@@ -48,6 +48,8 @@ def corroboration_row(row: Mapping[str, Any] | Sequence[str] | None) -> dict[str
             out["independent_sources"] = int(
                 row.get("independent_sources", len(out["sources"])) or 0
             )
+        if row.get("absence_sources"):
+            out["absence_sources"] = [str(x) for x in row["absence_sources"]]
         if isinstance(row.get("source_kinds"), Mapping):
             out["source_kinds"] = {str(k): int(v) for k, v in row["source_kinds"].items()}
         if row.get("support"):

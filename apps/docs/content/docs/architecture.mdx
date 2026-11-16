@@ -5080,10 +5080,18 @@ is assembled from what the run gathered rather than recomputed beside it:
   `evidence_roots.FILE_ASSESSMENT_TOOLS`); or a citation placed nowhere. A run
   observation or a rule cited by a sentence or evidence item of the statement
   that says it was not seen or holds no record (`_NOT_SEEN_RE`, `_HOLDS_NO_RE`:
-  "capa has no injection rule", "no write is recorded"; a negating word that
+  "capa has no injection rule", "no write is recorded", "(no match)", "does not
+  appear"; a negating word that
   says nothing of the source, "resolved, not imported", is not one) is cited
   for its absence and placed nowhere; a citation written only in the evidence
-  line is read against the claim's sentences too. `independent_sources` counts the sources that stand behind a
+  line is read against the claim's sentences too. A source every statement
+  naming the technique cites in a clause that says so — the part of the
+  sentence or evidence item that writes the citation, between commas, colons
+  and dashes ("[ev_0203] DNS names (no match)") — is cited to state an absence
+  and listed in `absence_sources` (`validation.technique_absence_sources`); a
+  source one statement cites for the behaviour, or an asserting tool's own row
+  names, is evidence. A range of items is read by its two ends.
+  `independent_sources` counts the sources that stand behind a
   fact about the technique, joining citations of one reading kind whose roots
   overlap (two tools reading one string are one source; a rule match and an
   index row on one function are two methods, never joined); a citation placed
@@ -5241,7 +5249,11 @@ is assembled from what the run gathered rather than recomputed beside it:
   `/reports/{id}/mitre` row. Every one of them prints the sandbox items among
   the technique's sources beside the set, named apart: "sandbox items: …" in a
   text cell or comment and in `x_malspark_evidence_note` on the STIX edge,
-  `sandbox_items` in the API. A technique whose statements cite no ledger
+  `sandbox_items` in the API. A source in the technique's `absence_sources` is
+  neither in the set nor among the items: the ATT&CK table's Evidence cell, the
+  analyst report's note and the MISP and Navigator comments name those sources
+  after them, "cited for an absence: …", and the defence rows, the STIX edge and
+  the API row leave them out; the row keeps every source. A technique whose statements cite no ledger
   entry and that has no item — one the judge alone names, for one — says so on
   each: "no ledger entry" in a text cell or comment, `x_malspark_evidence_note`
   on the STIX edge, `[]` in the API. The entries of the rules that matched the

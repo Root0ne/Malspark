@@ -15890,6 +15890,7 @@ def corroboration(
     backed = tool_backed_answers(isrs, ledger)
     roots = technique_roots(backed, ledger, read)
     traced = technique_sources(backed, ledger, read)
+    absent = technique_absence_sources(backed, ledger, read)
     sayers = _independent_sayers(backed)
     out: dict[str, dict[str, list[str]]] = {}
     collected = collect(isrs, ledger)
@@ -15936,6 +15937,10 @@ def corroboration(
             # technique whose statements cite none, and is judged on them.
             summary = summary_of_sources(traced.get(tid) or {})
             row["sources"] = list(summary.sources)
+            # The sources every statement naming it cites to state an absence
+            # (``technique_absence_sources``): sources, shown apart.
+            if absent.get(tid):
+                row["absence_sources"] = list(absent[tid])
             row["independent_sources"] = summary.independent
             if summary.kinds:
                 row["source_kinds"] = dict(sorted(summary.kinds.items()))
@@ -16064,9 +16069,10 @@ def support_of(sources: Mapping[str, Any]) -> str:
 _WHOLE_ANSWER_OPENING = "the whole answer of "
 # A statement that says a source holds no record of something: a negation
 # governing what was recorded, matched or found ("capa has no injection rule",
-# "the sandbox recorded no HTTP traffic", "no write is recorded", "not found"),
-# beside ``_NOT_SEEN_RE``'s negation of an observation. A negating word
-# elsewhere ("resolved, not imported") says nothing of the source.
+# "the sandbox recorded no HTTP traffic", "no write is recorded", "not found",
+# "(no match)", "does not appear"), beside ``_NOT_SEEN_RE``'s negation of an
+# observation. A negating word elsewhere ("resolved, not imported") says nothing
+# of the source.
 _HOLDS_NO_RE = re.compile(
     r"\b(?:has|have|had|holds?|held|shows?|showed|shown|lists?|listed|records?|recorded"
     r"|reports?|reported|contains?|contained|carries|carried|finds?|found|gives?|gave"
@@ -16074,7 +16080,9 @@ _HOLDS_NO_RE = re.compile(
     r"|\bno\b(?:\s+[\w-]+){1,3}?\s+(?:is|are|was|were)\s+(?:recorded|seen|observed|found"
     r"|matched|listed|reported|shown|present)\b"
     r"|\b(?:not|never)\s+(?:recorded|seen|observed|found|matched|listed|reported|shown"
-    r"|present)\b",
+    r"|present)\b"
+    r"|\bno\s+match(?:es)?\b"
+    r"|\b(?:do|does|did)\s+not\s+(?:appear|occur)\b|\bnever\s+(?:appears?|occurs?)\b",
     re.IGNORECASE,
 )
 
@@ -16104,6 +16112,93 @@ def _cites_to_negate(said: str, citation: str, claim: str | None = None) -> bool
     if claim is not None and needle not in claim.lower():
         mine = [*mine, *(p for p in _CITING_PIECE_BREAK.split(_read_dashes(claim)) if p.strip())]
     return any(_negates(p) for p in mine)
+
+
+# Where a piece of a statement breaks into clauses: a comma, a colon or a dash
+# between words. A citation is read for an absence by its own clause only.
+_CITING_CLAUSE_BREAK = re.compile(r"[,:]\s+|\s+-\s+")
+
+
+def _cited_for_an_absence(said: str, citation: str) -> bool:
+    """Whether ``said`` cites ``citation`` to state an absence.
+
+    Read in the clauses that write the citation, each a part of a sentence or
+    an evidence-line item (``_CITING_PIECE_BREAK``) between commas, colons and
+    dashes: one of them negates what was recorded, matched or found
+    (:func:`_negates`), as "[ev_0203] DNS names (no match)" does. A negation in
+    another clause, or a citation the statement does not write, is no absence.
+    """
+    text = _read_dashes(said)
+    written = re.compile(r"(?<![\w:])" + re.escape(citation) + r"(?![\w])", re.IGNORECASE)
+    return any(
+        _negates(clause)
+        for piece in _CITING_PIECE_BREAK.split(text)
+        if written.search(piece)
+        for clause in _CITING_CLAUSE_BREAK.split(piece)
+        if written.search(clause)
+    )
+
+
+def technique_absence_sources(
+    isrs: dict[str, Any] | None, ledger: Sequence[Any] | None, found: Any = None
+) -> dict[str, list[str]]:
+    """Per technique id, its sources every statement naming it cites for an absence.
+
+    Read over the statements :func:`technique_sources` reads, valid claims and
+    findings: a source cited by each of them in a clause that negates
+    (:func:`_cited_for_an_absence`). A source one statement cites for the
+    behaviour, or an asserting tool's own row names, is evidence. Sorted; a
+    technique with none is left out. Empty without a ledger.
+    """
+    from malspark.analysis.evidence_roots import run_roots
+    from malspark.pipeline.evidence_summary import (
+        asserted_techniques,
+        asserting_source,
+        invalid_technique_ids,
+    )
+
+    entries = list(ledger or ())
+    if not entries:
+        return {}
+    roots = found if found is not None else run_roots(entries)
+    absent: dict[str, set[str]] = {}
+    present: dict[str, set[str]] = {}
+
+    def read(tid: str, said: str, cited: list[str]) -> None:
+        for source in roots.sources_of_statement(said, cited):
+            into = absent if _cited_for_an_absence(said, source) else present
+            into.setdefault(tid, set()).add(source)
+
+    for isr in (isrs or {}).values():
+        for claim in getattr(isr, "claims", None) or []:
+            if not getattr(claim, "technique_id_valid", True):
+                continue
+            tid = str(getattr(claim, "technique_id", "") or "").strip().upper()
+            if not tid:
+                continue
+            ref = str(getattr(claim, "evidence_ref", "") or "")
+            said = f"{getattr(claim, 'claim', '') or ''} {ref}"
+            read(tid, said, [*entry_ids_in(said), *item_ids_in(ref)])
+        for finding in getattr(isr, "findings", None) or []:
+            said = f"{getattr(finding, 'title', '') or ''} {getattr(finding, 'detail', '') or ''}"
+            cited = [str(i) for i in getattr(finding, "evidence_ids", None) or [] if i]
+            for raw in getattr(finding, "technique_ids", None) or []:
+                tid = str(raw or "").strip().upper()
+                if tid:
+                    read(tid, said, cited)
+    invalid = invalid_technique_ids(entries)
+    for entry in entries:
+        if asserting_source(entry) is None or getattr(entry, "repeated_of", None):
+            continue
+        for tid in asserted_techniques(entry):
+            if tid not in invalid:
+                present.setdefault(tid, set()).add(str(getattr(entry, "id", "") or "").lower())
+    out: dict[str, list[str]] = {}
+    for tid, sources in absent.items():
+        kept = sorted(sources - present.get(tid, set()))
+        if kept:
+            out[tid] = kept
+    return out
 
 
 def technique_sources(
