@@ -1187,3 +1187,38 @@ def test_a_platform_rewrite_reads_a_judge_row_without_its_judge_source() -> None
     assert end == _end_of(make, _twin(row), ledger)
     # The fact grounds the whole-code absence: the platform qualifies it, as for its twin.
     assert end[0]["rewritten"] == 1 and end[0]["dropped"] == 0
+
+
+@pytest.mark.parametrize(
+    ("sources", "said"),
+    [
+        (["judge.verdict"], "judge.verdict is a passage of the judge's decision"),
+        (
+            ["judge.verdict", "judge.family", DROPPED],
+            f"judge.verdict, judge.family, {DROPPED} are passages of the judge's decision",
+        ),
+    ],
+)
+def test_the_judge_refusal_names_every_judge_passage_the_row_names(
+    sources: list[str], said: str
+) -> None:
+    row = {**_row(NAMING, "keep", quote="Benign"), "sources": [*sources, "string_resolution"]}
+
+    (told,) = [v for v in _refusals(report_of(), row) if v.question_only]
+    assert told.message.startswith(f"row 1: {said}, which supports a drop alone")
+    assert told.path == "sentences.0.decision" and told.question_only
+
+    report = report_of(OTHER)
+    report.executive_summary = _SUMMARY_VERDICT
+    summary = {**_summary_row(_SUMMARY_VERDICT, sources, "keep"), "sources": sources}
+    (told,) = [
+        v
+        for v in agreement_violations(
+            {"sentences": [summary]}, passages_of(report, narrative_written=True), CITABLE
+        )
+        if v.question_only
+    ]
+    assert told.message.startswith(
+        f"row 1 names {', '.join(sources)}, of the judge's decision, which supports no answer"
+    )
+    assert told.path == "sentences.0.sources"
