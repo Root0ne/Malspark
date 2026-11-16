@@ -1825,6 +1825,17 @@ def sandbox_view(
     return view(report, *args, normalised_by=normalised_by, **kwargs)
 
 
+def network_view(
+    report: dict[str, Any] | None, normalised_by: Sequence[str] | None, /
+) -> dict[str, Any]:
+    """The whole network view of ``report``, read through :func:`sandbox_view`.
+
+    For a reader that holds a report and reads it as no tool's call (the
+    report's network block), so it names no tool to read it.
+    """
+    return sandbox_view("sandbox_network", report, normalised_by)
+
+
 # Every tool of this source that reads a detonation, each taking the
 # ``detonation`` selector; ``request_detonation`` asks for one and reads none.
 DETONATION_READERS: tuple[str, ...] = (*_VIEW_READERS, ITEMS_TOOL)
