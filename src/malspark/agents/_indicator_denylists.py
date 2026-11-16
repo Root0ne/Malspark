@@ -518,20 +518,17 @@ def inside_a_longer_token_at(literal: str, haystack: str) -> int | None:
 
 
 def run_around(haystack: str, start: int, end: int) -> tuple[int, int]:
-    """The run of text ``haystack[start:end]`` stands in: up to a space, a quote or an escape."""
+    """The run of text ``haystack[start:end]`` stands in: up to a space, a quote, or an
+    escape that writes neither a backslash nor a slash (a newline, a tab, a quote)."""
+
+    def _ends(at: int) -> bool:
+        return _is_an_escape(haystack, at) and haystack[at + 1 : at + 2] not in ("\\", "/")
+
     begin = start
-    while (
-        begin > 0
-        and haystack[begin - 1] not in _ENDS_A_RUN
-        and not (begin >= 2 and _is_an_escape(haystack, begin - 2))
-    ):
+    while begin > 0 and haystack[begin - 1] not in _ENDS_A_RUN and not _ends(begin - 2):
         begin -= 1
     finish = end
-    while (
-        finish < len(haystack)
-        and haystack[finish] not in _ENDS_A_RUN
-        and not _is_an_escape(haystack, finish)
-    ):
+    while finish < len(haystack) and haystack[finish] not in _ENDS_A_RUN and not _ends(finish):
         finish += 1
     return begin, finish
 

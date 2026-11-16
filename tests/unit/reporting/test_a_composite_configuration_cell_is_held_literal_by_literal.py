@@ -385,6 +385,14 @@ class TestInsideALongerToken:
         assert found.asked
         assert repr(safe_finding_value(held)) in found.message
 
+    def test_the_run_shown_goes_on_through_a_path_s_backslashes(self) -> None:
+        pool = "HKLM\\Software\\Vendor\\RunHKCU\\Software\\Vendor\\Runtime"
+        texts = EntryTexts.from_ledger([_strings("ev_0062", pool)])
+
+        found = _one(_identifiers("HKCU\\Software\\Vendor\\Run", "ev_0062"), texts)
+
+        assert f"only inside a longer run of text: {pool!r}." in found.message
+
     def test_a_short_value_inside_a_longer_run_is_asked_as_not_held(self) -> None:
         found = _one(_identifiers("NameAlpha", "ev_0012"))
 
