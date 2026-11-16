@@ -265,6 +265,27 @@ class TestTheSourcesOfATechnique:
         held = technique_sources({"a": _isr("a", _claim(said, "[ev_0003]"))}, _ledger())
         assert _readings(held["T1547.001"]) == {"ev_0003": READING_RUN}
 
+    def test_a_denial_form_places_nowhere_only_a_source_whose_answer_found_nothing(self) -> None:
+        from malspark.core.declared_reading import legacy_by_name, stored_record
+        from malspark.pipeline.validation import answer_found_nothing
+
+        said = '"rundll32.exe x.dll,#1" ran [ev_0003] (no match).'
+        isrs = {"a": _isr("a", _claim(said, "[ev_0003]"))}
+        ledger = _ledger()
+        # Without the fact, the run observation stays placed.
+        assert not answer_found_nothing(ledger[2])
+        assert _readings(technique_sources(isrs, ledger)["T1547.001"]) == {"ev_0003": READING_RUN}
+        # With it (its declared rows place holds no row), it is placed nowhere.
+        declared = dict(stored_record(legacy_by_name()["sandbox_processes"]))
+        declared["rows"] = "/denied/*"
+        found_nothing = ledger[2].model_copy(
+            update={"facts": declared, "structured": {**ledger[2].structured, "denied": []}}
+        )
+        assert answer_found_nothing(found_nothing)
+        ledger[2] = found_nothing
+        held = technique_sources(isrs, ledger)["T1547.001"]
+        assert _readings(held) == {"ev_0003": READING_UNPLACED}
+
     def test_a_technique_on_an_external_assessment_alone_is_unobserved(self) -> None:
         held = technique_sources(_restating(3, "[ev_0007]"), _ledger())["T1547.001"]
 

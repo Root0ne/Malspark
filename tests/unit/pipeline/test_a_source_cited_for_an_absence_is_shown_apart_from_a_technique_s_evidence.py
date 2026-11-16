@@ -34,7 +34,7 @@ from malspark.reporting.technique_evidence import (
     technique_evidence_words,
     technique_sandbox_items,
 )
-from malspark.schemas.evidence import LedgerEntry
+from malspark.schemas.evidence import LedgerEntry, not_shown_record
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
 CLAIM = (
@@ -105,6 +105,32 @@ def test_an_answer_whose_declared_rows_are_empty_found_nothing() -> None:
     # The declared place itself missing from the answer states nothing either.
     missing = LEDGER[2].model_copy(update={"structured": {"other": []}})
     assert not answer_found_nothing(missing)
+
+
+def test_an_answer_that_failed_was_cut_or_repeats_states_nothing() -> None:
+    empty = LEDGER[2]
+    assert answer_found_nothing(empty)
+    assert not answer_found_nothing(empty.model_copy(update={"ok": False}))
+    assert not answer_found_nothing(empty.model_copy(update={"truncated": True}))
+    assert not answer_found_nothing(empty.model_copy(update={"repeated_of": "ev_0001"}))
+    # An answer the conversation had no room for (it is cut, too).
+    not_shown = empty.model_copy(update={"truncated": True, "output": not_shown_record(900)})
+    assert not answer_found_nothing(not_shown)
+
+
+def test_a_declared_place_that_is_no_list_or_object_states_nothing() -> None:
+    held = LEDGER[2].model_copy(update={"structured": {"matches": "none"}})
+    assert not answer_found_nothing(held)
+
+
+def test_a_rows_path_of_one_segment_reads_the_answer_itself() -> None:
+    facts = {"v": 1, "kind": "search_matches", "rows": "/*"}
+    empty = LedgerEntry(
+        id="ev_0209", tool="list_dns", args={}, output="[]", structured=[], facts=facts
+    )
+    held = empty.model_copy(update={"structured": [{"name": "a.example"}]})
+    assert answer_found_nothing(empty)
+    assert not answer_found_nothing(held)
 
 
 def test_no_match_and_does_not_appear_are_forms_of_denial_read_by_the_clause() -> None:
