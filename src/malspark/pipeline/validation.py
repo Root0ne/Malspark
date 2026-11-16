@@ -11364,15 +11364,16 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                     f"none of the entries they cite: {named}. Their values: {values}"
                     f"{f' and {more} more' if more > 0 else ''}."
                 )
+            # What a cited entry holds of each path: written with safe values.
             notes = list(dict.fromkeys(note for *_rest, row_notes in rows for note in row_notes))
+            said = " ".join([said, *notes[:_MAX_NAMED_IDS]])
             out.append(
                 Violation(
                     code=STATED_VALUE_UNHELD_CODE,
                     message=(
-                        f"{said} {' '.join(notes[:_MAX_NAMED_IDS])}"
-                        f"{' ' if notes else ''}A value in this table is one an entry records "
-                        "as written. Cite an entry that holds each value the row states, or "
-                        "leave the row out."
+                        f"{said} A value in this table is one an entry records as written. "
+                        "Cite an entry that holds each value the row states, or leave the row "
+                        "out."
                     ),
                     path=f"{list_key}.value:{','.join(refs)}",
                     statements=tuple(f"{list_key}.{row_at}.value" for row_at in unheld_at[refs]),
