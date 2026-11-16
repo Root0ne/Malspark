@@ -1,0 +1,3 @@
+### Fixed
+
+- **The place a sandbox started the submitted file from is read as the sandbox's (T-718).** A process that runs the submitted file by its submitted name or its digest, whose image is that file, and that no process running the file started, is where the sandbox placed the file. The process view marks its row `staged_by_sandbox: true` and says once that where the file was placed is the sandbox's doing, not the sample's; a copy the sample makes of itself and runs is never marked. The report's process tree carries the mark, and the pack, the evidence table, the process tree and its figure write the same words beside the row.

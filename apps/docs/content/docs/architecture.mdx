@@ -5939,6 +5939,23 @@ is assembled from what the run gathered rather than recomputed beside it:
   add it as a domain row and indicator when nothing else did. The export
   carries every row the table publishes, whatever their number. The rule's report-wide lookups
   are built once per table, export or feed (`one_reading`).
+* **The place a sandbox started the submitted file from is the sandbox's.**
+  It is read from the report's own lineage, in each task on its own
+  (`sandbox_report.started_by_the_sandbox`): a process that runs the submitted
+  file by its submitted name or its digest, whose image is that file, and that
+  no process running the file started. The process view marks that row
+  `staged_by_sandbox: true` (left out on every other row) and its answer
+  carries one sentence, once: the sandbox started the submitted file from that
+  path, and where the file was placed is the sandbox's doing, not the
+  sample's. A copy the sample makes of itself and runs is started by a process
+  that runs the file and is never marked; a process that names the file only
+  on its command line has another image and is not it; a sandbox that starts
+  the file under a name neither reading knows marks nothing. No product, path
+  or folder decides it. The ledger keeps the answer as written, the report's
+  process tree carries the mark (`ProcessNode.staged_by_sandbox`, left out
+  when false), and the pack's process line, the evidence table, the report's
+  process tree and its figure write the same words beside the row
+  (`sandbox_report.staged_words`).
 * **A host value the analysis states is exported when code finds it whole.**
   The report model's host-identifier call types each row with a closed
   vocabulary (`data/host_identifier_kinds_v1.json`: mutex, file path, file
