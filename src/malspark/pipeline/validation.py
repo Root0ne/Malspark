@@ -8288,7 +8288,9 @@ MARKED_IN_PLACE: frozenset[str] = frozenset(
 # The marked findings asked about by the value they name, not by the sentence:
 # an answer that rewrites the sentence around the same value was asked all the
 # same.
-ASKED_BY_VALUE: frozenset[str] = frozenset({CITATION_WRONG_ENTRY_CODE, ID_NOT_IN_CITED_ENTRY_CODE})
+ASKED_BY_VALUE: frozenset[str] = frozenset(
+    {CITATION_WRONG_ENTRY_CODE, ID_NOT_IN_CITED_ENTRY_CODE, STATED_VALUE_INSIDE_A_TOKEN_CODE}
+)
 
 
 def raised_only_in_retry(violation: Violation, shown: Sequence[Violation]) -> bool:
@@ -11066,20 +11068,38 @@ def _hive_spellings() -> list[tuple[str, str]]:
     return spelt
 
 
+@lru_cache(maxsize=256)
+def _in_json_notation(text: str) -> bool:
+    """Whether an entry's text is a JSON document: its strings and escapes are JSON's."""
+    if text.lstrip()[:1] not in ("{", "["):
+        return False
+    try:
+        json.loads(text)
+    except ValueError:
+        return False
+    return True
+
+
 def _line_start(text: str, at: int) -> int:
-    """Where the line of ``text`` that ``at`` stands in begins: after a newline, or after
-    the escape a JSON text writes one as."""
-    from malspark.agents._indicator_denylists import _is_an_escape
+    """Where the line of ``text`` that ``at`` stands in begins: after a newline, and in a
+    JSON text after the escape it writes one as and where the string ``at`` stands in
+    opens (an unescaped quote)."""
+    from malspark.agents._indicator_denylists import escape_starts_at, string_opens_before
 
     begin = text.rfind("\n", 0, at) + 1
+    if not _in_json_notation(text):
+        return begin
     escaped = text.rfind("\\n", begin, at)
-    while escaped != -1 and not _is_an_escape(text, escaped):
+    while escaped != -1 and not escape_starts_at(text, escaped):
         escaped = text.rfind("\\n", begin, escaped)
-    return escaped + 2 if escaped != -1 else begin
+    if escaped != -1:
+        begin = escaped + 2
+    return max(begin, string_opens_before(text, at))
 
 
 def _hive_before(text: str, at: int) -> str:
-    """The label of the hive spelt last before ``at`` on its line, ``""`` for none."""
+    """The label of the hive spelt last before ``at`` on its line and in its string, ``""``
+    for none."""
     from malspark.agents._indicator_denylists import whole_value_starts
 
     line = text[_line_start(text, at) : at]
@@ -11159,7 +11179,7 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
 
     def _held_with_its_hive(label: str, rest: str, ref: str) -> bool:
         # The rest of the path whole, with this hive the last one spelt before
-        # it on its line.
+        # it on its line and in its string.
         text = entries.text_of(ref)
         return any(
             _hive_before(text, start) == label
@@ -11181,7 +11201,7 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
             _held_with_its_hive(label, rest, ref) for ref in sorted(entries.may_hold(rest) & among)
         )
 
-    def _inside(literal: str, among: set[str]) -> list[tuple[str, str]]:
+    def _inside(literal: str, among: set[str]) -> list[tuple[str, str | None]]:
         # Each cited entry that holds the literal's text inside a longer run,
         # with the run as the entry holds it. A text holds the value's inner
         # runs whole (:meth:`EntryTexts.may_hold`).
@@ -11190,7 +11210,7 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
         runs = _TEXT_RUN_RE.findall(literal.lower())
         inner = " ".join(runs[1:-1])
         candidates = (entries.may_hold(inner) & among) if inner else set(among)
-        found: list[tuple[str, str]] = []
+        found: list[tuple[str, str | None]] = []
         for ref in sorted(candidates):
             text = entries.text_of(ref)
             for spelling in _stated_spellings(literal):
@@ -11204,24 +11224,29 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                 break
         return found
 
-    def _run_shown(ref: str, text: str, start: int, end: int) -> str:
+    def _run_shown(ref: str, text: str, start: int, end: int) -> str | None:
         # The run around the value as the entry holds it, in the entry's own
         # case where its stored text is the one read, bounded around the value
-        # by the bound of a value a finding quotes.
-        first, last = run_around(text, start, end)
+        # by the bound of a value a finding quotes; None where the printer
+        # would print other text than the run.
+        json_notation = _in_json_notation(text)
+        first, last = run_around(text, start, end, json_notation=json_notation)
         stored = str(getattr(entries.entries.get(ref), "output", "") or "")
         source = stored if len(stored) == len(text) and stored.lower() == text else text
         begin, finish = first, last
         if finish - begin > FINDING_VALUE_LIMIT:
-            room = max(FINDING_VALUE_LIMIT - (end - start), 0) // 2
+            # Room on each side for the run and the mark of its cut.
+            room = max(FINDING_VALUE_LIMIT - (end - start) - 2, 0) // 2
             begin, finish = max(begin, start - room), min(finish, end + room)
         run = source[begin:finish]
-        try:
-            # A run inside a JSON string reads as the string holds it.
-            run = str(json.loads(f'"{run}"'))
-        except ValueError:
-            pass
-        return f"{'…' if begin > first else ''}{run}{'…' if finish < last else ''}"
+        if json_notation:
+            try:
+                # A run inside a JSON string reads as the string holds it.
+                run = str(json.loads(f'"{run}"'))
+            except ValueError:
+                pass
+        run = f"{'…' if begin > first else ''}{run}{'…' if finish < last else ''}"
+        return run if safe_finding_value(run) == run else None
 
     def _what_is_held(literal: str, among: set[str]) -> str:
         # For a path no cited entry holds: the longest whole leading run of at
@@ -11268,7 +11293,9 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
         unheld_at: dict[tuple[str, ...], list[int]] = {}
         # By the entries cited: each row inside a longer run, with each text
         # read out of a run, its entry and the run.
-        inside: dict[tuple[str, ...], list[tuple[int, str, str, list[tuple[str, str, str]]]]] = {}
+        inside: dict[
+            tuple[str, ...], list[tuple[int, str, str, list[tuple[str, str, str | None]]]]
+        ] = {}
         inside_at: dict[tuple[str, ...], list[int]] = {}
         for index, (at, row) in enumerate(_placed_rows(payload, list_key)):
             value = str(row.get("value") or "").strip()
@@ -11379,30 +11406,25 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                     statements=tuple(f"{list_key}.{row_at}.value" for row_at in unheld_at[refs]),
                 )
             )
+        # One finding per row, carrying its value: whether a row was asked is
+        # decided by its value and its citation (``ASKED_BY_VALUE``), never by
+        # another row citing the same entries.
         for refs, read in inside.items():
-            said = " ".join(
-                _inside_fact(noun, number, label, value, facts, entries)
-                for number, label, value, facts in read[:_MAX_NAMED_IDS]
-            )
-            more = len(read) - _MAX_NAMED_IDS
-            if more > 0:
-                said += (
-                    f" {nouns} "
-                    f"{', '.join(str(number) for number, *_rest in read[_MAX_NAMED_IDS:])} "
-                    "each stand only inside a longer run of text too."
+            for (number, label, value, facts), row_at in zip(read, inside_at[refs], strict=True):
+                said = _inside_fact(noun, number, label, value, facts, entries)
+                out.append(
+                    Violation(
+                        code=STATED_VALUE_INSIDE_A_TOKEN_CODE,
+                        message=(
+                            f"{said} Where the value is one of several strings joined in that "
+                            "run, keep the row as written; where the longer token is the value, "
+                            "write the token the entry holds."
+                        ),
+                        path=f"{list_key}.value:{','.join(refs)}",
+                        statements=(f"{list_key}.{row_at}.value",),
+                        values=(value,),
+                    )
                 )
-            out.append(
-                Violation(
-                    code=STATED_VALUE_INSIDE_A_TOKEN_CODE,
-                    message=(
-                        f"{said} Where the value is one of several strings joined in that run, "
-                        "keep the row as written; where the longer token is the value, write "
-                        "the token the entry holds."
-                    ),
-                    path=f"{list_key}.value:{','.join(refs)}",
-                    statements=tuple(f"{list_key}.{row_at}.value" for row_at in inside_at[refs]),
-                )
-            )
     return out
 
 
@@ -11411,19 +11433,32 @@ def _inside_fact(
     number: int,
     label: str,
     value: str,
-    facts: Sequence[tuple[str, str, str]],
+    facts: Sequence[tuple[str, str, str | None]],
     entries: EntryTexts,
 ) -> str:
-    """What a question says of one row inside a longer run: each text, its entry and the run."""
+    """What a question says of one row inside a longer run: each text, its entry and the run.
+
+    A run the printer would print as other text is said not to be shown
+    (:data:`RUN_NOT_SHOWN`): no sentence claims to show what it does not.
+    """
     head = f"{noun} {number} ({safe_finding_value(label)}: {safe_finding_value(value)!r})"
     said = []
     for span, ref, run in facts:
         what = head if span == value else f"{head}: {safe_finding_value(span)!r}"
+        where = (
+            f"{what} stands in {safe_finding_value(entries.named(ref))} only inside a longer run"
+        )
         said.append(
-            f"{what} stands in {safe_finding_value(entries.named(ref))} only inside a longer run "
-            f"of text: {safe_finding_value(run)!r}."
+            f"{where} of text, {RUN_NOT_SHOWN}."
+            if run is None
+            else f"{where} of text: {safe_finding_value(run)!r}."
         )
     return " ".join(said)
+
+
+# What a finding says in place of a run the printer would print as other text,
+# and what a row kept after it is marked by (``markdown._row_mark``).
+RUN_NOT_SHOWN = "which is not shown here"
 
 
 def _named_literals(literals: Sequence[str]) -> str:

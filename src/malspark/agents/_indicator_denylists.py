@@ -517,12 +517,19 @@ def inside_a_longer_token_at(literal: str, haystack: str) -> int | None:
     return None
 
 
-def run_around(haystack: str, start: int, end: int) -> tuple[int, int]:
-    """The run of text ``haystack[start:end]`` stands in: up to a space, a quote, or an
-    escape that writes neither a backslash nor a slash (a newline, a tab, a quote)."""
+def run_around(
+    haystack: str, start: int, end: int, *, json_notation: bool = False
+) -> tuple[int, int]:
+    """The run of text ``haystack[start:end]`` stands in: up to a space or a quote, and in
+    a JSON text (``json_notation``) up to an escape its notation writes, a newline, a tab
+    or a quote, never a backslash or a slash a path's own components are joined with."""
 
     def _ends(at: int) -> bool:
-        return _is_an_escape(haystack, at) and haystack[at + 1 : at + 2] not in ("\\", "/")
+        return (
+            json_notation
+            and escape_starts_at(haystack, at)
+            and haystack[at + 1 : at + 2] not in ("\\", "/")
+        )
 
     begin = start
     while begin > 0 and haystack[begin - 1] not in _ENDS_A_RUN and not _ends(begin - 2):
@@ -531,6 +538,24 @@ def run_around(haystack: str, start: int, end: int) -> tuple[int, int]:
     while finish < len(haystack) and haystack[finish] not in _ENDS_A_RUN and not _ends(finish):
         finish += 1
     return begin, finish
+
+
+def escape_starts_at(haystack: str, at: int) -> bool:
+    """Whether a JSON text's escape opens at ``at``: a backslash after an even run of them."""
+    if at < 0 or haystack[at : at + 1] != "\\":
+        return False
+    before = at
+    while before > 0 and haystack[before - 1] == "\\":
+        before -= 1
+    return (at - before) % 2 == 0
+
+
+def string_opens_before(haystack: str, at: int) -> int:
+    """Where the JSON string ``at`` stands in opens: after the last quote no escape writes."""
+    quote = haystack.rfind('"', 0, at)
+    while quote != -1 and escape_starts_at(haystack, quote - 1):
+        quote = haystack.rfind('"', 0, quote)
+    return quote + 1
 
 
 # What ends a run of text a value stands in: a space and a quote.

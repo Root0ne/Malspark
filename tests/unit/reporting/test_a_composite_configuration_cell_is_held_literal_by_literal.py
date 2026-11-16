@@ -93,6 +93,7 @@ def _texts() -> EntryTexts:
                 "ExampleCounter123456789",
                 "ExampleCache.dat.bak",
                 "evil.exe",
+                "xxExampleUpdaterServiceMainyy",
                 "usageError: --alpha cannot be combined with --gamma, or --beta.zz",
             ),
         ]
@@ -200,6 +201,11 @@ class TestACompositeCell:
         texts = EntryTexts.from_ledger([_code("ev_0024", 'FindWindowA("Pageant", "Pageant");\n')])
 
         assert stated_value_violations(_items('FindWindowA, "Pageant"', "ev_0024"), texts) == []
+
+    def test_brackets_are_list_punctuation(self) -> None:
+        texts = EntryTexts.from_ledger([_strings("ev_0028", "LoadLibraryA", "primary")])
+
+        assert stated_value_violations(_items("LoadLibraryA [primary]", "ev_0028"), texts) == []
 
     def test_a_comma_inside_a_span_is_no_list_punctuation(self) -> None:
         texts = EntryTexts.from_ledger([_strings("ev_0025", "LoadLibraryA", "alpha", "beta")])
@@ -340,6 +346,35 @@ class TestTheSpellings:
 
         assert found.code == STATED_VALUE_UNHELD_CODE
 
+    @pytest.mark.parametrize(
+        ("entry", "key"),
+        [
+            # The hive in another string of the same list, before the path.
+            (
+                _strings("ev_0033", "HKLM\\Software\\Vendor", "HKCU", "Software\\Vendor"),
+                "HKCU\\Software\\Vendor",
+            ),
+            # The hive opens another path's string, the path a string of its own.
+            (
+                _strings("ev_0033", "HKCU\\Software\\Other", "Software\\Vendor\\Run"),
+                "HKCU\\Software\\Vendor\\Run",
+            ),
+        ],
+    )
+    def test_a_hive_in_another_string_of_the_entry_holds_nothing(
+        self, entry: LedgerEntry, key: str
+    ) -> None:
+        texts = EntryTexts.from_ledger([entry])
+
+        assert _one(_identifiers(key, "ev_0033"), texts).code == STATED_VALUE_UNHELD_CODE
+
+    def test_a_bare_hive_is_read_as_the_base_reads_it(self) -> None:
+        # A hive alone is looked for as written: its handle is no spelling of it.
+        texts = EntryTexts.from_ledger([_code("ev_0034", "h = 0x80000001;\n")])
+        assert _one(_identifiers("HKCU", "ev_0034"), texts).code == STATED_VALUE_UNHELD_CODE
+        texts = EntryTexts.from_ledger([_strings("ev_0035", "HKCU")])
+        assert stated_value_violations(_identifiers("HKCU", "ev_0035"), texts) == []
+
 
 class TestThePathNote:
     def test_the_whole_leading_part_an_entry_holds_is_said(self) -> None:
@@ -439,7 +474,7 @@ class TestInsideALongerToken:
             ("Global\\MsWinZonesCacheCounterMutexA", "Global\\MsWinZonesCacheCounterMutex"),
             ("http://evil.example.net/gate.php5", "http://evil.example.net/gate.php"),
             ("notevil-site.example.com", "evil-site.example.com"),
-            ("C:\\Users\\Public\\payload.exe", "C:\\Users\\Public\\payload.ex"),
+            ("Software\\Vendor\\payload.exe", "Software\\Vendor\\payload.ex"),
             ("WinDefendUpdaterSvc", "WinDefendUpdater"),
         ],
     )
@@ -469,7 +504,7 @@ class TestInsideALongerToken:
         shown = found.message.split("only inside a longer run of text: '")[1].split("'.")[0]
         assert "ExampleNoteFile-READ.txt" in shown
         assert shown.startswith("…") and shown.endswith("…")
-        assert len(shown) <= FINDING_VALUE_LIMIT + 2
+        assert len(shown) <= FINDING_VALUE_LIMIT
 
     def test_a_short_value_inside_a_longer_run_is_asked_as_not_held(self) -> None:
         found = _one(_identifiers("NameAlpha", "ev_0012"))
@@ -493,6 +528,48 @@ class TestInsideALongerToken:
         found = _one(_items(cell, "ev_0012"))
 
         assert found.code == STATED_VALUE_INSIDE_A_TOKEN_CODE
+
+    def test_each_row_inside_a_run_is_its_own_finding_with_its_value(self) -> None:
+        payload = {
+            "identifiers": [
+                {"kind": "file", "value": "ExampleNoteFile-READ.txt", "evidence_refs": ["ev_0012"]},
+                {"kind": "svc", "value": "ExampleUpdaterServiceMain", "evidence_refs": ["ev_0012"]},
+            ]
+        }
+
+        first, second = stated_value_violations(payload, _texts())
+
+        assert (first.code, second.code) == (STATED_VALUE_INSIDE_A_TOKEN_CODE,) * 2
+        assert first.values == ("ExampleNoteFile-READ.txt",)
+        assert second.values == ("ExampleUpdaterServiceMain",)
+        assert first.statements == ("identifiers.0.value",)
+        assert second.statements == ("identifiers.1.value",)
+
+    def test_the_run_shown_ends_at_an_escaped_newline_or_tab(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [_strings("ev_0064", "x\tSoftware\\Vendor\\RunTail\nnext line")]
+        )
+
+        found = _one(_identifiers("Software\\Vendor\\Run", "ev_0064"), texts)
+
+        assert "only inside a longer run of text: 'Software\\\\Vendor\\\\RunTail'." in found.message
+
+    def test_the_run_shown_ends_at_a_space(self) -> None:
+        texts = EntryTexts.from_ledger([_strings("ev_0065", "aaa ExampleNoteFile-READ.txtyy bbb")])
+
+        found = _one(_identifiers("ExampleNoteFile-READ.txt", "ev_0065"), texts)
+
+        assert "only inside a longer run of text: 'ExampleNoteFile-READ.txtyy'." in found.message
+
+    def test_a_run_the_printer_would_change_is_not_shown(self) -> None:
+        # The printer keeps a user folder's path out of a finding.
+        texts = EntryTexts.from_ledger([_strings("ev_0066", "C:\\Users\\Public\\dropper.exeTail")])
+
+        found = _one(_identifiers("C:\\Users\\Public\\dropper.exe", "ev_0066"), texts)
+
+        assert found.code == STATED_VALUE_INSIDE_A_TOKEN_CODE
+        assert "only inside a longer run of text, which is not shown here." in found.message
+        assert "dropper.exeTail" not in found.message
 
     def test_the_reader_of_one_text(self) -> None:
         text = "txtexamplenotefile-read.txtservicenamealpha"
@@ -570,6 +647,44 @@ class TestTheComposer:
         _result, llm, comp = _composed(first, retry)
 
         assert len(llm.sent) == 2
+        (row,) = comp.validation_tally.unresolved
+        assert row["code"] == STATED_VALUE_INSIDE_A_TOKEN_CODE
+        assert row["asked"] == "false"
+
+    def test_a_row_added_in_the_retry_with_the_same_citation_is_not_asked(self) -> None:
+        first = json.dumps(_identifiers("ExampleNoteFile-READ.txt", "ev_0012"))
+        retry = json.dumps(
+            {
+                "identifiers": [
+                    {
+                        "kind": "string",
+                        "value": "ExampleNoteFile-READ.txt",
+                        "evidence_refs": ["ev_0012"],
+                    },
+                    {
+                        "kind": "string",
+                        "value": "ExampleUpdaterServiceMain",
+                        "evidence_refs": ["ev_0012"],
+                    },
+                ]
+            }
+        )
+
+        _result, llm, comp = _composed(first, retry)
+
+        assert len(llm.sent) == 2
+        kept, added = comp.validation_tally.unresolved
+        assert kept["message"].startswith("identifier 1 (")
+        assert "asked" not in kept
+        assert added["message"].startswith("identifier 2 (")
+        assert added["asked"] == "false"
+
+    def test_a_row_changed_in_the_retry_to_another_inside_value_is_not_asked(self) -> None:
+        first = json.dumps(_identifiers("ExampleNoteFile-READ.txt", "ev_0012"))
+        retry = json.dumps(_identifiers("ExampleUpdaterServiceMain", "ev_0012"))
+
+        _result, _llm, comp = _composed(first, retry)
+
         (row,) = comp.validation_tally.unresolved
         assert row["code"] == STATED_VALUE_INSIDE_A_TOKEN_CODE
         assert row["asked"] == "false"
