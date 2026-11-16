@@ -14,7 +14,9 @@
   `internal_to_peer`/`internal_from_peer` when the two directions have different internal
   ends, and `public_senders` with `packets_public_to_peer`/`bytes_public_to_peer`. A record
   stored with the old keys is printed with the peer's share as the peer's, says the other end
-  is not recorded, and keeps every other line its writer stored. A capture summary longer than
-  the report section's room lists its heaviest conversations and says how many it leaves out
-  and where they all are; its overview, TLS names and beacons are printed whole. The triage
+  is not recorded, and keeps every other line its writer stored. The report's "Capture summary"
+  has a room 3.3 times a text section's, so every capture the shorter line fitted whole fits
+  whole; past it, conversations are left out first, the heaviest kept, then TLS names, each
+  with how many are left out and where they all are, and the overview and beacons are printed
+  whole. The triage
   pack parts the conversations with ` | `. No count changes.
