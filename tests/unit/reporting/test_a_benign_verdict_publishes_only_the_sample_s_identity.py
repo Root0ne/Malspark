@@ -413,3 +413,22 @@ class TestAVerdictStatedWithoutAConfidenceIsNotStatedEverywhere:
 
         assert [m.technique_id for m in report.ttp_mappings] == ["T1083"]
         assert [c.not_published for c in report.capability_matrix] == [""]
+
+
+def test_the_developer_host_question_decides_a_recovered_url() -> None:
+    """The same recovered URL on a developer's host and on another host, all else equal."""
+    from malspark.reporting.models import EmulatedStrings, NetworkURL, RecoveredValue
+
+    def answer(url: str) -> tuple[bool, bool]:
+        report = _report("Malware")
+        report.network = NetworkIOCs(urls=[NetworkURL(url=url, source="strings")])
+        report.emulated_strings = EmulatedStrings(
+            values={url.lower(): "ev_0004"},
+            recovered_by={
+                url.lower(): [RecoveredValue(tool="floss", entry="ev_0004", scheme="decoded")]
+            },
+        )
+        return publishes(_rows(report)[url].published), url in str(_indicators(_export(report)[0]))
+
+    assert answer("https://stage-host.example.net/simple/pkg/stage.bin") == (True, True)
+    assert answer("https://pypi.org/simple/pkg/stage.bin") == (False, False)
