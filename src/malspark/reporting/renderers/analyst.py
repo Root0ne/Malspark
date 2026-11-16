@@ -803,25 +803,53 @@ def _left_out_rows(count: int, what: str) -> str:
     )
 
 
-# What may close a sentence before the one a flagged text starts: its end mark, then any
-# closing quote or bracket.
-_SENTENCE_CLOSE = "\"'\u2019\u201d)]"
+# What may close a sentence after its end mark: any closing quote, bracket or emphasis markup.
+_SENTENCE_CLOSE = "\"'\u2019\u201d)]*_"
 # Citation brackets right after a flagged text, read past to its end.
 _CITED_AFTER = re.compile(r"(?:[ \t]*\[[^\]\n]*\])*")
+# What may stand on a line before the sentence that opens it: a list item's or a quoted
+# block's marker, or nothing.
+_LINE_OPEN = re.compile(r"[ \t]*(?:[-*+>]|\d+[.)])?[ \t]*")
+# A word of single letters each followed by a period ("e.g.", "i.e."): its last period ends
+# no sentence.
+_ABBREVIATION = re.compile(r"[\"'(\[]*(?:[A-Za-z]\.){2,}")
+
+
+def _ends_sentence(text: str, at: int) -> bool:
+    """Whether the mark at ``text[at]`` ends a sentence: a ``.``, ``!`` or ``?`` that white
+    space or the end follows, any closing quote, bracket or emphasis read past, and no
+    abbreviation's own (never "1.2", never "e.g.")."""
+    if text[at : at + 1] not in (".", "!", "?"):
+        return False
+    after = at + 1
+    while after < len(text) and text[after] in _SENTENCE_CLOSE:
+        after += 1
+    if after < len(text) and not text[after].isspace():
+        return False
+    word = text[: at + 1].split()[-1:] or [""]
+    return not _ABBREVIATION.fullmatch(word[0])
 
 
 def _stands_whole(text: str, start: int, end: int) -> bool:
     """Whether ``text[start:end]`` stands whole in ``text``: a sentence of it, or all of it
-    (a table cell's text). It starts the text or a line, or follows a sentence's end; and it
-    ends the text or a line, ends a sentence itself, or is followed by one's end mark, citation
-    brackets read past (T-706)."""
-    head = text[:start].rstrip(" \t")
-    if head and not head.endswith("\n") and head.rstrip(_SENTENCE_CLOSE)[-1:] not in ".!?":
+    (a table cell's text). It starts the text, a line or a list item, or follows a sentence's
+    end (:func:`_ends_sentence`), any emphasis opening it read past; and it ends the text or a
+    line, ends a sentence itself, or is followed by one's end mark, citation brackets read
+    past. A text of white space alone stands nowhere whole (T-706)."""
+    said = text[start:end]
+    if not said.strip():
         return False
-    if text[start:end].rstrip()[-1:] in ".!?":
-        return True
-    rest = text[_CITED_AFTER.match(text, end).end() :].lstrip(" \t")
-    return not rest or rest[0] == "\n" or (rest[0] in ".!?" and rest[1:2] in ("", " ", "\n"))
+    head = text[:start].rstrip(" \t*_")
+    if not _LINE_OPEN.fullmatch(head[head.rfind("\n") + 1 :]):
+        mark = len(head.rstrip(_SENTENCE_CLOSE)) - 1
+        if mark < 0 or not _ends_sentence(text, mark):
+            return False
+    core = said.rstrip().rstrip(_SENTENCE_CLOSE)
+    if core[-1:] in (".", "!", "?"):
+        return _ends_sentence(text, start + len(core) - 1)
+    after = _CITED_AFTER.match(text, end).end()
+    rest = text[after:].lstrip(" \t")
+    return not rest or rest[0] == "\n" or _ends_sentence(text, len(text) - len(rest))
 
 
 def _left_out_sentences(count: int) -> str:

@@ -220,3 +220,91 @@ def test_a_sentence_left_out_of_any_printed_passage_is_counted_there(
     markdown = _analyst(report)
     assert "_1 sentence of this section was left out" in _section(markdown, heading)
     assert markdown.count("of this section was left out") == 1
+
+
+# -- whole means whole (Ruling 12) --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "flagged", "whole"),
+    [
+        # A review's case: a list item's text opens a sentence.
+        ("- Foo bar baz.\n- Bar.", "Foo bar baz.", True),
+        # A made-up shape: a quoted block's line, and an item in emphasis.
+        ("> Foo bar baz.\n> Bar.", "Foo bar baz.", True),
+        ("- **Foo bar baz.**\n- Bar.", "Foo bar baz.", True),
+        # A review's case: a sentence in emphasis markup.
+        ("**Foo bar baz.** Next.", "Foo bar baz.", True),
+        ("Next. _Foo bar baz._ Then.", "Foo bar baz.", True),
+        # A line opening after one that ends on no mark.
+        ("Intro line\nFoo bar baz. Next.", "Foo bar baz.", True),
+        # Its citation read past to the mark ending it.
+        ("Foo bar baz [ev_1]. Next.", "Foo bar baz", True),
+        # A review's case: the mark of a number ends no sentence.
+        ("Version 1.2 was set.", "2 was set.", False),
+        # A made-up shape: a size.
+        ("The file is 1.5 MB in size.", "5 MB in size.", False),
+        # A review's case: the mark of an abbreviation ends no sentence.
+        ("Many, e.g. --path, flags.", "--path, flags.", False),
+        # A made-up shape: a text ending inside one.
+        ("It reads keys, i.e. the run key.", "It reads keys, i.e.", False),
+        # A mark that a word follows ends nothing.
+        ("Reads --path.conf first.", "--path", False),
+        ("--path.conf is read first.", "--path", False),
+        # A review's case: white space alone is no sentence.
+        ("Foo. Bar.", " ", False),
+        ("Foo.\n\nBar.", "\n", False),
+        # Values inside a sentence, as before.
+        ("- uses --path and more.", "--path", False),
+        ("It cannot be combined with --shares or --path.", "--path", False),
+    ],
+)
+def test_a_flagged_text_stands_whole_only_where_a_sentence_does(
+    text: str, flagged: str, whole: bool
+) -> None:
+    from malspark.reporting.renderers.analyst import _stands_whole
+
+    start = text.index(flagged)
+    assert _stands_whole(text, start, start + len(flagged)) is whole
+
+
+def test_a_flagged_list_item_is_left_out_and_counted() -> None:
+    report = _report(
+        packing_obfuscation=TechnicalSubsection(
+            title="Packing", body=f"It packs:\n\n- {PROCESS}\n- It unpacks in memory."
+        )
+    )
+    report.flagged_statements = _flag(PROCESS, code="report.process_words")
+    functionality = _section(_analyst(report), "## 5. Functionality")
+    assert "0x5030" not in functionality
+    assert "- It unpacks in memory." in functionality
+    assert "_1 sentence of this section was left out" in functionality
+
+
+def test_a_flagged_text_of_white_space_removes_nothing() -> None:
+    body = "It packs. It unpacks in memory."
+    report = _report(packing_obfuscation=TechnicalSubsection(title="Packing", body=body))
+    report.flagged_statements = _flag(" ", code="report.process_words")
+    functionality = _section(_analyst(report), "## 5. Functionality")
+    assert body in functionality
+    assert "left out; the bundle lists each" not in functionality
+
+
+def test_a_key_finding_the_summary_prints_without_bullets_is_counted_there() -> None:
+    report = _report()
+    report.key_findings = [KeyFinding(text="It encrypts files.")]
+    report.run_summary = _dropped("key_findings.1")
+    summary = _section(_analyst(report), "## 1. Executive summary")
+    assert "_1 sentence of this section was left out" in summary
+
+
+def test_a_numeric_confidence_inside_a_sentence_is_still_worded() -> None:
+    # A rewrite is no removal: it stands wherever the flagged text does, whole or not.
+    report = _report(
+        packing_obfuscation=TechnicalSubsection(
+            title="Packing", body="It is malware with confidence 0.95 and it packs."
+        )
+    )
+    report.flagged_statements = _flag("confidence 0.95", code="report.numeric_confidence")
+    functionality = _section(_analyst(report), "## 5. Functionality")
+    assert "0.95" not in functionality
