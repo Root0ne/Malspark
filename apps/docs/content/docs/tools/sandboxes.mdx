@@ -120,7 +120,7 @@ pid alone is named by it. A row's size is read from every field the reader
 declares states one (`Reading.dropped_size_fields`: a Triage report's `size`,
 then a dumped region's `length`), the first one stated, then from `size`; a row
 stating none states no size. Every sandbox view is read through one entry
-point that takes the reader's declaration (`sandbox_tools.sandbox_view`): the
+point that takes the reader's declaration (`sandbox_tools.read_view`): the
 pack, the read of a later detonation and an agent's call each read a view with
 the reader that built its report. A long answer is sized by the job's
 answer guardrail as every other view's is: the rows it does not show are

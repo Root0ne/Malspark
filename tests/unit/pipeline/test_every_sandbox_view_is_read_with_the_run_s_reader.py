@@ -5,7 +5,7 @@ sandbox's views, and the reader that built the report declares what its rows
 mean (``Reading``): which field of a dropped row is its guest path, which
 names its writer. A read without that declaration printed a written file with
 an empty path beside the analyst's row with its guest path, and the report
-listed the one file twice. Every view is read through ``sandbox_view``, which
+listed the one file twice. Every view is read through ``read_view``, which
 takes the reader's declaration as a required argument: a call without it does
 not run, and no module reads a view by its function.
 
@@ -23,7 +23,7 @@ import pytest
 
 from malspark.providers import sandbox_tools
 from malspark.providers.detonation import DetonationRecord
-from malspark.providers.sandbox_tools import sandbox_view
+from malspark.providers.sandbox_tools import read_view
 from malspark.reporting.ledger_projection import dynamic_from_ledger
 from malspark.schemas.evidence import LedgerEntry, build_entry
 from malspark.schemas.sandbox_document import sandbox_document
@@ -51,7 +51,7 @@ def _document() -> dict[str, Any]:
 class TestOneEntryPoint:
     def test_a_view_is_not_read_without_the_reader_s_declaration(self) -> None:
         with pytest.raises(TypeError):
-            sandbox_view("sandbox_dropped_files", _document())  # type: ignore[call-arg]
+            read_view("sandbox_dropped_files", _document())  # type: ignore[call-arg]
 
     def test_no_module_reads_a_view_but_through_the_entry_point(self) -> None:
         views = set(sandbox_tools.DETONATION_READERS) - {sandbox_tools.ITEMS_TOOL}
@@ -79,7 +79,7 @@ class TestOneEntryPoint:
     )
     def test_each_view_an_agent_is_offered_is_read_through_it(self, tool: str) -> None:
         asked = ("dropped",) if tool == "sandbox_report_section" else ()
-        answer = sandbox_view(tool, _document(), TASKS, *asked)
+        answer = read_view(tool, _document(), TASKS, *asked)
 
         assert isinstance(answer, dict) and not answer.get("error")
 
@@ -107,7 +107,7 @@ class TestThePackReadsEachViewAsAnAnalystDoes:
         entry = self._pack(tmp_path)[tool]
 
         assert entry.ok, entry.error
-        assert entry.structured == sandbox_view(tool, _document(), TASKS)
+        assert entry.structured == read_view(tool, _document(), TASKS)
 
 
 class _Container:
@@ -148,9 +148,7 @@ class TestThePackAndAnAnalystGiveOneRow:
             args={"detonation": "d2"},
             server="pipeline",
             output="{}",
-        ).model_copy(
-            update={"structured": sandbox_view("sandbox_dropped_files", _document(), TASKS)}
-        )
+        ).model_copy(update={"structured": read_view("sandbox_dropped_files", _document(), TASKS)})
         dynamic = dynamic_from_ledger([pack, analyst])
         assert dynamic is not None
         names = [op["name"] for op in dynamic.file_operations if op.get("operation") == "write"]

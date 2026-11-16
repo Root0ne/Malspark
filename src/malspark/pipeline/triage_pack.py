@@ -1433,7 +1433,7 @@ class _Pack:
         if not report:
             return
         normalised_by = self.inputs.sandbox_normalised_by
-        processes = sandbox_tools.sandbox_view("sandbox_processes", report, normalised_by)
+        processes = sandbox_tools.read_view("sandbox_processes", report, normalised_by)
         if not processes.get("absent"):
             commands = _command_lines(processes)
             self.record(
@@ -1462,7 +1462,7 @@ class _Pack:
         if report:
             # Read with the job's reader, as an agent's call of the view is.
             view = partial(
-                sandbox_tools.sandbox_view,
+                sandbox_tools.read_view,
                 step.called,
                 report,
                 self.inputs.sandbox_normalised_by,
@@ -1796,7 +1796,7 @@ class _Pack:
         if not report or platform is None:
             return
         rows = (
-            sandbox_tools.sandbox_view(
+            sandbox_tools.read_view(
                 "sandbox_api_calls", report, self.inputs.sandbox_normalised_by
             ).get("apis")
             or []
@@ -2074,7 +2074,7 @@ _FORMAT_CALLS: dict[str, str] = {
 }
 
 # The platform's own sandbox views, by the tool each step calls; each is read
-# through ``sandbox_tools.sandbox_view`` with the job's reader.
+# through ``sandbox_tools.read_view`` with the job's reader.
 _SANDBOX_VIEWS: tuple[str, ...] = (
     "sandbox_processes",
     "sandbox_network",

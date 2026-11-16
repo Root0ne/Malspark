@@ -1783,7 +1783,7 @@ _ITEM_FILTERS = ("pid", "contains", "signature", "ids")
 
 # The views of a detonation's report the source offers beside the item reader,
 # by the tool each is offered as, in the order :func:`sandbox_tools` builds
-# them. Every one is read through :func:`sandbox_view`.
+# them. Every one is read through :func:`read_view`.
 _VIEWS: dict[str, Callable[..., dict[str, Any]]] = {
     "sandbox_report_section": sandbox_report_section,
     "sandbox_processes": sandbox_processes,
@@ -1802,7 +1802,7 @@ _UNDECLARED_VIEWS = frozenset({"sandbox_report_section", "sandbox_channels"})
 _VIEW_READERS: tuple[str, ...] = tuple(_VIEWS)
 
 
-def sandbox_view(
+def read_view(
     tool: str,
     report: dict[str, Any] | None,
     normalised_by: Sequence[str] | None,
@@ -1828,12 +1828,12 @@ def sandbox_view(
 def network_view(
     report: dict[str, Any] | None, normalised_by: Sequence[str] | None, /
 ) -> dict[str, Any]:
-    """The whole network view of ``report``, read through :func:`sandbox_view`.
+    """The whole network view of ``report``, read through :func:`read_view`.
 
     For a reader that holds a report and reads it as no tool's call (the
     report's network block), so it names no tool to read it.
     """
-    return sandbox_view("sandbox_network", report, normalised_by)
+    return read_view("sandbox_network", report, normalised_by)
 
 
 # Every tool of this source that reads a detonation, each taking the
@@ -1872,8 +1872,8 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         if problem:
             return {"error": problem, "tool": "sandbox"}
         if later is None:
-            return sandbox_view(tool, report, normalised_by, *args, **kwargs)
-        answer = sandbox_view(tool, later.report, later.normalised_by, *args, **kwargs)
+            return read_view(tool, report, normalised_by, *args, **kwargs)
+        answer = read_view(tool, later.report, later.normalised_by, *args, **kwargs)
         return {**later.stated(), **answer} if isinstance(answer, dict) else answer
 
     def _report_section(

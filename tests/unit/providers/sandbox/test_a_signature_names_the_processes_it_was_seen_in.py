@@ -16,8 +16,8 @@ from malspark.pipeline.triage_pack import _SANDBOX_VIEWS
 from malspark.providers.sandbox.rest_mapping import apply_mapping, compile_mapping
 from malspark.providers.sandbox_tools import (
     SIGNATURE_PIDS_SHOWN,
+    read_view,
     sandbox_signatures,
-    sandbox_view,
 )
 from malspark.reporting.dedupe import distinct_signatures
 from malspark.reporting.ledger_projection import dynamic_from_ledger
@@ -199,7 +199,7 @@ class TestTheCap:
 
     def test_the_pack_answers_as_the_analysts_do(self) -> None:
         assert "sandbox_signatures" in _SANDBOX_VIEWS
-        row = sandbox_view("sandbox_signatures", _many(14), None)["signatures"][0]
+        row = read_view("sandbox_signatures", _many(14), None)["signatures"][0]
         assert len(row["pids"]) == SIGNATURE_PIDS_SHOWN
         assert row["pids_total"] == 14
 

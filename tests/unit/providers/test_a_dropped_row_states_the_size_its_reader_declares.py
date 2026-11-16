@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 
 from malspark.providers.sandbox.readers import required_reader
-from malspark.providers.sandbox_tools import sandbox_view
+from malspark.providers.sandbox_tools import read_view
 from malspark.schemas.sandbox_document import sandbox_document
 from malspark.schemas.sandbox_report import READ_FROM_OVERVIEW
 from tests.unit.providers.test_the_dropped_files_view_keeps_each_row_s_path_origin_kind_and_writer import (  # noqa: E501
@@ -42,7 +42,7 @@ REGION = {
 
 
 def _rows(normalised_by: Any, *rows: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    answer = sandbox_view("sandbox_dropped_files", sandbox_document(_report(*rows)), normalised_by)
+    answer = read_view("sandbox_dropped_files", sandbox_document(_report(*rows)), normalised_by)
     return {row["name"]: row for row in answer["dropped"]}
 
 
@@ -91,7 +91,7 @@ class TestWithoutADeclarationSizeIsRead:
         from malspark.schemas.evidence import build_entry
 
         bare = {"name": "files/0xbare.dat", "procid": 86, "path": "C:\\bare.dat"}
-        answer = sandbox_view("sandbox_dropped_files", sandbox_document(_report(bare)), TASKS)
+        answer = read_view("sandbox_dropped_files", sandbox_document(_report(bare)), TASKS)
         entry = build_entry(
             entry_id="ev_0015",
             seq=15,
@@ -142,7 +142,7 @@ class TestADeclaringReaderOfItsOwn:
             {"name": "c.dat", "size": 30},
             {"name": "d.dat"},
         ]
-        answer = sandbox_view("sandbox_dropped_files", {"dropped_files": rows}, declaring)
+        answer = read_view("sandbox_dropped_files", {"dropped_files": rows}, declaring)
         sizes = {row["name"]: row["size"] for row in answer["dropped"]}
 
         assert sizes == {"a.dat": 10, "b.dmp": 20, "c.dat": 30, "d.dat": None}
