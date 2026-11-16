@@ -80,6 +80,7 @@ from malspark.schemas.sandbox_report import (
     LINEAGE_MARKED_STORED,
     PROCESS_UNLISTED_KEY,
     SAMPLE_TREE_KEY,
+    STAGED_KEY,
     STORED_TRAFFIC_PROCESS_FIELD,
     TRAFFIC_FLOWS_KEY,
     TRAFFIC_FLOWS_LEFT_OUT_KEY,
@@ -1062,6 +1063,7 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
                 command_line=str(row.get("command_line") or ""),
                 marked=row.get("marked") is True,
                 task=str(row.get("task") or ""),
+                staged_by_sandbox=row.get(STAGED_KEY) is True,
             )
             for row in data.get("processes") or []
             if isinstance(row, dict)

@@ -927,11 +927,20 @@ def _sandbox_processes(acc: _Sections, entry: LedgerEntry, data: dict[str, Any])
             [
                 _text(_or(_declared_place(entry, row, "pid"), row.get("pid"))),
                 _text(row.get("ppid")),
-                _text(_or(_declared(entry, row, "name"), row.get("name"))),
+                _with_staged(_text(_or(_declared(entry, row, "name"), row.get("name"))), row),
                 _text(_or(_declared(entry, row, "command_line"), row.get("command_line"))),
             ],
         )
     acc.credit(table, entry)
+
+
+def _with_staged(name: str, row: dict[str, Any]) -> str:
+    """A process's name cell, with the words a row marked as where the sandbox started the
+    submitted file from carries beside it (``sandbox_report.staged_words``)."""
+    from malspark.schemas.sandbox_report import staged_words
+
+    words = staged_words(row)
+    return f"{name} ({words})" if words else name
 
 
 def _sandbox_network(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -> None:

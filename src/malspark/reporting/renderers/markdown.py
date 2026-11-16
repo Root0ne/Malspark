@@ -6812,12 +6812,19 @@ def _truncate_escaped(text: str, length: int) -> str:
 def _process_tree_lines(
     node: ProcessNode, depth: int, plain: Callable[[str], str] = lambda text: text
 ) -> list[str]:
-    """The process tree, one line per process, each name and command line defanged."""
+    """The process tree, one line per process, each name and command line defanged.
+
+    A process whose image is the submitted file as the sandbox started it says
+    so in words beside it (``sandbox_report.staged_words``).
+    """
+    from malspark.schemas.sandbox_report import staged_words
+
     indent = "  " * depth
     prefix = "└─ " if depth > 0 else ""
     label = _one_line(plain(node.name)) or f"pid={node.pid}"
     extra = f"  ({_one_line(plain(node.command_line))})" if node.command_line else ""
-    line = f"{indent}{prefix}pid={node.pid} ppid={node.ppid} {label}{extra}"
+    staged = f"  [{staged_words(node)}]" if staged_words(node) else ""
+    line = f"{indent}{prefix}pid={node.pid} ppid={node.ppid} {label}{extra}{staged}"
     out = [line]
     if node.injected_into:
         out.append(f"{indent}    [injected_into={', '.join(str(p) for p in node.injected_into)}]")

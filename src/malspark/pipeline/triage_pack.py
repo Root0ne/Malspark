@@ -185,6 +185,7 @@ from malspark.schemas.evidence import (
 )
 from malspark.schemas.sandbox_document import LINEAGE_KEY
 from malspark.schemas.sandbox_document import place as report_place
+from malspark.schemas.sandbox_report import staged_words
 from malspark.tools import (
     artefact_index,
     crypto_constants,
@@ -4684,10 +4685,16 @@ def _lolbin(data: dict[str, Any]) -> str:
 
 def _sandbox_processes(data: dict[str, Any]) -> str:
     rows = [r for r in (data.get("processes") or []) if isinstance(r, dict)]
-    # A process's image name is the sample's to choose.
-    names = [str(r.get("name") or "") for r in rows]
+    # A process's image name is the sample's to choose; the words beside a
+    # row the view marks as where the sandbox started the submitted file from
+    # are the platform's (``sandbox_report.staged_words``).
+    names = [_sample(str(r.get("name") or ""), path=True) for r in rows]
+    names = [
+        f"{name} ({staged_words(r)})" if staged_words(r) else name
+        for name, r in zip(names, rows, strict=True)
+    ]
     text = f"{data.get('total', len(rows))} processes"
-    return f"{text} ({_sample_names(names, path=True)})" if names else text
+    return f"{text} ({_names(names)})" if names else text
 
 
 def _sandbox_network(data: dict[str, Any]) -> str:

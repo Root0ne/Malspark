@@ -386,6 +386,11 @@ class ProcessNode(BaseModel):
     # not stated, as on a report stored before the fields existed.
     task: str = Field(default="", exclude_if=lambda value: not value)
     guest_pid: str = Field(default="", exclude_if=lambda value: not value)
+    # Whether the process's image is the submitted file as the sandbox started
+    # it, as the process view marks it (``sandbox_report.started_by_the_sandbox``):
+    # its path is the sandbox's, not the sample's doing. Left out of the dump
+    # when not marked, as on a report stored before the field existed.
+    staged_by_sandbox: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
 class RegistryMod(BaseModel):
