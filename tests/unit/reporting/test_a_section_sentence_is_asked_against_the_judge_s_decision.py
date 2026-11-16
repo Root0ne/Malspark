@@ -3,20 +3,27 @@
 A section 5 paragraph could assert a technique the judge dropped, with its reason in the
 matrix, and nothing asked it against that: the round's sources for section 5 were the
 platform's facts alone, and the judge's notes are passages printed in its own words, no
-source. Now the judge's decision as the run recorded it (verdict and confidence, family or
-none, each technique published and each dropped with the judge's reason) is shown as
-passages of their own, a source of every passage the round may rewrite; code holds each
-sentence writing, with no negation in its clause, a dropped technique's id or catalogue name,
-another verdict word or another family, and every sentence of its paragraph; the model
-answers each: a rewrite cites an entry the judge's passage cites, a keep quotes a source, a
-drop gives its reason, and a sentence no answer passes for is left out. Nothing here changes
-the decision itself (T-717). Every address, entry and name here is a neutral synthetic value.
+source. Now the judge's decision as the run recorded it (verdict and confidence band, family
+or none, each technique published by id and name, each dropped with the judge's reason) is
+shown as passages of their own, a source of every passage the round may rewrite. Which
+sentence states otherwise is the model's to say: code picks no sentence by a name. A section
+5 sentence answered on the decision is only left out, naming the judge passage with a reason,
+and recorded under a code of its own; any other answer there is refused and the sentence
+stands. A rewrite resting on the decision is refused where its own words write, in a clause
+denying nothing, what the decision denies. Nothing here changes the decision itself, and the
+decision starts no question of its own (T-717). Every address, entry and name here is a
+neutral synthetic value.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
+from malspark.pipeline.validation import Violation
+from malspark.reporting import section_agreement as agreement
+from malspark.reporting.judge_decision import denied_in, judge_decision
 from malspark.reporting.models import (
     CapabilityCell,
     FamilyAttribution,
@@ -27,14 +34,14 @@ from malspark.reporting.models import (
     TechnicalSubsection,
     TTPMapping,
 )
+from malspark.reporting.renderers.layout import ANALYST
+from malspark.reporting.renderers.markdown import MarkdownRenderer
 from malspark.reporting.section_agreement import (
     DROPPED_CODE,
     HELD_UNLISTED_CODE,
-    JUDGE_HELD_KEPT_CODE,
-    KEEP_UNQUOTED_CODE,
-    REWRITE_UNGROUNDED_CODE,
     REWRITTEN_CODE,
     SYSTEM_PROMPT,
+    UNKNOWN_PASSAGE_CODE,
     UNKNOWN_SOURCE_CODE,
     agreement_violations,
     apply_rows,
@@ -44,6 +51,7 @@ from malspark.reporting.section_agreement import (
 from malspark.schemas.isr_models import is_judge_dropped, judge_dropped_reason
 
 _REASON = "The loader resolves its imports by plain name at 0x4a10 [ev_0301], not by hash."
+_INJECTION = "No write into another process is shown [ev_0303]."
 NAMING = "Dynamic API resolution is the main import-hiding mechanism [ev_0301]."
 WALK = "The loader walks a table of plain names at 0x4a10 [ev_0301]."
 ASSESS = "We assess this as hiding its imports, serving evasion."
@@ -51,18 +59,27 @@ OTHER = "The routine at 0x4b20 formats a host name [ev_0302]."
 DENIED = "Dynamic API resolution is not shown here [ev_0302]."
 BODY = f"{NAMING} {WALK} {ASSESS}\n\n{OTHER}\n\n{DENIED}"
 SECTION = "string_resolution"
-CITABLE = ["ev_0301", "ev_0302"]
+CITABLE = ["ev_0301", "ev_0302", "ev_0303"]
 DROPPED = "judge.technique.T1027.007"
+CLOSING = "The routine formats a host name."
 
 
 def report_of(
-    body: str = BODY, *, verdict: str = "Benign", family: str | None = None
+    body: str = BODY,
+    *,
+    verdict: str = "Benign",
+    family: str | None = None,
+    similar: str | None = None,
 ) -> MalwareReport:
     report = MalwareReport(
         identity=SampleIdentity(hashes=FileHashes(sha256="cd" * 32), file_name="sample.bin"),
         verdict=verdict,  # type: ignore[arg-type]
         overall_confidence=0.6,
-        attribution=FamilyAttribution(family=family, family_source="sandbox" if family else None),
+        attribution=FamilyAttribution(
+            family=family,
+            family_source="sandbox" if family else None,
+            similar_samples=[{"family": similar}] if similar else [],
+        ),
         capability_matrix=[
             CapabilityCell(
                 tactic="TA0005",
@@ -71,6 +88,14 @@ def report_of(
                 technique_name="Dynamic API Resolution",
                 not_published=judge_dropped_reason(_REASON),
                 evidence_ids=["ev_0301", "ev_0303"],
+            ),
+            CapabilityCell(
+                tactic="TA0005",
+                tactic_name="Defense Evasion",
+                technique_id="T1055",
+                technique_name="Process Injection",
+                not_published=judge_dropped_reason(_INJECTION),
+                evidence_ids=["ev_0303"],
             ),
             CapabilityCell(
                 tactic="TA0007",
@@ -108,9 +133,38 @@ def _row(sentence: str, decision: str, **more: Any) -> dict[str, Any]:
     }
 
 
-def _refusals(report: MalwareReport, *rows: dict[str, Any]) -> list[Any]:
+def _refusals(report: MalwareReport, *rows: dict[str, Any]) -> list[Violation]:
     found = agreement_violations({"sentences": list(rows)}, passages_of(report), CITABLE)
     return [v for v in found if v.path.startswith("sentences.")]
+
+
+def _body(report: MalwareReport) -> str:
+    ta = report.technical_analysis
+    assert ta is not None and ta.string_resolution is not None
+    return ta.string_resolution.body
+
+
+def _decided(report: MalwareReport) -> tuple[Any, ...]:
+    return (
+        report.verdict,
+        [m.model_dump() for m in report.ttp_mappings],
+        [c.model_dump() for c in report.capability_matrix],
+    )
+
+
+def _closing(report: MalwareReport) -> TechnicalSubsection:
+    ta = report.technical_analysis
+    assert ta is not None
+    ta.analyst_conclusion = TechnicalSubsection(title="Conclusion", body=CLOSING)
+    return ta.analyst_conclusion
+
+
+def _closing_row(rewrite: str, sources: list[str] | None = None) -> dict[str, Any]:
+    return {
+        **_row(CLOSING, "rewrite", rewrite=rewrite),
+        "passage": "conclusion",
+        "sources": sources or [DROPPED],
+    }
 
 
 def test_the_judge_s_decision_is_shown_as_passages_of_its_own() -> None:
@@ -118,179 +172,245 @@ def test_the_judge_s_decision_is_shown_as_passages_of_its_own() -> None:
 
     dropped = shown[DROPPED]
     assert dropped.kind == "judge" and dropped.write is None
+    # A dropped technique rests on what the judge's reason cites, which its words show.
     assert dropped.cites == frozenset({"ev_0301"})
     assert dropped.text.startswith("T1027.007 Dynamic API Resolution: not published, ")
     assert _REASON in dropped.text
-    assert shown["judge.technique.T1082"].text == "T1082 System Information Discovery: published"
-    assert shown["judge.verdict"].text == "Benign, overall confidence 0.60 (moderate confidence)"
+    published = shown["judge.technique.T1082"]
+    assert published.text == "T1082 System Information Discovery: published"
+    assert published.cites == frozenset()
+    assert shown["judge.verdict"].text == "Benign, moderate confidence"
     assert shown["judge.family"].text == "no family named"
+    assert shown["judge.family"].cites == frozenset()
 
 
-def test_a_naming_sentence_and_its_paragraph_are_held() -> None:
-    passage = next(p for p in passages_of(report_of()) if p.id == SECTION)
-
-    assert dict(passage.judged) == {NAMING: (DROPPED,), WALK: (DROPPED,), ASSESS: (DROPPED,)}
-    assert {NAMING, WALK, ASSESS} <= set(passage.held)
-    # Another paragraph, and a negated naming, are not held to the decision.
-    assert OTHER not in dict(passage.judged)
-    assert DENIED not in dict(passage.judged)
-
-
-def test_the_question_shows_the_decision_after_the_facts_and_names_the_held_sentences() -> None:
+def test_the_block_names_published_techniques_by_id_and_name_and_lists_no_cites() -> None:
     text = prompt_text(passages_of(report_of()))
 
-    assert "THE JUDGE'S DECISION" in text
     assert text.index("THE JUDGE'S DECISION") < text.index("SECTION 5, WRITTEN FROM THE CODE")
-    assert f"- [{DROPPED}] a technique the judge dropped (cites ev_0301): T1027.007" in text
-    assert f'"{NAMING}" ({DROPPED})' in text
-    assert "It is a source of every passage you may rewrite, section 5 included" in text
-    assert "or by the judge's decision, alone" in SYSTEM_PROMPT
+    block = text[text.index("THE JUDGE'S DECISION") : text.index("SECTION 5, WRITTEN")]
+    assert (
+        "- [judge.technique.T1082] a technique the judge published: T1082 System Information "
+        "Discovery: published\n"
+    ) in block
+    assert f"- [{DROPPED}] a technique the judge dropped: T1027.007 Dynamic API" in block
+    assert "(cites" not in block
+    assert "- [judge.verdict] the judge's verdict: Benign, moderate confidence\n" in block
 
 
-def test_a_rewrite_on_the_judge_s_passage_passes_and_takes_its_place() -> None:
+def test_no_sentence_is_picked_by_a_name_and_asked_about() -> None:
     report = report_of()
-    rewrite = "The loader resolves its imports by plain name, not to evade [ev_0301]."
-    row = _row(NAMING, "rewrite", rewrite=rewrite)
+    passage = next(p for p in passages_of(report) if p.id == SECTION)
+    text = prompt_text(passages_of(report))
 
-    assert _refusals(report, row) == []
-    counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
-    assert counts["rewritten"] == 1
-    assert REWRITTEN_CODE in [v.code for v in records]
-    ta = report.technical_analysis
-    assert ta is not None and ta.string_resolution is not None
-    assert rewrite in ta.string_resolution.body and NAMING not in ta.string_resolution.body
-
-
-def test_a_rewrite_citing_no_entry_of_the_judge_s_passage_is_refused() -> None:
-    sources = [DROPPED, "judge.technique.T1082"]
-    on_it = _row(ASSESS, "rewrite", sources=sources, rewrite="The names are plain [ev_0301].")
-    assert _refusals(report_of(), on_it) == []
-
-    beside = _row(ASSESS, "rewrite", sources=sources, rewrite="The names are plain [ev_0302].")
-    found = _refusals(report_of(), beside)
-    assert [v.code for v in found] == [REWRITE_UNGROUNDED_CODE]
-    assert "cite one of ev_0301" in found[0].message
+    assert not {NAMING, WALK, ASSESS} & set(passage.held)
+    assert "names a technique the judge dropped" not in text
+    assert "held to the judge's decision" not in text
+    # No row at all for them is asked for again, and none is left out for want of one.
+    found = agreement_violations({"sentences": []}, passages_of(report), CITABLE)
+    assert not [
+        v
+        for v in found
+        if v.code == HELD_UNLISTED_CODE
+        and any(repr(s) in v.message for s in (NAMING, WALK, ASSESS))
+    ]
+    other = _row(OTHER, "keep", sources=["judge.technique.T1082"])
+    counts, records = apply_rows({"sentences": [other]}, passages_of(report), citable=CITABLE)
+    assert counts["dropped"] == 0 and _body(report) == BODY
+    assert not [v for v in records if v.code in agreement.LEFT_OUT_CODES]
 
 
-def test_a_keep_needs_its_quote() -> None:
+def test_a_section_5_sentence_dropped_on_a_judge_passage_is_left_out_and_recorded() -> None:
     report = report_of()
-    no_source = _row(NAMING, "keep", sources=[], reason="It is right.")
-    no_quote = _row(NAMING, "keep")
-    far_quote = _row(NAMING, "keep", quote="resolves its imports by plain name")
-
-    assert [v.code for v in _refusals(report, no_source)] == [UNKNOWN_SOURCE_CODE]
-    assert KEEP_UNQUOTED_CODE in [v.code for v in _refusals(report, no_quote)]
-    assert "shares too few of the sentence's own words" in " ".join(
-        v.message for v in _refusals(report, far_quote)
-    )
-    # Refused, it is left out, with the judge's passage named.
-    counts, records = apply_rows({"sentences": [no_quote]}, passages_of(report), citable=CITABLE)
-    assert counts["dropped"] >= 1
-    left = [v for v in records if v.code == DROPPED_CODE and v.stood == NAMING]
-    assert left and DROPPED in left[0].message
-
-
-def test_a_keep_on_a_quote_that_passes_stands_and_is_recorded() -> None:
-    report = report_of()
-    quote = "Dynamic API Resolution: not published"
-    row = _row(NAMING, "keep", quote=quote)
-
-    assert _refusals(report, row) == []
-    _counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
-    kept = [v for v in records if v.code == JUDGE_HELD_KEPT_CODE]
-    assert len(kept) == 1 and DROPPED in kept[0].message
-    ta = report.technical_analysis
-    assert ta is not None and ta.string_resolution is not None
-    assert NAMING in ta.string_resolution.body
-
-
-def test_a_drop_leaves_it_out_and_the_decision_is_unchanged() -> None:
-    report = report_of()
-    before = (
-        report.verdict,
-        [m.model_dump() for m in report.ttp_mappings],
-        [c.model_dump() for c in report.capability_matrix],
-    )
+    before = _decided(report)
     row = _row(ASSESS, "drop", reason="The judge reads the resolution as ordinary linking.")
 
     assert _refusals(report, row) == []
     counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
-    assert counts["dropped"] >= 1
-    ta = report.technical_analysis
-    assert ta is not None and ta.string_resolution is not None
-    assert ASSESS not in ta.string_resolution.body
-    assert any(v.code == DROPPED_CODE and DROPPED in v.message for v in records)
-    after = (
-        report.verdict,
-        [m.model_dump() for m in report.ttp_mappings],
-        [c.model_dump() for c in report.capability_matrix],
-    )
-    assert after == before
+    assert counts["dropped"] == 1
+    assert ASSESS not in _body(report) and NAMING in _body(report)
+    (left,) = [v for v in records if v.code == agreement.JUDGE_LEFT_OUT_CODE]
+    assert left.stood == ASSESS and left.subject == SECTION
+    assert DROPPED in left.message and "ordinary linking" in left.message
+    assert left.code in agreement.LEFT_OUT_CODES and left.code != DROPPED_CODE
+    assert _decided(report) == before
 
 
-def test_a_held_sentence_no_row_lists_is_asked_again_and_left_out_unanswered() -> None:
+@pytest.mark.parametrize(
+    "row",
+    [
+        _row(NAMING, "rewrite", rewrite="The loader resolves its imports by plain name [ev_0301]."),
+        _row(
+            OTHER,
+            "rewrite",
+            sources=["judge.technique.T1082"],
+            rewrite="The routine at 0x4b20 collects system information for the operator [ev_0302].",
+        ),
+        _row(
+            OTHER, "rewrite", sources=["judge.verdict"], rewrite="The routine is benign [ev_0302]."
+        ),
+        _row(NAMING, "keep", quote="Dynamic API Resolution: not published"),
+    ],
+)
+def test_any_other_answer_on_a_judge_passage_leaves_a_section_5_sentence_standing(
+    row: dict[str, Any],
+) -> None:
     report = report_of()
-    found = agreement_violations({"sentences": []}, passages_of(report), CITABLE)
-    asked = [v for v in found if v.code == HELD_UNLISTED_CODE and repr(WALK) in v.message]
-    assert asked and "held to the judge's decision" in asked[0].message
 
-    dropped = _row(NAMING, "drop", reason="The judge reads plain names as no evasion.")
-    counts, records = apply_rows({"sentences": [dropped]}, passages_of(report), citable=CITABLE)
-    ta = report.technical_analysis
-    assert ta is not None and ta.string_resolution is not None
-    assert ta.string_resolution.body.split() == f"{OTHER} {DENIED}".split()
-    assert counts["dropped"] == 3
-    assert all(DROPPED in v.message for v in records if v.code == DROPPED_CODE)
+    found = _refusals(report, row)
+    assert [v.code for v in found] == [UNKNOWN_PASSAGE_CODE]
+    assert 'is only left out: answer it "decision": "drop"' in found[0].message
+    counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
+    assert counts["rewritten"] == 0 and counts["dropped"] == 0
+    assert _body(report) == BODY
+    assert REWRITTEN_CODE not in [v.code for v in records]
 
 
-def test_a_question_with_no_answer_at_all_leaves_every_paragraph_standing() -> None:
+def test_a_section_5_drop_naming_no_judge_passage_is_refused_as_before() -> None:
     report = report_of()
-    counts, _records = apply_rows({"sentences": []}, passages_of(report), citable=CITABLE)
-    ta = report.technical_analysis
-    assert ta is not None and ta.string_resolution is not None
-    assert counts["dropped"] == 0 and ta.string_resolution.body == BODY
+    row = _row(ASSESS, "drop", sources=[], reason="The judge reads the names as plain.")
+
+    found = _refusals(report, row)
+    assert [v.code for v in found] == [UNKNOWN_PASSAGE_CODE]
+    assert "only a sentence of the conclusion" in found[0].message
+    counts, _records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
+    assert counts["dropped"] == 0 and ASSESS in _body(report)
 
 
-def test_another_verdict_word_is_held_and_the_judge_s_own_is_not() -> None:
-    malicious = "The file is malicious [ev_0302]."
-    passage = next(p for p in passages_of(report_of(f"{OTHER} {malicious}")) if p.id == SECTION)
-    assert dict(passage.judged) == {OTHER: ("judge.verdict",), malicious: ("judge.verdict",)}
-
-    passage = next(
-        p
-        for p in passages_of(report_of(f"{OTHER} {malicious}", verdict="Malware"))
-        if p.id == SECTION
+def test_a_section_5_source_refusal_names_the_judge_only_where_it_is_shown() -> None:
+    on_a_claim = _row(ASSESS, "drop", sources=[DROPPED, "nowhere.1"], reason="No.")
+    found = _refusals(report_of(), on_a_claim)
+    assert [v.code for v in found] == [UNKNOWN_SOURCE_CODE]
+    assert "; a sentence of it is left out on a passage of the judge's decision" in (
+        found[0].message
     )
-    assert passage.judged == ()
+
+    bare = report_of()
+    bare.capability_matrix = []
+    bare.ttp_mappings = []
+    bare.overall_confidence = None
+    found = _refusals(bare, _row(OTHER, "rewrite", sources=["nowhere.1"], rewrite=OTHER))
+    assert found and all("judge" not in v.message for v in found)
 
 
-def test_a_family_the_judge_did_not_name_is_held() -> None:
-    said = "The code matches the Quillfern loader [ev_0302]."
-    passage = next(p for p in passages_of(report_of(said, family="Quillfern")) if p.id == SECTION)
-    assert dict(passage.judged) == {said: ("judge.family",)}
+def test_a_closing_rewrite_on_the_judge_s_decision_passes_where_it_denies_nothing() -> None:
+    report = report_of(OTHER)
+    conclusion = _closing(report)
+    rewrite = "The routine formats a host name, and the loader resolves plain names [ev_0301]."
 
-
-def test_a_quoted_label_and_an_identifier_are_not_held() -> None:
-    said = (
-        'The rule "Dynamic API Resolution" matched, and the tag dynamic_api_resolution was '
-        "set [ev_0302]."
+    assert _refusals(report, _closing_row(rewrite)) == []
+    counts, _records = apply_rows(
+        {"sentences": [_closing_row(rewrite)]}, passages_of(report), citable=CITABLE
     )
-    passage = next(p for p in passages_of(report_of(said)) if p.id == SECTION)
-    assert passage.judged == ()
+    assert counts["rewritten"] == 1 and conclusion.body == rewrite
 
 
-def test_a_published_technique_named_is_not_held() -> None:
-    said = "The routine reads system information [ev_0302] (T1082)."
-    passage = next(p for p in passages_of(report_of(said)) if p.id == SECTION)
-    assert passage.judged == ()
+@pytest.mark.parametrize(
+    "rewrite",
+    [
+        "The loader uses T1027.007 to hide its imports [ev_0301].",
+        "The loader uses dynamic API resolution to hide its imports [ev_0301].",
+        "The loader writes into another process by T1055.012 [ev_0301].",
+        "The loader writes into another process by process hollowing [ev_0301].",
+        "The loader is malicious and hides its imports [ev_0301].",
+    ],
+)
+def test_a_closing_rewrite_writing_what_the_decision_denies_is_refused_and_left_out(
+    rewrite: str,
+) -> None:
+    report = report_of(OTHER)
+    conclusion = _closing(report)
+    row = _closing_row(rewrite, [DROPPED, "judge.verdict"])
+
+    found = _refusals(report, row)
+    assert [v.code for v in found] == [agreement.JUDGE_DENIED_CODE]
+    assert "which the judge's decision it rests on denies" in found[0].message
+    counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
+    # Refused, it ends as any refused closing rewrite on a source does: left out.
+    assert counts["dropped"] == 1 and CLOSING not in conclusion.body
+    assert any(v.code == DROPPED_CODE for v in records)
 
 
-def test_a_verdict_the_judge_never_gave_shows_no_verdict_passage() -> None:
+@pytest.mark.parametrize(
+    "rewrite",
+    [
+        "Dynamic API resolution is absent from the loader [ev_0301].",
+        "Process injection was ruled out [ev_0301].",
+        "The loader resolves plain names rather than dynamic API resolution [ev_0301].",
+        "The judge dropped T1027.007 [ev_0301].",
+        "The loader is not malicious [ev_0301].",
+        'The rule "Dynamic API Resolution" matched the loader [ev_0301].',
+        "The rule tags T1027.007 and T1055 at rule level [ev_0301].",
+        "The loader is benign and resolves plain names [ev_0301].",
+        "The suspicious-instruction scan hit the loader [ev_0301].",
+    ],
+)
+def test_a_denial_a_quoted_label_and_a_tag_list_assert_nothing(rewrite: str) -> None:
+    report = report_of(OTHER)
+    _closing(report)
+    denied = _closing_row("The loader is malicious [ev_0301].", [DROPPED, "judge.verdict"])
+    row = _closing_row(rewrite, [DROPPED, "judge.verdict"])
+
+    assert [v.code for v in _refusals(report, denied)] == [agreement.JUDGE_DENIED_CODE]
+    assert agreement.JUDGE_DENIED_CODE not in [v.code for v in _refusals(report, row)]
+
+
+def test_a_heading_asserts_nothing() -> None:
+    decision = judge_decision(report_of())
+
+    assert denied_in("Process injection serves the loader.", decision) == ("Process injection",)
+    assert denied_in("### Process Injection", decision) == ()
+
+
+def test_a_published_sub_technique_of_a_dropped_parent_is_no_denial() -> None:
     report = report_of()
+    report.ttp_mappings.append(
+        TTPMapping(technique_id="T1055.012", technique_name="Process Hollowing")
+    )
+    decision = judge_decision(report)
+
+    assert denied_in("It hollows a process by T1055.012.", decision) == ()
+    assert denied_in("It hollows a process by T1055.012 and T1055.001.", decision) == ()
+    assert denied_in("It writes by T1055.001; it hollows by T1055.012.", decision) == ("T1055.001",)
+    assert denied_in("It uses T1027.0071 and T1027.", decision) == ()
+
+
+def test_a_family_the_judge_did_not_name_is_denied_and_its_own_is_not() -> None:
+    sandbox = judge_decision(report_of(family="Quillfern", similar="Brambleton"))
+    assert set(denied_in("The code is the Quillfern loader.", sandbox)) == {"Quillfern"}
+    assert denied_in("The code shares a stub with Brambleton.", sandbox) == ("Brambleton",)
+
+    named = report_of(similar="Quillfern")
+    named.attribution.family = "Quillfern"
+    assert denied_in("The code is the Quillfern loader.", judge_decision(named)) == ()
+    # A name too short to read is none.
+    short = judge_decision(report_of(similar="Qx"))
+    assert denied_in("The Qx loader runs.", short) == ()
+
+
+def test_a_verdict_the_judge_never_gave_denies_no_verdict_and_no_family() -> None:
+    report = report_of(similar="Quillfern")
     report.overall_confidence = None
+    decision = judge_decision(report)
+
+    assert decision.other_families == ()
+    assert denied_in("The file is malicious and the Quillfern loader.", decision) == ()
+    assert denied_in("It uses T1027.007.", decision) == ("T1027.007",)
     shown = {p.id for p in passages_of(report)}
     assert "judge.verdict" not in shown and "judge.family" not in shown
     assert DROPPED in shown
+
+
+def test_the_round_s_texts_say_what_its_code_takes() -> None:
+    text = prompt_text(passages_of(report_of()))
+
+    assert "A section 5 sentence so listed is only dropped" in text
+    assert "rewritten in your own words" not in text
+    assert "is dropped, naming the judge passage" in SYSTEM_PROMPT
+    assert "left out on the judge's decision" in SYSTEM_PROMPT
+    assert "or by the judge's decision, alone" not in SYSTEM_PROMPT
+    assert "Leave out every sentence no source states otherwise than" not in SYSTEM_PROMPT
+    assert "calls absent or not observed one it published" in SYSTEM_PROMPT
 
 
 def test_a_matrix_row_the_judge_dropped_is_read_with_or_without_its_reason() -> None:
@@ -300,50 +420,29 @@ def test_a_matrix_row_the_judge_dropped_is_read_with_or_without_its_reason() -> 
     assert not is_judge_dropped("an id the ATT&CK catalogue has no entry for")
 
 
-def test_a_drop_on_its_reason_alone_passes_and_one_on_a_passage_no_source_is_refused() -> None:
-    report = report_of()
-    on_reason = _row(ASSESS, "drop", sources=[], reason="The judge reads the names as plain.")
-    assert _refusals(report, on_reason) == []
-
-    on_a_claim = _row(ASSESS, "drop", sources=["nowhere.1"], reason="No.")
-    found = _refusals(report, on_a_claim)
-    assert [v.code for v in found] == [UNKNOWN_SOURCE_CODE]
-    assert "or the judge's decision (judge.verdict, judge.family, judge.technique.ID)" in (
-        found[0].message
-    )
-
-
-def test_a_quote_sharing_one_word_of_the_sentence_keeps_nothing() -> None:
-    one_word = _row(NAMING, "keep", quote="Dynamic API Resolution: not published")
-    assert _refusals(report_of(), one_word) == []
-    assert "shares too few of the sentence's own words" in " ".join(
-        v.message
-        for v in _refusals(report_of(), _row(NAMING, "keep", quote="Resolution: not published"))
-    )
-
-
-def test_a_dropped_technique_cites_what_the_judge_s_reason_cites() -> None:
-    shown = {p.id: p for p in passages_of(report_of())}
-    assert shown[DROPPED].cites == frozenset({"ev_0301"})
-
-
-def test_an_id_inside_an_identifier_is_not_held() -> None:
-    said = "The tag attack_T1027.007 is set [ev_0302]."
-    passage = next(p for p in passages_of(report_of(said)) if p.id == SECTION)
-    assert passage.judged == ()
-
-
-def test_a_closing_rewrite_on_the_judge_s_decision_no_check_passes_is_left_out() -> None:
+def test_a_sentence_left_out_on_the_judge_s_decision_is_counted_where_it_is_left_out() -> None:
     report = report_of(OTHER)
-    ta = report.technical_analysis
-    assert ta is not None
-    closing = "The routine formats a host name [ev_0302]."
-    ta.analyst_conclusion = TechnicalSubsection(title="Conclusion", body=closing)
-    row = {
-        **_row(closing, "rewrite", sources=["judge.technique.T1082"]),
-        "passage": "conclusion",
-        "rewrite": "The routine formats a host name [ev_0399].",
+    _closing(report)
+    report.run_summary = {
+        "validation": {
+            "unresolved": [
+                {"code": "agreement.judge_left_out", "message": "left out", "subject": "conclusion"}
+            ]
+        }
     }
-    counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
-    assert counts["dropped"] == 1 and closing not in ta.analyst_conclusion.body
-    assert any(v.code == DROPPED_CODE for v in records)
+    analyst = MarkdownRenderer(layout=ANALYST).render(report)
+    conclusion = analyst.split("## 7. Conclusion", 1)[1].split("\n## ", 1)[0]
+    assert "_1 sentence of this section was left out" in conclusion
+
+
+def test_a_rewrite_resting_on_no_judge_passage_is_not_read_against_the_decision() -> None:
+    report = report_of(OTHER)
+    _closing(report)
+    rewrite = "The loader uses dynamic API resolution to hide its imports [ev_0301]."
+
+    assert agreement.JUDGE_DENIED_CODE not in [
+        v.code for v in _refusals(report, _closing_row(rewrite, [SECTION]))
+    ]
+    assert agreement.JUDGE_DENIED_CODE in [
+        v.code for v in _refusals(report, _closing_row(rewrite, [SECTION, DROPPED]))
+    ]

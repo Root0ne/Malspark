@@ -2408,7 +2408,7 @@ _RECORDS = frozenset(
         agreement.QUALIFIED_CODE,
         agreement.HELD_KEPT_CODE,
         agreement.KEPT_IN_SOURCE_WORDS_CODE,
-        agreement.JUDGE_HELD_KEPT_CODE,
+        agreement.JUDGE_LEFT_OUT_CODE,
     }
 )
 # The report rounds' prose checks, run on every rewrite; and a procedure's own checks.
@@ -2455,6 +2455,9 @@ def _cannot(kind: str, code: str, decision: str) -> str:
         )
     if code in _PROCEDURE:
         return "a procedure's own checks hold an ATT&CK procedure alone, none of these kinds"
+    if code == agreement.JUDGE_DENIED_CODE:
+        # Its ends are walked where the decision is shown (T-717).
+        return "only a rewrite resting on the judge's decision is read against it; none here does"
     if code in _REWRITE_ONLY and decision != "rewrite":
         return "only a rewrite is read for what it cites and states"
     if code in (

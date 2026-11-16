@@ -15,7 +15,12 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage
 
-from malspark.reporting.section_agreement import UNKNOWN_SOURCE_CODE, ask_section_agreement
+from malspark.pipeline.validation import Violation
+from malspark.reporting.section_agreement import (
+    UNKNOWN_SOURCE_CODE,
+    _no_turn_left,
+    ask_section_agreement,
+)
 from tests.unit.reporting.test_a_section_sentence_is_asked_against_the_judge_s_decision import (
     OTHER,
     report_of,
@@ -68,7 +73,9 @@ def test_a_refusal_the_retry_answered_leaves_no_such_record() -> None:
     assert not any("No turn was left" in r["message"] for r in done.tally.unresolved)
 
 
-def test_a_section_5_passage_and_the_judge_s_decision_alone_are_asked() -> None:
+def test_a_section_5_passage_and_the_judge_s_decision_alone_are_not_asked() -> None:
+    # The judge's decision starts no question of its own: the round is asked where it was
+    # before the decision was shown (T-717).
     reporter = _Reporter({"sentences": []})
     asked: list[Any] = []
     real = reporter.ask
@@ -79,4 +86,16 @@ def test_a_section_5_passage_and_the_judge_s_decision_alone_are_asked() -> None:
 
     reporter.ask = _ask  # type: ignore[method-assign]
     asyncio.run(ask_section_agreement(reporter, report_of(OTHER)))
-    assert len(asked) == 1
+    assert asked == []
+
+
+def test_a_record_already_saying_so_or_naming_no_row_is_left_as_it_was() -> None:
+    row = _refused()["sentences"][0]
+    said = Violation(code=UNKNOWN_SOURCE_CODE, message="Refused.", path="sentences.0.sources")
+    once = _no_turn_left([said], {"sentences": [row]})
+    assert once[0].message.count("No turn was left") == 1
+    assert _no_turn_left(once, {"sentences": [row]}) == once
+    # A path past the answer's rows, or no row path at all, names no sentence.
+    past = Violation(code=UNKNOWN_SOURCE_CODE, message="Refused.", path="sentences.3.sources")
+    held = Violation(code=UNKNOWN_SOURCE_CODE, message="Refused.", path="held.summary")
+    assert _no_turn_left([past, held], {"sentences": [row]}) == [past, held]
