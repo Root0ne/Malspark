@@ -463,7 +463,9 @@ a `strings` head
 capped by `triage.strings_head` and `iocs_from_file` (its indicator scan reads printable
 ASCII and UTF-16LE runs; a UTF-16LE host written directly after a NUL-terminated ASCII
 string can be read with that string's last letter in front of it, because the bytes are
-the same either way); `yara_scan`, `capa`
+the same either way; a path or a registry key its pattern cut out of a longer token —
+a word character continues it within the run's text between two whitespace characters —
+carries that token as `cut_from`, unless the value also stands whole in the file); `yara_scan`, `capa`
 under the static provider's budget and, when a sandbox report exists,
 `sigma_match_sandbox`; `api_capability` over the import set (asked about the
 routed format's own platform, and a format the catalogue has no block for —
@@ -5987,7 +5989,14 @@ is assembled from what the run gathered rather than recomputed beside it:
   stays unpublished — and so does a value a tool recovered that the sweep
   also read as a whole value in the file's plain strings (a `strings` or
   `iocs_from_file` entry): text the sample did not hide is not recovered, and
-  the refusal names the sweep's entry. Under a Benign verdict it publishes
+  the refusal names the sweep's entry. Where no `strings` entry listed every
+  plain string, that holdout reads the sample's own plain-string runs, when
+  the build has the sample, and names "the sample's own bytes". A recovered
+  name is asked, in the spelling its tool wrote, the question a mailbox the
+  sweep read is asked (`reads_as_a_host_in_the_bytes`): an identifier
+  capitalises what it reaches into and a host name never does, so a
+  runtime's `time.Date` is no hidden host, and the refusal quotes the
+  spelling. Under a Benign verdict it publishes
   nothing, nor under a verdict the judge did not state with a confidence (a
   fallback's default word), and the table's refusal says so. A well-known
   benign host is read by its registered name (`*.co.uk` included), and a
@@ -6476,13 +6485,28 @@ Two halves, in this order:
   `crypto_wallet` have no STIX object and so no pattern; they stay in the
   consolidated IOC table.
 * **Does anything but the sample's own byte image know it.** A `domain` asks the
-  network block's own answer; every other kind asks the run's corroborating
-  record — what a sandbox watched (the process tree, the registry
-  modifications, the file operations, the notable APIs), what a persistence
-  mechanism names, and what an analyst established in an artefact or a finding
-  section. The report's own tool sections are deliberately not in it: they are
-  the string sweep arriving under another heading, and a haystack holding them
-  would answer yes to everything.
+  network block's own answer; every other kind asks the run's second-source
+  record (`stix_renderer.SecondSources`, asked by `second_source` alone) for
+  an observation independent of the file's text, holding the value whole:
+  what a sandbox watched (the process tree, the registry modifications, the
+  file operations, the notable APIs), what a persistence mechanism names, and
+  the answer of an entry an analyst cites in an artefact or a finding whose
+  declared kind watched the sample or recovered the value — a sandbox or
+  capture kind, a rule over its events, an emulator, a decoder, a hash
+  resolver (`core.builtin_declarations.OBSERVING_KINDS`, read by
+  `tool_kinds.second_source_standing`). Every other declared kind — the string
+  sweep, a listing, a string search, a decompile, a disassembly, a byte read,
+  an extractor — reads the same bytes again and confirms nothing. A tool that
+  declares no kind is used at full strength: its cited entry confirms a value
+  unless the value stands as plain text in the string sweep's record (its
+  rows and its sections), where the entry read the file's own text. The
+  decision is per entry: a tool section prints its entries' answers as one,
+  so it counts only when every entry it stands on is cited, and with the
+  run's corpus a cited entry is read on its own. A value the sweep cut out of
+  a longer token (`StringIOC.cut_from`) is no whole value, whatever holds it.
+  A refusal names what held the value and confirms nothing — the cut and its
+  token, a tool that declares no kind, a re-reading, an entry no claim
+  cites — so an operator can declare a tool.
 
 **Validity removes what cannot be the thing; corroboration decides the rest.**
 For a string-derived value the second question is the one that carries the
