@@ -997,17 +997,22 @@ def _process_root(joins: _Joins, pid: Any, task: Any = "") -> str:
     """The root of the process ``pid`` names in ``task``, as the run's identities write it.
 
     A row that states no task names the process of its id in the one task
-    that lists it; ``""`` where several tasks do.
+    that lists it; ``""`` where several tasks do, and where a listing holds
+    the id twice in its task, with the task stated or without.
     """
     number = pid_of(pid)
     if not number:
         return _process(pid)
     if task:
-        return _process(joins.identities.written(ProcessKey(str(task), number)))
-    held = joins.identities.keys(number, alias=False)
-    if len(set(held)) > 1:
+        key = ProcessKey(str(task), number)
+    else:
+        held = joins.identities.keys(number, alias=False)
+        if len(set(held)) > 1:
+            return ""
+        key = held[0] if held else ProcessKey("", number)
+    if joins.identities.twice(key):
         return ""
-    return _process(joins.identities.written(held[0] if held else ProcessKey("", number)))
+    return _process(joins.identities.written(key))
 
 
 def _indicator_roots(
@@ -1530,11 +1535,13 @@ def _read_entry(entry: Any, found: EntryRoots, joins: _Joins) -> EntryRoots:
             _address_root(found, row.get("address"), values=(row.get("value"),))
     elif branch == "sandbox_processes":
         for row in _rows(data, "processes"):
-            if row.get("pid") is not None:
-                found.add(
-                    _process_root(joins, row["pid"], row.get("task")),
-                    values=(row.get("command_line"), row.get("name")),
-                )
+            if row.get("pid") is None:
+                continue
+            # A row naming no one process (an id two tasks or one task twice
+            # list) gives no root.
+            root = _process_root(joins, row["pid"], row.get("task"))
+            if root:
+                found.add(root, values=(row.get("command_line"), row.get("name")))
     elif branch == "flows":
         for row in _flow_rows(entry):
             label = _flow_of(row, joins)

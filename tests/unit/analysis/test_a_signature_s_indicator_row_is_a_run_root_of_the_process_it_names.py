@@ -356,6 +356,33 @@ class TestAnIdATaskListsTwiceNamesNoProcess:
         assert found.of_item("proc:85") == (P85, "")
         assert found.of_item("proc:900.3") == ("sandbox process 900 in task t2", "")
 
+    def test_a_stored_indicator_naming_it_without_the_not_settled_flag_gives_no_root(
+        self,
+    ) -> None:
+        untasked = _entry(
+            "ev_0083",
+            "sandbox_signatures",
+            {"indicators": [{"signature": WROTE, "process": _proc("900", "1500", "x.exe")}]},
+        )
+        found = run_roots([*self._ledger(), untasked])
+
+        assert found.of_entry("ev_0082").roots == [P85]
+        assert found.of_entry("ev_0083").roots == []
+        assert found.of_entry("ev_0083").reason == INDICATOR_UNSETTLED
+
+    def test_its_listing_rows_give_no_root(self) -> None:
+        roots = run_roots(self._ledger()).of_entry("ev_0011").roots
+
+        assert roots == [P85, "sandbox process 900 in task t2"]
+
+
+class TestAListingRowNamingNoOneProcessGivesNoRoot:
+    def test_a_task_less_row_of_an_id_two_tasks_list_gives_no_empty_root(self) -> None:
+        bare = _entry("ev_0012", "sandbox_processes", {"processes": [{"pid": 87, "name": "a"}]})
+        roots = run_roots([*_ledger(), bare]).of_entry("ev_0012").roots
+
+        assert roots == []
+
 
 class TestARowThatStatesNoTaskIsReadAgainstTheListedTasks:
     @staticmethod
