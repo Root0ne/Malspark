@@ -16,9 +16,10 @@ from typing import Any
 
 from malspark.tools import strings as S
 
-# One match: its kind, its text as matched, its notes, its length floor, and
-# where it starts and ends in the scanned blob.
-_Hit = tuple[str, str, str | None, int, int, int]
+# One match: its kind, its text as matched, its notes, its length floor, where
+# it starts and ends in the scanned blob, and the token it was cut out of
+# (``strings.cut_from``), ``""`` for a whole value.
+_Hit = tuple[str, str, str | None, int, int, int, str]
 
 
 def _runs(blob: bytes) -> Iterator[tuple[str, int, int]]:
@@ -74,36 +75,44 @@ def _hits(blob: bytes) -> Iterator[_Hit]:
                 None,
                 0,
                 *at(match.span()),
+                "",
             )
         for found in S._IP_RE.finditer(encoded):
             ip = found.group().decode("ascii", errors="ignore")
             if S._is_meaningful_ip(ip) and not S._written_as_a_version(encoded, found.start()):
-                yield ("ip", ip, None, 0, *at(found.span()))
+                yield ("ip", ip, None, 0, *at(found.span()), "")
         for match in S._REG_RE.finditer(encoded):
             value = match.group().decode("ascii", errors="ignore")
-            yield ("registry", value, None, 0, *at(match.span()))
+            yield ("registry", value, None, 0, *at(match.span()), S.cut_from(text, *match.span()))
         for match in S._PATH_RE.finditer(encoded):
             candidate = match.group().decode("ascii", errors="ignore")
             if S._looks_like_path(candidate):
-                yield ("path", candidate, None, 0, *at(match.span()))
+                yield (
+                    "path",
+                    candidate,
+                    None,
+                    0,
+                    *at(match.span()),
+                    S.cut_from(text, *match.span()),
+                )
         for span in _email_spans(encoded):
             value = encoded[span[0] : span[1]].decode("ascii", errors="ignore")
-            yield ("email", value, None, 0, *at(span))
+            yield ("email", value, None, 0, *at(span), "")
         for match in S._MUTEX_RE.finditer(encoded):
             value = match.group().decode("ascii", errors="ignore")
-            yield ("mutex", value, None, 0, *at(match.span()))
+            yield ("mutex", value, None, 0, *at(match.span()), "")
         for start, end, candidate in _domain_spans(text):
             short = S.two_character_label_with_a_digit(candidate.split(".", 1)[0])
             floor = S._SHORT_RUN_LENGTH if short else 0
-            yield ("domain", candidate, None, floor, *at((start, end)))
+            yield ("domain", candidate, None, floor, *at((start, end)), "")
         for label, pattern in S._SECRET_PATTERNS:
             for hit in pattern.finditer(text):
-                yield ("secret", hit.group(), label, 0, *at(hit.span()))
+                yield ("secret", hit.group(), label, 0, *at(hit.span()), "")
         for label, pattern in S._WALLET_PATTERNS:
             for hit in pattern.finditer(text):
-                yield ("crypto_wallet", hit.group(), label, 0, *at(hit.span()))
+                yield ("crypto_wallet", hit.group(), label, 0, *at(hit.span()), "")
         for hit in S._ONION_RE.finditer(text):
-            yield ("domain", hit.group(), "tor_hidden_service", 0, *at(hit.span()))
+            yield ("domain", hit.group(), "tor_hidden_service", 0, *at(hit.span()), "")
     for host_pattern, width in ((S._SHORT_HOST_RE, 1), (S._SHORT_WIDE_HOST_RE, 2)):
         first: dict[bytes, tuple[int, int]] = {}
         for match in host_pattern.finditer(blob):
@@ -111,7 +120,7 @@ def _hits(blob: bytes) -> Iterator[_Hit]:
         for run, (start, end) in first.items():
             host = S._short_host(run[::width].decode("ascii"))
             if host:
-                yield ("domain", host, None, S._SHORT_RUN_LENGTH, start, end)
+                yield ("domain", host, None, S._SHORT_RUN_LENGTH, start, end, "")
 
 
 def string_iocs_with_spans(blob: bytes, kinds: Iterable[str] | None = None) -> list[dict[str, Any]]:
@@ -120,19 +129,23 @@ def string_iocs_with_spans(blob: bytes, kinds: Iterable[str] | None = None) -> l
     The same rows in the same order, narrowed to ``kinds`` when given; each
     also carries ``start`` and ``end``, the offsets in ``blob`` of the value as
     kept (its NULs and then its whitespace stripped from both ends), and
-    ``width``, 1 for a match in an ASCII run and 2 for one in a UTF-16LE run.
+    ``width``, 1 for a match in an ASCII run and 2 for one in a UTF-16LE run,
+    and a cut value its ``cut_from`` as ``iter_string_iocs`` gives it.
     """
     keep = set(kinds) if kinds else None
-    seen: set[tuple[str, str]] = set()
+    seen: dict[tuple[str, str], dict[str, Any] | None] = {}
     rows: list[dict[str, Any]] = []
-    for kind, matched, notes, floor, start, end in _hits(blob):
+    for kind, matched, notes, floor, start, end, cut in _hits(blob):
         decoded = matched.strip("\x00").strip()
         if len(decoded) < (floor or S._MIN_STRING_LENGTH):
             continue
         key = (kind, decoded.lower())
         if key in seen:
+            held = seen[key]
+            if held is not None and not cut:
+                held.pop("cut_from", None)
             continue
-        seen.add(key)
+        seen[key] = None
         if keep is not None and kind not in keep:
             continue
         without_nul = matched.strip("\x00")
@@ -150,4 +163,7 @@ def string_iocs_with_spans(blob: bytes, kinds: Iterable[str] | None = None) -> l
                 "width": width,
             }
         )
+        if cut:
+            rows[-1]["cut_from"] = cut
+        seen[key] = rows[-1]
     return rows

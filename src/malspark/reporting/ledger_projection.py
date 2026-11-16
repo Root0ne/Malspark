@@ -676,6 +676,7 @@ def static_from_ledger(ledger: list[LedgerEntry]) -> StaticAnalysis | None:
                     value=str(row.get("value") or ""),
                     kind=_string_kind(row.get("kind")),  # type: ignore[arg-type]
                     notes=_opt(row.get("notes")),
+                    cut_from=_opt(row.get("cut_from")),
                 )
             )
 

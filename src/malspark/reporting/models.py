@@ -212,6 +212,11 @@ class StringIOC(BaseModel):
         "other",
     ]
     notes: str | None = None
+    # The longer token the string sweep cut this value out of
+    # (``tools.strings.cut_from``): the value is no whole value of the file,
+    # and the publish rule refuses it. ``None`` for a value that stands whole,
+    # and then left out of the dump, so a stored report reads and dumps as it did.
+    cut_from: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ExportRow(BaseModel):

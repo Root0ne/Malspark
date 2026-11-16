@@ -1238,6 +1238,8 @@ def _shannon_entropy(data: bytes) -> float:
 def _extract_string_iocs(blob: bytes) -> list[StringIOC]:
     """The typed indicators in ``blob``, as report models."""
     return [
-        StringIOC(value=row["value"], kind=row["kind"], notes=row["notes"])  # type: ignore[arg-type]
+        StringIOC(  # type: ignore[arg-type]
+            value=row["value"], kind=row["kind"], notes=row["notes"], cut_from=row.get("cut_from")
+        )
         for row in iter_string_iocs(blob)
     ]

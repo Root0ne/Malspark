@@ -200,20 +200,29 @@ def iter_string_iocs(blob: bytes) -> list[dict[str, Any]]:
     otherwise. ``source`` is always ``"strings"`` and is there so a consumer
     can tell a name a sandbox watched the sample resolve from a name that was
     lying in its byte image, which are not the same claim and were being
-    published as though they were.
+    published as though they were. A path or a registry key the pattern cut
+    out of a longer token also carries ``cut_from``, that token
+    (:func:`cut_from`), unless the value stands whole somewhere in the blob.
     """
     iocs: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    rows: dict[tuple[str, str], dict[str, Any]] = {}
 
-    def _add(kind: str, decoded: str, notes: str | None = None, *, floor: int = 0) -> None:
+    def _add(
+        kind: str, decoded: str, notes: str | None = None, *, floor: int = 0, cut: str = ""
+    ) -> None:
         decoded = decoded.strip("\x00").strip()
         if len(decoded) < (floor or _MIN_STRING_LENGTH):
             return
         key = (kind, decoded.lower())
-        if key in seen:
+        if key in rows:
+            if not cut:
+                rows[key].pop("cut_from", None)
             return
-        seen.add(key)
-        iocs.append({"kind": kind, "value": decoded, "notes": notes, "source": _IOC_SOURCE})
+        row = {"kind": kind, "value": decoded, "notes": notes, "source": _IOC_SOURCE}
+        if cut:
+            row["cut_from"] = cut
+        rows[key] = row
+        iocs.append(row)
 
     for text in _iter_strings(blob):
         for match in _URL_RE.findall(text.encode("ascii", errors="ignore")):
@@ -225,12 +234,13 @@ def iter_string_iocs(blob: bytes) -> list[dict[str, Any]]:
             # number is not an address whatever its shape.
             if _is_meaningful_ip(ip) and not _written_as_a_version(encoded, found.start()):
                 _add("ip", ip)
-        for match in _REG_RE.findall(text.encode("ascii", errors="ignore")):
-            _add("registry", match.decode("ascii", errors="ignore"))
-        for match in _PATH_RE.findall(text.encode("ascii", errors="ignore")):
-            candidate = match.decode("ascii", errors="ignore")
+        for found in _REG_RE.finditer(encoded):
+            value = found.group().decode("ascii", errors="ignore")
+            _add("registry", value, cut=cut_from(text, *found.span()))
+        for found in _PATH_RE.finditer(encoded):
+            candidate = found.group().decode("ascii", errors="ignore")
             if _looks_like_path(candidate):
-                _add("path", candidate)
+                _add("path", candidate, cut=cut_from(text, *found.span()))
         for match in emails_in(text.encode("ascii", errors="ignore")):
             _add("email", match.decode("ascii", errors="ignore"))
         for match in _MUTEX_RE.findall(text.encode("ascii", errors="ignore")):
@@ -254,6 +264,32 @@ def iter_string_iocs(blob: bytes) -> list[dict[str, Any]]:
         _add("domain", host, floor=_SHORT_RUN_LENGTH)
 
     return iocs
+
+
+# A character of a word, which continues a value it stands beside.
+_WORD_RE = re.compile(r"\w")
+
+
+def cut_from(text: str, start: int, end: int) -> str:
+    """The token a match at ``text[start:end]`` was cut out of, or ``""`` when it is whole.
+
+    A pattern of a value's characters stops at the first one it does not
+    take, and that is no end of the value: ``/cpu/classes/total`` stops at the
+    ``:`` of ``…/cpu/classes/total:cpu-seconds``, ``/f /q C`` at the ``:`` of
+    ``del /f /q C:\\…``. What ends a value is the token it stands in, the run's
+    text between two whitespace characters (or the run's ends): a match a word
+    character continues on either side within its token is a cut, and the
+    token is returned. A quote, a bracket or a comma around a value holds no
+    word character, and the value it encloses stands whole.
+    """
+    edge, close = start, end
+    while edge > 0 and not text[edge - 1].isspace():
+        edge -= 1
+    while close < len(text) and not text[close].isspace():
+        close += 1
+    if _WORD_RE.search(text, edge, start) or _WORD_RE.search(text, end, close):
+        return text[edge:close]
+    return ""
 
 
 def _short_hosts(blob: bytes) -> Iterator[str]:
