@@ -196,3 +196,26 @@ def test_an_address_keyed_batch_of_errors_lists_no_routine() -> None:
     answer = {hex(FIRST): "Error: no function", hex(SECOND): "Error: no function"}
     entry = _asked({"functions": f"{hex(FIRST)},{hex(SECOND)}"}, answer)
     assert _entry_functions(entry) == []
+
+
+def test_a_mixed_batch_names_the_one_address_no_member_took() -> None:
+    answer = {hex(FIRST): _listing(FIRST), "main": "int main(void)\n{ }"}
+    entry = _asked({"functions": f"{hex(FIRST)},{hex(SECOND)}"}, answer)
+    assert _entry_functions(entry) == [(FIRST, [f"FUN_{FIRST:08x}"]), (SECOND, ["main"])]
+
+
+def test_a_mixed_batch_keeps_every_address_no_member_took() -> None:
+    answer = {hex(FIRST): _listing(FIRST), "main": "int main(void)\n{ }"}
+    entry = _asked({"functions": f"{hex(FIRST)},{hex(SECOND)},{hex(THIRD)}"}, answer)
+    assert _entry_functions(entry) == [
+        (FIRST, [f"FUN_{FIRST:08x}"]),
+        (None, ["main"]),
+        (SECOND, []),
+        (THIRD, []),
+    ]
+
+
+def test_an_address_keyed_batch_takes_no_address_from_the_call() -> None:
+    answer = {hex(FIRST): _listing(FIRST)}
+    entry = _asked({"functions": f"{hex(FIRST)},{hex(SECOND)}"}, answer)
+    assert _entry_functions(entry) == [(FIRST, [f"FUN_{FIRST:08x}"])]
