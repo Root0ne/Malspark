@@ -673,7 +673,12 @@ def _endpoint_is_publishable(kind: str, literal: str) -> bool:
 
 
 def _judge_indicator_problem(indicator: Indicator) -> tuple[str, str] | None:
-    """Why this judge indicator is not exported, as ``(code, sentence)``, or ``None``.
+    """Why this judge indicator is not exported, or ``None`` (:func:`pattern_problem`)."""
+    return pattern_problem(indicator.pattern or "")
+
+
+def pattern_problem(pattern: str) -> tuple[str, str] | None:
+    """Why the export declines a judge indicator of this pattern, ``(code, sentence)``, or ``None``.
 
     The judge's objects go through the host question the deterministic rows do,
     and the answer for one that fails it is the one this pipeline gives
@@ -690,7 +695,6 @@ def _judge_indicator_problem(indicator: Indicator) -> tuple[str, str] | None:
     endpoint up is ``stix.ungrounded_indicator``'s question, and it is asked of
     every indicator the judge writes.
     """
-    pattern = indicator.pattern or ""
     unknown = unknown_object_types(pattern)
     if unknown:
         return (
@@ -5100,10 +5104,14 @@ def table_row_record(row: Any, report: Any) -> tuple[str, str | None]:
     if str(_field(row, "source") or "") == "judge":
         # The judge's own indicator carries it, under the judge's type.
         return INDICATOR_ROLE, judged
-    if _written_after_the_judge(row, report) and judged:
-        # A host value, or a value the string sweep and the judge both hold,
-        # the judge's own indicator names is exported as that indicator, under
-        # the judge's type (``ExtendedSTIXRenderer._render``).
+    if _host_row(row) and judged:
+        # A host value the judge's own indicator names, where the export carries
+        # it, is exported as that indicator, under the judge's type
+        # (``ExtendedSTIXRenderer._render``).
+        return INDICATOR_ROLE, judged
+    if _lifted_by_the_judge(row, report):
+        # A path the sweep read whose shape the judge's naming lifted: the
+        # judge's indicator, where the export carries it, is its export.
         return INDICATOR_ROLE, judged
     # The stated verdict, as the sample's own type reads it: a report never
     # claims more about a host than about its sample.
@@ -5309,7 +5317,13 @@ def exported_indicator_values(bundle: Any) -> list[ExportedValue]:
         # A file named with its directory is one value (:func:`_compared_values`).
         if len(comparisons) - (_paired_directory(pattern, comparisons) is not None) != 1:
             continue
-        types = tuple(str(t) for t in obj.get("indicator_types") or [] if t)
+        # What the indicator claims, only where the export would carry it: an
+        # indicator it declines lends its type to nothing.
+        types = (
+            ()
+            if pattern_problem(pattern) is not None
+            else tuple(str(t) for t in obj.get("indicator_types") or [] if t)
+        )
         for value in pattern_values(pattern):
             if (value.kind, value.value.lower()) in seen:
                 continue
@@ -5362,29 +5376,23 @@ def _host_row(row: Any) -> bool:
     )
 
 
-def _named_by_the_judge(row: Any, report: Any) -> bool:
-    """Whether a value of the judge's indicators is the row's, as the builder records them."""
-    kind = str(_field(row, "kind") or "")
+def _lifted_by_the_judge(row: Any, report: Any) -> bool:
+    """Whether a path the string sweep read is published only because the judge names it.
+
+    Its shape is not that of a file the sample uses (:func:`_string_path_shape`),
+    and the judge's indicator names the same kind and value, which lifts the
+    question (``judge_s_value``). The platform mints no indicator for such a row,
+    as the string step never did: the judge's own is its export.
+    """
+    if str(_field(row, "kind") or "") != "path" or not _from_the_strings(_field(row, "source")):
+        return False
+    if not _string_path_shape(str(_field(row, "value") or "")):
+        return False
     key = str(_field(row, "value") or "").strip().lower()
     return any(
-        str(_field(item, "kind") or "") == kind
+        str(_field(item, "kind") or "") == "path"
         and str(_field(item, "value") or "").strip().lower() == key
         for item in _field(report, "judge_indicators") or []
-    )
-
-
-def _written_after_the_judge(row: Any, report: Any) -> bool:
-    """Whether a row's indicator is written after the judge's own, and only where none names it.
-
-    A host value a sandbox, a record or the analysis recorded (:func:`_host_row`),
-    and a value other than a network one the string sweep holds that the
-    judge's indicator also names: such a value is the judge's, exported as the
-    judge's indicator where it carries one.
-    """
-    return _host_row(row) or (
-        str(_field(row, "kind") or "") not in NETWORK_KINDS
-        and _from_the_strings(_field(row, "source"))
-        and _named_by_the_judge(row, report)
     )
 
 
@@ -5509,6 +5517,7 @@ def _row_indicators(
             or not row.indicator_type
             or not publishes(row.published)
             or row.source == "judge"
+            or _lifted_by_the_judge(row, report)
         ):
             continue
         pattern = row_pattern(row)
@@ -5521,7 +5530,7 @@ def _row_indicators(
             indicator_types=[str(row.indicator_type)],
             description=_row_description(row, report),
         )
-        if _written_after_the_judge(row, report):
+        if _host_row(row):
             late.append((row, made))
         else:
             early.append((_row_order(row, report), position, made))

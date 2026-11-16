@@ -631,3 +631,150 @@ def test_a_network_value_the_judge_also_names_is_the_platform_s_indicator() -> N
         if o.get("type") == "indicator" and "relay-c2" in str(o.get("pattern"))
     ]
     assert named == "Domain relay-c2.example.net"
+
+
+# Ruling 18: "the judge names it" lifts the shape question and nothing else.
+_RELAY = "C:\\ProgramData\\relay.dat"
+_RELAY_PLATFORM = (
+    "path C:\\ProgramData\\relay.dat",
+    "[file:name = 'relay.dat' AND file:parent_directory_ref.path = 'C:\\\\ProgramData']",
+)
+_VERDICTS = [("Malware", 0.9), ("Suspicious", 0.9), ("Suspicious", None)]
+
+
+def _both_hold(judge: dict[str, Any], verdict: str, confidence: float | None) -> MalwareReport:
+    from malspark.reporting.models import StaticAnalysis, StringIOC
+
+    report = _report(
+        judge,
+        overall_confidence=confidence,
+        static=StaticAnalysis(interesting_strings=[StringIOC(kind="path", value=_RELAY)]),
+        dynamic=DynamicBehavior(
+            process_tree=[{"pid": 1, "name": "s.exe", "command_line": f"s.exe {_RELAY}"}]
+        ),
+    )
+    report.verdict = verdict  # type: ignore[assignment]
+    report.judge_indicators = [
+        JudgeIndicator(
+            kind=v.kind,
+            value=v.value,
+            algorithm=v.algorithm,
+            indicator_types=list(v.indicator_types),
+        )
+        for v in exported_indicator_values(judge)
+    ]
+    return report
+
+
+def _indicators_of(exported: dict[str, Any]) -> list[tuple[str, str, list[str]]]:
+    return [
+        (o["name"], o["pattern"], o["indicator_types"])
+        for o in exported["objects"]
+        if o.get("type") == "indicator" and "relay" in str(o.get("pattern"))
+    ]
+
+
+class TestAValueTheJudgeNamesIsExportedAsBefore:
+    """The bundle's objects, patterns and types for a value both hold are dev's."""
+
+    @pytest.mark.parametrize(("verdict", "confidence"), _VERDICTS)
+    def test_a_well_formed_judge_indicator_and_the_platform_s_both_stand(
+        self, verdict: str, confidence: float | None
+    ) -> None:
+        judge = _judge(f"[file:name = '{_RELAY.replace(chr(92), chr(92) * 2)}']")
+        report = _both_hold(judge, verdict, confidence)
+        exported, _renderer = _export(report, judge)
+
+        assert _indicators_of(exported) == [
+            (*_RELAY_PLATFORM, ["anomalous-activity"]),
+            (
+                "judge indicator 0",
+                "[file:name = 'C:\\\\ProgramData\\\\relay.dat']",
+                ["malicious-activity"],
+            ),
+        ]
+        assert _row(report, _RELAY).indicator_type == "anomalous-activity"
+
+    @pytest.mark.parametrize(("verdict", "confidence"), _VERDICTS)
+    def test_a_declined_judge_indicator_lends_no_type(
+        self, verdict: str, confidence: float | None
+    ) -> None:
+        # Single backslashes: the grammar refuses the judge's pattern and the export declines it.
+        judge = _judge(f"[file:name = '{_RELAY}']")
+        report = _both_hold(judge, verdict, confidence)
+        exported, _renderer = _export(report, judge)
+
+        assert _indicators_of(exported) == [(*_RELAY_PLATFORM, ["anomalous-activity"])]
+        assert _row(report, _RELAY).indicator_type == "anomalous-activity"
+
+
+class TestTheJudgesValueIsTheSameKindAndText:
+    def test_another_kind_with_the_same_text_lifts_no_shape_question(self) -> None:
+        from malspark.reporting.models import StaticAnalysis, StringIOC
+
+        judge = _judge("[mutex:name = 'relay_agent']")
+        report = _report(
+            judge,
+            overall_confidence=0.9,
+            static=StaticAnalysis(
+                interesting_strings=[StringIOC(kind="path", value="relay_agent")]
+            ),
+            dynamic=DynamicBehavior(
+                process_tree=[{"pid": 1, "name": "s", "command_line": "s relay_agent"}]
+            ),
+        )
+
+        (row,) = [r for r in build_consolidated_iocs(report) if r.kind == "path"]
+        assert not publishes(row.published), row.published
+
+
+def test_a_network_row_the_judge_names_keeps_the_platform_s_type() -> None:
+    from malspark.reporting.models import NetworkDomain
+
+    judge = {
+        "type": "bundle",
+        "objects": [
+            {
+                **_indicator(0, "[domain-name:value = 'relay-c2.example.net']"),
+                "indicator_types": ["compromised"],
+            }
+        ],
+    }
+    report = _report(judge, overall_confidence=0.9)
+    report.judge_indicators = [
+        JudgeIndicator(kind=v.kind, value=v.value, indicator_types=list(v.indicator_types))
+        for v in exported_indicator_values(judge)
+    ]
+    report.network = NetworkIOCs(
+        domains=[
+            NetworkDomain(
+                fqdn="relay-c2.example.net",
+                source="strings",
+                reputation={"source": "virustotal", "malicious": 9},
+            )
+        ]
+    )
+
+    assert _row(report, "relay-c2.example.net").indicator_type == "anomalous-activity"
+
+
+def test_a_sweep_path_of_the_toolchain_s_shape_stays_refused_everywhere() -> None:
+    from malspark.reporting.models import StaticAnalysis, StringIOC
+    from malspark.reporting.renderers.stix_renderer import COMPILE_ARTIFACT_PATH
+
+    path = "/usr/lib/gcc/x86_64-linux-gnu/12/librelay.so"
+    report = _report(
+        _judge(),
+        overall_confidence=0.9,
+        static=StaticAnalysis(interesting_strings=[StringIOC(kind="path", value=path)]),
+        dynamic=DynamicBehavior(
+            process_tree=[{"pid": 1, "name": "s", "command_line": f"s {path}"}]
+        ),
+    )
+    exported, _renderer = _export(report, _judge())
+
+    assert _row(report, path).published == f"no: {COMPILE_ARTIFACT_PATH}"
+    assert [r["published"] for r in ioc_feed_rows(report.model_dump()) if r["value"] == path] == [
+        False
+    ]
+    assert "librelay" not in str(_indicators_of(exported))
