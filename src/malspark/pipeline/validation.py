@@ -15052,13 +15052,17 @@ def claims_unread_replaced_row(
     """
     from malspark.pipeline.revision_merge import claims_unread_why_of
 
-    reason = str(getattr(replaced, "claims_unread_reason", "") or "")
-    if not reason.strip() or in_force is replaced:
+    reason = getattr(replaced, "claims_unread_reason", "")
+    if not isinstance(reason, str) or not reason.strip() or in_force is replaced:
         return None
     if reason in str(getattr(in_force, "claims_unread_reason", "") or ""):
         return None
     counts = getattr(replaced, "claims_unread_counts", None)
-    begun, read, unread = (str(int(n)) for n in counts) if counts else ("", "", "")
+    begun, read, unread = (
+        (str(int(n)) for n in counts)
+        if isinstance(counts, tuple) and len(counts) == 3
+        else ("", "", "")
+    )
     return {
         "record": CLAIMS_UNREAD_REPLACED_RECORD,
         "agent": str(agent),
