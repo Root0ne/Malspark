@@ -1317,18 +1317,16 @@ def _stated_value(kind: str, value: str) -> str:
     return text
 
 
-# A long path's prefix (``\\?\``, ``\\?\UNC\``), which Windows reads off the
-# path it opens and a log does not write.
+# A long path's prefix (``\\?\``, and ``\\?\UNC\`` before a share's server),
+# which Windows reads off the path it opens and a log does not write.
 _LONG_PATH_RE = re.compile(r"^\\\\\?\\(UNC\\)?", re.IGNORECASE)
 
 
 def _without_long_prefix(text: str) -> str:
-    """``text`` without a long path's prefix: a drive's path as written, a share's with two
-    separators before it."""
+    """``text`` without a long path's prefix: a drive's path as written, a share's from its
+    server."""
     match = _LONG_PATH_RE.match(text)
-    if match is None:
-        return text
-    return ("\\\\" if match.group(1) else "") + text[match.end() :]
+    return text[match.end() :] if match else text
 
 
 def _printed_path(text: str, shortened: str) -> str:
@@ -1572,18 +1570,14 @@ def _persistence_image_source(mech: PersistenceMechanism, admitted: frozenset[st
 
     The payload is what runs (``models.PersistenceMechanism``): admitted on its
     own row, or as the data registered under an admitted key every
-    installation has, where it names a file: that data is what makes the
-    record the sample's. A registry key is where it is registered, and a
-    key's last component selected as an image matches no process event; so a
-    registry target, by its kind or by its hive, is never one.
+    installation has: that data is what makes the record the sample's. A
+    registry key is where it is registered, and a key's last component
+    selected as an image matches no process event; so a registry target, by
+    its kind or by its hive, is never one.
     """
     if mech.payload and (
         _admitted_value(mech.payload, admitted)
-        or (
-            bool(_named_paths(mech.payload))
-            and _admitted_value(mech.target, admitted)
-            and _common_key(mech.target)
-        )
+        or (_admitted_value(mech.target, admitted) and _common_key(mech.target))
     ):
         return mech.payload
     target = mech.target or ""
@@ -1631,15 +1625,14 @@ def _file_value(word: str, *, rooted: bool) -> str:
 
 
 def _written_data(report: MalwareReport, admitted: frozenset[str]) -> list[str]:
-    """The data a sandbox recorded written under an admitted key every installation has,
-    where it names a file: the payload such a write registers."""
+    """The data a sandbox recorded written under an admitted key every installation has:
+    the payload such a write registers."""
     if report.dynamic is None:
         return []
     return [
         reg.new_value
         for reg in report.dynamic.registry_mods
         if reg.new_value
-        and _named_paths(reg.new_value)
         and _admitted_value(_registry_full_path(reg), admitted)
         and _written_under_a_common_key(reg)
     ]
@@ -1791,7 +1784,7 @@ def selection_specific(
             for value in values if isinstance(values, list) else []:
                 why = _not_specific(name, value)
                 stated = str((asked or {}).get((name, value.lower()), value))
-                if why and stated != value and kind.shape == "path":
+                if why and kind.shape == "path":
                     why = benign_reason(kind, stated) or NAME_ALONE_REASON
                 if why:
                     left_out.append((value, why))
