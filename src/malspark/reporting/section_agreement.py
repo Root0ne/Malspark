@@ -424,9 +424,9 @@ KEPT_IN_SOURCE_WORDS_CODE = "agreement.kept_in_source_words"
 # A sentence, or a rewrite, giving failed calls a number the ledger's count
 # does not.
 FAILURE_COUNT_CODE = "agreement.failure_count"
-# A section 5 sentence the answer left out on a passage of the judge's decision, the one end
-# such a row may give: recorded with the judge passage, the reason and the sentence whole, and
-# counted where it is left out as a ``DROPPED_CODE`` sentence is (T-717).
+# A sentence the answer left out on a passage of the judge's decision, the one end a row naming
+# one may give, whatever else it names: recorded with the row's sources, the reason and the
+# sentence whole, and counted where it is left out as a ``DROPPED_CODE`` sentence is (T-717).
 JUDGE_LEFT_OUT_CODE = "agreement.judge_left_out"
 # The records of a sentence the round left out, which the analyst report counts.
 LEFT_OUT_CODES = frozenset({DROPPED_CODE, JUDGE_LEFT_OUT_CODE})
@@ -6785,35 +6785,32 @@ def _qualified(sentence: str, facts: Sequence[Passage]) -> str:
 def _platform_rewrites(payload: Any, by_id: dict[str, Passage]) -> Any:
     """The payload with each section 5 rewrite resting on a fact written by the platform:
     the sentence unchanged and the facts' clauses (``_qualified``). Every other row as the
-    model wrote it. One pass over the rows."""
+    model wrote it, a row naming a passage of the judge's decision among them, which is a
+    drop or is refused (T-717). One pass over the rows."""
     rows = payload.get("sentences") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return payload
     out: list[Any] = []
     for row in rows:
         passage = by_id.get(_form(row.get("passage"))) if isinstance(row, dict) else None
+        named = row.get("sources") if isinstance(row, dict) else None
+        sources = [by_id.get(_form(n)) for n in (named if isinstance(named, list) else [])]
         if (
             passage is not None
             and passage.kind == SECTION_5
             and isinstance(row, dict)
             and row.get("decision") == "rewrite"
+            and not _judge_named(sources)
         ):
-            named = row.get("sources")
             standing = located(passage.text, str(row.get("sentence") or ""))
-            if standing and _in_own_words(
-                passage,
-                standing,
-                [by_id.get(_form(n)) for n in (named if isinstance(named, list) else [])],
-            ):
+            if standing and _in_own_words(passage, standing, sources):
                 # The model's words, read as any passage's rewrite is.
                 out.append(row)
                 continue
             reading = _Reading(standing or "", passage.text)
             facts = [
                 fact
-                for fact in (
-                    by_id.get(_form(n)) for n in (named if isinstance(named, list) else [])
-                )
+                for fact in sources
                 if fact is not None and fact.kind == FACT and standing and _grounds(fact, reading)
             ]
             if standing and facts:
@@ -7848,9 +7845,10 @@ def apply_rows(
             taken.append((*left_out_span(passage.text, span[0], span[1]), ""))
             counts["dropped"] += 1
             sources = [by_id.get(_form(name)) for name in row.sources]
-            if _on_the_judge(passage, sources):
-                # A section 5 sentence left out on the judge's decision: recorded under its
-                # own code, with the judge passage, the reason and the sentence whole (T-717).
+            if _judge_named(sources):
+                # A sentence left out on the judge's decision, whatever else the row names:
+                # recorded under its own code, with the sources, the reason and the sentence
+                # whole (T-717).
                 written.append(
                     Violation(
                         code=JUDGE_LEFT_OUT_CODE,
@@ -8091,8 +8089,11 @@ def _fact_fallback(
 ) -> str | None:
     """The platform's qualification of a section 5 denial a bound value's fact grounds
     (``_qualified``), or ``None`` where the sentence is no such denial or no fact the row
-    names grounds it."""
+    names grounds it, or the row names a passage of the judge's decision, which is a drop or
+    is refused (T-717)."""
     if passage.kind != SECTION_5 or sentence not in passage.on_fact:
+        return None
+    if _judge_named([by_id.get(_form(name)) for name in row.sources]):
         return None
     reading = _Reading(sentence, passage.text)
     facts = [

@@ -474,3 +474,134 @@ def test_a_judge_passage_is_no_source_of_any_answer_on_a_verbatim_passage(
         assert not report.flagged_statements or all(
             not f.left_out for f in report.flagged_statements
         )
+
+
+# A row naming a fact and a judge passage: a judge row whatever else it names (T-717).
+def _fact_and_judge(row: dict[str, Any], *, held: bool) -> tuple[MalwareReport, Any, Any]:
+    """The verdict shown beside a section 5 sentence a fact grounds: ``held`` one a decoded
+    value's fact speaks to that the ledger's lines hold, else one an unlisted routine's fact
+    qualifies."""
+    from malspark.pipeline.validation import EntryTexts
+
+    if held:
+        from tests.unit.reporting.test_a_held_sentence_no_answer_passes_for_is_left_out import (
+            _ledger,
+            _on_fact_and_held,
+        )
+
+        report, sentence = _on_fact_and_held()
+        row = {**row, "sources": ["bound.1", "judge.verdict"]}
+    else:
+        from tests.unit.reporting.test_a_section_5_sentence_is_asked_against_the_ledger_s_own_facts import (  # noqa: E501
+            ABSENT as sentence,
+        )
+        from tests.unit.reporting.test_a_section_5_sentence_is_asked_against_the_ledger_s_own_facts import (  # noqa: E501
+            _ledger,
+            _report,
+        )
+
+        report = _report()
+        row = {**row, "sources": ["unread.1", "judge.verdict"]}
+    report.overall_confidence = 0.8
+    ledger = _ledger()
+    row = {"passage": "evasion_antiforensics", "sentence": sentence, **row}
+    return report, {"sentences": [row]}, (ledger, EntryTexts.from_ledger(ledger))
+
+
+@pytest.mark.parametrize("held", [False, True])
+def test_a_section_5_rewrite_naming_a_fact_and_a_judge_passage_is_refused_and_not_put_in(
+    held: bool,
+) -> None:
+    report, answer, (ledger, entries) = _fact_and_judge(
+        {"decision": "rewrite", "rewrite": "The model's words [ev_0107]."}, held=held
+    )
+    citable = [str(e.id) for e in ledger]
+    passages = passages_of(report, entries=ledger)
+    by_id = {p.id: p for p in passages}
+    body = report.technical_analysis.evasion_antiforensics.body  # type: ignore[union-attr]
+    sentence = answer["sentences"][0]["sentence"]
+    # The platform writes no rewrite of a row naming a judge passage: read as the model wrote
+    # it, before and after.
+    assert agreement._platform_rewrites(answer, by_id) == answer
+
+    found = [
+        v
+        for v in agreement_violations(answer, passages, citable, entries=entries)
+        if v.path.startswith("sentences.")
+    ]
+    assert [v.code for v in found] == [UNKNOWN_PASSAGE_CODE]
+    assert "judge.verdict is a passage of the judge's decision" in found[0].message
+    counts, records = apply_rows(
+        answer, passages_of(report, entries=ledger), citable=citable, entries=entries
+    )
+    after = report.technical_analysis.evasion_antiforensics.body  # type: ignore[union-attr]
+    # No rewrite and no platform qualification is put in on it.
+    assert counts["rewritten"] == 0 and counts["qualified"] == 0
+    assert not [v for v in records if v.code in (REWRITTEN_CODE, agreement.QUALIFIED_CODE)]
+    assert agreement.JUDGE_LEFT_OUT_CODE not in [v.code for v in records]
+    if held:
+        # A sentence the ledger's lines hold ends as one no answer passes for: left out,
+        # recorded with what holds it, as it is whatever its refused row names.
+        assert sentence not in after and counts["dropped"] == 1
+        (left,) = [v for v in records if v.code == DROPPED_CODE]
+        assert "no rewrite of it passed the checks" in left.message
+        assert "its last answer" not in found[0].message
+        assert "If no answer for it passes the checks, it is left out" in found[0].message
+    else:
+        assert after == body and counts["dropped"] == 0
+
+
+def test_a_section_5_drop_naming_a_fact_and_a_judge_passage_is_the_judge_s_drop() -> None:
+    report, answer, (ledger, entries) = _fact_and_judge(
+        {"decision": "drop", "reason": "The judge decided otherwise."}, held=False
+    )
+    citable = [str(e.id) for e in ledger]
+    sentence = answer["sentences"][0]["sentence"]
+
+    assert [
+        v
+        for v in agreement_violations(
+            answer, passages_of(report, entries=ledger), citable, entries=entries
+        )
+        if v.path.startswith("sentences.")
+    ] == []
+    counts, records = apply_rows(
+        answer, passages_of(report, entries=ledger), citable=citable, entries=entries
+    )
+    assert counts["dropped"] == 1
+    assert sentence not in report.technical_analysis.evasion_antiforensics.body  # type: ignore[union-attr]
+    (left,) = [v for v in records if v.code in agreement.LEFT_OUT_CODES]
+    assert left.code == agreement.JUDGE_LEFT_OUT_CODE and left.stood == sentence
+
+
+@pytest.mark.parametrize(
+    ("decision", "more"),
+    [("rewrite", {"rewrite": "The routine formats a host name [ev_0302]."}), ("drop", {})],
+)
+def test_a_closing_row_naming_a_fact_and_a_judge_passage_is_a_judge_row(
+    decision: str, more: dict[str, str]
+) -> None:
+    report = report_of(OTHER)
+    conclusion = _closing(report)
+    row = {
+        **_closing_row(""),
+        "decision": decision,
+        "sources": [SECTION, "judge.verdict"],
+        "reason": "The judge decided otherwise.",
+        **more,
+    }
+    by_id = {p.id: p for p in passages_of(report)}
+    assert agreement._platform_rewrites({"sentences": [row]}, by_id) == {"sentences": [row]}
+
+    found = _refusals(report, row)
+    counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
+    if decision == "drop":
+        # Left out on the judge's decision, recorded as such whatever else the row names.
+        assert found == [] and counts["dropped"] == 1 and conclusion.body == ""
+        (left,) = [v for v in records if v.code in agreement.LEFT_OUT_CODES]
+        assert left.code == agreement.JUDGE_LEFT_OUT_CODE and left.stood == CLOSING
+    else:
+        # Refused, and no source a refused closing rewrite rests on: it stands as written.
+        assert [v.code for v in found] == [UNKNOWN_PASSAGE_CODE]
+        assert counts["dropped"] == 0 and counts["rewritten"] == 0
+        assert conclusion.body == CLOSING
