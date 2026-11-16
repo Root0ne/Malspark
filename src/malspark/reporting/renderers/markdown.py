@@ -1025,7 +1025,11 @@ class MarkdownRenderer:
                 cited += _row_mark(
                     "report.value_not_in_cited_entry", ctx.config_unheld.get(index + 1)
                 )
-                cited += _row_mark(_INSIDE_A_TOKEN_CODE, ctx.config_inside.get(index + 1))
+                cited += _row_mark(
+                    _INSIDE_A_TOKEN_CODE,
+                    ctx.config_inside.get(index + 1),
+                    shown=index + 1 not in ctx.config_run_unshown,
+                )
                 cited += ctx.cited_row_mark(item)
                 value = ctx.cell(item.value) + ctx.publish_state(item.value)
                 body.append(_row(ctx.cell(item.key), value, how, cited))
@@ -2753,6 +2757,19 @@ class _Context:
             self.unresolved, _INSIDE_A_TOKEN_CODE, "configuration item"
         )
         self.identifier_inside = _rows_named_in(self.unresolved, _INSIDE_A_TOKEN_CODE, "identifier")
+        # Of those, the rows whose run the finding could not show.
+        from malspark.pipeline.validation import RUN_NOT_SHOWN
+
+        self.config_run_unshown = set(
+            _rows_named_in(
+                self.unresolved, _INSIDE_A_TOKEN_CODE, "configuration item", saying=RUN_NOT_SHOWN
+            )
+        )
+        self.identifier_run_unshown = set(
+            _rows_named_in(
+                self.unresolved, _INSIDE_A_TOKEN_CODE, "identifier", saying=RUN_NOT_SHOWN
+            )
+        )
         # What the run knows about a sandbox, in four answers: it recorded
         # something; its tools were called and returned nothing; none was
         # called; or the report does not say (stored without its index).
@@ -3339,17 +3356,19 @@ def _named_in(rows: list[dict[str, Any]], code: str, pattern: str) -> set[str]:
     return found
 
 
-def _rows_named_in(rows: list[dict[str, Any]], code: str, noun: str) -> dict[int, bool]:
+def _rows_named_in(
+    rows: list[dict[str, Any]], code: str, noun: str, *, saying: str = ""
+) -> dict[int, bool]:
     """The row numbers the unresolved rows of one code name at their start, each with asked.
 
     ``identifier 3 (…)`` names one row; ``identifiers 3, 4, 9 are …`` names
     several. A row is asked where any finding naming it was (``"asked"`` not
-    ``"false"``).
+    ``"false"``). With ``saying``, only the findings whose words hold it.
     """
     pattern = re.compile(rf"^{re.escape(noun)}s? (\d+(?:, \d+)*)\b")
     found: dict[int, bool] = {}
     for row in rows:
-        if row.get("code") != code:
+        if row.get("code") != code or saying not in str(row.get("message") or ""):
             continue
         match = pattern.search(str(row.get("message") or ""))
         if match:
@@ -3386,20 +3405,28 @@ def _was_asked(row: dict[str, Any]) -> bool:
 _INSIDE_A_TOKEN_CODE = "report.value_inside_a_longer_token"
 _INSIDE_A_TOKEN_WORDS = "the cited entry holds this text inside a longer run"
 INSIDE_A_TOKEN_KEPT = f"{_INSIDE_A_TOKEN_WORDS}; kept after the run was shown"
+# What it says of a row kept where the finding could not show the run.
+INSIDE_A_TOKEN_KEPT_UNSHOWN = f"{_INSIDE_A_TOKEN_WORDS}; kept"
 
 
-def _row_mark(code: str, asked: bool | None) -> str:
+def inside_a_token_kept(shown: bool) -> str:
+    """What a row kept after its inside-a-run question is marked by, as the run was shown."""
+    return INSIDE_A_TOKEN_KEPT if shown else INSIDE_A_TOKEN_KEPT_UNSHOWN
+
+
+def _row_mark(code: str, asked: bool | None, *, shown: bool = True) -> str:
     """The mark a table row carries beside its evidence for one finding naming it, or ``""``.
 
     ``asked`` is ``None`` where no finding of ``code`` names the row. A finding
     never put to the model says so. A value inside a longer run states that
-    fact first, then that it was kept after the run was shown, or not asked.
+    fact first, then that it was kept after the run was shown, kept where the
+    finding could not show the run (``shown`` false), or not asked.
     """
     if asked is None:
         return ""
     if code == _INSIDE_A_TOKEN_CODE:
         return (
-            f" ({INSIDE_A_TOKEN_KEPT}: {code})"
+            f" ({inside_a_token_kept(shown)}: {code})"
             if asked
             else f" ({_INSIDE_A_TOKEN_WORDS}; not asked: {code})"
         )
@@ -5605,7 +5632,11 @@ def _host_identifier_table(identifiers: list[Any], ctx: _Context) -> list[str]:
         cited = ", ".join(item.evidence_refs) or "no evidence cited"
         cited += _row_mark("report.identifier_uncited", ctx.identifier_findings.get(index + 1))
         cited += _row_mark("report.value_not_in_cited_entry", ctx.identifier_unheld.get(index + 1))
-        cited += _row_mark(_INSIDE_A_TOKEN_CODE, ctx.identifier_inside.get(index + 1))
+        cited += _row_mark(
+            _INSIDE_A_TOKEN_CODE,
+            ctx.identifier_inside.get(index + 1),
+            shown=index + 1 not in ctx.identifier_run_unshown,
+        )
         cited += ctx.cited_row_mark(item)
         where = published(item.value)
         lines.append(

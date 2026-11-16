@@ -6236,7 +6236,8 @@ is assembled from what the run gathered rather than recomputed beside it:
   the entry's pair of the two; a value with a backslash is also held as a C
   string writes it, a 32-bit constant also sign-extended to 64 bits, and a
   registry path's leading hive by its other name or its predefined handle where
-  that stands before the rest of the path on the same line of the entry, with no
+  that stands before the rest of the path on the same line of the entry and, in a
+  JSON entry, in the same string, with no
   other hive's spelling between; a configuration cell of several spans is held
   where every span of it is held by a cited entry — only list punctuation (`;`,
   a comma before a space, brackets, the quotes around a span) is no span, no
@@ -6256,13 +6257,18 @@ is assembled from what the run gathered rather than recomputed beside it:
   no number — a digit against a digit, or a value of hexadecimal digits against
   a hexadecimal digit. The text cannot tell a value joined to other strings in
   a pool from the start or the end of a longer value, so the row is asked once
-  with the entry and the run around the value, bounded as a quoted value is,
-  and both answers offered: keep the row where the value is one of several
-  strings joined in that run, or write the token the entry holds where the
-  longer token is the value. A row kept after the run was shown is printed
-  where its table prints, the analyst report too, marked as kept after the run
-  was shown; one first raised with no turn left is marked as not asked and left
-  to the bundle) and
+  with the entry and the run around the value — up to a space, a quote or an
+  escape a JSON entry writes (a newline, a tab), never a path's own backslashes
+  — bounded as a quoted value is, and both answers offered: keep the row where
+  the value is one of several strings joined in that run, or write the token
+  the entry holds where the longer token is the value. A run the safe printer
+  would print as other text is said not to be shown. Each row is its own
+  finding carrying its value, and a row was asked only where the answer before
+  showed the same value under the same citation. A row kept after its run was
+  shown is printed where its table prints, the analyst report too, marked as
+  kept after the run was shown, or as kept where the run was not shown; a row
+  added or changed in the retry is marked as not asked and left to the bundle)
+  and
   `report.unpublished_value` (a section's prose — a body, the introduction, a
   flow step — names a network value the IOC table does not publish with no
   `no: <reason>` beside that value; one question per section, each state said

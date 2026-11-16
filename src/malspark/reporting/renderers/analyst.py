@@ -62,7 +62,6 @@ from malspark.reporting.renderers.markdown import (
     _NETWORK_KINDS,
     _PIPE,
     ANALYST_LIMITATIONS_TITLE,
-    INSIDE_A_TOKEN_KEPT,
     SUMMARY_SUBJECTS,
     _code_span,
     _degraded_sentence,
@@ -90,6 +89,7 @@ from malspark.reporting.renderers.markdown import (
     _title_heading,
     _whole,
     confidence_word,
+    inside_a_token_kept,
     is_carve_note,
     lost_tools_sentence,
     not_started_by_the_sample_line,
@@ -1913,7 +1913,11 @@ class _Analyst:
                         self._cell(item.key),
                         self._line(item.value, item.evidence_refs)
                         + ctx.publish_state(item.value)
-                        + (f" _({INSIDE_A_TOKEN_KEPT})_" if inside else ""),
+                        + (
+                            f" _({inside_a_token_kept(index not in ctx.config_run_unshown)})_"
+                            if inside
+                            else ""
+                        ),
                         item.how_obtained,
                     )
                 )
@@ -2287,7 +2291,11 @@ class _Analyst:
             role += (
                 f" _({_inline_safe(said, pipes=False, plain=ctx.plain)}"
                 + (f"; {state[1:-1]}" if state else "")
-                + (f"; {INSIDE_A_TOKEN_KEPT}" if inside else "")
+                + (
+                    f"; {inside_a_token_kept(index not in ctx.identifier_run_unshown)}"
+                    if inside
+                    else ""
+                )
                 + ")_"
             )
             rows.append((self._cell(item.kind), ctx.plain(_one_line(item.value)), role))

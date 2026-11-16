@@ -134,6 +134,40 @@ def test_a_row_kept_after_the_run_was_shown_says_so() -> None:
     assert STATED_VALUE_INSIDE_A_TOKEN_CODE not in config
 
 
+def test_a_row_kept_where_the_run_was_not_shown_says_only_kept() -> None:
+    _config, host = _rendered(
+        {
+            "code": STATED_VALUE_INSIDE_A_TOKEN_CODE,
+            "message": "identifier 1 (file name: 'ExampleNote.txt') stands in ev_0005 (strings) "
+            "only inside a longer run of text, which is not shown here. Where …",
+        },
+    )
+
+    assert (
+        "ev_0005 (the cited entry holds this text inside a longer run; kept: "
+        f"{STATED_VALUE_INSIDE_A_TOKEN_CODE})"
+    ) in host
+    assert "after the run was shown" not in host
+
+
+def test_the_analyst_report_says_only_kept_where_the_run_was_not_shown() -> None:
+    from malspark.reporting.renderers.layout import ANALYST
+
+    report = _two_tables(asked=True)
+    for row in report.run_summary["validation"]["unresolved"]:
+        row["message"] = (
+            row["message"] + " only inside a longer run of text, which is not shown here."
+        )
+
+    analyst = MarkdownRenderer(layout=ANALYST).render(report)
+
+    note = next(line for line in analyst.splitlines() if "ExampleNote.txt" in line)
+    run_on = next(line for line in analyst.splitlines() if "ExampleRunOn.txt" in line)
+    for line in (note, run_on):
+        assert "the cited entry holds this text inside a longer run; kept" in line
+        assert "after the run was shown" not in line
+
+
 def test_a_row_inside_a_run_never_asked_says_so() -> None:
     _config, host = _rendered(
         {
