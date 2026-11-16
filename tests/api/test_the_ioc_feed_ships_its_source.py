@@ -373,6 +373,10 @@ class TestEveryRowCarriesTheReportsTlp:
                 "source": "identity",
                 "published": True,
                 "publish_answer": "yes: the sample's own digest",
+                # The stored report states no confidence: the verdict table's
+                # "not stated" row types the sample's identity ``unknown``.
+                "role": "sample_identity",
+                "indicator_type": "unknown",
                 "recovered_by": None,
                 "evidence_ids": [],
                 "tlp": "TLP:AMBER+STRICT",
