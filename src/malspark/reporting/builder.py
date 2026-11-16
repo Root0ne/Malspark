@@ -177,6 +177,7 @@ class MalwareReportBuilder:
         """Build a deterministic ``MalwareReport`` out of the evidence ledger."""
         from malspark.pipeline.evidence_summary import yara_rule_strings
         from malspark.reporting.renderers.stix_renderer import (
+            confirmed_only_by_undeclared,
             emulation_from_ledger,
             exported_indicator_values,
             recovered_network_values,
@@ -351,6 +352,12 @@ class MalwareReportBuilder:
         report.tlp = report.front_matter.tlp
         report.version_history = _build_version_history(report.front_matter)
         report.consolidated_iocs = build_consolidated_iocs(report)
+        # How many values only a cited entry of a tool that declares no kind
+        # confirmed: such a tool is used at full strength, and the count says
+        # what it alone put in the table, so an operator can declare it.
+        report.run_summary["undeclared_confirmations"] = sum(
+            1 for row in report.consolidated_iocs if confirmed_only_by_undeclared(row.published)
+        )
         # The MISP attributes of the table's published rows and the published
         # techniques, so the console's MISP export and the job package carry them.
         from malspark.reporting.misp import build_misp_attributes, misp_owner

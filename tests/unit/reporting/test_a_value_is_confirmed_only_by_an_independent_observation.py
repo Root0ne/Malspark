@@ -27,7 +27,7 @@ from typing import Any
 import pytest
 
 from malspark.agents.run_evidence_corpus import RunEvidenceCorpus
-from malspark.reporting.builder import build_consolidated_iocs
+from malspark.reporting.builder import MalwareReportBuilder, build_consolidated_iocs
 from malspark.reporting.models import (
     DynamicBehavior,
     EmulatedStrings,
@@ -42,6 +42,7 @@ from malspark.reporting.models import (
 )
 from malspark.reporting.renderers.stix_renderer import (
     ExtendedSTIXRenderer,
+    confirmed_only_by_undeclared,
     corroborating_values,
     publish_answer,
     publishes,
@@ -261,19 +262,84 @@ class TestTheDecisionIsPerEntry:
 
 
 class TestAToolThatDeclaresNoKind:
-    def test_it_does_not_confirm_a_value_that_stands_as_plain_text(self) -> None:
-        report = _held_by(None, RUNTIME_PATH)
+    """A tool that declares no kind is used at full strength: its cited entry confirms."""
 
-        answer = _answer(report, RUNTIME_PATH)
-        assert not publishes(answer), answer
-        # Named, so an operator can declare the tool.
-        assert "reader declares no kind" in answer
+    MUTEX = "Global\\RelayLock7"
+    INSTALLED = "C:\\ProgramData\\Relay\\relay.exe"
 
-    def test_the_same_for_a_made_up_key(self) -> None:
-        report = _held_by(None, REGISTRY_KEY, "registry")
+    def test_an_undeclared_sandbox_s_mutex(self) -> None:
+        report = _report(
+            StringIOC(kind="mutex", value=self.MUTEX),
+            _tool("my_sandbox", ["ev_0001"], f"mutex created: {self.MUTEX}"),
+            _finding("ev_0001"),
+            index=[_row("ev_0001", "my_sandbox", None)],
+        )
 
-        assert not publishes(_answer(report, REGISTRY_KEY))
-        assert not _exported(report, REGISTRY_KEY)
+        answer = _answer(report, self.MUTEX)
+        assert publishes(answer), answer
+        assert _exported(report, self.MUTEX)
+        # Said, so an operator sees what an undeclared tool confirmed.
+        assert "my_sandbox records it and declares no kind" in answer
+        assert confirmed_only_by_undeclared(answer)
+
+    def test_an_undeclared_decoder_s_path(self) -> None:
+        report = _report(
+            StringIOC(kind="path", value=self.INSTALLED),
+            _tool("my_decoder", ["ev_0002"], f"decoded: {self.INSTALLED}"),
+            _finding("ev_0002"),
+            index=[_row("ev_0002", "my_decoder", None)],
+        )
+
+        answer = _answer(report, self.INSTALLED)
+        assert publishes(answer), answer
+        assert confirmed_only_by_undeclared(answer)
+
+    def test_a_made_up_key_the_build_s_record_holds(self) -> None:
+        report = _report(
+            StringIOC(kind="registry", value=REGISTRY_KEY),
+            _finding("ev_0003"),
+            index=[_row("ev_0003", "watcher", None)],
+        )
+        ledger = [LedgerEntry(id="ev_0003", agent="dynamic", tool="watcher", output=REGISTRY_KEY)]
+        report.second_source_reads = second_source_reads(report, ledger)
+
+        answer = _answer(report, REGISTRY_KEY)
+        assert publishes(answer), answer
+        assert _exported(report, REGISTRY_KEY)
+        assert confirmed_only_by_undeclared(answer)
+
+    def test_an_observation_beside_it_is_said_as_an_observation(self) -> None:
+        report = _report(
+            StringIOC(kind="mutex", value=self.MUTEX),
+            _tool("my_sandbox", ["ev_0004"], f"mutex created: {self.MUTEX}"),
+            _finding("ev_0004"),
+            index=[_row("ev_0004", "my_sandbox", None)],
+            dynamic=DynamicBehavior(
+                process_tree=[ProcessNode(pid=4, name="a.exe", command_line=f"a.exe {self.MUTEX}")]
+            ),
+        )
+
+        answer = _answer(report, self.MUTEX)
+        assert publishes(answer)
+        assert not confirmed_only_by_undeclared(answer)
+
+    def test_the_build_counts_what_an_undeclared_tool_alone_confirmed(self) -> None:
+        report = MalwareReportBuilder(
+            file_hash="e" * 64,
+            file_name="sample.bin",
+            sample_path=None,
+            sandbox_report={},
+            reports={},
+            isr_reports={},
+            stix_output={"objects": []},
+            run_summary={},
+            discussion_history=[],
+            final_decision="Malware",
+            overall_confidence=0.8,
+            evidence_ledger=[],
+        ).build_deterministic()
+
+        assert report.run_summary["undeclared_confirmations"] == 0
 
     def test_it_confirms_a_value_the_file_s_text_does_not_hold(self) -> None:
         """Full strength: what an undeclared sandbox or decoder reports still confirms."""

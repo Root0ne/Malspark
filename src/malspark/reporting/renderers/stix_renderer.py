@@ -5334,9 +5334,8 @@ class SecondSources:
     the build's record, entry by entry (``MalwareReport.second_source_reads``):
     each entry's tool, standing, whether a claim cites it, and the asked
     values it holds whole. ``undeclared`` holds each cited section of a tool
-    that declares no kind, by tool, and ``plain`` the string sweep's own record —
-    its rows' values and its sections — which such an entry is read against.
-    ``rereads`` and ``uncited`` hold, by tool, the text of the sections that
+    that declares no kind, by tool, which confirms as an observation does and
+    is named. ``rereads`` and ``uncited`` hold, by tool, the text of the sections that
     confirm nothing — a cited reading of the file's bytes, and a section that
     prints a cited entry's answer beside one no claim cites — so a refusal can
     name them. ``cut`` maps each value the sweep cut out of a longer token to
@@ -5348,7 +5347,6 @@ class SecondSources:
     observed: str = ""
     reads: tuple[tuple[str, str, bool, frozenset[str]], ...] = ()
     undeclared: tuple[tuple[str, str], ...] = ()
-    plain: str = ""
     rereads: tuple[tuple[str, str], ...] = ()
     uncited: tuple[tuple[str, str], ...] = ()
     cut: Mapping[str, str] = dataclasses.field(default_factory=dict)
@@ -5387,9 +5385,10 @@ def second_source(value: Any, corroborating: Any) -> str:
       confirms it, a value the sweep cut out of a longer token too where the
       observation holds it as a whole token of its own (:func:`whole_as_held`):
       what the sample did outranks how its file spells the value;
-    * a cited entry of a tool that declares no kind confirms it unless the
-      value stands as plain text in the string sweep's record: the entry then
-      read the file's own text and adds nothing to it;
+    * a cited entry of a tool that declares no kind confirms it as an
+      observing tool's does: a tool never declared is used at full strength,
+      and the reason names it, so an operator sees what it confirmed and can
+      declare it;
     * nothing else does — another reading of the same bytes, or an entry no
       claim cites.
     """
@@ -5401,15 +5400,40 @@ def second_source(value: Any, corroborating: Any) -> str:
     cut = low in record.cut
     if whole_as_held(text, record.observed, cut) or low.rstrip(".") in record.recovered:
         return SECOND_SOURCE
-    held = [standing for _t, standing, cited, holds in record.reads if cited and low in holds]
-    if tool_kinds.OBSERVES in held:
+    held = [
+        (tool, standing) for tool, standing, cited, holds in record.reads if cited and low in holds
+    ]
+    if any(standing == tool_kinds.OBSERVES for _tool, standing in held):
         return SECOND_SOURCE
-    undeclared = tool_kinds.UNDECLARED in held or any(
-        whole_as_held(text, part, cut) for _tool, part in record.undeclared
+    undeclared = list(
+        dict.fromkeys(
+            [
+                *(tool for tool, standing in held if standing == tool_kinds.UNDECLARED),
+                *(tool for tool, part in record.undeclared if whole_as_held(text, part, cut)),
+            ]
+        )
     )
-    if undeclared and not whole_value_in(text, record.plain):
-        return SECOND_SOURCE
+    if undeclared:
+        records = "records" if len(undeclared) == 1 else "record"
+        return (
+            f"{SECOND_SOURCE}; {_tools_said(undeclared)} {records} it and "
+            f"{_declares(undeclared)} {_NO_KIND}"
+        )
     return ""
+
+
+# How a reason says a value is confirmed only by tools that declare no kind.
+_NO_KIND = "no kind"
+
+
+def confirmed_only_by_undeclared(answer: Any) -> bool:
+    """Whether a publish answer stands only on cited entries of tools that declare no kind.
+
+    The one place such an answer is recognised: the run's record counts these
+    values (``builder``), so an operator sees what an undeclared tool confirmed.
+    """
+    said = str(answer or "")
+    return said.startswith(f"yes: {SECOND_SOURCE}; ") and said.endswith(f" {_NO_KIND}")
 
 
 def whole_as_held(value: str, text: str, cut: bool) -> bool:
@@ -5431,7 +5455,7 @@ def second_source_refusal(value: Any, corroborating: Any) -> str:
     """Why nothing confirms a value :func:`second_source` refused, in words; ``""`` for no holder.
 
     Names the tools that hold the value whole and confirm nothing, so an
-    operator can see what read it and declare a tool that declares no kind.
+    operator can see what read it.
     """
     record = _as_record(corroborating)
     text = str(value or "").strip()
@@ -5452,15 +5476,6 @@ def second_source_refusal(value: Any, corroborating: Any) -> str:
         ]
 
     said: list[str] = []
-    undeclared = list(
-        dict.fromkeys([*read_by((tool_kinds.UNDECLARED,), True), *holders(record.undeclared)])
-    )
-    if undeclared:
-        said.append(
-            f"{_tools_said(undeclared)} {_declares(undeclared)} no kind, and the value stands "
-            "as plain text in the file's strings, so its answer reads the file's own text "
-            "(a declared kind would let it confirm)"
-        )
     rereads = list(dict.fromkeys([*read_by((tool_kinds.REREADS,), True), *holders(record.rereads)]))
     if rereads:
         verb = "reads" if len(rereads) == 1 else "read"
@@ -5629,8 +5644,6 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
 
     static = getattr(report, "static", None)
     sweep_rows = list(getattr(static, "interesting_strings", None) or [])
-    plain = [str(getattr(row, "value", "") or "") for row in sweep_rows]
-    plain.extend(getattr(getattr(report, "emulated_strings", None), "plain", None) or {})
     undeclared: list[tuple[str, str]] = []
     rereads: list[tuple[str, str]] = []
     uncited: list[tuple[str, str]] = []
@@ -5649,7 +5662,6 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
         entries = {str(eid) for eid in (section.evidence_ids or [])}
         text = " ".join(_section_text(section))
         if _sweeps_the_strings(row, origin):
-            plain.append(text)
             continue
         if not cited & entries:
             continue
@@ -5681,7 +5693,6 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
         observed=" ".join(part for part in parts if part).lower(),
         reads=reads,
         undeclared=tuple(undeclared),
-        plain=" ".join(part for part in plain if part).lower(),
         rereads=tuple(rereads),
         uncited=tuple(uncited),
         cut={

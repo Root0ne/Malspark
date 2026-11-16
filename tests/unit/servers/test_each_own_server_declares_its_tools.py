@@ -128,6 +128,15 @@ def test_the_parity_gate_covers_every_tool_of_every_own_server() -> None:
 
 
 @pytest.mark.parametrize("key", SERVERS)
+def test_every_tool_of_an_own_server_declares_its_kind(key: str) -> None:
+    # A tool that declares no kind is used at full strength, and its cited
+    # entry confirms a value taken from the file's text: the platform's own
+    # readings of that text say what they are.
+    read = served_tool_facts(_listing(key), where=f"{key}.")
+    assert [tool for tool, facts in sorted(read.items()) if not facts.kind] == []
+
+
+@pytest.mark.parametrize("key", SERVERS)
 def test_no_own_server_ships_a_table_of_its_tools(key: str) -> None:
     # What the platform reads of it is what it serves, and nothing else.
     assert "tool_facts" not in server_declaration(key)
