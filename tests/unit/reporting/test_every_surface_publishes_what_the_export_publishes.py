@@ -896,3 +896,21 @@ def test_a_host_row_is_written_after_the_judge_s_own_indicator() -> None:
     assert names.index("judge indicator 0") < next(
         i for i, n in enumerate(names) if carved[:12] in n
     )
+
+
+def test_a_value_only_a_declined_judge_indicator_names_gets_no_row() -> None:
+    """Only a carried indicator gives a row for a value nobody else holds."""
+    judge = _judge(f"[file:name = '{_RELAY}']")  # single backslashes: the grammar refuses it
+    report = _report(
+        judge,
+        overall_confidence=0.9,
+        dynamic=DynamicBehavior(
+            process_tree=[{"pid": 1, "name": "s.exe", "command_line": f"s.exe {_RELAY}"}]
+        ),
+    )
+    report.judge_indicators = _recorded(judge)
+    exported, _renderer = _export(report, judge)
+
+    assert [r for r in build_consolidated_iocs(report) if r.value == _RELAY] == []
+    assert [r for r in ioc_feed_rows(report.model_dump()) if r["value"] == _RELAY] == []
+    assert _indicators_of(exported) == []
