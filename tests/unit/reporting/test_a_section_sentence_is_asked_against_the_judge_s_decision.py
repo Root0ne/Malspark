@@ -841,3 +841,16 @@ def test_an_empty_field_left_out_on_the_judge_s_decision_prints_as_written_empty
         "validation": {"unresolved": [{**rows, "subject": "encryption_scheme.cipher"}]}
     }
     assert "| Cipher | - |" in analyst.render(report)
+
+
+def test_a_closing_source_refusal_names_the_judge_s_drop_where_the_decision_is_shown() -> None:
+    report = report_of(OTHER)
+    _closing(report)
+    row = _closing_row("The routine formats a host name [ev_0302].", ["nowhere.1"])
+
+    (refused,) = [v for v in _refusals(report, row) if v.code == UNKNOWN_SOURCE_CODE]
+    assert refused.message.startswith(
+        "row 1 names nowhere.1 as what states otherwise than conclusion, but only the facts, "
+        "the section 5 passages and the debate rounds listed are sources, and the judge's "
+        "decision of a drop alone."
+    )

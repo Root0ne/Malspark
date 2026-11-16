@@ -4816,13 +4816,10 @@ def _judge_drops(passage: Passage) -> bool:
     """Whether a sentence of ``passage`` may be left out on the judge's decision, the one answer
     that decision supports: a sentence of a section 5 passage the round may rewrite, or of the
     conclusion, the limitations, a value cell or a capability bullet, each of which a drop
-    leaves a sentence out of; never one of a passage printed in its writer's own words, nor of
-    any other passage, whose sentences no drop on a source leaves out (T-717)."""
-    return (
-        _writable(passage)
-        and not passage.verbatim
-        and (passage.kind == SECTION_5 or passage.closing)
-    )
+    leaves a sentence out of; never one of a passage printed in its writer's own words, which
+    the round never rewrites, nor of any other passage, whose sentences no drop on a source
+    leaves out (T-717)."""
+    return _writable(passage) and (passage.kind == SECTION_5 or passage.closing)
 
 
 # The passages a sentence may be left out of on the judge's decision (:func:`_judge_drops`), as
