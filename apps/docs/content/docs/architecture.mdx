@@ -5895,8 +5895,15 @@ is assembled from what the run gathered rather than recomputed beside it:
   stated values in `file_event`, `create_stream_hash`, Security 4698, System
   7045 and `pipe_created` (`detection_signatures._stated_drafts`, at most 64
   values a selection), each value written with Sigma's wildcards escaped
-  (`sigma_literal`). A sandbox signature selects nothing; with no value left
-  the report records why (`drafts_not_built`).
+  (`sigma_literal`). A sandbox signature selects nothing. Every selection
+  holds only values that stand alone (`detection_signatures.selection_specific`):
+  a value `benign_reason` calls every host's is taken out whatever its
+  source, and a `contains` value another selected value of the draft holds as
+  whole path components is taken out for the narrower one. A draft is tagged
+  only with the techniques whose evidence quotes or roots name a selected
+  value (`delimited_in`), and the tactics of their published cells. With no
+  value left the report records why (`drafts_not_built`, reading the same
+  decision as the builder).
 * **The IOC table is the one publish rule's answer, row by row.**
   `build_consolidated_iocs` stores every indicator live with its kind, who
   recorded it and `published`: `yes:` and the reason
@@ -6016,7 +6023,9 @@ is assembled from what the run gathered rather than recomputed beside it:
   YARA strings, since an import is not an indicator. A Sigma selection names a
   registry key or an image path only when the table publishes it or a sandbox
   recorded it, and the sandbox's own signature names (`sigma_admits`); an
-  analyst's persistence target the table does not publish selects nothing.
+  analyst's persistence target the table does not publish selects nothing,
+  and a key or image the benign-location catalogue calls every Windows host's
+  selects nothing either, a sandbox's included.
   A registry key is compared in one form on both sides — without its hive
   (`HKCU`, `HKEY_CURRENT_USER`, `HKU\<SID>`, `\REGISTRY\USER\<SID>`,
   stripped until the text stops changing) and without the table's trailing
