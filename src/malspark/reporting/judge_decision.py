@@ -178,7 +178,6 @@ def quoted_spans(text: str) -> list[tuple[int, int]]:
 
 
 def id_pattern(technique_id: str) -> re.Pattern[str]:
-    """A technique id written whole: never a part of a longer id or a sub-technique's."""
-    return re.compile(
-        r"(?<![A-Za-z0-9.])" + re.escape(technique_id) + r"(?![0-9]|\.\d)", re.IGNORECASE
-    )
+    """A technique id written whole: never a part of a longer id, a sub-technique's or an
+    identifier ("attack_T1027")."""
+    return re.compile(r"(?<![\w.])" + re.escape(technique_id) + r"(?![0-9]|\.\d)", re.IGNORECASE)

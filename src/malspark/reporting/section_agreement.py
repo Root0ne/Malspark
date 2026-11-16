@@ -965,8 +965,8 @@ def _judge_named(sentence: str, decision: JudgeDecision) -> tuple[str, ...]:
     """The judge's passages ``sentence`` writes the subject of otherwise than the decision,
     read by shape alone: the id or the catalogue name of a technique the judge dropped, a
     verdict word other than the judge's, a family name other than the judge's, each in the
-    writer's own words (outside a quoted label) and in a clause no negation stands in
-    (T-717). Whether it says otherwise is the model's to read."""
+    writer's own words (outside a quoted label or an identifier) and in a clause no negation
+    stands in (T-717). Whether it says otherwise is the model's to read."""
     from malspark.reporting.judge_decision import (
         VERDICT_WORDS,
         id_pattern,
