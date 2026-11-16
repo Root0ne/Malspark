@@ -134,7 +134,8 @@ def test_the_run_summary_lists_the_rows_beside_the_retry_drops() -> None:
     assert "unparsed_answers" not in metrics
     summary = RunSummaryBuilder(start_time=0.0).set_validation(metrics).build()
     assert summary.validation is not None
-    assert summary.validation.answers["claims_unread_replaced"][0]["replaced_by"] == "round 3"
+    (kept,) = summary.validation.answers["claims_unread_replaced"]
+    assert (kept["round"], kept["replaced_by"]) == ("2", "round 3")
 
 
 def test_a_later_round_that_replaces_the_answer_in_force_is_recorded() -> None:

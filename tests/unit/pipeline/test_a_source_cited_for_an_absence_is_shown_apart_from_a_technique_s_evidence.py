@@ -153,3 +153,36 @@ def test_a_row_without_the_list_prints_as_it_did() -> None:
     )
     assert technique_evidence_words(row) == "ev_0006; sandbox items: net:3"
     assert "absence_sources" not in row.model_dump(mode="json")
+
+
+def test_a_citation_written_in_the_claim_s_sentence_is_read_there() -> None:
+    from malspark.pipeline.validation import technique_absence_sources
+
+    claim = _claim("The hosts give no match for the mailbox [ev_0204].", "")
+    isrs = {"network": AgentISR(agent_id="network", domain="network", claims=[claim])}
+    assert technique_absence_sources(isrs, LEDGER) == {"T1486": ["ev_0204"]}
+
+
+def test_a_finding_that_cites_a_source_for_the_behaviour_keeps_it_evidence() -> None:
+    from malspark.pipeline.validation import technique_absence_sources
+    from malspark.schemas.isr_models import Finding
+
+    finding = Finding(
+        title="Encryption of user files",
+        detail="The files are rewritten",
+        technique_ids=["T1486"],
+        evidence_ids=["ev_0203"],
+        confidence=0.8,
+    )
+    isrs = {
+        "network": AgentISR(
+            agent_id="network", domain="network", claims=[_claim(CLAIM, REF)], findings=[finding]
+        )
+    }
+    assert technique_absence_sources(isrs, LEDGER) == {"T1486": ["ev_0202", "ev_0204"]}
+
+
+def test_a_row_stored_before_the_set_leaves_the_absence_cited_entries_out() -> None:
+    row = {"sources": ["ev_0006", "ev_0203"], "absence_sources": ["ev_0203"]}
+    assert technique_evidence_ids(row) == ["ev_0006"]
+    assert technique_evidence_ids({"sources": ["ev_0203"], "absence_sources": ["ev_0203"]}) is None

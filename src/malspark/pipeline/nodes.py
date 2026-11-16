@@ -6541,7 +6541,7 @@ def make_revision_node(container: ServiceContainer, *, stage: Any = None) -> Any
                 replaced_unread = claims_unread_replaced_row(
                     name, kept_isrs.get(name), isr, f"round {int(iteration)}"
                 )
-                if replaced_unread is not None and name not in not_asked:
+                if replaced_unread is not None:
                     revision_validation.setdefault("validation_unparsed_answers", []).append(
                         replaced_unread
                     )
