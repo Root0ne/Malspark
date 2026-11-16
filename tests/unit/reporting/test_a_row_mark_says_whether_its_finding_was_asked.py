@@ -154,16 +154,36 @@ def test_the_analyst_report_leaves_a_row_read_out_of_a_longer_run_to_the_bundle(
                     evidence_refs=["ev_0020"],
                 ),
             ],
+            host_identifiers=[
+                HostIdentifier(
+                    kind="file name",
+                    value="ExampleKept.txt",
+                    purpose="ransom note",
+                    evidence_refs=["ev_0005"],
+                ),
+                HostIdentifier(
+                    kind="file name",
+                    value="ExampleRunOn.txt",
+                    purpose="ransom note",
+                    evidence_refs=["ev_0005"],
+                ),
+            ],
         ),
         run_summary={
             "validation": {
                 "unresolved": [
                     {
+                        "agent": "composer:host_identifiers",
+                        "code": STATED_VALUE_INSIDE_A_TOKEN_CODE,
+                        "message": "identifier 2 (file name: 'ExampleRunOn.txt') is read out …",
+                        "asked": "false",
+                    },
+                    {
                         "agent": "composer:configuration",
                         "code": STATED_VALUE_INSIDE_A_TOKEN_CODE,
                         "message": "configuration item 2 (Note: 'ExampleNote.txt') is read out …",
                         "asked": "false",
-                    }
+                    },
                 ]
             }
         },
@@ -173,3 +193,5 @@ def test_the_analyst_report_leaves_a_row_read_out_of_a_longer_run_to_the_bundle(
 
     assert "7000" in analyst
     assert "ExampleNote.txt" not in analyst
+    assert "ExampleKept.txt" in analyst
+    assert "ExampleRunOn.txt" not in analyst

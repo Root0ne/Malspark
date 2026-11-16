@@ -85,7 +85,7 @@ def _texts() -> EntryTexts:
                             "ExampleCounter123456789",
                             "ExampleCache.dat.bak",
                             "evil.exe",
-                            "usageError: --alpha cannot be combined with --beta.zz",
+                            "usageError: --alpha cannot be combined with --gamma, or --beta.zz",
                         ]
                     }
                 ),
@@ -298,7 +298,7 @@ class TestInsideALongerToken:
     def test_a_cell_whose_whole_text_runs_on_is_recorded(self) -> None:
         # ``--beta`` alone runs on through a dot; the cell's whole text is read
         # out of the longer run.
-        cell = "Error: --alpha cannot be combined with --beta."
+        cell = "Error: --alpha cannot be combined with --gamma, or --beta."
 
         (found,) = stated_value_violations(_items(cell, "ev_0012"), _texts())
 
