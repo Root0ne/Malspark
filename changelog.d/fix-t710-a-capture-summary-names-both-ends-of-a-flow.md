@@ -15,8 +15,10 @@
   ends, and `public_senders` with `packets_public_to_peer`/`bytes_public_to_peer`. A record
   stored with the old keys is printed with the peer's share as the peer's, says the other end
   is not recorded, and keeps every other line its writer stored. The report's "Capture summary"
-  has a room 3.3 times a text section's, so every capture the shorter line fitted whole fits
-  whole; past it, conversations are left out first, the heaviest kept, then TLS names, each
-  with how many are left out and where they all are, and the overview and beacons are printed
-  whole. The triage
+  is printed whole when it fits a room 3.3 times a text section's, or when the same rows
+  written with the peer's share alone would have fitted a text section and the whole stays
+  within 40,000 characters; otherwise conversations are left out first, the heaviest kept, then
+  TLS names, then beacons, those of the heaviest conversations kept, each with how many are
+  left out and where they all are, and the overview is never cut. No capture summary is longer
+  than 40,000 characters. The triage
   pack parts the conversations with ` | `. No count changes.
