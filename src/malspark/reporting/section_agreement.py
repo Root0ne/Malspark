@@ -4797,7 +4797,9 @@ def _without_the_judge(row: AgreementRow, by_id: Mapping[str, Passage]) -> Agree
     removes a sentence nor spares it a check, and its refusal (:func:`_judge_refusal`) is
     only told (T-717). Any other row as it is."""
     kept = _judge_less(row.sources, row.decision, by_id)
-    return row if len(kept) == len(row.sources) else row.model_copy(update={"sources": kept})
+    if len(kept) == len(row.sources):
+        return row
+    return AgreementRow.model_validate({**row.model_dump(), "sources": kept})
 
 
 def _judge_refusal(
