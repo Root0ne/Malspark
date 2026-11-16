@@ -66,3 +66,17 @@ def test_a_refusal_the_retry_answered_leaves_no_such_record() -> None:
     done = asyncio.run(ask_section_agreement(_Reporter(_refused(), {"sentences": []}), report))
 
     assert not any("No turn was left" in r["message"] for r in done.tally.unresolved)
+
+
+def test_a_section_5_passage_and_the_judge_s_decision_alone_are_asked() -> None:
+    reporter = _Reporter({"sentences": []})
+    asked: list[Any] = []
+    real = reporter.ask
+
+    async def _ask(turns: list[BaseMessage], *, call: str, what: str) -> AIMessage:
+        asked.append(turns)
+        return await real(turns, call=call, what=what)
+
+    reporter.ask = _ask  # type: ignore[method-assign]
+    asyncio.run(ask_section_agreement(reporter, report_of(OTHER)))
+    assert len(asked) == 1

@@ -41,7 +41,7 @@ from malspark.reporting.section_agreement import (
     passages_of,
     prompt_text,
 )
-from malspark.schemas.isr_models import judge_dropped_reason
+from malspark.schemas.isr_models import is_judge_dropped, judge_dropped_reason
 
 _REASON = "The loader resolves its imports by plain name at 0x4a10 [ev_0301], not by hash."
 NAMING = "Dynamic API resolution is the main import-hiding mechanism [ev_0301]."
@@ -70,7 +70,7 @@ def report_of(
                 technique_id="T1027.007",
                 technique_name="Dynamic API Resolution",
                 not_published=judge_dropped_reason(_REASON),
-                evidence_ids=["ev_0301"],
+                evidence_ids=["ev_0301", "ev_0303"],
             ),
             CapabilityCell(
                 tactic="TA0007",
@@ -291,3 +291,59 @@ def test_a_verdict_the_judge_never_gave_shows_no_verdict_passage() -> None:
     shown = {p.id for p in passages_of(report)}
     assert "judge.verdict" not in shown and "judge.family" not in shown
     assert DROPPED in shown
+
+
+def test_a_matrix_row_the_judge_dropped_is_read_with_or_without_its_reason() -> None:
+    assert is_judge_dropped(judge_dropped_reason("No write is shown."))
+    assert is_judge_dropped(judge_dropped_reason(""))
+    assert is_judge_dropped(f"{judge_dropped_reason('')}, asked after a finding")
+    assert not is_judge_dropped("an id the ATT&CK catalogue has no entry for")
+
+
+def test_a_drop_on_its_reason_alone_passes_and_one_on_a_passage_no_source_is_refused() -> None:
+    report = report_of()
+    on_reason = _row(ASSESS, "drop", sources=[], reason="The judge reads the names as plain.")
+    assert _refusals(report, on_reason) == []
+
+    on_a_claim = _row(ASSESS, "drop", sources=["nowhere.1"], reason="No.")
+    found = _refusals(report, on_a_claim)
+    assert [v.code for v in found] == [UNKNOWN_SOURCE_CODE]
+    assert "or the judge's decision (judge.verdict, judge.family, judge.technique.ID)" in (
+        found[0].message
+    )
+
+
+def test_a_quote_sharing_one_word_of_the_sentence_keeps_nothing() -> None:
+    one_word = _row(NAMING, "keep", quote="Dynamic API Resolution: not published")
+    assert _refusals(report_of(), one_word) == []
+    assert "shares too few of the sentence's own words" in " ".join(
+        v.message
+        for v in _refusals(report_of(), _row(NAMING, "keep", quote="Resolution: not published"))
+    )
+
+
+def test_a_dropped_technique_cites_what_the_judge_s_reason_cites() -> None:
+    shown = {p.id: p for p in passages_of(report_of())}
+    assert shown[DROPPED].cites == frozenset({"ev_0301"})
+
+
+def test_an_id_inside_an_identifier_is_not_held() -> None:
+    said = "The tag attack_T1027.007 is set [ev_0302]."
+    passage = next(p for p in passages_of(report_of(said)) if p.id == SECTION)
+    assert passage.judged == ()
+
+
+def test_a_closing_rewrite_on_the_judge_s_decision_no_check_passes_is_left_out() -> None:
+    report = report_of(OTHER)
+    ta = report.technical_analysis
+    assert ta is not None
+    closing = "The routine formats a host name [ev_0302]."
+    ta.analyst_conclusion = TechnicalSubsection(title="Conclusion", body=closing)
+    row = {
+        **_row(closing, "rewrite", sources=["judge.technique.T1082"]),
+        "passage": "conclusion",
+        "rewrite": "The routine formats a host name [ev_0399].",
+    }
+    counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
+    assert counts["dropped"] == 1 and closing not in ta.analyst_conclusion.body
+    assert any(v.code == DROPPED_CODE for v in records)
