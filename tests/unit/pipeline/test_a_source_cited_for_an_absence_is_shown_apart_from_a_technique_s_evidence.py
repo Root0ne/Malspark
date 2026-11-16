@@ -415,9 +415,13 @@ def test_the_judge_s_summary_shows_one_total_beside_the_support_sentence() -> No
         "source_kinds": kinds,
     }
     sentence = support_sentence("capability", kinds, 3)
+    qualified = support_sentence("capability", kinds, 3, absent=1)
+    assert qualified == sentence.replace(
+        "3 sources:", "3 sources (1 of them cited for an absence):"
+    )
     assert _source_facts(row) == (
         " [traced to 2 cited source(s), each counted once: ev_0006, ev_0007; "
-        f"{sentence}, the 1 cited for an absence among them; {ABSENCE_LABEL}: ev_0203]"
+        f"{qualified}; {ABSENCE_LABEL}: ev_0203]"
     )
     # With nothing cited for an absence, the sentence stands as it is.
     plain = {k: v for k, v in row.items() if k != "absence_sources"}
