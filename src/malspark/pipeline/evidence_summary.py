@@ -86,7 +86,8 @@ def _source_facts(row: Any) -> str:
 
     Each source is one ledger entry or sandbox item however many sources
     above name the technique from it (``validation.technique_sources``), and
-    a row whose sources are all artefacts of the file says so. The sources
+    a row whose sources are all artefacts of the file says so, counting every
+    source of the row and, beside the traced ones, saying so. The sources
     its statements cite only to state an absence (``absence_sources``) are
     named apart from the traced ones, in the words every surface uses
     (``reporting.technique_evidence.absence_words``). ``""`` for a row that
@@ -115,7 +116,11 @@ def _source_facts(row: Any) -> str:
             )
     sentence = support_sentence(str(row.get("support") or ""), row.get("source_kinds"), len(held))
     if sentence:
-        said.append(sentence)
+        # The sentence counts every source of the row, as each surface states
+        # it; beside the traced ones it says that its total holds the others.
+        said.append(
+            f"{sentence}, the {len(absent)} cited for an absence among them" if absent else sentence
+        )
     if absent:
         said.append(absence_words(absent))
     return " [" + "; ".join(said) + "]"

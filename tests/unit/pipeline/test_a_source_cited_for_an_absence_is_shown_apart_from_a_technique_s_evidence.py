@@ -391,3 +391,28 @@ def test_a_claim_whose_technique_is_invalid_is_not_read_for_an_absence() -> None
     claim.technique_id_valid = False
     isrs = {"network": AgentISR(agent_id="network", domain="network", claims=[claim])}
     assert technique_absence_sources(isrs, LEDGER) == {}
+
+
+def test_the_judge_s_summary_shows_one_total_beside_the_support_sentence() -> None:
+    from malspark.analysis.corroboration import support_sentence
+    from malspark.pipeline.evidence_summary import _source_facts
+
+    kinds = {"artefact": 2, "unplaced": 1}
+    row = {
+        "sources": ["ev_0006", "ev_0007", "ev_0203"],
+        "absence_sources": ["ev_0203"],
+        "independent_sources": 2,
+        "support": "capability",
+        "source_kinds": kinds,
+    }
+    sentence = support_sentence("capability", kinds, 3)
+    assert _source_facts(row) == (
+        " [traced to 2 cited source(s), each counted once: ev_0006, ev_0007; "
+        f"{sentence}, the 1 cited for an absence among them; {ABSENCE_LABEL}: ev_0203]"
+    )
+    # With nothing cited for an absence, the sentence stands as it is.
+    plain = {k: v for k, v in row.items() if k != "absence_sources"}
+    plain["independent_sources"] = 3
+    assert _source_facts(plain) == (
+        f" [traced to 3 cited source(s), each counted once: ev_0006, ev_0007, ev_0203; {sentence}]"
+    )
