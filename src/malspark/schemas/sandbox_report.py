@@ -922,18 +922,34 @@ def _basename(path: str) -> str:
     return re.split(r"[\\/]", path.strip().strip('"').strip("'"))[-1].lower()
 
 
+# A command line's word: a span in double quotes whole, else a run between
+# spaces and commas.
+_COMMAND_WORD_RE = re.compile(r'"[^"]*"|[^\s,"]+')
+
+
+def command_line_paths(command_line: Any) -> list[str]:
+    """Each path a command line may name, in order, without its quotes.
+
+    Its first word and every comma- or space-separated one after it
+    (``rundll32.exe <dll>,#1`` runs the DLL); a path in double quotes is one
+    word, spaces and all (``"C:\\Program Files\\x.exe" /s``).
+    """
+    out = []
+    for token in _COMMAND_WORD_RE.findall(str(command_line or "")):
+        cleaned = token.strip().strip('"').strip("'")
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
 def _named_files(proc: dict[str, Any]) -> set[str]:
     """The file names a process record runs: its image, and each path its command line names.
 
-    Whole file names, never slices: a command line's first word and every
-    comma- or space-separated path in it (``rundll32.exe <dll>,#1`` runs the
-    DLL), each cut to its file name.
+    Whole file names, never slices: each path :func:`command_line_paths`
+    reads, cut to its file name.
     """
     names = {_basename(str(proc.get("image") or ""))}
-    for token in re.split(r"[\s,]+", str(proc.get("cmd") or "")):
-        cleaned = token.strip().strip('"').strip("'")
-        if cleaned:
-            names.add(_basename(cleaned))
+    names.update(_basename(path) for path in command_line_paths(proc.get("cmd")))
     return {name for name in names if name}
 
 
