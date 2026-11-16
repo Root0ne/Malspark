@@ -100,6 +100,13 @@ class TestTheWriterIsTheProcessListsOwnId:
         assert row["task"] == "behavioral1"
         assert row["guest_pid"] == "3444"
 
+    def test_a_guest_pid_equal_to_the_id_states_no_alias(self) -> None:
+        same = {"procid": 86, "pid": 86, "name": "files/0x7.dat", "path": "C:\\z.dat"}
+        row = _rows(TASKS, same)["files/0x7.dat"]
+
+        assert row["pids"] == ["86"]
+        assert "guest_pid" not in row
+
     def test_a_row_naming_its_writer_by_one_number_states_no_alias(self) -> None:
         only = {"pid": 3444, "name": "files/0x8.dat", "path": "C:\\y.dat"}
         row = _rows(TASKS, only)["files/0x8.dat"]
