@@ -120,6 +120,33 @@ class TestTheReaderOfACommandLine:
             ("run me.exe", ["run", "me.exe"]),
             # No word names a file.
             ("C:\\Vendor7731\\run -k", ["C:\\Vendor7731\\run", "-k"]),
+            # A program Windows ships, written without its extension, stands
+            # alone: the loader adds ``.exe``.
+            (
+                "%windir%\\system32\\cmd /c C:\\Users\\a\\x7731.bat",
+                ["%windir%\\system32\\cmd", "/c", "C:\\Users\\a\\x7731.bat"],
+            ),
+            (
+                "C:\\Windows\\System32\\rundll32 C:\\Users\\a\\evil7731.dll,Start",
+                ["C:\\Windows\\System32\\rundll32", "C:\\Users\\a\\evil7731.dll", "Start"],
+            ),
+            # A switch, or a word that begins another rooted path, ends the program.
+            (
+                "C:\\Vendor7731\\up /s C:\\Users\\a\\x7731.dll",
+                ["C:\\Vendor7731\\up", "/s", "C:\\Users\\a\\x7731.dll"],
+            ),
+            (
+                "C:\\Vendor7731\\up -k x7731.dll",
+                ["C:\\Vendor7731\\up", "-k", "x7731.dll"],
+            ),
+            (
+                "C:\\Vendor7731\\up %APPDATA%\\x7731.dll",
+                ["C:\\Vendor7731\\up", "%APPDATA%\\x7731.dll"],
+            ),
+            (
+                "C:\\Vendor7731\\up \\\\srv7731\\s\\x7731.dll",
+                ["C:\\Vendor7731\\up", "\\\\srv7731\\s\\x7731.dll"],
+            ),
             # A quote before a file name: the quoted span is a word of its own.
             ('C:\\a "b c" d7731.exe', ["C:\\a", "b c", "d7731.exe"]),
         ],
@@ -534,3 +561,26 @@ class TestEachFormIsReadWhole:
         assert body["detection"]["selection_folder"] == {
             "TargetFilename|contains": ["\\Vendor7731\\"]
         }
+
+
+class TestAProgramWrittenWithoutItsExtension:
+    @pytest.mark.parametrize(
+        ("data", "selected"),
+        [
+            ("%windir%\\system32\\cmd /c C:\\Users\\a\\x7731.bat", "\\x7731.bat"),
+            ("C:\\Windows\\System32\\rundll32 C:\\Users\\a\\evil7731.dll,Start", "\\evil7731.dll"),
+            ("C:\\Windows\\system32\\regsvr32 /s C:\\Users\\a\\x7731.dll", "\\x7731.dll"),
+        ],
+    )
+    def test_selects_the_path_after_it_on_the_command_line(self, data: str, selected: str) -> None:
+        (body,) = _sigma(_run_payload(data))
+
+        assert body["detection"] == {
+            "selection_payload": {"CommandLine|contains": [selected]},
+            "condition": "selection_payload",
+        }
+
+    def test_an_own_program_with_a_space_in_its_name_is_still_one_path(self) -> None:
+        (body,) = _sigma(_run_payload("C:\\Program Files\\x\\svc host.exe /s"))
+
+        assert body["detection"]["selection_persistence"] == {"Image|endswith": ["\\svc host.exe"]}

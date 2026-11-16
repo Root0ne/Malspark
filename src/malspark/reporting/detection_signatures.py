@@ -1643,23 +1643,32 @@ def _unquoted_program(text: str) -> str:
     """The program an unquoted command line names where a space is in its path, or ``""``.
 
     Where the first word begins a rooted path (a drive, an environment name,
-    ``\\\\``) and names no file, the words are joined by the spaces between
-    them until one ends in a file name (before a comma, which ends a
-    rundll32-style entry): that run is the program. A first word that names
-    a file, a quote before the end, or no word ending in a file name leave
-    the line to be read word by word.
+    ``\\\\``), the words are joined by the spaces between them until one ends
+    in a file name (before a comma, which ends a rundll32-style entry): that
+    run is the program. The first word stands alone (``""``, the line read
+    word by word) where it names a file itself, at a quote, at a switch
+    (``/…``, ``-…``), at a word that begins another rooted path, and where
+    the words so far with the loader's default extension (``.exe``) end in a
+    program Windows ships (``%windir%\\system32\\cmd /c x.bat``, asked of
+    the catalogue); and where no word ends in a file name.
     """
+    from malspark.reporting.stated_host_values import ENDSWITH, shipped_match
     from malspark.schemas.sandbox_report import FILE_NAME_END_RE
 
     if not _ROOTED_RE.match(text):
         return ""
     for match in _SPACED_RE.finditer(text):
         word = match.group(0)
-        if '"' in word:
+        if '"' in word or (
+            match.start() and (word.startswith(("/", "-")) or _ROOTED_RE.match(word))
+        ):
             return ""
         head = word.partition(",")[0]
         if FILE_NAME_END_RE.search(head):
             return text[: match.start() + len(head)] if match.start() else ""
+        name = re.split(r"[\\/]", text[: match.start() + len(head)])[-1]
+        if shipped_match("path", ENDSWITH, f"\\{name}.exe"):
+            return ""
     return ""
 
 

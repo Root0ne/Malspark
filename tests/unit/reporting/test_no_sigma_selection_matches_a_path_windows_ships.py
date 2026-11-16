@@ -101,6 +101,11 @@ def _matched(report: MalwareReport) -> list[str]:
     return out
 
 
+def _stem(name: str) -> str:
+    """``name`` without its extension."""
+    return name.rsplit(".", 1)[0]
+
+
 def _sliced(name: str) -> str:
     """``name`` cut by a space where its stem is longest on both sides."""
     stem = name.rsplit(".", 1)[0]
@@ -138,6 +143,16 @@ FORMS: dict[str, Callable[[str], str]] = {
     "mixed case under the root's name": lambda name: f"%SYSTEMROOT%\\system32\\{name.title()}",
     "forward slashes": lambda name: f"C:/Windows/System32/{name}",
     "forward slashes under the root's name": lambda name: f"%windir%/system32/{name}",
+    # A program written without its extension, which the loader adds.
+    "without its extension, a switch and a path": lambda name: (
+        f"C:\\Windows\\System32\\{_stem(name)} /c C:\\Users\\a\\x7731.dll"
+    ),
+    "without its extension and a rooted path": lambda name: (
+        f"C:\\Windows\\System32\\{_stem(name)} C:\\Users\\a\\x7731.dll"
+    ),
+    "without its extension under the root's name": lambda name: (
+        f"%windir%\\system32\\{_stem(name)} x7731.dll"
+    ),
 }
 # A folder Windows keeps its programs in, as a stated folder is written.
 FOLDER_FORMS: dict[str, Callable[[str], str]] = {
