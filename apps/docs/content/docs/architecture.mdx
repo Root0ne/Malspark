@@ -1602,23 +1602,22 @@ Two producers use it:
   judge assessed one, the family the judge named or none, each published
   technique by id and name, and each technique the judge dropped with the
   judge's reason as the capability matrix keeps it. The decision is shown under
-  THE JUDGE'S DECISION (`judge.verdict`, `judge.family`,
-  `judge.technique.<ID>`) and is the source of a drop and of nothing else: a
-  row naming a judge passage is a drop, whatever else it names, and a row of
-  any other form naming one is refused; its sentence then ends as any sentence
-  whose answer is refused, as the refusal tells it: it stands as written unless
-  the ledger's lines hold it, or it stands in a field answered whole or in a
-  text printed in its writer's own words, whose refused keep leaves it out.
-  It leaves a sentence out only of a
-  section 5 passage the round may rewrite, the conclusion, the limitations, a
-  value cell or a capability bullet, and supports no answer for a sentence of
-  any other passage, a text printed in its writer's own words included. Which
-  sentence states otherwise than the decision is the model's answer; no code
-  reads a sentence for what it asserts. A sentence left out on the decision is
-  counted where it is left out and recorded with the row's sources, the reason
-  and the sentence whole (`agreement.judge_left_out`). The decision starts no question of its
-  own, and nothing here changes the verdict, the mappings or the matrix. A
-  refusal of the round's last answer is recorded with the passage and the
+  THE JUDGE'S DECISION (`judge.verdict`, `judge.family`, `judge.technique.<ID>`)
+  and is the source of a drop and of nothing else. A drop gives its reason or is
+  not read. A row of any other form that names a judge passage ends as the same
+  row without the judge passage would end: every check and every end are that
+  row's, so naming the decision neither removes a sentence nor spares it a
+  check, and the refusal of the judge passage is only told to the model on the
+  retry. A drop on the decision leaves a sentence out only of a section 5
+  passage the round may rewrite, the conclusion, the limitations, a value cell
+  or a capability bullet, and supports no answer for a sentence of any other
+  passage, a text printed in its writer's own words included. Which sentence
+  states otherwise than the decision is the model's answer; no code reads a
+  sentence for what it asserts. A sentence left out on the decision is counted
+  where it is left out and recorded with the row's sources, the reason and the
+  sentence whole (`agreement.judge_left_out`). The decision starts no question
+  of its own, and nothing here changes the verdict, the mappings or the matrix.
+  A refusal of the round's last answer is recorded with the passage and the
   sentence its row was about, and says that no turn was left to answer it.
 
   A function name the run resolved at runtime from a stored value is not an
