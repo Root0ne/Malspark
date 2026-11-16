@@ -219,3 +219,13 @@ def test_an_address_keyed_batch_takes_no_address_from_the_call() -> None:
     answer = {hex(FIRST): _listing(FIRST)}
     entry = _asked({"functions": f"{hex(FIRST)},{hex(SECOND)}"}, answer)
     assert _entry_functions(entry) == [(FIRST, [f"FUN_{FIRST:08x}"])]
+
+
+def test_an_address_the_answer_reports_as_an_error_is_taken_before_pairing() -> None:
+    answer = {
+        hex(FIRST): _listing(FIRST),
+        hex(SECOND): "Error: no function at this address",
+        "main": "int main(void)\n{ }",
+    }
+    entry = _asked({"functions": f"{hex(FIRST)},{hex(SECOND)}"}, answer)
+    assert _entry_functions(entry) == [(FIRST, [f"FUN_{FIRST:08x}"]), (None, ["main"])]

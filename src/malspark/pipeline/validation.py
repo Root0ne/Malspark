@@ -7229,7 +7229,9 @@ def _is_error(text: str) -> bool:
     return text.lstrip().lower().startswith("error")
 
 
-def _batch_members(output: str) -> list[tuple[int | None, str, str]] | None:
+def _batch_members(
+    output: str, *, with_errors: bool = False
+) -> list[tuple[int | None, str, str]] | None:
     """``(address, key, listing)`` of each function a batch answer lists, or ``None``
     when the answer is no batch.
 
@@ -7239,7 +7241,8 @@ def _batch_members(output: str) -> list[tuple[int | None, str, str]] | None:
     was not decompiled: it is left out, and an answer of such keys alone is a
     batch only when one of them reads as an address.
     An answer cut short keeps the functions its text still shows
-    (``_cut_batch_items``). Any other answer is no batch.
+    (``_cut_batch_items``). Any other answer is no batch. ``with_errors`` keeps
+    the keys reported as errors among the members.
     """
     try:
         parsed = json.loads(output)
@@ -7260,6 +7263,8 @@ def _batch_members(output: str) -> list[tuple[int | None, str, str]] | None:
             return None
     if not members:
         return None
+    if with_errors:
+        return members
     return [member for member in members if not _is_error(member[2])]
 
 
@@ -7277,8 +7282,9 @@ def _entry_functions(entry: Any) -> list[tuple[int | None, list[str]]]:
 
     A batch whose members carry addresses is one function per address, a key
     written again adding its listing's name; beside a member that carries
-    none, every address of the call no member took is a function too, and
-    one such address beside one such member is that member's. A batch
+    none, every address of the call no key took (a key reported as an error
+    takes its address too) is a function too, and one such address beside one
+    such member is that member's. A batch
     keyed by plain names alone takes the addresses the call was given; a
     member's name joins its address only when the call gave one address and
     the answer lists one member. Given no address, its members keep their
@@ -7303,15 +7309,20 @@ def _entry_functions(entry: Any) -> list[tuple[int | None, list[str]]]:
                 at[address] = list(names)
                 functions.append((address, at[address]))
         # A member with no address beside addressed ones: the call's addresses
-        # no member took are routines too, and one such address beside one
-        # such member is that member's.
+        # no key took, a key reported as an error included, are routines too,
+        # and one such address beside one such member is that member's.
         unnamed = [i for i, (address, _names) in enumerate(functions) if address is None]
         if unnamed:
+            taken = {
+                address
+                for address, _key, _text in _batch_members(output, with_errors=True) or ()
+                if address is not None
+            }
             asked = _argument_functions(entry, args, output)
             untaken = [
                 address
                 for address in dict.fromkeys(a for a, _names in asked if a is not None)
-                if address not in at
+                if address not in taken
             ]
             if len(untaken) == 1 and len(unnamed) == 1:
                 functions[unnamed[0]] = (untaken[0], functions[unnamed[0]][1])
