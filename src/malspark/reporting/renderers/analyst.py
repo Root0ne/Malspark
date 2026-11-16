@@ -803,6 +803,27 @@ def _left_out_rows(count: int, what: str) -> str:
     )
 
 
+# What may close a sentence before the one a flagged text starts: its end mark, then any
+# closing quote or bracket.
+_SENTENCE_CLOSE = "\"'\u2019\u201d)]"
+# Citation brackets right after a flagged text, read past to its end.
+_CITED_AFTER = re.compile(r"(?:[ \t]*\[[^\]\n]*\])*")
+
+
+def _stands_whole(text: str, start: int, end: int) -> bool:
+    """Whether ``text[start:end]`` stands whole in ``text``: a sentence of it, or all of it
+    (a table cell's text). It starts the text or a line, or follows a sentence's end; and it
+    ends the text or a line, ends a sentence itself, or is followed by one's end mark, citation
+    brackets read past (T-706)."""
+    head = text[:start].rstrip(" \t")
+    if head and not head.endswith("\n") and head.rstrip(_SENTENCE_CLOSE)[-1:] not in ".!?":
+        return False
+    if text[start:end].rstrip()[-1:] in ".!?":
+        return True
+    rest = text[_CITED_AFTER.match(text, end).end() :].lstrip(" \t")
+    return not rest or rest[0] == "\n" or (rest[0] in ".!?" and rest[1:2] in ("", " ", "\n"))
+
+
 def _left_out_sentences(count: int) -> str:
     """The line a section ends with where sentences of it only the bundle prints (T-555)."""
     one = count == 1
@@ -1045,6 +1066,10 @@ class _Analyst:
         self.measured_list: list[str] = []
         # How many sentences the section being written left out (``counted``).
         self.left = 0
+        # The passages of the agreement question the section being written prints, by id or
+        # by the id before a ``.N`` or ``.field`` (:meth:`_prints`): the sentences the question
+        # left out of them are counted there (T-706).
+        self.printing: set[str] = set()
         # The texts printed in their writer's own words, by section, then by id, as each
         # section last wrote them (:meth:`_as_said`).
         self.shown: dict[str, dict[str, VerbatimText]] = {}
@@ -1065,8 +1090,10 @@ class _Analyst:
         with the spaces ``left_out_span`` takes, and counted where ``count``.
         A sentence is found as written and with its citations taken out, as
         a procedure's first sentence is printed, wherever it stands
-        (``_Context.places``). One pass over the flagged sentences, the
-        longest first.
+        (``_Context.places``), and left out only where it stands whole
+        (:func:`_stands_whole`): a flagged text inside a longer sentence, a
+        table row's value it names, leaves that sentence as written (T-706).
+        One pass over the flagged sentences, the longest first.
         """
         edits: list[tuple[int, int, str | None]] = []
         for sentence, _mark in self.ctx.flagged:
@@ -1075,8 +1102,12 @@ class _Analyst:
             codes = self.ctx.flag_codes.get(sentence, [])
             for form in dict.fromkeys((sentence, _CITATION_RUN.sub("", sentence).strip())):
                 for start, end in self.ctx.places(form, text, sentence) if form else []:
-                    if not any(a < end and start < b for a, b, _ in edits):
-                        edits.append((start, end, self._flag_rewrite(form, codes)))
+                    if any(a < end and start < b for a, b, _ in edits):
+                        continue
+                    rewrite = self._flag_rewrite(form, codes)
+                    if rewrite is None and not _stands_whole(text, start, end):
+                        continue
+                    edits.append((start, end, rewrite))
         for start, end, rewrite in sorted(edits, reverse=True):
             if rewrite is None:
                 start, end = left_out_span(text, start, end)
@@ -1193,21 +1224,36 @@ class _Analyst:
                 out = out[: out.rfind("(", 0, start)].rstrip() + out[close:]
         return out, cut
 
+    def _prints(self, *passages: str) -> None:
+        """Say that the section being written prints the agreement question's ``passages``: an
+        id (``key_findings.2``), or what stands before every ``.N`` or ``.field`` of a list or
+        a record's ids (``capability_summary``, ``communications``) (T-706)."""
+        self.printing.update(passages)
+
     def counted(self, key: str, section: str) -> str:
         """``section`` with the line saying how many of its sentences were left out, before
         the line linking the bundle; the count starts over for the next section.
 
-        The conclusion and the limitations also count the sentences the agreement
-        question left out of them (``section_agreement.DROPPED_CODE``).
+        It also counts the sentences the agreement question left out of the passages the
+        section prints (``section_agreement.DROPPED_CODE``, :meth:`_prints`): the conclusion's
+        and the limitations', a capability bullet's, a value cell's, a section 5 passage's, a
+        step's or a procedure's, wherever the section prints them, a bullet left with no
+        sentence among them; nothing else (T-706).
         """
         from malspark.reporting.section_agreement import DROPPED_CODE
 
+        printing = {key, *self.printing}
         left = self.left + sum(
             1
             for row in self.ctx.unresolved
-            if row.get("code") == DROPPED_CODE and row.get("subject") == key
+            if row.get("code") == DROPPED_CODE
+            and any(
+                (subject := str(row.get("subject") or "")) == p or subject.startswith(f"{p}.")
+                for p in printing
+            )
         )
         self.left = 0
+        self.printing = set()
         if not left:
             return section
         said = _left_out_sentences(left)
@@ -1411,10 +1457,23 @@ class _Analyst:
         findings = [
             f for f in report.key_findings if f.text.strip() and not self._flagged_whole(f.text)
         ]
+        if self.ta is not None and self.ta.capability_summary:
+            # Every bullet is the section's, one the question emptied too (T-706).
+            self._prints("capability_summary")
         if bullets:
             findings = [f for f in findings if self._keeps(f.text)]
+            # A key finding the summary prints beside the bullets is the section's; the rest
+            # are the bundle's.
+            self._prints(
+                *(
+                    f"key_findings.{index}"
+                    for index, f in enumerate(report.key_findings, 1)
+                    if any(f is kept for kept in findings)
+                )
+            )
         else:
             self.left += len(report.key_findings) - len(findings)
+            self._prints("key_findings", "executive_summary")
         for bullet in bullets:
             if self._flagged_whole(bullet.text):
                 self.left += 1
@@ -1466,6 +1525,7 @@ class _Analyst:
 
     def scope(self) -> str:
         report, ctx = self.report, self.ctx
+        self._prints("introduction")
         ident = report.identity
         name = _code_span(ctx.plain(ident.file_name or ident.hashes.sha256 or "unknown"))
         summary = report.run_summary or {}
@@ -1598,6 +1658,7 @@ class _Analyst:
 
     def flow(self) -> str:
         steps = list(self.ta.execution_flow) if self.ta is not None else []
+        self._prints("execution_flow")
         lines = [_heading(4, "Execution flow"), ""]
         if not steps:
             lines.append("The report model wrote no execution flow in this run.")
@@ -1632,6 +1693,15 @@ class _Analyst:
     def functionality(self) -> str:
         report, ctx, ta = self.report, self.ctx, self.ta
         blocks: list[str] = []
+        self._prints(
+            "packing_obfuscation",
+            "evasion_antiforensics",
+            "string_resolution",
+            "persistence_detail",
+            "discovery",
+            "payloads",
+            "encryption_scheme",
+        )
         number = iter(range(1, 100))
 
         def numbered() -> str:
@@ -1776,6 +1846,14 @@ class _Analyst:
     def c2(self) -> str:
         ctx, ta = self.ctx, self.ta
         blocks: list[str] = []
+        self._prints(
+            "command_and_control",
+            "message_packet_structure",
+            "communications",
+            "configuration",
+            "commands",
+            "cli_flags",
+        )
         prose = [ta.command_and_control, ta.message_packet_structure] if ta else []
         protocol = self._channels() + self._message_examples() + self._requests()
         if any(sub is not None and sub.body.strip() for sub in prose) or protocol:
@@ -2065,6 +2143,7 @@ class _Analyst:
 
     def detection(self) -> str:
         lines = [_heading(8, "Detection"), ""]
+        self._prints("host_identifiers")
         lines.extend(self._indicators())
         lines.extend(self._rules())
         from malspark.reporting.detection_signatures import hunting_query
@@ -2328,6 +2407,7 @@ class _Analyst:
 
         report = self.report
         lines = [_heading(10, "MITRE ATT&CK mapping"), ""]
+        self._prints("procedures")
         mappings = {m.technique_id: m for m in report.ttp_mappings}
         # The composer's one sentence per technique, where it wrote one.
         self._procedures = {
