@@ -55,9 +55,11 @@ def test_a_failed_call_was_shown_none_and_counts_every_printed_text_unseen() -> 
 def test_a_question_not_asked_was_shown_none() -> None:
     for reporter in (None, _Broken()):
         report = report_of()
-        # No source of any kind: the question is not asked.
+        # No source of any kind, the judge's decision included (T-717): the question is not
+        # asked.
         assert report.technical_analysis is not None
         report.technical_analysis.string_resolution = None
+        report.capability_matrix = [c for c in report.capability_matrix if not c.not_published]
         done = asyncio.run(ask_section_agreement(reporter, report, citable_ids=["ev_0103"]))
 
         assert done.summary == {VERBATIM_SHOWN: {}}

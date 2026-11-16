@@ -189,10 +189,24 @@ def judge_and_findings_note(agents: list[str]) -> str:
 JUDGE_UNCONFIRMED_TECHNIQUE_MARKER = "not confirmed by the judge"
 
 
+# How the capability matrix's row of a technique the judge dropped when asked opens.
+JUDGE_DROPPED_MARKER = "the judge dropped it"
+
+
 def judge_dropped_reason(reason: str) -> str:
     """Why a technique the judge dropped when asked is not published, in its own words."""
     said = str(reason or "").strip()
-    return f"the judge dropped it ({said})" if said else "the judge dropped it"
+    return f"{JUDGE_DROPPED_MARKER} ({said})" if said else JUDGE_DROPPED_MARKER
+
+
+def is_judge_dropped(not_published: str) -> bool:
+    """Whether a matrix row's ``not_published`` is :func:`judge_dropped_reason`'s: the
+    record of a technique the judge dropped, with the check's finding it was asked after where
+    one was (``reporting.judge_decision``, T-717)."""
+    said = str(not_published or "").strip()
+    return said == JUDGE_DROPPED_MARKER or said.startswith(
+        (f"{JUDGE_DROPPED_MARKER} (", f"{JUDGE_DROPPED_MARKER}, ")
+    )
 
 
 def judge_kept_note(reason: str) -> str:

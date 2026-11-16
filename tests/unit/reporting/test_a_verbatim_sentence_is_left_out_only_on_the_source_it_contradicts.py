@@ -1,7 +1,8 @@
 """A verbatim sentence is left out only on the source it contradicts; the rewritable side mends.
 
 Where a text printed in its writer's own words and a passage the round may rewrite disagree,
-the question says to list and mend the rewritable one. A verbatim sentence is left out only on
+the question says to mend the rewritable one on a source that states otherwise, the verbatim
+text being none (T-717). A verbatim sentence is left out only on
 a named source it contradicts: a drop naming none is refused, as a keep naming no quote is,
 and records the sentence as asked about and left standing; a drop resting on a
 passage the round may rewrite is refused too (T-613). Every address,
@@ -71,5 +72,7 @@ def test_a_drop_resting_on_a_passage_the_round_may_rewrite_is_refused() -> None:
 def test_the_question_states_the_order_of_ends_once() -> None:
     text = prompt_text(passages_of(report_of()))
 
-    assert text.count("where it and a passage you may rewrite disagree, list and mend that ") == 1
+    assert (
+        text.count("where it and a passage you may rewrite disagree, mend that passage only ") == 1
+    )
     assert 'or drop it naming in "sources" the source it contradicts (a fact, a section 5' in text

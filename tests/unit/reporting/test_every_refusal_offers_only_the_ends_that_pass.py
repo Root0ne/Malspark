@@ -2408,6 +2408,7 @@ _RECORDS = frozenset(
         agreement.QUALIFIED_CODE,
         agreement.HELD_KEPT_CODE,
         agreement.KEPT_IN_SOURCE_WORDS_CODE,
+        agreement.JUDGE_HELD_KEPT_CODE,
     }
 )
 # The report rounds' prose checks, run on every rewrite; and a procedure's own checks.

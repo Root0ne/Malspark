@@ -192,6 +192,25 @@ limitations'. On every path an answer that passes answers its sentence, and a re
 row for the same sentence is not applied. A quote shorter than
 ``absence_answers.QUOTE_FLOOR`` is refused as such, and the question states the floor.
 
+A report section's own sentence could assert a technique the judge dropped beside the judge's
+reason, and nothing asked it against the decision (T-717). The judge's decision as the run
+records it (``reporting.judge_decision``: the verdict and its confidence where the judge
+assessed one, its family or none, each technique published and each it dropped with its
+reason) is shown after the facts, one passage each (``judge.verdict``, ``judge.family``,
+``judge.technique.<ID>``), and is a source of every passage the round may rewrite, section 5
+included; another analyst's words, a debate round and the judge's free notes stay none. A
+section 5 sentence answered on it is rewritten in the model's words. A sentence writing, in
+the writer's own words and a clause no negation stands in, the id or the catalogue name of a
+technique the judge dropped, another verdict word or a family the judge did not name is held
+with every other sentence of its paragraph (:func:`judged_sentences`): a rewrite of it cites
+an entry a judge passage it is held to cites, a keep quotes a source (a sentence denying
+nothing on two of its own words), a drop gives its reason, and one no answer passes for after
+the retry is left out, recorded with the judge's passages that hold it; one kept on a quote
+that passed stands and is recorded (``JUDGE_HELD_KEPT_CODE``). Code reads which sentences;
+whether one says otherwise is the model's answer, and nothing changes the decision. A refusal
+of the round's last answer is recorded with the sentence its row was about, saying no turn
+was left (:func:`_no_turn_left`).
+
 Every step is one pass over the passages and the answer's rows.
 """
 
@@ -275,6 +294,7 @@ from malspark.utils.written_forms import pack_escaped, pack_reads
 
 if TYPE_CHECKING:
     from malspark.reporting.agreement_facts import LedgerFacts
+    from malspark.reporting.judge_decision import JudgeDecision
     from malspark.reporting.limitation_facts import FailedCall, LimitationFacts
 
 # The producer the round's unresolved findings are recorded under.
@@ -411,6 +431,13 @@ KEPT_IN_SOURCE_WORDS_CODE = "agreement.kept_in_source_words"
 # A sentence, or a rewrite, giving failed calls a number the ledger's count
 # does not.
 FAILURE_COUNT_CODE = "agreement.failure_count"
+# A sentence held to the judge's decision (one writing, outside a quoted label and with no
+# negation in its clause, the id or the catalogue name of a technique the judge dropped, a
+# verdict word other than the judge's or a family name other than the judge's, and every
+# other sentence of its paragraph) that the answer kept on a quote every check passed: it
+# stands, and is recorded with the judge's passages it is held to and the source it was kept
+# on (T-717).
+JUDGE_HELD_KEPT_CODE = "agreement.judge_held_kept"
 # What every retry turn of the round asks besides the fix: the whole answer.
 _EVERY_ROW = " Answer with every row again, this one included."
 
@@ -420,6 +447,9 @@ CLAIM_LED = "claim-led"
 SECTION_5 = "section 5"
 FACT = "fact"
 DEBATE = "debate"
+# The judge's decision as the run recorded it (``reporting.judge_decision``): a source of
+# every passage the round may rewrite, section 5 included (T-717).
+JUDGE = "judge"
 
 # The fields of each record that hold the report model's sentences, which a
 # rewrite may replace, and the fields that hold a value in a record's cell (a
@@ -587,6 +617,11 @@ class Passage:
     # source only, named by another row, taking no row and no end of its own, and supplying no
     # keep's quote (T-613).
     source_only: bool = False
+    # The sentences of a writable passage held to the judge's decision
+    # (:func:`judged_sentences`), each with the ids of the judge's passages it is held to: each
+    # is held, rewritten, kept on a quote or dropped, and left out where no answer for it
+    # passes the checks (T-717).
+    judged: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 def _ids(*sources: Any) -> frozenset[str]:
@@ -862,6 +897,136 @@ def left_out_of(text: str, sentences: Iterable[str]) -> tuple[str, int]:
     return text, len(spans)
 
 
+# The ids of the judge's passages (``JUDGE``): its verdict, its family, and a technique's.
+JUDGE_VERDICT_ID = "judge.verdict"
+JUDGE_FAMILY_ID = "judge.family"
+JUDGE_TECHNIQUE_ID = "judge.technique."
+
+
+def judge_passages(decision: JudgeDecision) -> list[Passage]:
+    """The judge's decision as the round is shown it, one passage each: the verdict with its
+    confidence and band, the family or none, then each technique published and each the
+    judge dropped with the record's words, the judge's reason among them; their entries the
+    record's (T-717). None for a decision the run did not record."""
+    out: list[Passage] = []
+    if decision.assessed:
+        confidence = f"{decision.confidence:.2f}" if decision.confidence is not None else "none"
+        out.append(
+            Passage(
+                id=JUDGE_VERDICT_ID,
+                label="the judge's verdict",
+                text=f"{decision.verdict}, overall confidence {confidence} ({decision.band})",
+                kind=JUDGE,
+            )
+        )
+        out.append(
+            Passage(
+                id=JUDGE_FAMILY_ID,
+                label="the judge's family",
+                text=quoted_value(decision.family) if decision.family else "no family named",
+                kind=JUDGE,
+                cites=_ids(decision.family_ids),
+            )
+        )
+    for technique in decision.techniques:
+        out.append(
+            Passage(
+                id=f"{JUDGE_TECHNIQUE_ID}{technique.technique_id}",
+                label=(
+                    "a technique the judge published"
+                    if technique.published
+                    else "a technique the judge dropped"
+                ),
+                text=f"{technique.technique_id} {_sample_text(technique.name)}: "
+                + (
+                    "published"
+                    if technique.published
+                    else f"not published, {quoted_value(technique.said)}"
+                ),
+                kind=JUDGE,
+                cites=_ids(technique.evidence_ids, technique.said),
+            )
+        )
+    return out
+
+
+# Where a paragraph ends: a line holding nothing but white space.
+_PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
+
+
+def _judge_named(sentence: str, decision: JudgeDecision) -> tuple[str, ...]:
+    """The judge's passages ``sentence`` writes the subject of otherwise than the decision,
+    read by shape alone: the id or the catalogue name of a technique the judge dropped, a
+    verdict word other than the judge's, a family name other than the judge's, each in the
+    writer's own words (outside a quoted label) and in a clause no negation stands in
+    (T-717). Whether it says otherwise is the model's to read."""
+    from malspark.reporting.judge_decision import (
+        VERDICT_WORDS,
+        id_pattern,
+        quoted_spans,
+        words_pattern,
+    )
+
+    named: list[str] = []
+    quoted = quoted_spans(sentence)
+
+    def _written(pattern: re.Pattern[str] | None) -> bool:
+        # In the writer's own words: outside a quoted label, in a clause no negation stands in.
+        return pattern is not None and any(
+            not any(begin <= m.start() < end for begin, end in quoted)
+            and not carries_negation(_clause_at(sentence, m.start()))
+            for m in pattern.finditer(sentence)
+        )
+
+    for technique in decision.dropped:
+        if _written(id_pattern(technique.technique_id)) or _written(words_pattern(technique.name)):
+            named.append(f"{JUDGE_TECHNIQUE_ID}{technique.technique_id}")
+    if decision.verdict is not None and any(
+        _written(words_pattern(word))
+        for verdict, words in VERDICT_WORDS.items()
+        if verdict != decision.verdict
+        for word in words
+    ):
+        named.append(JUDGE_VERDICT_ID)
+    if any(_written(words_pattern(name)) for name in decision.other_families):
+        named.append(JUDGE_FAMILY_ID)
+    return tuple(named)
+
+
+def _clause_at(sentence: str, at: int) -> str:
+    """The clause of ``sentence`` the character at ``at`` stands in (:data:`_CLAUSE_BREAK`)."""
+    begin = 0
+    for found in _CLAUSE_BREAK.finditer(sentence):
+        if found.end() <= at:
+            begin = found.end()
+        elif found.start() > at:
+            return sentence[begin : found.start()]
+    return sentence[begin:]
+
+
+def judged_sentences(text: str, decision: JudgeDecision) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """The sentences of ``text`` held to the judge's decision, each with the ids of the judge's
+    passages it is held to, in the order they stand: each sentence writing what
+    :func:`_judge_named` reads, and every other sentence of its paragraph, held to the same
+    passages (T-717). Code holds them; whether one says otherwise is the model's answer."""
+    if not decision.dropped and decision.verdict is None:
+        return ()
+    starts, _ends = _sentence_units(text)
+    placed = sorted((at, sentence) for sentence, ats in starts.items() for at in ats)
+    breaks = [found.start() for found in _PARAGRAPH_BREAK.finditer(text)]
+    read: list[tuple[int, str]] = []
+    by_paragraph: dict[int, list[str]] = {}
+    for at, sentence in placed:
+        paragraph = bisect.bisect_right(breaks, at)
+        read.append((paragraph, sentence))
+        by_paragraph.setdefault(paragraph, []).extend(_judge_named(sentence, decision))
+    out: dict[str, list[str]] = {}
+    for paragraph, sentence in read:
+        if by_paragraph.get(paragraph):
+            out.setdefault(sentence, []).extend(by_paragraph[paragraph])
+    return tuple((s, tuple(dict.fromkeys(ids))) for s, ids in out.items())
+
+
 def passages_of(
     report: MalwareReport,
     *,
@@ -872,9 +1037,9 @@ def passages_of(
 ) -> list[Passage]:
     """Every passage the round is shown, in the order the prompt lists them.
 
-    The facts first, then section 5's passages written from the code, then
-    the debate's mediations, then the passages written without the code, the texts
-    the analyst report prints in their writer's own words last. The
+    The facts first, then the judge's decision (T-717), then section 5's passages written
+    from the code, then the debate's mediations, then the passages written without the code,
+    the texts the analyst report prints in their writer's own words last. The
     key findings and the summary are asked about only when the narrative round
     wrote them (``narrative_written``): the platform's own fallback is not the
     report model's to rewrite. ``entries`` is the run's ledger, in its order,
@@ -884,6 +1049,7 @@ def passages_of(
     from malspark.reporting.call_bindings import binding_words
     from malspark.reporting.composer import COMPOSED_SECTIONS
     from malspark.reporting.evidence_bundles import reads_code
+    from malspark.reporting.judge_decision import judge_decision
 
     facts: list[Passage] = []
     for index, bound in enumerate(report.bound_values, 1):
@@ -1146,6 +1312,10 @@ def passages_of(
         for passage in writable:
             passage.counts = counts
     sources = [*facts, *coded]
+    # The judge's decision as the run recorded it, after the facts: a source of every passage
+    # the round may rewrite, section 5 included (T-717).
+    decision = judge_decision(report)
+    judged = judge_passages(decision)
     listed = [fact for fact in facts if fact.lists_code]
     valued = [fact for fact in facts if fact.value]
     for passage in (*coded, *uncoded):
@@ -1190,6 +1360,9 @@ def passages_of(
                     *holding,
                     *(s for s in _sentences_of(passage.text) if count_disagrees(s, passage.counts)),
                 )
+            # A sentence writing what the judge decided otherwise, and its paragraph (T-717).
+            passage.judged = judged_sentences(passage.text, decision)
+            holding = (*holding, *(sentence for sentence, _ids in passage.judged))
         if passage.closing and _writable(passage):
             # Every sentence of the conclusion and the limitations is answered:
             # the closing sections are short, and three runs in a row slipped a
@@ -1235,7 +1408,14 @@ def passages_of(
         )
     # The texts the analyst report prints in their writer's own words, last: listed only where
     # a source says otherwise, so no fact is read off them (T-613).
-    every = [*facts, *coded, *debate, *uncoded, *_verbatim_passages(report, degradations)]
+    every = [
+        *facts,
+        *judged,
+        *coded,
+        *debate,
+        *uncoded,
+        *_verbatim_passages(report, degradations),
+    ]
     by_id = {passage.id: passage for passage in every}
     for passage in (*coded, *uncoded):
         if _writable(passage):
@@ -4407,14 +4587,16 @@ def _row_violations(
         and not passage.closing
         and span[2] in passage.absences
     )
+    # The judge's decision is a source of every passage the round may rewrite, section 5
+    # included; another analyst's words and the judge's free notes stay none (T-717).
     allowed = (
-        (FACT, SECTION_5, DEBATE, CLAIM_LED)
+        (FACT, JUDGE, SECTION_5, DEBATE, CLAIM_LED)
         if absent_keep
-        else (FACT, SECTION_5)
+        else (FACT, JUDGE, SECTION_5)
         if in_words
-        else (FACT,)
+        else (FACT, JUDGE)
         if passage.kind == SECTION_5
-        else (FACT, SECTION_5, DEBATE)
+        else (FACT, JUDGE, SECTION_5, DEBATE)
     )
     # A held absence of section 5 rewritten rests on any source that speaks of it
     # (:func:`_body_speaking`), a passage written without the code included where it names
@@ -4442,6 +4624,7 @@ def _row_violations(
         and not passage.verbatim
         and span is not None
         and not _held_by_the_ledger(passage, span[2])
+        and not _held_by_the_judge(passage, span[2])
     )
     wrong = [
         _form(name)
@@ -4462,6 +4645,8 @@ def _row_violations(
     ]
     if unheld_drop:
         wrong = []
+    # The refusal names the judge's decision where the round shows it (T-717).
+    judge_shown = any(p.kind == JUDGE for p in by_id.values()) if wrong else False
     if wrong:
         out.append(
             Violation(
@@ -4472,11 +4657,14 @@ def _row_violations(
                     f"states otherwise than {safe_finding_value(passage.id)}, but "
                     + (
                         "a section 5 passage is answered by a platform fact (bound.N, "
-                        "unread.N, listed.N, answered.N, ledger.N) alone"
+                        "unread.N, listed.N, answered.N, ledger.N)"
+                        + (_JUDGE_SOURCE_SAID if judge_shown else "")
+                        + " alone"
                         + (f"{_HELD_ABSENCE_GROUNDS}." if widened else ".")
                         if passage.kind == SECTION_5
-                        else "only the facts, the section 5 passages and the debate rounds "
-                        "listed are sources."
+                        else "only the facts, "
+                        + ("the judge's decision, " if judge_shown else "")
+                        + "the section 5 passages and the debate rounds listed are sources."
                     )
                     + f" {_NAME_THE_SOURCES}"
                 ),
@@ -4685,17 +4873,55 @@ def _held_by_the_ledger(passage: Passage, sentence: str) -> str:
     return "; ".join(said)
 
 
+def _held_by_the_judge(passage: Passage, sentence: str) -> str:
+    """What holds ``sentence`` of ``passage`` to the judge's decision (:func:`judged_sentences`),
+    in the words of the record of one left out: the judge's passages it is held to; ``""`` for
+    a sentence none holds (T-717)."""
+    ids = dict(passage.judged).get(sentence, ())
+    return f"held to the judge's decision ({', '.join(ids)})" if ids else ""
+
+
+# What the refusal of a source a section 5 passage may not rest on says of the judge's
+# decision, where the round shows it (T-717).
+_JUDGE_SOURCE_SAID = " or the judge's decision (judge.verdict, judge.family, judge.technique.ID)"
+# What a sentence held to the judge's decision may end as, as the question and every refusal
+# of an answer for it say (T-717).
+_JUDGED_ENDS = (
+    "where it states otherwise than the judge's decision, rewrite it in your own words on "
+    "that judge passage, keeping every id it cites and citing an entry the judge passage "
+    'cites, or drop it with "reason"; else keep it naming the source you read and found '
+    'agreeing, with "quote": its words that state the same thing, copied exactly'
+)
+
+
+def _judged_ends(passage: Passage, sentence: str) -> str:
+    """For a sentence held to the judge's decision, what it may do, naming the judge's
+    passages it is held to, and what becomes of it where no answer passes; ``""`` for any
+    other (T-717)."""
+    ids = dict(passage.judged).get(sentence, ())
+    if not ids:
+        return ""
+    return (
+        f"it is held to the judge's decision ({safe_finding_value(', '.join(ids))}): "
+        f"{_JUDGED_ENDS}. {_sentence_start(_LEFT_OUT_END)}"
+    )
+
+
 def _ends_on_answer(passage: Passage, sentence: str) -> str:
     """What leaves ``sentence`` of ``passage`` out where no answer for it passes the checks,
     in the words of its record: the ledger's lines that hold it (:func:`_held_by_the_ledger`),
     or the kind of field answered whole it stands in (``Passage.whole``), or who wrote the
-    passage printed in its writer's own words it stands in (``Passage.verbatim``, T-613);
-    ``""`` for any other sentence, which ends by the other rules."""
-    return (
+    passage printed in its writer's own words it stands in (``Passage.verbatim``, T-613); and
+    the judge's passages it is held to (:func:`_held_by_the_judge`, T-717); ``""`` for any
+    other sentence, which ends by the other rules."""
+    said = (
         _held_by_the_ledger(passage, sentence)
         or passage.whole
         or ("" if passage.source_only else passage.verbatim)
     )
+    # Held to the judge's decision besides, or alone (T-717).
+    judged = _held_by_the_judge(passage, sentence)
+    return "; ".join(part for part in (said, judged) if part)
 
 
 def _shown_entries(passage: Passage, sentence: str, by_id: Mapping[str, Passage]) -> frozenset[str]:
@@ -4789,9 +5015,11 @@ def _told_the_end(
     ]
     # Its own ends, ahead of what becomes of it (:func:`_held_ends`, :func:`_named_body_ends`),
     # are told once, on the row's last refusal, where none of its refusals carries them.
-    ends = (_closing_ends(passage, sentence) or _named_body_ends(passage, sentence)).removesuffix(
-        f" {end}"
-    )
+    ends = (
+        _closing_ends(passage, sentence)
+        or _named_body_ends(passage, sentence)
+        or _judged_ends(passage, sentence)
+    ).removesuffix(f" {end}")
     said = [violation.message for violation in (*beside, *found)]
     offers = _held_offers(passage, sentence)
     if (
@@ -5048,9 +5276,10 @@ def _held_offers(passage: Passage, sentence: str) -> list[str]:
     :func:`_held_ends` and :func:`_named_body_ends` write them, and those of a closing
     sentence no keep passes for that nothing else holds, :data:`_UNKEPT_ENDS`: a refusal
     carrying each one has told it its ends (:func:`_told_the_end`)."""
+    judged = [_JUDGED_ENDS] if dict(passage.judged).get(sentence, ()) else []
     if not passage.closing:
         if not dict(passage.ledger_named).get(sentence, ()):
-            return []
+            return judged
         return [_HELD_UNKEPT_BODY_ENDS if sentence in passage.unkept else _HELD_NAME_BODY_ENDS]
     unredone = bool(passage.unredone_failed)
     redos = dict(passage.redone_named).get(sentence, ())
@@ -5060,7 +5289,7 @@ def _held_offers(passage: Passage, sentence: str) -> list[str]:
         *([_redone_ends(redos, unredone=unredone)] if redos else []),
         *([_failed_ends(failed, unredone=unredone)] if failed else []),
     ]
-    return held or ([_UNKEPT_ENDS] if sentence in passage.unkept else [])
+    return held or ([_UNKEPT_ENDS] if sentence in passage.unkept else judged)
 
 
 def _held_ends(passage: Passage, sentence: str) -> str:
@@ -5173,6 +5402,9 @@ def _answer_violations(
     # A sentence the ledger's own lines hold is left out where no answer for it passes
     # (:data:`_LEFT_OUT_END`): a drop of it is an answer, in the body as in a closing passage.
     held = span is not None and bool(_held_by_the_ledger(passage, span[2]))
+    # A sentence held to the judge's decision: dropped on its reason, kept only on a quote,
+    # and left out where no answer passes (T-717).
+    judged = span is not None and bool(_held_by_the_judge(passage, span[2]))
     # A passage printed in its writer's own words: a sentence of it is kept on a source's words
     # or dropped on its reason, never rewritten (T-613).
     verbatim = bool(passage.verbatim)
@@ -5182,6 +5414,7 @@ def _answer_violations(
         row.decision == "drop"
         and not passage.closing
         and not held
+        and not judged
         and not verbatim
         and span is not None
     )
@@ -5207,9 +5440,9 @@ def _answer_violations(
     )
     reasoned = (
         (
-            passage.closing
+            (passage.closing and not (judged and row.decision == "keep"))
             or absent
-            or (held and row.decision == "drop")
+            or ((held or judged) and row.decision == "drop")
             # A verbatim sentence is left out only on the source it contradicts (T-613).
             or (verbatim and row.decision == "drop" and bool(row.sources))
         )
@@ -5221,6 +5454,7 @@ def _answer_violations(
     # is kept on a reason.
     closing_ends = _closing_ends(passage, span[2]) if span is not None else ""
     body_ends = _named_body_ends(passage, span[2]) if span is not None else ""
+    judged_ends = _judged_ends(passage, span[2]) if span is not None else ""
     verbatim_ends = f"{_VERBATIM_ENDS}." if verbatim else ""
     # A drop of the body naming no sentence of its passage is refused for that alone: which
     # sentence it drops is not known, so no source it names is asked for (T-600).
@@ -5244,7 +5478,7 @@ def _answer_violations(
                         f", or, leaving it out, {_VERBATIM_DROP}"
                         if verbatim_ends
                         else f", {_REASON_LEAVING}"
-                        if closing_ends or body_ends
+                        if closing_ends or body_ends or judged
                         else f", {_REASON_KEEPING}"
                         if passage.closing
                         else f", {_REASON_ABSENCE}"
@@ -5270,8 +5504,8 @@ def _answer_violations(
         and (passage.kind != SECTION_5 or _in_own_words(passage, sentence, sources))
         and repeats_sentence(sentence, row.rewrite)
     )
-    keeping = row.decision == "keep" and (passage.closing or absent or verbatim)
-    held_ends = closing_ends or body_ends or verbatim_ends
+    keeping = row.decision == "keep" and (passage.closing or absent or verbatim or judged)
+    held_ends = closing_ends or body_ends or verbatim_ends or judged_ends
     if row.decision == "rewrite" and passage.closing and repeats_sentence(sentence, row.rewrite):
         # A rewrite saying what the sentence says is a keep on the sources it names,
         # quoting the one of their sentences that matches it best (T-568).
@@ -5327,6 +5561,8 @@ def _answer_violations(
                 if s is not None and s not in named_sources and s.kind != CLAIM_LED
             ],
         )
+        if not problem and judged and not carries_negation(sentence):
+            problem = _judged_quote_problem(sentence, row.quote, generic_words(by_id or {}))
         if problem:
             out.append(
                 Violation(
@@ -5461,6 +5697,29 @@ def _answer_violations(
                         + ("that denial" if len(denials) == 1 else "any of them")
                         + f" at once: {_EACH_DENIAL_CITED}, cited in square brackets, one of "
                         f"{safe_finding_value(', '.join(sorted(shown)))}."
+                    ),
+                    path=f"{path}.rewrite",
+                )
+            )
+    if row.decision == "rewrite" and judged:
+        # A rewrite of it cites an entry a judge's passage it is held to cites, where one
+        # cites any (T-717).
+        judge_cites = frozenset().union(
+            *(
+                found.cites
+                for found in ((by_id or {}).get(i) for i in dict(passage.judged).get(sentence, ()))
+                if found is not None
+            )
+        )
+        if judge_cites and judge_cites.isdisjoint(entry_ids_in(row.rewrite)):
+            out.append(
+                Violation(
+                    code=REWRITE_UNGROUNDED_CODE,
+                    message=(
+                        f"row {number}: the rewrite of {where} is held to the judge's decision "
+                        "and cites none of the entries its judge passage cites: cite one of "
+                        f"{safe_finding_value(', '.join(sorted(judge_cites)))}, "
+                        f"{safe_finding_value(_otherwise(passage, sentence))}."
                     ),
                     path=f"{path}.rewrite",
                 )
@@ -5729,6 +5988,20 @@ def _quote_problem(
                 " ".join(sorted(item)) for item in contradicted
             )
     return ""
+
+
+# What a keep of a sentence held to the judge's decision is refused for where its quote holds
+# too few of the sentence's own words (T-717).
+_QUOTE_FEW_OWN = "shares too few of the sentence's own words"
+
+
+def _judged_quote_problem(sentence: str, quote: str, generic: frozenset[str]) -> str:
+    """What is wrong with the quote of a kept sentence held to the judge's decision that
+    denies nothing: it holds two (all, where fewer) of the sentence's own words, the report's
+    generic words left out; ``""`` where it does (T-717)."""
+    own = (content_words(sentence) - generic) or content_words(sentence)
+    shared = own & content_words(quote)
+    return _QUOTE_FEW_OWN if len(shared) < min(_QUOTE_SHARED, len(own)) else ""
 
 
 def _names_place(quote: str, place: tuple[tuple[str, ...], ...]) -> bool:
@@ -6301,6 +6574,9 @@ def _in_own_words(passage: Passage, sentence: str, sources: Sequence[Passage | N
     if passage.kind == SECTION_5 and sentence in passage.on_fact:
         # A denial a bound value's fact contradicts: the fact's clause beside it
         # would state both (haiku12's mutex sentences, T-568).
+        return True
+    if passage.kind == SECTION_5 and any(s is not None and s.kind == JUDGE for s in sources):
+        # Rewritten on the judge's decision: no clause of the platform's states it (T-717).
         return True
     listings = dict(passage.branch_sense).get(sentence, ())
     if (
@@ -6899,7 +7175,11 @@ def _held_unlisted(
             ids = unread.get(sentence)
             # A sentence held on a name or to a redone call, or one no keep passes for, is
             # told its own ends.
-            ends = _closing_ends(passage, sentence) or _named_body_ends(passage, sentence)
+            ends = (
+                _closing_ends(passage, sentence)
+                or _named_body_ends(passage, sentence)
+                or _judged_ends(passage, sentence)
+            )
             said = (
                 f"calls code not read that {safe_finding_value(', '.join(ids))} "
                 "states an entry lists"
@@ -6912,6 +7192,9 @@ def _held_unlisted(
                 if any(s == sentence for s, _ids in passage.ledger_named)
                 else "denies what a decoded value's fact may state"
                 if sentence in passage.on_fact
+                else "names a technique the judge dropped, a verdict or a family other than the "
+                "judge's, or stands in the paragraph of one that does"
+                if dict(passage.judged).get(sentence)
                 else "states an absence the body or the ledger may say otherwise of"
                 if sentence in passage.absences and not passage.closing
                 else f"is {passage.whole}"
@@ -7051,10 +7334,11 @@ SYSTEM_PROMPT = (
     "List each sentence of a passage written without the code that calls absent, unknown, "
     "open, unresolved, not shown or not established what a section 5 passage, a fact or a "
     "closed debate line states, or that states the opposite of what one of them states; and "
-    "each sentence of a section 5 passage that a fact contradicts. For each, give the "
-    "passage's id, the whole sentence copied exactly as it stands, the ids of the sources "
-    "that state otherwise (a section 5 passage is answered by a fact alone), and one "
-    "decision:\n"
+    "each sentence of a section 5 passage that a fact contradicts; and, where the judge's "
+    "decision is shown, each sentence of a passage you may rewrite that states otherwise than "
+    "it. For each, give the passage's id, the whole sentence copied exactly as it stands, the "
+    "ids of the sources that state otherwise (a section 5 passage is answered by a fact, or by "
+    "the judge's decision, alone), and one decision:\n"
     "  - rewrite: the sentence as it should read, stating what the sources state with their "
     "certainty (what they assess, it assesses; what they say is not shown, it says is not "
     "shown), in the passage's style, keeping every ev_ id the sentence cites and citing in "
@@ -7062,9 +7346,10 @@ SYSTEM_PROMPT = (
     "sources nor the passage cite;\n"
     "  - keep: the sources do not state otherwise on reading (they speak of another routine, "
     "value or run), or the passage is marked (read only): a passage so marked is listed with "
-    "keep and never rewritten. A section 5 sentence is rewritten only where a fact contradicts it, "
-    "and then states what the fact states and nothing a passage written without the code or "
-    "a debate round says. A section 5 sentence answered by a fact is not reworded: the "
+    "keep and never rewritten. A section 5 sentence is rewritten only where a fact or the "
+    "judge's decision contradicts it, and then states what that source states and nothing a "
+    "passage written without the code or a debate round says. A section 5 sentence answered "
+    "by a fact is not reworded: the "
     "decision rewrite only asks that it be qualified, and the platform adds the fact's own "
     "words and its ids to the sentence as it stands; it is qualified only where the "
     "sentence names the routine, the address, the value or the call the fact is about, or, "
@@ -7079,6 +7364,7 @@ SYSTEM_PROMPT = (
 
 _HEADINGS = (
     (FACT, "FACTS THE PLATFORM STATES"),
+    (JUDGE, "THE JUDGE'S DECISION"),
     (SECTION_5, "SECTION 5, WRITTEN FROM THE CODE AND THE TOOL ANSWERS"),
     (DEBATE, "THE DEBATE'S MEDIATIONS, IN ROUND ORDER"),
     (CLAIM_LED, "PASSAGES WRITTEN WITHOUT THE CODE"),
@@ -7096,7 +7382,7 @@ def prompt_text(passages: Sequence[Passage]) -> str:
         for passage in group:
             cites = f" (cites {', '.join(sorted(passage.cites))})" if passage.cites else ""
             # Model-written text and the sample's own: one quoted value each.
-            text = passage.text if passage.kind == FACT else quoted_value(passage.text)
+            text = passage.text if passage.kind in (FACT, JUDGE) else quoted_value(passage.text)
             shown = (
                 _SOURCE_MARK
                 if passage.source_only
@@ -7121,6 +7407,8 @@ def prompt_text(passages: Sequence[Passage]) -> str:
             # Read against what the ledger holds of a name (T-600): asked once, under it.
             named = dict(passage.ledger_named)
             absent = tuple(a for a in absent if a not in named)
+            # Held to the judge's decision (T-717): asked once, under it.
+            judged = dict(passage.judged)
             held = [
                 sentence
                 for sentence in passage.held
@@ -7129,6 +7417,7 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                 and sentence not in absent
                 and sentence not in branch
                 and sentence not in named
+                and sentence not in judged
             ]
             if passage.closing and _writable(passage):
                 # Every sentence is held: the passage is shown once, not again. A field
@@ -7238,6 +7527,20 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                     f"  [{passage.id}] {'; '.join(quoted_value(s) for s in alike)}: {ends}"
                     for ends, alike in told.items()
                 )
+            if judged and not (passage.closing and _writable(passage)):
+                # Read off the passage by code: each names what the judge decided otherwise, or
+                # stands in the paragraph of one that does (T-717). A closing passage's every
+                # sentence is answered; the TASK says how one held to the decision ends.
+                lines.append(
+                    f"  [{passage.id}] each of these names a technique the judge dropped, a "
+                    "verdict or a family other than the judge's, or stands in the paragraph of "
+                    f"one that does; read it against the judge's decision: {_JUDGED_ENDS}; "
+                    f"{_LEFT_OUT_END}: "
+                    + "; ".join(
+                        f"{quoted_value(sentence)} ({', '.join(ids)})"
+                        for sentence, ids in judged.items()
+                    )
+                )
             if denied:
                 # Read off the passage by code: a decoded value's fact may contradict them.
                 lines.append(
@@ -7259,6 +7562,24 @@ def prompt_text(passages: Sequence[Passage]) -> str:
     closing = [p.id for p in passages if p.closing and _writable(p)]
     if closing:
         lines.append(_CLOSING_TASK.format(ids=", ".join(f"[{pid}]" for pid in closing)))
+    if any(p.kind == JUDGE for p in passages):
+        lines.append(_JUDGE_TASK)
+    judged_closing = [
+        (p.id, sentence, ids)
+        for p in passages
+        if p.closing and _writable(p)
+        for sentence, ids in p.judged
+    ]
+    if judged_closing:
+        # The closing sentences held to the judge's decision, named once (T-717).
+        lines.append(
+            "Of these, each sentence here is held to the judge's decision: "
+            f"{_JUDGED_ENDS}; {_LEFT_OUT_END}: "
+            + "; ".join(
+                f"[{pid}] {quoted_value(sentence)} ({', '.join(ids)})"
+                for pid, sentence, ids in judged_closing
+            )
+        )
     if any(p.verbatim and not p.source_only for p in passages):
         lines.append(_VERBATIM_TASK)
     if any(p.source_only for p in passages):
@@ -7288,9 +7609,21 @@ _SOURCE_TASK = (
 )
 _VERBATIM_TASK = (
     "A passage marked (verbatim) prints an analyst's or the judge's own words: list a sentence "
-    "of it only where a source states otherwise; where it and a passage you may rewrite "
-    "disagree, list and mend that passage. Never rewrite a verbatim sentence: "
+    "of it only where a source states otherwise; it is no source of another passage: where it "
+    "and a passage you may rewrite disagree, mend that passage only on a source that states "
+    "otherwise. Never rewrite a verbatim sentence: "
     f"{_VERBATIM_ENDS}. " + _sentence_start(_VERBATIM_LEFT_OUT)
+)
+# What the TASK says of the judge's decision once, where the round shows it (T-717).
+_JUDGE_TASK = (
+    "THE JUDGE'S DECISION is the run's record of what the judge decided: its verdict and "
+    "confidence, its family or none, each technique published and each it dropped with its "
+    "reason. It is a source of every passage you may rewrite, section 5 included, and of no "
+    "passage marked (verbatim). List each sentence of a passage you may rewrite that states as "
+    "present, "
+    "or as serving its purpose, a technique the judge dropped, calls absent or not observed "
+    "one it published, or states another verdict, family or confidence, naming the judge "
+    "passage; a section 5 sentence answered on it is rewritten in your own words."
 )
 
 
@@ -7349,10 +7682,11 @@ def _names_a_source(row: AgreementRow, by_id: dict[str, Passage]) -> bool:
 
 def _rests_on_a_source(row: AgreementRow, by_id: dict[str, Passage]) -> bool:
     """Whether every source a row names is one a passage written without the code is
-    answered by: a fact, a section 5 passage or a debate round it was shown."""
+    answered by: a fact, the judge's decision (T-717), a section 5 passage or a debate round
+    it was shown."""
     return bool(row.sources) and all(
         (source := by_id.get(_form(name))) is not None
-        and (source.kind in (FACT, SECTION_5, DEBATE) or source.source_only)
+        and (source.kind in (FACT, JUDGE, SECTION_5, DEBATE) or source.source_only)
         for name in row.sources
     )
 
@@ -7537,6 +7871,31 @@ def apply_rows(
                 and standing is not None
                 and standing[2] in passage.absences
             )
+            judged = (
+                dict(passage.judged).get(standing[2], ())
+                if passage is not None and standing is not None
+                else ()
+            )
+            if passage is not None and standing is not None and judged and not found:
+                # A sentence held to the judge's decision kept on a quote every check passed:
+                # it stands, recorded with what holds it and what it was kept on (T-717).
+                counts["kept"] += 1
+                listed.append(
+                    Violation(
+                        code=JUDGE_HELD_KEPT_CODE,
+                        message=(
+                            "The agreement question kept a sentence of "
+                            f"{safe_finding_value(passage.label)} held to the judge's decision "
+                            f"({safe_finding_value(', '.join(judged))}) on "
+                            f"{safe_finding_value(', '.join(_form(s) for s in row.sources))}, "
+                            f"quoting {safe_finding_value(_capped(row.quote))!r}: "
+                            f"{safe_finding_value(standing[2])!r} stands as written."
+                        ),
+                        path=f"sentences.{index}",
+                        answered=True,
+                    )
+                )
+                continue
             # A section 5 sentence a fact was listed against is recorded as
             # listed, as it was before it could be rewritten.
             if passage is not None and _listed_when_kept(passage) and not found and not absent:
@@ -7772,10 +8131,12 @@ def apply_rows(
         ledger_held = [
             s for s, _ids in (*passage.ledger_named, *passage.redone_named, *passage.failure_said)
         ]
-        # A field answered whole leaves out each sentence no answer reached, but not where
-        # the question got no answer at all: a failed call blanks no table and no summary.
+        # A field answered whole, and a sentence held to the judge's decision (T-717), leave
+        # out each sentence no answer reached, but not where the question got no answer at all:
+        # a failed call blanks no table, no summary and no paragraph.
         whole = _sentences_of(passage.text) if passage.whole and rows else []
-        for sentence in dict.fromkeys([*ledger_held, *whole]):
+        unanswered_judged = [s for s, _ids in passage.judged] if rows else []
+        for sentence in dict.fromkeys([*ledger_held, *whole, *unanswered_judged]):
             span = _sentences(passage).span(sentence)
             held = _ends_on_answer(passage, sentence)
             if span is not None and (passage.id, span[0]) not in answered:
@@ -7913,14 +8274,14 @@ def _unbacked(found: Sequence[Violation]) -> bool:
 
 
 def _keep_sources(sources: Sequence[Passage | None], *, body: bool) -> list[Passage]:
-    """The named sources a keep's quote may stand in: a fact, a section 5 passage or a debate
-    round, and for a body absence a passage written without the code too; never a passage
-    shown as a source only (T-613)."""
+    """The named sources a keep's quote may stand in: a fact, the judge's decision (T-717), a
+    section 5 passage or a debate round, and for a body absence a passage written without the
+    code too; never a passage shown as a source only (T-613)."""
     return [
         s
         for s in sources
         if s is not None
-        and (s.kind in (FACT, SECTION_5, DEBATE) or (body and s.kind == CLAIM_LED))
+        and (s.kind in (FACT, JUDGE, SECTION_5, DEBATE) or (body and s.kind == CLAIM_LED))
         and not s.source_only
     ]
 
@@ -8321,11 +8682,11 @@ async def _ask(
     coded = any(_writable(p) and p.kind == SECTION_5 for p in passages)
     # A fact that rests on entries: the count of routines no passage names
     # grounds no rewrite, and asks nothing on its own.
-    facts = any(p.kind == FACT and p.cites and not p.silent for p in passages)
-    # A passage written without the code is asked against any source; a
-    # section 5 passage against a fact alone.
+    # A section 5 passage is asked against a fact or the judge's decision (T-717).
+    facts = any((p.kind == FACT and p.cites and not p.silent) or p.kind == JUDGE for p in passages)
+    # A passage written without the code is asked against any source.
     sourced = any(
-        (p.kind == FACT and p.cites and not p.silent) or p.kind in (SECTION_5, DEBATE)
+        (p.kind == FACT and p.cites and not p.silent) or p.kind in (JUDGE, SECTION_5, DEBATE)
         for p in passages
     )
     if not (claim_led and sourced) and not (coded and facts):
@@ -8425,6 +8786,9 @@ async def _ask(
         failed = f"The section agreement question was not answered ({type(exc).__name__})."
         payload, violations, retries = None, [], 0
     tally.retries += retries
+    # A refusal of the last answer had no turn left to answer it: its record names the
+    # sentence the row was about and says so (T-717).
+    violations = _no_turn_left(violations, payload)
     tally.count(violations)
     if violations:
         tally.record_unresolved(AGREEMENT_PRODUCER, violations)
@@ -8465,6 +8829,40 @@ async def _ask(
     return AgreementRound(
         summary=summary, tally=tally, degradations=[*said(), *([failed] if failed else [])]
     )
+
+
+# What the record of a refusal of the round's last answer adds: no turn was left (T-717).
+_NO_TURN_LEFT = "No turn was left to answer this refusal"
+_ROW_PATH = re.compile(r"sentences\.(\d+)(?:\.|$)")
+
+
+def _no_turn_left(violations: Sequence[Violation], payload: Any) -> list[Violation]:
+    """``violations``, the refusals of the round's last answer, each refusing a row of
+    ``payload`` saying that no turn was left to answer it and naming the passage and the
+    sentence the row was about, so a row the model raised that code refused is not lost
+    without a record (T-717). Any other finding as it was."""
+    raw = payload.get("sentences") if isinstance(payload, dict) else None
+    rows = raw if isinstance(raw, list) else []
+    out: list[Violation] = []
+    for violation in violations:
+        found = _ROW_PATH.match(violation.path)
+        row = rows[int(found.group(1))] if found and int(found.group(1)) < len(rows) else None
+        sentence = str(_field(row, "sentence") or "").strip() if row is not None else ""
+        if not sentence or _NO_TURN_LEFT in violation.message:
+            out.append(violation)
+            continue
+        out.append(
+            replace(
+                violation,
+                message=(
+                    f"{safe_finding_value(violation.message.rstrip(), whole=True)} "
+                    f"{_NO_TURN_LEFT}; the row's sentence of "
+                    f"{safe_finding_value(_form(_field(row, 'passage')))}: "
+                    f"{safe_finding_value(sentence)!r}."
+                ),
+            )
+        )
+    return out
 
 
 # The run summary's record of the round (``section_agreement``): the texts printed in their

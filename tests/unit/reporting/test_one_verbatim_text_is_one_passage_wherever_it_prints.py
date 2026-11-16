@@ -134,7 +134,11 @@ def test_only_the_judge_s_own_words_are_the_judge_s_passage() -> None:
     assert shown["attack_note.T1622"].text == "The judge read only the flag check [ev_0103]."  # type: ignore[attr-defined]
     assert shown["attack_note.T1055"].text == "No write into another process is shown [ev_0104]."  # type: ignore[attr-defined]
     assert "attack_note.T1057" not in shown
-    assert "the judge dropped it" not in prompt_text(passages_of(report))
+    assert all("the judge dropped it" not in passage.text for passage in shown.values())  # type: ignore[attr-defined]
+    # The matrix's record of the drop is the judge's decision, under its own heading (T-717).
+    text = prompt_text(passages_of(report))
+    assert text.count("the judge dropped it") == 1
+    assert "- [judge.technique.T1055] a technique the judge dropped" in text
 
 
 def test_a_reason_left_out_keeps_the_platform_s_words_without_the_bracket() -> None:
