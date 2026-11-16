@@ -281,19 +281,18 @@ class TestTheSpellings:
             == []
         )
 
-    def test_the_hive_spelt_last_before_the_path_is_the_one_read(self) -> None:
-        texts = EntryTexts.from_ledger(
-            [
-                _code(
-                    "ev_0032",
-                    'x = 0x80000002; k = fun(0xffffffff80000001, "Software\\\\Vendor");\n',
-                )
-            ]
-        )
+    @pytest.mark.parametrize(
+        ("line", "key"),
+        [
+            ('x = 0x80000002; k = fun(0xffffffff80000001, "Software\\\\Vendor");\n', "HKCU"),
+            ('x = 0xffffffff80000001; k = fun(0x80000002, "Software\\\\Vendor");\n', "HKLM"),
+        ],
+    )
+    def test_the_hive_spelt_last_before_the_path_is_the_one_read(self, line: str, key: str) -> None:
+        texts = EntryTexts.from_ledger([_code("ev_0032", line)])
 
-        assert (
-            stated_value_violations(_identifiers("HKCU\\Software\\Vendor", "ev_0032"), texts) == []
-        )
+        held = _identifiers(f"{key}\\Software\\Vendor", "ev_0032")
+        assert stated_value_violations(held, texts) == []
 
     @pytest.mark.parametrize(
         "entry",
