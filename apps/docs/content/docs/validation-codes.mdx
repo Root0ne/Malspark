@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**133 codes in 12 families:** [agreement](#agreement) 19 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 20 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**134 codes in 12 families:** [agreement](#agreement) 20 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 20 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -97,6 +97,14 @@ A held sentence (any sentence of the conclusion or the limitations, of a record'
 - **Raised at** `malspark.reporting.section_agreement:_held_unlisted`
 - **Constant** `malspark.reporting.section_agreement:HELD_UNLISTED_CODE`
 - **Docs** none
+
+### `agreement.judge_held_kept`
+
+A sentence held to the judge's decision (one writing, outside a quoted label and with no negation in its clause, the id or the catalogue name of a technique the judge dropped, a verdict word other than the judge's or a family name other than the judge's, and every other sentence of its paragraph) that the answer kept on a quote every check passed: it stands, and is recorded with the judge's passages it is held to and the source it was kept on (T-717).
+
+- **Raised at** `malspark.reporting.section_agreement:apply_rows`
+- **Constant** `malspark.reporting.section_agreement:JUDGE_HELD_KEPT_CODE`
+- **Docs** [Architecture](/docs/architecture/)
 
 ### `agreement.keep_unquoted`
 
