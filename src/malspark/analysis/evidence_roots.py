@@ -1028,7 +1028,10 @@ def _item_root(item: str, joins: _Joins) -> tuple[str, str]:
         return _process(pid), ""
     if section == "signatures":
         roots = _signature_item_roots(item, joins)
-        if roots is None or len(roots.roots) != 1 or roots.unplaced_values:
+        if roots is not None and len(roots.roots) > 1:
+            # Which of its processes a statement read is the statement's to say.
+            return "", NAMES_NO_ROW.format(entry=item)
+        if roots is None or not roots.roots or roots.unplaced_values:
             return "", (roots.first_reason if roots is not None else "") or SIGNATURE_UNPLACED
         return roots.roots[0], ""
     if section != "network":

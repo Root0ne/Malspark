@@ -65,6 +65,10 @@ def _processes() -> LedgerEntry:
     )
 
 
+def _wrote_rows() -> list[dict[str, Any]]:
+    return list(_wrote().structured["indicators"])
+
+
 def _wrote() -> LedgerEntry:
     """The indicator page of one signature: two tasks, each a pairing of two processes."""
     return _entry(
@@ -105,6 +109,12 @@ def _items() -> LedgerEntry:
             "items": [
                 {"id": "sig:1", "kind": "signatures", "fields": {"name": "Family: X"}},
                 {
+                    "id": "sig:3",
+                    "kind": "signatures",
+                    "fields": {"name": "Writes into another process"},
+                    "indicators": _wrote_rows()[:1],
+                },
+                {
                     "id": "sig:2",
                     "kind": "signatures",
                     "fields": {"name": "Creates a file in the Startup directory"},
@@ -129,8 +139,13 @@ def _index() -> LedgerEntry:
         "sandbox_sections",
         {
             "sections": {
-                "processes": {"items": 4, "prefix": "proc", "pids": [[85, 85], [87, 87], [89, 89]]},
-                "signatures": {"items": 2, "prefix": "sig"},
+                "processes": {
+                    "items": 4,
+                    "prefix": "proc",
+                    "pids": [[85, 85], [87, 87], [89, 89]],
+                    "repeats": [[87, 2]],
+                },
+                "signatures": {"items": 3, "prefix": "sig"},
             }
         },
     )
@@ -219,6 +234,14 @@ class TestAStatementPicksAProcessByTheNumberItWrites:
         assert roots == []
         assert reasons == [f"ev_0082: {NAMES_NO_ROW.format(entry='ev_0082')}"]
 
+    def test_a_pid_of_a_process_the_entry_does_not_hold_picks_none(self) -> None:
+        page = _entry("ev_0092", "sandbox_signatures", {"indicators": _wrote_rows()[:1]})
+        roots, _reasons = run_roots(_ledger(page)).of_statement(
+            "pid 4156 was written into [ev_0092].", ["ev_0092"]
+        )
+
+        assert roots == []
+
     def test_a_number_written_without_pid_picks_none(self) -> None:
         held = _sources("The value 1496 is written [ev_0082].", "ev_0082")
 
@@ -243,7 +266,25 @@ class TestASignatureItemIsPlacedByItsIndicators:
         assert reasons == [f"sig:1: {SIGNATURE_UNPLACED}"]
 
     def test_the_item_reader_s_answer_gives_the_roots_of_its_indicators(self) -> None:
-        assert run_roots(_ledger()).of_entry("ev_0089").roots == [P87_T1]
+        assert run_roots(_ledger()).of_entry("ev_0089").roots == [P85, P87_T1]
+
+    def test_an_item_of_several_processes_is_picked_from_by_the_statement(self) -> None:
+        held = _sources("PID 1496 wrote into another process [sig:3].", "sig:3")
+
+        assert held == {"sig:3": (READING_RUN, (P85,))}
+
+    def test_an_item_of_several_processes_named_by_none_says_so(self) -> None:
+        found = run_roots(_ledger())
+
+        assert found.of_item("sig:3") == ("", NAMES_NO_ROW.format(entry="sig:3"))
+        roots, reasons = found.of_statement("Code is written [sig:3].", ["sig:3"])
+        assert (roots, reasons) == ([], [f"sig:3: {NAMES_NO_ROW.format(entry='sig:3')}"])
+
+    def test_a_process_item_s_repeat_is_the_listing_s_next_process_of_that_id(self) -> None:
+        found = run_roots(_ledger())
+
+        assert found.of_item("proc:87") == (P87_T1, "")
+        assert found.of_item("proc:87.2") == (P87_T2, "")
 
 
 class TestATechniqueOnIndicatorRowsIsObserved:
