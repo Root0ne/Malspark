@@ -78,6 +78,19 @@ def test_any_whitespace_ends_a_token() -> None:
     ]
 
 
+def test_each_of_two_tokens_in_one_run_is_answered_by_its_own_token() -> None:
+    """A later match past the current token's end is read in the token it stands in."""
+    text = "ab/cd:e fg/hi:j"
+
+    assert token_cuts(text, [(2, 5), (10, 13)]) == ["ab/cd:e", "fg/hi:j"]
+    blob = b"\x00/gc/heap/allocs:bytes/cpu/classes/total:cpu-seconds /sched/cpu/classes/user:s\x00"
+    rows = _rows(blob, "path")
+    assert rows["/cpu/classes/total"]["cut_from"] == (
+        "/gc/heap/allocs:bytes/cpu/classes/total:cpu-seconds"
+    )
+    assert rows["/sched/cpu/classes/user"]["cut_from"] == "/sched/cpu/classes/user:s"
+
+
 def test_a_registry_key_a_word_continues_is_a_cut_too() -> None:
     """A made-up key of another shape: the rule is the token's, not a kind's list."""
     blob = b"\x00HKCU\\Software\\Vendor\\Relay{0A1B2C3D}\x00"
