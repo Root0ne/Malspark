@@ -239,11 +239,11 @@ def iter_string_iocs(blob: bytes, *, cuts: bool = False) -> list[dict[str, Any]]
             # number is not an address whatever its shape.
             if _is_meaningful_ip(ip) and not _written_as_a_version(encoded, found.start()):
                 _add("ip", ip)
-        for kind, pattern in (("registry", _REG_RE), ("path", _PATH_RE)):
-            found = list(pattern.finditer(encoded))
-            tokens = token_cuts(text, (match.span() for match in found)) if cuts else []
-            for at, match in enumerate(found):
-                value = match.group().decode("ascii", errors="ignore")
+        for kind, shape in (("registry", _REG_RE), ("path", _PATH_RE)):
+            spans = list(shape.finditer(encoded))
+            tokens = token_cuts(text, (span.span() for span in spans)) if cuts else []
+            for at, span in enumerate(spans):
+                value = span.group().decode("ascii", errors="ignore")
                 if kind == "registry" or _looks_like_path(value):
                     _add(kind, value, cut=tokens[at] if cuts else "")
         for match in emails_in(text.encode("ascii", errors="ignore")):
