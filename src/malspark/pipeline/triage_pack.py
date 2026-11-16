@@ -1456,7 +1456,13 @@ class _Pack:
     def _sandbox_view(self, step: PackStep) -> None:
         report = observed_report(self.inputs.sandbox_report)
         if report:
-            self.record(step.called, {}, partial(_SANDBOX_VIEWS[step.called], report))
+            # Read with the job's reader, as an agent's call of the view is.
+            view = partial(
+                _SANDBOX_VIEWS[step.called],
+                report,
+                normalised_by=self.inputs.sandbox_normalised_by,
+            )
+            self.record(step.called, {}, view)
 
     def _pcap_summary(self, step: PackStep) -> None:
         report = observed_report(self.inputs.sandbox_report)

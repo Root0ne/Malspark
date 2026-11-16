@@ -568,7 +568,11 @@ class TestAHostRowIsAskedAsAFlowIs:
         from malspark.reporting.models import DynamicBehavior, ProcessNode
 
         return DynamicBehavior(
-            process_tree=[ProcessNode(pid=100, name="sample.exe")],
+            # 812 is listed, a root of its own outside the sample's tree.
+            process_tree=[
+                ProcessNode(pid=100, name="sample.exe"),
+                ProcessNode(pid=812, name="x.exe"),
+            ],
             file_operations=[
                 {"operation": "mutex", "name": self.MUTEX},
                 {"operation": "write", "path": self.DROPPED, "pid": 812},
@@ -809,13 +813,13 @@ class TestTheFactsAreReadOnce:
                     for i in range(count)
                 ]
 
-        walk = stix_renderer.sample_process_tree
+        walk = stix_renderer.sample_process_trees
 
         def _counted(roots: list[Any], *args: str) -> Any:
             reads["tree"] += 1
             return walk(roots, *args)
 
-        monkeypatch.setattr(stix_renderer, "sample_process_tree", _counted)
+        monkeypatch.setattr(stix_renderer, "sample_process_trees", _counted)
         dynamic = DynamicBehavior(
             process_tree=[ProcessNode(pid=1, name="s.exe")],
             file_operations=[{"operation": "mutex", "name": f"m{i}"} for i in range(count)],

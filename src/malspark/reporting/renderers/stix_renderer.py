@@ -105,9 +105,9 @@ from malspark.schemas.sandbox_report import (
     PLACED_OUTSIDE,
     PLACED_UNSETTLED,
     PLACED_UNSTATED,
-    SampleTree,
+    ProcessTrees,
     process_placement,
-    sample_process_tree,
+    sample_process_trees,
 )
 from malspark.schemas.stix_models import (
     ATTACK_PATTERN_NAMESPACE,
@@ -3473,6 +3473,11 @@ UNATTRIBUTED_HOST_ROW = "the sandbox report does not say which process {did} it"
 HOST_ROW_OUTSIDE_THE_TREE = (
     "the sandbox report attributes it to a process outside the sample's process tree"
 )
+# A record naming its process by a number no listed process answers to, as
+# the report's own id or as the guest's pid: no tree was tested against it.
+HOST_ROW_UNLISTED = (
+    "the sandbox report names the process that {did} it by a number its process list does not hold"
+)
 # The host kinds that answer for the process that made them.
 HOST_KINDS = frozenset({"hash", "path", "registry", "mutex"})
 # Why a host row the sandbox recorded is not published on its own: the guest
@@ -3508,16 +3513,26 @@ _PID_KEYS = ("pid", "process_id", "pids")
 _PROCESS_KEYS = ("process", "process_name", "processes")
 
 
-def _not_the_sample_s(record: Any, tree: SampleTree, did: str) -> str:
+def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
     """Why a sandbox record is not the sample's, or ``""`` when a process of its tree made it.
 
-    Decided by the record's pid when it names one; its image name is read only
-    when it names no pid, because a common image the tree also runs
+    Decided by the record's pid when it names one, read as one process (its
+    task where the record states one, the report's id or the guest's pid,
+    :meth:`ProcessTrees.place`) against its task's tree; its image name is
+    read only when it names no pid, because a common image the tree also runs
     (``explorer.exe``) would otherwise attribute every record of that name. A
-    record naming a pid the listing does not settle (:class:`SampleTree`) is
-    unattributed.
+    record naming a pid the listing does not settle is unattributed, and one
+    naming a number no listed process answers to says so where every listed
+    process it could name (its task's, where it states one) states its guest
+    pid, and is unattributed where one of them states none.
     """
-    pids, names = tree.pids, tree.names
+    from malspark.schemas.sandbox_report import (
+        WRITER_IN_TREE,
+        WRITER_UNLISTED,
+        WRITER_UNSETTLED,
+    )
+
+    names = trees.names
     if not isinstance(record, dict):
         return UNATTRIBUTED_HOST_ROW.format(did=did)
     by_pid: list[str] = []
@@ -3527,9 +3542,20 @@ def _not_the_sample_s(record: Any, tree: SampleTree, did: str) -> str:
             if one not in (None, ""):
                 by_pid.append(str(one).strip())
     if by_pid:
-        if any(pid in tree.unsettled for pid in by_pid):
+        task = str(record.get("task") or "") or None
+        places = {trees.place(pid, task) for pid in by_pid}
+        if WRITER_UNSETTLED in places:
             return UNATTRIBUTED_HOST_ROW.format(did=did)
-        return "" if any(pid in pids for pid in by_pid) else HOST_ROW_OUTSIDE_THE_TREE
+        if WRITER_IN_TREE in places:
+            return ""
+        if places == {WRITER_UNLISTED}:
+            # A number no listed process answers to is one of none only where
+            # every process the record could name states its guest pid; else
+            # it may be the guest pid of one that states none.
+            if trees.identities.states_every_guest_pid(task):
+                return HOST_ROW_UNLISTED.format(did=did)
+            return UNATTRIBUTED_HOST_ROW.format(did=did)
+        return HOST_ROW_OUTSIDE_THE_TREE
     by_name: list[str] = []
     for key in _PROCESS_KEYS:
         value = record.get(key)
@@ -3555,7 +3581,7 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
         if dynamic is None:
             return {}
         identity = _field(report, "identity")
-        tree = sample_process_tree(
+        tree = sample_process_trees(
             list(_field(dynamic, "process_tree") or []),
             str(_field(identity, "file_name") or ""),
             str(_field(_field(identity, "hashes"), "sha256") or ""),

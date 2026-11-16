@@ -127,11 +127,17 @@ class TestTheLauncherSOwnProcess:
         assert len(report.dropped_files) == 7
         assert set(_reasons(report).values()) == {DROPPED_BY_LAUNCHER}
         assert all(row[LINEAGE_KEY] == "launcher" for row in report.dropped_files)
-        answer = sandbox_dropped_files(sandbox_document(report))
+        answer = sandbox_dropped_files(
+            sandbox_document(report), normalised_by=("triage", "triage", "tasks")
+        )
         assert answer["dropped"] == [] and answer["total"] == 0
         assert len(answer["platform_files"]) == 7
-        # Each listed with its writer, the script host (guest pids 1756 and 4316).
-        assert {tuple(row["pids"]) for row in answer["platform_files"]} == {("1756",), ("4316",)}
+        # Each listed with its writer, the script host, by the process list's
+        # own id in its task, the guest's pid beside it, as the job's reader
+        # declares the fields.
+        assert {
+            (tuple(row["pids"]), row["task"], row["guest_pid"]) for row in answer["platform_files"]
+        } == {(("84",), "behavioral1", "1756"), (("87",), "behavioral2", "4316")}
         assert {row[LINEAGE_REASON_KEY] for row in answer["platform_files"]} == {
             DROPPED_BY_LAUNCHER
         }

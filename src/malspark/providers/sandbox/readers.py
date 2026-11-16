@@ -593,7 +593,9 @@ class TriageReportReader(ReportReader):
     # each signature again with the indicators seen in that task, each naming
     # the process that acted (and the one acted on) by the task's process ids.
     # The guest's pid beside them (``pid``, ``pid_target``) is another number,
-    # never the report's process id: it stays among the indicator's values.
+    # never the report's process id: it stays among the indicator's values,
+    # but where it is the guest's pid of the process the indicator resolves
+    # to, which that process states.
     signature_indicators = IndicatorFields(
         lists=("marks",),
         process=("procid",),
@@ -605,6 +607,8 @@ class TriageReportReader(ReportReader):
         # A process row of a task report holds the guest's pid under its
         # ``extra``, beside the report's own process id.
         guest_pid=("extra.pid",),
+        process_guest_pid=("pid",),
+        target_guest_pid=("pid_target",),
     )
 
     def read(
@@ -647,13 +651,22 @@ class TriageReportReader(ReportReader):
                 TRIAGE_OVERVIEW_FILLS,
                 partial=self.PARTIAL,
                 signature_indicators=self.signature_indicators,
+                dropped_writer_fields=self.DROPPED_WRITER_FIELDS,
+                dropped_guest_pid_fields=self.DROPPED_GUEST_PID_FIELDS,
             )
         # A task report's dumped file names its guest path under ``path``.
         return Reading(
             TRIAGE_NORMALISER_FILLS,
             guest_path_fields=("path",),
+            dropped_writer_fields=self.DROPPED_WRITER_FIELDS,
+            dropped_guest_pid_fields=self.DROPPED_GUEST_PID_FIELDS,
             signature_indicators=self.signature_indicators,
         )
+
+    # A dumped file's row names its writer by the task's process id under
+    # ``procid``, and the guest's pid of that process under ``pid``.
+    DROPPED_WRITER_FIELDS = ("procid",)
+    DROPPED_GUEST_PID_FIELDS = ("pid",)
 
     # What a behavioural task's row in the overview, and its task report's
     # ``task`` block, say of the machine the task ran in: ``resource`` is the
