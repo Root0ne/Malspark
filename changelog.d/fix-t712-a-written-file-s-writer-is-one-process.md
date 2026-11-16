@@ -1,0 +1,3 @@
+### Fixed
+
+- **A file the sample's child wrote is read against its own task's tree, and a refusal states its true reason (T-712).** A written file's, a key's or a mutex's writer is read as one process: its task and the report's own id, or a number that is the guest's pid an answer of the run states for a listed process. The sample's process tree is read per task, and the report's process tree keeps each process's task and guest pid. A file the tree wrote is withheld only because the judge named no such indicator, as the rule says; a writer named by a number no listed process answers to is refused as so named, not as outside the tree.
