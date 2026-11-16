@@ -4238,7 +4238,7 @@ def judge_bundle_json(bundle: dict) -> dict:
         as_json = Bundle.model_validate(bundle).model_dump(mode="json")
     except Exception:  # noqa: BLE001 — a record kept in a weaker form, never a failed save
         as_json = json.loads(json.dumps(bundle, default=str))
-    return {"spec_version": "2.1", **as_json}
+    return as_json
 
 
 def _extract_mitre(result: dict) -> list | None:
@@ -5045,13 +5045,8 @@ def _report_inputs(
                 UNPUBLISHED_PROPERTY: False,
                 "x_malspark_notice": UNPUBLISHED_NOTICE,
             }
-    # Ensure STIX 2.1 ``spec_version`` is present on every bundle —
-    # the OASIS spec requires it on top-level bundle objects, and
-    # downstream tooling (OpenCTI / MISP / TAXII clients) silently
-    # rejects bundles that omit the field. Defensive: covers the
-    # case where the producer dropped it during serialization.
-    if isinstance(stix_bundle_for_persist, dict):
-        stix_bundle_for_persist.setdefault("spec_version", "2.1")
+    # The envelope is stored as built: a STIX 2.1 bundle holds ``type``, ``id``
+    # and ``objects`` (and ``x_`` properties); ``spec_version`` is each object's.
 
     # A masked, non-secret record of the Settings this job actually
     # ran with, plus which core keys came from a stored UI override

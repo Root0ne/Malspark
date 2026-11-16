@@ -31,7 +31,6 @@ function exportBundle(extra: StixObject[] = []) {
   return {
     type: "bundle",
     id: "bundle--c05e78f6-f39f-459d-bc03-234d11df4afa",
-    spec_version: "2.1",
     objects: [
       { type: "malware", id: MALWARE, name: "sample.exe", is_family: false },
       {

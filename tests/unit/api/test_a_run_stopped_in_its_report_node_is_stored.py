@@ -223,5 +223,23 @@ class TestTheStoredBundle:
             override_keys=(),
             hash_mismatch_reason=None,
         )
-        assert stix_bundle == {**export, "spec_version": "2.1"}
+        assert stix_bundle == export
         assert "x_malspark_published" not in stix_bundle
+
+    @pytest.mark.parametrize("exported", [True, False])
+    def test_the_envelope_holds_the_bundle_s_own_properties_only(self, exported: bool) -> None:
+        # STIX 2.1: a bundle is ``type``, ``id`` and ``objects``; ``spec_version``
+        # is each object's, and the envelope adds only ``x_`` properties.
+        export = {"type": "bundle", "id": "bundle--export", "objects": [{"x_kept": 1}]}
+        state = _judged_state(stix_bundle_extended=dict(export)) if exported else _judged_state()
+        stix_bundle, _ = _report_inputs(
+            state,
+            core_settings=Settings(_env_file=None),
+            override_keys=(),
+            hash_mismatch_reason=None,
+        )
+        assert {k for k in stix_bundle if not k.startswith("x_")} == {"type", "id", "objects"}
+        record = judge_bundle_record(_judged_state())
+        assert record is not None
+        assert set(record["bundle"]) == {"type", "id", "objects"}
+        assert all(obj["spec_version"] == "2.1" for obj in record["bundle"]["objects"])
