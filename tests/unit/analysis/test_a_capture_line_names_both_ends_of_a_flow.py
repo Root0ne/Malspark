@@ -141,6 +141,15 @@ def test_two_internal_ends_of_one_conversation_are_both_named(tmp_path: Path) ->
     )
 
 
+def test_the_internal_ends_are_listed_in_address_order(tmp_path: Path) -> None:
+    tenth, ninth = b"\x0a\x00\x00\x0a", b"\x0a\x00\x00\x09"
+    records = [
+        (0.0, _udp(tenth, PEER, 40000, 53, b"q")),
+        (1.0, _udp(ninth, PEER, 40001, 53, b"q")),
+    ]
+    assert _facts(tmp_path, records)["conversations"][0]["internal"] == ["10.0.0.9", "10.0.0.10"]
+
+
 def test_the_directions_add_up_to_the_conversation(tmp_path: Path) -> None:
     records = [
         *_download(50000),
