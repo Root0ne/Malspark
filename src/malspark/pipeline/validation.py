@@ -15031,6 +15031,46 @@ def discarded_retry_row(agent: str, revision_round: int, answer: str, why: str) 
     }
 
 
+# What a run-record row of the validation answers is for an answer whose claims
+# were not all read and that left force: a retry or a later round replaced it.
+CLAIMS_UNREAD_REPLACED_RECORD = "claims_unread_replaced"
+
+
+def claims_unread_replaced_row(
+    agent: str, replaced: Any, in_force: Any, replaced_by: str
+) -> dict[str, str] | None:
+    """An answer whose claims were not all read, replaced, as the run record keeps it; or ``None``.
+
+    A row when ``replaced`` carries an unread-claims reason
+    (``AgentISR.claims_unread_reason``) that the answer now in force does not
+    carry: the analyst, the replaced answer's round, the claims its read began,
+    read and left unread (``""`` where the reader gave no count), why in the
+    platform's words (``revision_merge.claims_unread_why_of``) and what replaced
+    it (``retry``, ``round N``). Only the answer in force degrades the run
+    (``nodes.claims_unread_in_force``); this is the record's alone. Read into
+    ``run_summary.validation.claims_unread_replaced``.
+    """
+    from malspark.pipeline.revision_merge import claims_unread_why_of
+
+    reason = str(getattr(replaced, "claims_unread_reason", "") or "")
+    if not reason.strip() or in_force is replaced:
+        return None
+    if reason in str(getattr(in_force, "claims_unread_reason", "") or ""):
+        return None
+    counts = getattr(replaced, "claims_unread_counts", None)
+    begun, read, unread = (str(int(n)) for n in counts) if counts else ("", "", "")
+    return {
+        "record": CLAIMS_UNREAD_REPLACED_RECORD,
+        "agent": str(agent),
+        "round": str(int(getattr(replaced, "revision_round", 0) or 0)),
+        "begun": begun,
+        "read": read,
+        "unread": unread,
+        "why": claims_unread_why_of(replaced),
+        "replaced_by": str(replaced_by),
+    }
+
+
 # ---------------------------------------------------------------------------
 # What a kept retry left out of the first answer
 # ---------------------------------------------------------------------------
@@ -15768,6 +15808,16 @@ def validation_metrics(
     # each when the analyst was asked (``retry_drop_row``).
     if drops:
         out["retry_drops"] = drops
+    # The answers whose claims were not all read that a retry or a later round
+    # replaced (``claims_unread_replaced_row``): a fact of the record, no
+    # degradation reason.
+    replaced = [
+        {k: v for k, v in row.items() if k != "record"}
+        for row in rows_kept
+        if row.get("record") == CLAIMS_UNREAD_REPLACED_RECORD
+    ]
+    if replaced:
+        out["claims_unread_replaced"] = replaced
     # The items a retry withdrew with a WITHDRAW line, with its reason
     # (``retry_withdrawn_row``).
     withdrawn = [

@@ -207,6 +207,7 @@ from malspark.pipeline.validation import (
     VALIDITY_CODE,
     ValidationTally,
     Violation,
+    claims_unread_replaced_row,
     corroboration,
     count_claim_blocks,
     not_run_sentence,
@@ -6534,6 +6535,16 @@ def make_revision_node(container: ServiceContainer, *, stage: Any = None) -> Any
                     )
                 revised[name] = report_now
                 revised_isrs[name] = isr
+                # The answer this round replaced, when claims it began were not
+                # all read: the run record says so (only the answer in force
+                # degrades the run).
+                replaced_unread = claims_unread_replaced_row(
+                    name, kept_isrs.get(name), isr, f"round {int(iteration)}"
+                )
+                if replaced_unread is not None and name not in not_asked:
+                    revision_validation.setdefault("validation_unparsed_answers", []).append(
+                        replaced_unread
+                    )
                 if name in not_asked:
                     # Its answer from before the round, handed back unasked:
                     # not a revision, and not counted as one.

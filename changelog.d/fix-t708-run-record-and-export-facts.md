@@ -1,3 +1,4 @@
 ### Fixed
 
 - **The stored STIX bundle's envelope holds `type`, `id` and `objects` only (T-708).** STIX 2.1 defines a bundle by those three properties; `spec_version` belongs to each object, where every object keeps it. The stored export and the judge's stored bundle no longer add `spec_version` to the envelope; `x_` properties stay where they were.
+- **An answer replaced while claims it began were unread is in the run record (T-708).** Only the answer in force carries its unread-claims reason into the run's degradation reasons, as before. Each answer that leaves force with such a reason, replaced by a validation retry or by a later round, is a row of `run_summary.validation.claims_unread_replaced`: the analyst, its round, the claims begun, read and unread, why, and what replaced it. The row is no degradation reason and no sentence of the report.

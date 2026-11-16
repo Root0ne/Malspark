@@ -187,6 +187,7 @@ from malspark.pipeline.validation import (
     claim_block_indexes,
     claims_kept_under_disputes_finding,
     claims_repeated,
+    claims_unread_replaced_row,
     count_claim_blocks,
     decompiled_functions,
     describe_stands_alone,
@@ -2918,6 +2919,11 @@ def claims_unread_sentence(agent: str, read: ClaimRead, revision_round: int = 0)
         f"{read.read} were read{declined}; {read.unread} {CLAIMS_UNREAD_CLOSING}"
         f"{uncited}{unreadable}"
     )
+
+
+def _claims_counts(read: ClaimRead, shortfall: str) -> tuple[int, int, int] | None:
+    """The claims ``read`` began, read and left unread, when its shortfall is recorded."""
+    return (read.begun, read.read, read.unread) if shortfall else None
 
 
 def confidence_unreadable_sentence(values: Sequence[str]) -> str:
@@ -10287,12 +10293,22 @@ class BaseAnalyst(BudgetMeter, ABC):
         (:meth:`_continued_question`).
         """
         try:
-            return BaseAnalyst._validation_turn(  # type: ignore[arg-type]
+            checked = BaseAnalyst._validation_turn(  # type: ignore[arg-type]
                 self, isr, evidence, chunk=chunk, only_cut=only_cut
             )
         finally:
             self._questions_carry_tools = False
             self._question_base = None
+        # An answer whose claims were not all read, replaced by its retry: the
+        # run record says so; only the answer in force can degrade the run.
+        replaced = claims_unread_replaced_row(str(self.name), isr, checked, "retry")
+        if replaced is not None:
+            kept = getattr(self, "validation_unparsed_answers", None)
+            if not isinstance(kept, list):
+                kept = []
+                self.validation_unparsed_answers = kept
+            kept.append(replaced)
+        return checked
 
     def _validation_turn(
         self,
@@ -13041,12 +13057,14 @@ class BaseAnalyst(BudgetMeter, ABC):
         self._pending_claims_unread = (
             self._claims_shortfall(read, revision_round) if read.claims else ""
         )
+        self._pending_claims_counts = _claims_counts(read, self._pending_claims_unread)
         self._pending_under_disputes = read.after_disputes if read.claims else 0
         return read.claims
 
     # The shortfall of the last strict read, and the claim headings it found
     # under the DISPUTES section, until an ISR takes them.
     _pending_claims_unread: str = ""
+    _pending_claims_counts: tuple[int, int, int] | None = None
     _pending_under_disputes: int = 0
 
     def _claims_shortfall(self, read: ClaimRead, revision_round: int) -> str:
@@ -13074,9 +13092,10 @@ class BaseAnalyst(BudgetMeter, ABC):
 
     def _with_claims_read(self, isr: AgentISR) -> AgentISR:
         """``isr`` with the shortfall of the strict read its claims came from, taken once."""
-        isr.note_claims_unread(self._pending_claims_unread)
+        isr.note_claims_unread(self._pending_claims_unread, self._pending_claims_counts)
         isr.note_claims_under_disputes(self._pending_under_disputes)
         self._pending_claims_unread = ""
+        self._pending_claims_counts = None
         self._pending_under_disputes = 0
         return isr
 
@@ -13169,12 +13188,14 @@ class BaseAnalyst(BudgetMeter, ABC):
         without_confidence = 0
         unreadable: tuple[str, ...] = ()
         shortfall = ""
+        counts: tuple[int, int, int] | None = None
         under_disputes = 0
         if "CLAIM:" in text or count_claims_begun(text) or count_claims_after_disputes(text):
             read = read_claim_blocks(text)
             structured, without_confidence = read.claims, read.without_confidence
             unreadable = read.confidence_unreadable
             shortfall = self._claims_shortfall(read, revision_round)
+            counts = _claims_counts(read, shortfall)
             under_disputes = read.after_disputes if read.claims else 0
             # A claim block that only parrots the placeholder is no finding,
             # whatever else the answer holds; an answer of nothing else is the
@@ -13194,7 +13215,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             isr.note_parse(
                 blocks_without_confidence=without_confidence, confidence_unreadable=unreadable
             )
-            isr.note_claims_unread(shortfall)
+            isr.note_claims_unread(shortfall, counts)
             isr.note_claims_under_disputes(under_disputes)
             return isr
 
@@ -13216,7 +13237,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             blocks_without_confidence=without_confidence,
             confidence_unreadable=unreadable,
         )
-        isr.note_claims_unread(shortfall)
+        isr.note_claims_unread(shortfall, counts)
         isr.status = NO_STRUCTURED_REPORT_STATUS
         isr.status_reason = UNPARSED_ANSWER_REASON
         return isr
