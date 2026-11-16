@@ -1038,3 +1038,12 @@ def test_the_task_s_passages_are_the_ones_the_code_takes_a_judge_drop_for() -> N
     assert {"string_resolution", "conclusion", "communications.1.encryption"} <= taken
     assert "executive_summary" not in taken and "configuration.1" not in taken
     assert taken == named
+
+
+def test_a_judge_row_whose_sentence_does_not_stand_is_told_both() -> None:
+    row = _row("A sentence the passage does not hold.", "keep", quote="Benign")
+
+    found = _refusals(report_of(), row)
+    assert [v.code for v in found][:1] == [UNKNOWN_PASSAGE_CODE]
+    assert "of the judge's decision" in found[0].message
+    assert agreement.SENTENCE_NOT_FOUND_CODE in [v.code for v in found[1:]]
