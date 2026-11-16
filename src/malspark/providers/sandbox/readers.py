@@ -647,15 +647,22 @@ class TriageReportReader(ReportReader):
                 TRIAGE_OVERVIEW_FILLS,
                 partial=self.PARTIAL,
                 signature_indicators=self.signature_indicators,
+                dropped_writer_fields=self.DROPPED_WRITER_FIELDS,
+                dropped_guest_pid_fields=self.DROPPED_GUEST_PID_FIELDS,
             )
-        # A task report's dumped file names its guest path under ``path``, and
-        # the guest's pid of its writer under ``pid``, beside ``procid``.
+        # A task report's dumped file names its guest path under ``path``.
         return Reading(
             TRIAGE_NORMALISER_FILLS,
             guest_path_fields=("path",),
-            dropped_guest_pid_fields=("pid",),
+            dropped_writer_fields=self.DROPPED_WRITER_FIELDS,
+            dropped_guest_pid_fields=self.DROPPED_GUEST_PID_FIELDS,
             signature_indicators=self.signature_indicators,
         )
+
+    # A dumped file's row names its writer by the task's process id under
+    # ``procid``, and the guest's pid of that process under ``pid``.
+    DROPPED_WRITER_FIELDS = ("procid",)
+    DROPPED_GUEST_PID_FIELDS = ("pid",)
 
     # What a behavioural task's row in the overview, and its task report's
     # ``task`` block, say of the machine the task ran in: ``resource`` is the

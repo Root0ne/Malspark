@@ -5,11 +5,14 @@ guest it lies, what kind of row it is and where it came from (a ransom note, a
 download, a region the process protected), and which process wrote it. The
 view keeps all of it: the guest path where the job's reader declares the field
 that holds one (``Reading.guest_path_fields``), the row's ``kind`` and
-``origin`` where it states them, and the writer by the process list's own id
-first (``schemas.sandbox_report._WRITER_KEYS``), with the task the reader
-listed it in and the guest's pid beside it where the reader declares the field
-that holds one (``Reading.dropped_guest_pid_fields``). The pack reads the view
-with the job's reader, as an agent's call does, so its entry states the same.
+``origin`` where it states them, and the writer by the process list's own id,
+read from every field the reader declares holds it
+(``Reading.dropped_writer_fields``, else the generic fields), with the task
+the reader listed it in and the guest's pid beside it where the reader
+declares the field that holds one (``Reading.dropped_guest_pid_fields``). The
+pack reads the view with the job's reader, as an agent's call does, so its
+entry states the same. A long answer is sized as every sibling view's is: the
+rows it does not show are counted and a page names where the rest are.
 
 The reports under ``fixtures/sandbox/triage_live`` are a public sandbox's
 output for a harmless submission; the rows added here are synthetic.
@@ -20,6 +23,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from malspark.providers.sandbox.readers import required_reader
 from malspark.providers.sandbox_tools import sandbox_dropped_files
@@ -102,12 +107,54 @@ class TestTheWriterIsTheProcessListsOwnId:
         assert row["pids"] == ["3444"]
         assert "guest_pid" not in row
 
-    def test_without_the_job_s_reader_no_field_is_read_as_a_guest_s(self) -> None:
+    def test_without_the_job_s_reader_the_generic_fields_are_read(self) -> None:
         row = _rows(None)[WRITTEN["name"]]
 
         assert row["path"] == ""
         assert "guest_pid" not in row
-        assert row["pids"] == ["86"]
+        assert row["pids"] == ["3444"]
+
+
+class TestTheWriterFieldsAreTheReadersDeclaration:
+    @pytest.fixture
+    def declaring(self) -> Any:
+        from dataclasses import replace
+
+        from malspark.providers.sandbox.readers import (
+            CapeReportReader,
+            register_report_reader,
+            unregister_report_reader,
+        )
+
+        class _Declaring(CapeReportReader):
+            id = "writer-box"
+
+            def reading(self, read_from: str = "", provider: str = "") -> Any:
+                held = super().reading(read_from, provider)
+                return replace(
+                    held, dropped_writer_fields=("writer_ref",), dropped_guest_pid_fields=("guest",)
+                )
+
+        register_report_reader(_Declaring)
+        yield ("writer-box", "writer-box")
+        unregister_report_reader(_Declaring.id)
+
+    def test_a_declared_field_names_the_writer_and_no_generic_one_does(
+        self, declaring: Any
+    ) -> None:
+        row = {"name": "a.dat", "writer_ref": 12, "pid": 99, "guest": 1500}
+        (answer,) = sandbox_dropped_files({"dropped_files": [row]}, normalised_by=declaring)[
+            "dropped"
+        ]
+
+        assert answer["pids"] == ["12"]
+        assert answer["guest_pid"] == "1500"
+
+    def test_a_row_holding_two_numbers_keeps_both(self) -> None:
+        row = {"name": "a.dat", "pid": 5, "process_id": 6}
+        (answer,) = sandbox_dropped_files({"dropped_files": [row]})["dropped"]
+
+        assert answer["pids"] == ["5", "6"]
 
 
 class TestThePackReadsTheViewWithTheJobsReader:
@@ -131,3 +178,69 @@ class TestThePackReadsTheViewWithTheJobsReader:
         assert row["path"] == NOTE
         assert row["origin"] == "ransom"
         assert (row["pids"], row["task"]) == (["86"], "behavioral1")
+
+
+class TestALongAnswerIsSizedAsEverySiblingViewIs:
+    """Six hundred written files: the answer stays in the job's room, the rest a page away."""
+
+    ROOM = 20_000
+
+    @staticmethod
+    def _many(count: int) -> list[dict[str, Any]]:
+        return [
+            {
+                **WRITTEN,
+                "name": f"files/0x{i:04x}.dat",
+                "path": f"C:\\Users\\Admin\\AppData\\Local\\Temp\\f{i:04d}.dat",
+                "sha256": f"{i:064x}",
+            }
+            for i in range(count)
+        ]
+
+    def _tool(self) -> Any:
+        from malspark.agents.mcp_client import MCPLangChainToolkit
+        from malspark.core.truncation_ledger import TruncationLedger
+        from malspark.providers import sandbox_tools
+
+        room = self.ROOM
+
+        class _Registry:
+            def answer_sizer(self) -> MCPLangChainToolkit:
+                return MCPLangChainToolkit(
+                    None, max_output_chars=room, truncation_ledger=TruncationLedger()
+                )
+
+        class _Container:
+            sandbox_report = sandbox_document(_report(*self._many(600)))
+            sandbox_normalised = TASKS
+
+            def get_server_registry(self) -> _Registry:
+                return _Registry()
+
+        return next(
+            t
+            for t in sandbox_tools.sandbox_tools(_Container())
+            if t.name == "sandbox_dropped_files"
+        )
+
+    def test_the_answer_counts_what_it_does_not_show_and_names_the_page(self) -> None:
+        from malspark.agents.evidence_recorder import shortened_notice
+        from malspark.agents.output_shortening import BOOKKEEPING_KEY
+
+        answer = self._tool().invoke({})
+
+        assert len(answer) <= self.ROOM
+        parsed = json.loads(answer)
+        assert BOOKKEEPING_KEY in parsed
+        assert parsed["total"] >= 600
+        notice = shortened_notice(answer, narrowing=("offset", "limit"))
+        assert "`offset`" in notice and "`limit`" in notice
+
+    def test_the_rows_not_shown_are_one_page_away(self) -> None:
+        tool = self._tool()
+        shown = len(json.loads(tool.invoke({}))["dropped"])
+
+        page = json.loads(tool.invoke({"offset": shown, "limit": 20}))
+
+        assert len(page["dropped"]) == 20
+        assert page["next_offset"] == shown + 20

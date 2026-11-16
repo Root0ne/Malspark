@@ -192,12 +192,6 @@ def _guest_path_fields(normalised_by: Sequence[str] | None) -> tuple[str, ...]:
     return reading.guest_path_fields if reading is not None else ()
 
 
-def _guest_pid_fields(normalised_by: Sequence[str] | None) -> tuple[str, ...]:
-    """The dropped-file fields the job's reader declares hold the writer's guest pid."""
-    reading = _reading(normalised_by)
-    return reading.dropped_guest_pid_fields if reading is not None else ()
-
-
 # A view's source under the reader's word for it, where the two differ
 # (``schemas.sandbox_report.REPORT_LIST_FIELDS``); every other source is its own.
 _FILL_NAMES: dict[str, str] = {"calls": "processes.calls"}
@@ -1126,7 +1120,7 @@ def sandbox_dropped_files(
     dropped = written
     rows: list[dict[str, Any]] = []
     guest = _guest_path_fields(normalised_by)
-    guest_pids = _guest_pid_fields(normalised_by)
+    reading = _reading(normalised_by)
 
     def _path(entry: dict[str, Any]) -> Any:
         # A path field the reader declares the guest's; never one it does not.
@@ -1151,7 +1145,7 @@ def sandbox_dropped_files(
                     row[key] = entry[key]
             # The processes the sandbox says wrote the file, where it says:
             # which tree wrote it is what makes the file the sample's.
-            row.update(_writer(entry, guest_pids))
+            row.update(_writer(entry, reading))
             if entry.get(LINEAGE_KEY):
                 row[LINEAGE_KEY] = entry[LINEAGE_KEY]
                 if entry.get(LINEAGE_REASON_KEY):
@@ -1172,7 +1166,7 @@ def sandbox_dropped_files(
                 LINEAGE_REASON_KEY: entry.get(LINEAGE_REASON_KEY) or "",
                 # The process that wrote it, where the sandbox names one: a
                 # file the launcher's process wrote is listed with its writer.
-                **_writer(entry, guest_pids),
+                **_writer(entry, reading),
             }
             for entry in platform
         ]
@@ -1184,29 +1178,27 @@ def sandbox_dropped_files(
 _DROPPED_FACT_KEYS = ("kind", "origin")
 
 
-def _writer(entry: dict[str, Any], guest_pid_fields: Sequence[str]) -> dict[str, Any]:
+def _writer(entry: dict[str, Any], reading: Any) -> dict[str, Any]:
     """The process a dropped-file record names as its writer: ``pids``, ``task``, ``guest_pid``.
 
-    The writer is read as the sample's tree reads it, by the first field
-    naming one, the process list's own id first
-    (``schemas.sandbox_report._writer_pids``); a sandbox may write several in
-    one field joined by commas (``"1536,908"``). The task the reader listed
-    the row in, and the guest's pid of the writer where the job's reader
-    declares the field that holds it and it is another number, stand beside
-    it: one process identity (``schemas.process_identity``). ``{}`` for a row
-    naming no writer.
+    The writer's ids are read from every field the job's reader declares
+    holds one, else the generic fields
+    (``schemas.sandbox_report.dropped_writer``); the task the reader listed
+    the row in, and the guest's pid of the writer where the reader declares
+    the field that holds it and it is another number, stand beside them: one
+    process identity (``schemas.process_identity``). ``{}`` for a row naming
+    no writer.
     """
-    from malspark.schemas.sandbox_report import _writer_pids
+    from malspark.schemas.sandbox_report import dropped_writer
 
-    pids = _writer_pids(entry)
+    pids, guest = dropped_writer(entry, reading)
     if not pids:
         return {}
     out: dict[str, Any] = {"pids": pids}
     task = entry.get(PROCESS_TASK_KEY)
     if task:
         out["task"] = str(task)
-    guest = next((p for f in guest_pid_fields if (p := pid_of(entry.get(f)))), "")
-    if guest and guest not in pids:
+    if guest:
         out["guest_pid"] = guest
     return out
 

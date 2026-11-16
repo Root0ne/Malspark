@@ -587,6 +587,11 @@ class Reading:
     # process that wrote it, where the source names the writer by an id of its
     # process list beside it; empty where the source names no such field.
     dropped_guest_pid_fields: tuple[str, ...] = ()
+    # The fields of a dropped file's row that hold the id the report's process
+    # list gives the process that wrote it; empty where the source names no
+    # such field of its own, and the generic fields are read
+    # (:data:`DROPPED_WRITER_FIELDS`).
+    dropped_writer_fields: tuple[str, ...] = ()
     # Where a signature row states its indicators, as the reader's source
     # declares them (``schemas.signature_indicators``); ``None`` where the
     # source states none.
@@ -1636,26 +1641,38 @@ def _signature_nodes(
     return nodes
 
 
-# The fields a written file names the processes that wrote it under, the
-# process list's own id first: a sandbox that lists its processes by an id of
-# its own names the writer by that id too, beside the guest's pid.
-_WRITER_KEYS: tuple[str, ...] = ("procid", "pids", "pid", "process_id")
+# The fields a written file names the processes that wrote it under where its
+# reader declares none of its own (``Reading.dropped_writer_fields``).
+DROPPED_WRITER_FIELDS: tuple[str, ...] = ("pids", "pid", "process_id")
 
 
-def _writer_pids(row: Mapping[str, Any]) -> list[str]:
-    """The processes a written file's row names as its writer, by the first field naming one."""
-    for key in _WRITER_KEYS:
+def dropped_writer(row: Mapping[str, Any], reading: Reading | None) -> tuple[list[str], str]:
+    """The ids a written file's row names its writer by, and the guest's pid beside them.
+
+    The ids are read from every field the row's reader declares holds one
+    (``Reading.dropped_writer_fields``, else :data:`DROPPED_WRITER_FIELDS`),
+    each once in the order read, a field joining several with commas
+    (``"1536,908"``); the guest's pid from the first field the reader
+    declares holds it, where it is another number. A row whose id fields
+    name none is named by the guest's pid alone, an alias the process
+    identity reads (``schemas.process_identity``).
+    """
+    declared = reading.dropped_writer_fields if reading is not None else ()
+    pids: list[str] = []
+    for key in declared or DROPPED_WRITER_FIELDS:
         value = row.get(key)
-        pids = [
-            pid
-            for one in (value if isinstance(value, list) else [value])
-            if isinstance(one, int | str) and not isinstance(one, bool)
-            for text in str(one).split(",")
-            if (pid := pid_of(text))
-        ]
-        if pids:
-            return pids
-    return []
+        for one in value if isinstance(value, list) else [value]:
+            if not isinstance(one, int | str) or isinstance(one, bool):
+                continue
+            for text in str(one).split(","):
+                pid = pid_of(text)
+                if pid and pid not in pids:
+                    pids.append(pid)
+    guest_fields = reading.dropped_guest_pid_fields if reading is not None else ()
+    guest = next((pid for key in guest_fields if (pid := pid_of(row.get(key)))), "")
+    if not pids:
+        return ([guest] if guest else []), ""
+    return pids, (guest if guest not in pids else "")
 
 
 # What becomes of a written file the sample wrote that a member's facts touch
@@ -2057,6 +2074,9 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
     reached = _reached_launcher_tasks(report, by_pid, launcher_nodes)
     tasked = any(node[0] for node in parent)
     places = _member_places(names, folders)
+    # Which fields name a written file's writer, as the report's reader declares.
+    provider, source_format, read_from = reader_of(report)
+    reading = normaliser_reading(source_format, provider, read_from)
     unplaced = credited = unsettled = 0
     for index, dropped in enumerate(report.dropped_files):
         if not isinstance(dropped, dict):
@@ -2064,7 +2084,7 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
         plain = {k: v for k, v in dropped.items() if k not in _DROPPED_PLATFORM_KEYS}
         # The row's writers, read within its own task, as a process is the
         # pair of its task and its id.
-        writers = _writer_pids(plain)
+        writers, _guest = dropped_writer(plain, reading)
         task = str(plain.get(PROCESS_TASK_KEY) or "")
         nodes = {(task, pid) for pid in writers} if task or not tasked else set()
         reason, fact, at_no_place = _member_reading(
