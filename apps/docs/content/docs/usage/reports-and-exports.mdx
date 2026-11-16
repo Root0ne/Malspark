@@ -229,15 +229,21 @@ value in `registry_event`. A mutex, which no Windows log records, gets none.
 Every Sigma selection can match alone (the condition is the one selection, or
 `1 of` them), so each holds only specific values: a value the benign-location
 catalogue calls every Windows host's (an autorun key, a file Windows ships) is
-never selected, whatever recorded it, a sandbox included; and a folder or key
-selected with `contains` that another selected value holds as whole path
-components (the folder a selected file lies in, the key a selected subkey lies
-under) is left out for the narrower value. A folder the catalogue does not know
-and no other value narrows is a selection of its own. A Sigma draft is tagged
-with an ATT&CK technique only where that technique's evidence quotes or roots
-name a value the draft selects, whole and delimited, and with a tactic only for
-a technique kept, from a published cell; a draft no technique names carries no
-`tags`. With no value left to select on there is no Sigma draft, and the report and the
+never selected, whatever recorded it, a sandbox included. A write a sandbox
+recorded under such a key is selected by what makes it the sample's: the key
+with the value's name, and the program its data names. A path the IOC table
+publishes whose file name alone is one Windows ships keeps its folders past the
+drive and the user's profile. A folder or key selected with `contains` that
+another selected value lies under (the folder a selected file lies in, the key
+a selected subkey lies under) is left out for the narrower value, case and
+separators folded; of two spellings of one key, the shorter, which matches
+both, stays. A folder the catalogue does not know and no other value narrows is
+a selection of its own. Each value left out of a draft that is built is
+recorded on the draft with why, and not printed. A Sigma draft is tagged with
+an ATT&CK technique only where that technique's evidence quotes or roots name a
+value the draft selects, whole and delimited, quoted, in code marks or as a
+path component, and with a tactic only for a technique kept, from a published
+cell; a draft no technique names carries no `tags`. With no value left to select on there is no Sigma draft, and the report and the
 console say why where they list the drafts. Every Sigma value is written as the
 literal it is: `*`, `?` and a backslash before either are escaped. A Benign
 verdict publishes no malicious indicator, so it gets no draft, and the report
