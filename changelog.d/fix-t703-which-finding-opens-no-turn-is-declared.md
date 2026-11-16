@@ -1,0 +1,3 @@
+### Changed
+
+- **Which finding opens no analyst turn of its own is declared beside the codes (T-703).** `validation.OPENS_NO_TURN_OF_ITS_OWN` names the codes that join a validation turn another finding opens and, standing alone, are recorded as not asked; it holds `attck.claim_does_not_describe` alone. The turn rule, the recorded rows and the replay reader `scripts.replay.retry_turns` read it, and every code not declared there opens its turn. The question, the card, the retry count, the recorded rows and the judge's technique question are unchanged. No finding code, event or stored file changed.

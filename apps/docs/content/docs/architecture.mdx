@@ -2182,7 +2182,10 @@ decide.
    sample does it, and then to say what it does. Decided only where the
    catalogue gives the id's name, and not asked of an absence claim or a
    platform mismatch, which get their own question. It opens no validation
-   turn of its own (`validation.describe_stands_alone`): beside a finding that
+   turn of its own: its code is the one declared in
+   `validation.OPENS_NO_TURN_OF_ITS_OWN`, which the turn rule
+   (`validation.describe_stands_alone`) reads, and every code not declared
+   there opens its turn. Beside a finding that
    opens the turn it is asked there, with the technique's card, and standing
    alone (beside nothing but a check that could not run, or the exit branches
    that joined it) no turn is asked. The rule is asked again wherever a
