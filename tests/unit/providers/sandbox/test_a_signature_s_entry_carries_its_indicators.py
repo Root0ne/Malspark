@@ -412,6 +412,24 @@ class TestAProcessListedInTwoTasks:
         assert indicator["process"]["id"] == "84" and "image" not in indicator["process"]
         assert "2 tasks" in indicator["process"]["not_settled"]
 
+    def test_an_id_another_task_s_process_has_as_its_guest_pid_names_its_own(self) -> None:
+        overview = _json("overview.json")
+        overview["signatures"].append(
+            {"name": "own marks", "score": 1, "indicators": [{"procid": 86}]}
+        )
+        second = _json("behavioral2.json")
+        second["processes"].append(
+            {"procid": 400, "procid_parent": 87, "pid": 86, "image": "b.exe"}
+        )
+        report = required_reader("triage").read(
+            overview,
+            provider="triage",
+            task_id="s1",
+            task_reports={"behavioral1": _json("behavioral1.json"), "behavioral2": second},
+        )
+        (indicator,) = _rows(report)["own marks"]["indicators"]
+        assert indicator["process"]["id"] == "86" and "not_settled" not in indicator["process"]
+
 
 class TestThePagedCallOnTheLiveReport:
     def test_a_process_id_lists_the_indicators_acting_on_it_too(self) -> None:
@@ -437,6 +455,13 @@ class TestThePagedCallOnTheLiveReport:
             sandbox_document(_read(task)), normalised_by=TRIAGE, process="300"
         )
         assert page["no"] == INDICATORS_NO_PROCESS.format(asked="300")
+
+    def test_an_id_equal_to_another_process_s_guest_pid_names_its_own_process(self) -> None:
+        task = _json("behavioral1.json")
+        task["processes"].append({"procid": 400, "procid_parent": 84, "pid": 86, "image": "b.exe"})
+        page = sandbox_signatures(sandbox_document(_read(task)), normalised_by=TRIAGE, process="86")
+        (written,) = [one for one in page["indicators"] if one["signature"] == WPM]
+        assert written["target"]["id"] == "86" and "not_settled" not in written["target"]
 
     def test_an_offset_past_the_matches_gives_no_reason(self) -> None:
         page = sandbox_signatures(

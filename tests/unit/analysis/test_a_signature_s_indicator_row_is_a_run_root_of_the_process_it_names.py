@@ -300,6 +300,7 @@ class TestAnIdATaskListsTwiceNamesNoProcess:
                     {"pid": 85, "ppid": 56, "name": SAMPLE, "task": "t1"},
                     {"pid": 900, "ppid": 4, "name": "x.exe", "task": "t1", "guest_pid": "1500"},
                     {"pid": 900, "ppid": 5, "name": "y.exe", "task": "t1", "guest_pid": "1504"},
+                    {"pid": 900, "ppid": 6, "name": "z.exe", "task": "t2", "guest_pid": "1600"},
                 ]
             },
         )
@@ -319,10 +320,10 @@ class TestAnIdATaskListsTwiceNamesNoProcess:
             {
                 "sections": {
                     "processes": {
-                        "items": 3,
+                        "items": 4,
                         "prefix": "proc",
                         "pids": [[85, 85], [900, 900]],
-                        "repeats": [[900, 2]],
+                        "repeats": [[900, 3]],
                     }
                 }
             },
@@ -342,6 +343,7 @@ class TestAnIdATaskListsTwiceNamesNoProcess:
         assert found.of_item("proc:900") == ("", ITEM_UNSETTLED.format(item="proc:900"))
         assert found.of_item("proc:900.2") == ("", ITEM_UNSETTLED.format(item="proc:900.2"))
         assert found.of_item("proc:85") == (P85, "")
+        assert found.of_item("proc:900.3") == ("sandbox process 900 in task t2", "")
 
 
 class TestARowThatStatesNoTaskIsReadAgainstTheListedTasks:
@@ -391,6 +393,29 @@ class TestTheWordsBeforeAProcessNumberAreDeclared:
 
     def test_a_word_a_reader_declares_picks_its_process(self, declared: Any) -> None:
         held = _sources("box_ref 85 wrote into another process [ev_0082].", "ev_0082")
+
+        assert held["ev_0082"] == (READING_RUN, (P85,))
+
+    def test_a_signature_indicator_s_declared_process_field_is_a_word(self) -> None:
+        from dataclasses import replace
+
+        from malspark.providers.sandbox.readers import (
+            CapeReportReader,
+            register_report_reader,
+            unregister_report_reader,
+        )
+
+        class _Indicating(CapeReportReader):
+            id = "indicating-box"
+            signature_indicators = replace(
+                CapeReportReader.signature_indicators, process=("actor_ref",)
+            )
+
+        register_report_reader(_Indicating)
+        try:
+            held = _sources("actor_ref 85 wrote into another process [ev_0082].", "ev_0082")
+        finally:
+            unregister_report_reader(_Indicating.id)
 
         assert held["ev_0082"] == (READING_RUN, (P85,))
 
