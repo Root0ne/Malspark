@@ -145,8 +145,8 @@ def test_a_conversation_counts_the_packets_from_the_peer(tmp_path: Path) -> None
     line = conversation_line(facts["conversations"][0])
     assert line == (
         f"8.8.8.8:443/tcp — {len(records)} pkts, {sum(sent) + sum(got)} bytes: "
-        f"10.0.0.2 → 8.8.8.8 {len(sent)} pkts, {sum(sent)} bytes; "
-        f"8.8.8.8 → 10.0.0.2 {len(got)} pkts, {sum(got)} bytes"
+        f"10.0.0.2 sent {len(sent)} pkts, {sum(sent)} bytes; "
+        f"8.8.8.8 sent {len(got)} pkts, {sum(got)} bytes"
     )
 
 
@@ -168,8 +168,7 @@ def test_a_one_way_conversation_answers_as_before(tmp_path: Path) -> None:
         }
     ]
     assert conversation_line(facts["conversations"][0]) == (
-        "8.8.8.8:9/udp — 2 pkts, 62 bytes: 10.0.0.2 → 8.8.8.8 2 pkts, 62 bytes; "
-        "8.8.8.8 → 10.0.0.2 none"
+        "8.8.8.8:9/udp — 2 pkts, 62 bytes: 10.0.0.2 sent 2 pkts, 62 bytes; 8.8.8.8 sent none"
     )
 
 
@@ -192,7 +191,7 @@ def test_a_flow_the_external_peer_opened_is_a_conversation(tmp_path: Path) -> No
         }
     ]
     assert conversation_line(facts["conversations"][0]).endswith(
-        ": 10.0.0.2 → 8.8.8.8 none; 8.8.8.8 → 10.0.0.2 3 pkts, 96 bytes (inbound only)"
+        ": 8.8.8.8 sent 3 pkts, 96 bytes to 10.0.0.2 (inbound only)"
     )
 
 

@@ -5,7 +5,9 @@ The line keyed each conversation on its public end and called that end's share
 word the rest of the platform uses for it, so a download read as an upload. The
 line now names the internal end, told from the capture by the module's own
 internal/external rule, and the public peer, and states the packets and bytes
-each of them sent. A capture that gives no internal end says so, and a record
+each of them sent: each direction names only the addresses that sent in it, and
+the peer's names the internal ends it sent to wherever they are not exactly the
+ones that sent to it. A capture that gives no internal end says so, and a record
 stored with the old keys is printed with the peer's share as the peer's.
 """
 
@@ -101,8 +103,7 @@ def test_a_download_reads_as_the_peer_sending_to_the_guest(tmp_path: Path) -> No
     }
     assert conversation_line(row) == (
         f"8.8.8.8:80/tcp — {out_p + in_p} pkts, {out_b + in_b} bytes: "
-        f"10.0.0.2 → 8.8.8.8 {out_p} pkts, {out_b} bytes; "
-        f"8.8.8.8 → 10.0.0.2 {in_p} pkts, {in_b} bytes"
+        f"10.0.0.2 sent {out_p} pkts, {out_b} bytes; 8.8.8.8 sent {in_p} pkts, {in_b} bytes"
     )
 
 
@@ -112,8 +113,8 @@ def test_a_flow_the_peer_alone_sent_says_the_other_way_carried_none(tmp_path: Pa
     assert row["inbound_only"] is True
     assert (row["packets_to_peer"], row["bytes_to_peer"]) == (0, 0)
     assert conversation_line(row) == (
-        "8.8.8.8:6000/udp — 3 pkts, 96 bytes: 10.0.0.2 → 8.8.8.8 none; "
-        "8.8.8.8 → 10.0.0.2 3 pkts, 96 bytes (inbound only)"
+        "8.8.8.8:6000/udp — 3 pkts, 96 bytes: 8.8.8.8 sent 3 pkts, 96 bytes to 10.0.0.2 "
+        "(inbound only)"
     )
 
 
@@ -122,8 +123,7 @@ def test_a_flow_the_guest_alone_sent_says_the_peer_sent_none(tmp_path: Path) -> 
     row = _facts(tmp_path, records)["conversations"][0]
     assert "inbound_only" not in row
     assert conversation_line(row) == (
-        "8.8.8.8:9/udp — 2 pkts, 62 bytes: 10.0.0.2 → 8.8.8.8 2 pkts, 62 bytes; "
-        "8.8.8.8 → 10.0.0.2 none"
+        "8.8.8.8:9/udp — 2 pkts, 62 bytes: 10.0.0.2 sent 2 pkts, 62 bytes; 8.8.8.8 sent none"
     )
 
 
@@ -135,10 +135,16 @@ def test_two_internal_ends_of_one_conversation_are_both_named(tmp_path: Path) ->
     ]
     row = _facts(tmp_path, records)["conversations"][0]
     assert row["internal"] == ["10.0.0.2", "10.0.0.3"]
-    assert conversation_line(row) == (
-        "8.8.8.8:53/udp — 3 pkts, 92 bytes: 10.0.0.2 and 10.0.0.3 → 8.8.8.8 2 pkts, 58 bytes; "
-        "8.8.8.8 → 10.0.0.2 and 10.0.0.3 1 pkts, 34 bytes"
+    assert (row["internal_to_peer"], row["internal_from_peer"]) == (
+        ["10.0.0.2", "10.0.0.3"],
+        ["10.0.0.3"],
     )
+    # 10.0.0.2 only asked: the peer's direction names 10.0.0.3, the one it answered.
+    assert conversation_line(row) == (
+        "8.8.8.8:53/udp — 3 pkts, 92 bytes: 10.0.0.2 and 10.0.0.3 sent 2 pkts, 58 bytes; "
+        "8.8.8.8 sent 1 pkts, 34 bytes to 10.0.0.3"
+    )
+    _no_address_credited_with_traffic_it_did_not_send(row, records)
 
 
 def test_the_internal_ends_are_listed_in_address_order(tmp_path: Path) -> None:
@@ -174,9 +180,11 @@ def test_a_capture_with_no_internal_end_says_so(tmp_path: Path) -> None:
     assert row["internal"] == []
     assert (row["packets_to_peer"], row["packets_from_peer"]) == (0, 0)
     assert row["public_senders"] == ["1.2.3.4"]
+    # The peer sent nothing: a public sender talking to it is no inbound-only flow.
+    assert "inbound_only" not in row
     assert conversation_line(row) == (
         "8.8.8.8:53/udp — 2 pkts, 58 bytes: no internal end in the capture; "
-        "1.2.3.4 → 8.8.8.8 2 pkts, 58 bytes"
+        "1.2.3.4 sent 2 pkts, 58 bytes"
     )
 
 
@@ -187,9 +195,88 @@ def test_a_public_sender_beside_the_guest_is_named_apart(tmp_path: Path) -> None
     ]
     row = _facts(tmp_path, records)["conversations"][0]
     assert conversation_line(row) == (
-        "8.8.8.8:53/udp — 2 pkts, 59 bytes: 10.0.0.2 → 8.8.8.8 1 pkts, 29 bytes; "
-        "8.8.8.8 → 10.0.0.2 none; 1.2.3.4 → 8.8.8.8 1 pkts, 30 bytes"
+        "8.8.8.8:53/udp — 2 pkts, 59 bytes: 10.0.0.2 sent 1 pkts, 29 bytes; "
+        "8.8.8.8 sent none to 10.0.0.2; 1.2.3.4 sent 1 pkts, 30 bytes"
     )
+
+
+# ---------------------------------------- each direction names who sent in it
+
+_SENT = re.compile(r"(?:^|: |; )((?:[0-9.]+)(?: and [0-9.]+)*) sent (\d+) pkts, (\d+) bytes")
+
+
+def _no_address_credited_with_traffic_it_did_not_send(
+    row: dict[str, Any], records: list[tuple[float, bytes]]
+) -> None:
+    """Each "<addresses> sent K pkts, B bytes" of the line is what those addresses sent in it."""
+    peer, port = bytes(int(x) for x in row["dst"].split(".")), row["dport"]
+    ours = [
+        f
+        for _, f in records
+        if (f[16:20] == peer and int.from_bytes(f[22:24], "big") == port)
+        or (f[12:16] == peer and int.from_bytes(f[20:22], "big") == port)
+    ]
+    said = _SENT.findall(conversation_line(row))
+    assert said, conversation_line(row)
+    for named, packets, size in said:
+        senders = {bytes(int(x) for x in ip.split(".")) for ip in named.split(" and ")}
+        assert all(any(f[12:16] == ip for f in ours) for ip in senders), (named, row)
+        frames = [f for f in ours if f[12:16] in senders]
+        assert (len(frames), sum(len(f) for f in frames)) == (int(packets), int(size)), named
+
+
+def test_an_end_that_only_received_is_named_as_the_peer_s_receiver(tmp_path: Path) -> None:
+    records = [
+        (0.0, _udp(GUEST, PEER, 1000, 53, b"q")),
+        (1.0, _udp(PEER, OTHER_GUEST, 53, 1000, b"r" * 100)),
+    ]
+    row = _facts(tmp_path, records)["conversations"][0]
+    assert conversation_line(row) == (
+        "8.8.8.8:53/udp — 2 pkts, 157 bytes: 10.0.0.2 sent 1 pkts, 29 bytes; "
+        "8.8.8.8 sent 1 pkts, 128 bytes to 10.0.0.3"
+    )
+    _no_address_credited_with_traffic_it_did_not_send(row, records)
+
+
+def test_a_broadcast_the_peer_sent_to_is_no_sender(tmp_path: Path) -> None:
+    broadcast = b"\xff\xff\xff\xff"
+    records = [
+        (0.0, _udp(GUEST, b"\xe0\x00\x00\xfb", 5353, 5353, b"q")),
+        (0.0, _udp(GUEST, broadcast, 68, 67, b"q")),
+        (0.0, _udp(PEER, broadcast, 68, 67, b"q")),
+    ]
+    (row,) = _facts(tmp_path, records)["conversations"]
+    assert conversation_line(row) == (
+        "8.8.8.8:68/udp — 1 pkts, 29 bytes: 8.8.8.8 sent 1 pkts, 29 bytes to "
+        "255.255.255.255 (inbound only)"
+    )
+    _no_address_credited_with_traffic_it_did_not_send(row, records)
+
+
+def test_an_end_that_sent_nothing_beside_a_public_sender_is_said_to_send_nothing_back(
+    tmp_path: Path,
+) -> None:
+    records = [
+        (0.0, _udp(PUBLIC, PEER, 7000, 53, b"q")),
+        (1.0, _udp(PEER, GUEST, 53, 40000, b"push")),
+    ]
+    row = _facts(tmp_path, records)["conversations"][0]
+    assert "inbound_only" not in row
+    assert conversation_line(row) == (
+        "8.8.8.8:53/udp — 2 pkts, 61 bytes: 8.8.8.8 sent 1 pkts, 32 bytes to 10.0.0.2 "
+        "(none back); 1.2.3.4 sent 1 pkts, 29 bytes"
+    )
+    _no_address_credited_with_traffic_it_did_not_send(row, records)
+
+
+def test_a_direction_of_empty_packets_is_not_none() -> None:
+    # Packets with no byte counted (an empty record) are still packets sent.
+    row = {
+        "dst": "8.8.8.8", "dport": 53, "proto": "udp", "packets": 3, "bytes": 29,
+        "internal": ["10.0.0.2"], "packets_to_peer": 1, "bytes_to_peer": 29,
+        "packets_from_peer": 2, "bytes_from_peer": 0,
+    }  # fmt: skip
+    assert conversation_line(row).endswith("; 8.8.8.8 sent 2 pkts, 0 bytes")
 
 
 # ------------------------------------------------------- no line says "host"
@@ -221,32 +308,89 @@ _OLD_ROWS = [
     {"dst": "8.8.8.8", "dport": 9, "proto": "udp", "packets": 2, "bytes": 62},
 ]  # fmt: skip
 _OLD_LINES = [
-    "93.123.17.252:80/tcp — 103 pkts, 87527 bytes: toward 93.123.17.252 38 pkts, 2752 bytes; "
-    "from 93.123.17.252 65 pkts, 84775 bytes; the record does not name the internal end",
-    "8.8.4.4:6000/udp — 3 pkts, 96 bytes: toward 8.8.4.4 none; from 8.8.4.4 3 pkts, 96 bytes "
-    "(inbound only); the record does not name the internal end",
-    "8.8.8.8:9/udp — 2 pkts, 62 bytes: toward 8.8.8.8 2 pkts, 62 bytes; the record does not "
-    "state what 8.8.8.8 sent or name the internal end",
+    "93.123.17.252:80/tcp — 103 pkts, 87527 bytes: 93.123.17.252 was sent 38 pkts, 2752 bytes "
+    "and sent 65 pkts, 84775 bytes; the other end is not recorded",
+    "8.8.4.4:6000/udp — 3 pkts, 96 bytes: 8.8.4.4 was sent none and sent 3 pkts, 96 bytes "
+    "(inbound only); the other end is not recorded",
+    "8.8.8.8:9/udp — 2 pkts, 62 bytes: 8.8.8.8 was sent 2 pkts, 62 bytes; what 8.8.8.8 sent "
+    "and the other end are not recorded",
 ]
+# The text the summary's writer stored with those rows, its protocols and TLS names in the
+# writer's order; the record holds them in the order a JSON store keeps keys, not that one.
+_OLD_SUMMARY = "\n".join(
+    [
+        "#### Packet Capture Analysis (deterministic, whole capture):",
+        "1162 of 1162 packets in the capture read: 900000 bytes over 576.0s. Protocols: "
+        "other=2, tcp=1150, udp=10",
+        "",
+        "External conversations (all 3, by volume):",
+        "- 93.123.17.252:80/tcp — 103 pkts, 87527 bytes (65 pkts, 84775 bytes from the host)",
+        "- 8.8.4.4:6000/udp — 3 pkts, 96 bytes (3 pkts, 96 bytes from the host; inbound only)",
+        "- 8.8.8.8:9/udp — 2 pkts, 62 bytes",
+        "",
+        "TLS SNI (encrypted destinations):",
+        "- a.example (3 ClientHello)",
+        "- zz.io (1 ClientHello)",
+        "",
+        "Beaconing detected (periodic callbacks — strong C2 signal):",
+        "- 93.123.17.252:80/tcp — 12 connections opened, ~30.0s interval (regular; likely C2 "
+        "beacon)",
+    ]
+)
 
 
 def _old_record() -> dict[str, Any]:
     return {
-        "summary": "#### Packet Capture Analysis (deterministic, whole capture):\n"
-        "1162 of 1162 packets in the capture read: 900000 bytes over 576.0s. Protocols: tcp=1162"
-        "\n\nExternal conversations (all 3, by volume):\n"
-        "- 93.123.17.252:80/tcp — 103 pkts, 87527 bytes (65 pkts, 84775 bytes from the host)",
+        "summary": _OLD_SUMMARY,
         "empty": False,
         "packets_read": 1162,
         "packets_in_capture": 1162,
         "packet_limit": None,
         "bytes": 900000,
         "duration_s": 576.0,
-        "protocols": {"tcp": 1162},
+        "protocols": {"tcp": 1150, "udp": 10, "other": 2},
         "conversations": [dict(row) for row in _OLD_ROWS],
-        "sni": {},
-        "beacons": [],
-    }
+        "sni": {"zz.io": 1, "a.example": 3},
+        "beacons": [
+            {"dst": "93.123.17.252", "dport": 80, "proto": "tcp", "callbacks": 12,
+             "interval_s": 30.0, "unit": "connection"},
+        ],
+    }  # fmt: skip
+
+
+def beside_the_flows(text: str) -> list[str]:
+    """``text``'s lines with its conversation lines and their heading taken out."""
+    out: list[str] = []
+    listing = False
+    for line in text.split("\n"):
+        if line.startswith("External conversations ("):
+            listing = True
+            continue
+        if listing and line.startswith("- "):
+            continue
+        listing = False
+        out.append(line)
+    return out
+
+
+def _entry(record: dict[str, Any]) -> Any:
+    from malspark.schemas.evidence import build_entry, format_entry_id
+
+    return build_entry(
+        entry_id=format_entry_id(1),
+        seq=1,
+        agent="network",
+        tool="pcap_summary",
+        args={},
+        server=None,
+        output=json.dumps(record),
+    )
+
+
+def _section(record: dict[str, Any]) -> str:
+    from malspark.reporting.ledger_report import build_sections
+
+    return {s.key: s for s in build_sections([_entry(record)])}["pcap_summary"].text
 
 
 def test_an_old_record_s_line_gives_the_peer_s_share_as_the_peer_s() -> None:
@@ -257,28 +401,34 @@ def test_a_record_that_counted_only_toward_the_peer_says_nothing_of_what_it_sent
     # Before the replies were counted, a row held the packets toward the peer
     # alone: the peer's packets were not read, so they are not "none".
     line = conversation_line(_OLD_ROWS[2])
-    assert "from 8.8.8.8" not in line
+    assert re.search(r"8\.8\.8\.8 sent (\d|none)", line) is None
     assert "none" not in line
-    assert "does not state what 8.8.8.8 sent" in line
+    assert "what 8.8.8.8 sent and the other end are not recorded" in line
+
+
+def test_a_rebuilt_record_differs_from_its_stored_text_only_in_its_flow_lines() -> None:
+    record = _old_record()
+    rebuilt = summary_text(record)
+    assert len(rebuilt.split("\n")) == len(_OLD_SUMMARY.split("\n"))
+    assert beside_the_flows(rebuilt) == beside_the_flows(_OLD_SUMMARY)
+    flows = [line for line in rebuilt.split("\n") if line.startswith("- ") and " — " in line]
+    assert flows[:3] == [f"- {line}" for line in _OLD_LINES]
 
 
 def test_the_report_prints_an_old_record_truthfully() -> None:
-    from malspark.reporting.ledger_report import build_sections
-    from malspark.schemas.evidence import build_entry, format_entry_id
-
-    entry = build_entry(
-        entry_id=format_entry_id(1),
-        seq=1,
-        agent="network",
-        tool="pcap_summary",
-        args={},
-        server=None,
-        output=json.dumps(_old_record()),
-    )
-    section = {s.key: s for s in build_sections([entry])}["pcap_summary"]
-    assert "from the host" not in section.text
+    text = _section(_old_record())
+    assert "from the host" not in text
     for line in _OLD_LINES:
-        assert f"- {line}" in section.text
+        assert f"- {line}" in text
+    # Its overview, TLS names and beacons are the lines the writer stored.
+    assert beside_the_flows(text) == beside_the_flows(_OLD_SUMMARY)
+
+
+def test_a_record_without_the_capture_s_counts_prints_its_stored_text() -> None:
+    # Recorded before the summary carried how much of the capture it read: its
+    # conversations are no whole set of facts, so its own text is printed.
+    record = {key: value for key, value in _old_record().items() if key != "packets_read"}
+    assert _section(record) == _OLD_SUMMARY
 
 
 def test_the_triage_pack_prints_an_old_record_truthfully() -> None:
@@ -286,7 +436,20 @@ def test_the_triage_pack_prints_an_old_record_truthfully() -> None:
 
     line = _pcap(_old_record())
     assert "host" not in line
-    assert ", ".join(_OLD_LINES) in line
+    assert " | ".join(_OLD_LINES) in line
+
+
+def test_the_triage_pack_parts_its_conversations_by_a_mark_no_line_holds(tmp_path: Path) -> None:
+    from malspark.pipeline.triage_pack import _pcap
+
+    pushed = [(1.0 + i, _udp(PEER, GUEST, 6000, 1, b"p")) for i in range(2)]
+    records = [*_download(), *pushed, (5.0, _udp(PUBLIC, PEER, 7000, 53, b"q"))]
+    facts = _facts(tmp_path, records)
+    lines = [conversation_line(row) for row in facts["conversations"]]
+    assert len(lines) == 3
+    assert not any("|" in line for line in lines)
+    rows = _pcap(facts).split(" by volume: ", 1)[1].rsplit("; contacts at a regular", 1)[0]
+    assert rows.split(" | ") == lines
 
 
 # ----------------------------------------------- one writer, every surface
@@ -317,4 +480,4 @@ def test_every_surface_writes_the_conversation_by_the_one_line(tmp_path: Path) -
     for text in (answer["summary"], summarize_pcap(str(path)), report):
         for line in lines:
             assert f"- {line}" in text
-    assert ", ".join(lines) in _pcap(answer)
+    assert " | ".join(lines) in _pcap(answer)
