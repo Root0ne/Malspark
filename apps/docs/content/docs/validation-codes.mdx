@@ -707,7 +707,7 @@ No comment names its meaning; the message at `malspark.pipeline.validation:unpub
 
 ### `report.value_inside_a_longer_token`
 
-A table row whose value a cited entry holds only inside a longer run of letters or digits (`stated_value_violations`): read out of that run, as from a string pool written with no separator. Never asked (`ASKED_BY_NO_TURN`); the row is kept, marked beside its evidence, and counted in the run's record with each row.
+A table row whose value a cited entry holds only inside a longer run of letters or digits (`stated_value_violations`): one of several strings joined in that run, or the start or the end of a longer value. Asked once, with the run shown; a row kept after it is marked beside its evidence.
 
 - **Raised at** `malspark.pipeline.validation:stated_value_violations`
 - **Constant** `malspark.pipeline.validation:STATED_VALUE_INSIDE_A_TOKEN_CODE`, `malspark.reporting.renderers.markdown:_INSIDE_A_TOKEN_CODE`

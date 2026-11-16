@@ -461,44 +461,83 @@ def whole_value_starts(literal: str, haystack: str) -> Iterator[int]:
 
 # What runs on into a value inside a longer run of text: a letter or a digit.
 _RUNS_ON_RE = re.compile(r"[a-z0-9]")
+# A value made of hexadecimal digits alone: a number in that base, which a
+# hexadecimal digit beside it continues.
+_HEX_DIGITS_RE = re.compile(r"[0-9a-f]+")
+_HEX_DIGITS = frozenset("0123456789abcdef")
 
 
 def inside_a_longer_token(literal: str, haystack: str) -> bool:
     """Whether ``haystack`` holds ``literal``'s exact text with letters or digits running on.
 
+    :func:`inside_a_longer_token_at`'s answer, as a yes or no.
+    """
+    return inside_a_longer_token_at(literal, haystack) is not None
+
+
+def inside_a_longer_token_at(literal: str, haystack: str) -> int | None:
+    """Where ``haystack`` first holds ``literal``'s text inside a longer run; ``None`` for nowhere.
+
     The other answer to :func:`whole_value_in`'s question: the text is there,
     but at one end or both a letter or a digit of a longer run goes on, as in a
-    string pool written with no separator. Each end of some place it stands at
-    either bounds a value (:func:`whole_value_in`'s rule) or runs on by a letter
-    or a digit, and at least one runs on. A digit of the value against a digit
-    of the text is a cut number, not a value read out of a run, and so is any
-    other character that continues a label (``evil.com`` in ``evil.com.br``).
-    Lower-cased, as :func:`whole_value_in` compares.
+    string pool written with no separator, or in a longer value the literal is
+    the start or the end of. Text alone cannot tell the two apart, so the place
+    is what a question shows. Each end of the place either bounds a value
+    (:func:`whole_value_in`'s rule) or runs on by a letter or a digit, and at
+    least one runs on. A digit of the value against a digit of the text is a
+    cut number, not a run, and so is a value of hexadecimal digits alone
+    against a hexadecimal digit, and any other character that continues a
+    label (``evil.com`` in ``evil.com.br``). Lower-cased, as
+    :func:`whole_value_in` compares.
     """
     lowered = str(literal or "").lower()
     if not lowered:
-        return False
+        return None
     continues = _continuation_for(lowered)
+    hexadecimal = _HEX_DIGITS_RE.fullmatch(lowered) is not None
+
+    def _runs_on(neighbour: str, edge: str) -> bool:
+        if not _RUNS_ON_RE.match(neighbour):
+            return False
+        if neighbour.isdigit() and edge.isdigit():
+            return False
+        return not (hexadecimal and neighbour in _HEX_DIGITS)
+
     start = haystack.find(lowered)
     while start != -1:
         end = start + len(lowered)
         before, after = haystack[start - 1 : start] if start else "", haystack[end : end + 1]
         opens = _opens_a_value(haystack, start, continues)
         closes = _closes_a_value(haystack, end, continues)
-        runs_before = (
-            not opens
-            and bool(_RUNS_ON_RE.match(before))
-            and not (before.isdigit() and lowered[0].isdigit())
-        )
-        runs_after = (
-            not closes
-            and bool(_RUNS_ON_RE.match(after))
-            and not (after.isdigit() and lowered[-1].isdigit())
-        )
+        runs_before = not opens and _runs_on(before, lowered[0])
+        runs_after = not closes and _runs_on(after, lowered[-1])
         if (opens or runs_before) and (closes or runs_after) and (runs_before or runs_after):
-            return True
+            return start
         start = haystack.find(lowered, start + 1)
-    return False
+    return None
+
+
+def run_around(haystack: str, start: int, end: int) -> tuple[int, int]:
+    """The run of text ``haystack[start:end]`` stands in: up to a space, a quote or an escape."""
+    begin = start
+    while (
+        begin > 0
+        and haystack[begin - 1] not in _ENDS_A_RUN
+        and not (begin >= 2 and _is_an_escape(haystack, begin - 2))
+    ):
+        begin -= 1
+    finish = end
+    while (
+        finish < len(haystack)
+        and haystack[finish] not in _ENDS_A_RUN
+        and not _is_an_escape(haystack, finish)
+    ):
+        finish += 1
+    return begin, finish
+
+
+# What ends a run of text a value stands in: a space and a quote.
+_ENDS_A_RUN = frozenset(" \t\r\n\"'`")
 
 
 class _Automaton:

@@ -553,11 +553,8 @@ class TestWhichFindingOpensNoTurnIsDeclared:
                 or describe_stands_alone([_v(CLAIM_DOES_NOT_DESCRIBE_CODE), _v(code)])
             )
         ]
-        # A finding that could not run is never asked about (``_askable``), nor is
-        # one of a code no turn asks by declaration (``ASKED_BY_NO_TURN``).
-        from malspark.pipeline.validation import ASKED_BY_NO_TURN
-
-        assert sorted(alone) == sorted({CHECK_FAILED_CODE, *ASKED_BY_NO_TURN})
+        # A finding that could not run is never asked about (``_askable``).
+        assert alone == [CHECK_FAILED_CODE]
 
     def test_a_declared_code_stands_alone_by_its_declaration(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
