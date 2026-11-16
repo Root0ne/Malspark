@@ -370,6 +370,10 @@ def test_a_published_sub_technique_of_a_dropped_parent_is_no_denial() -> None:
     decision = judge_decision(report)
 
     assert denied_in("It hollows a process by T1055.012.", decision) == ()
+    assert denied_in("It hollows a process by process hollowing.", decision) == ()
+    assert denied_in("It writes by thread execution hijacking.", decision) == (
+        "thread execution hijacking",
+    )
     assert denied_in("It hollows a process by T1055.012 and T1055.001.", decision) == ()
     assert denied_in("It writes by T1055.001; it hollows by T1055.012.", decision) == ("T1055.001",)
     assert denied_in("It uses T1027.0071 and T1027.", decision) == ()
@@ -379,6 +383,8 @@ def test_a_family_the_judge_did_not_name_is_denied_and_its_own_is_not() -> None:
     sandbox = judge_decision(report_of(family="Quillfern", similar="Brambleton"))
     assert set(denied_in("The code is the Quillfern loader.", sandbox)) == {"Quillfern"}
     assert denied_in("The code shares a stub with Brambleton.", sandbox) == ("Brambleton",)
+    # A part of a hyphened word is no family named.
+    assert denied_in("The code shares a Brambleton-style stub.", sandbox) == ()
 
     named = report_of(similar="Quillfern")
     named.attribution.family = "Quillfern"
