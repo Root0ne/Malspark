@@ -2881,12 +2881,12 @@ class _Context:
 
     def left_out(self, subject: str) -> bool:
         """Whether the agreement question left a sentence of the passage ``subject`` out
-        (``section_agreement.DROPPED_CODE``), so an empty field of it was written, not
+        (``section_agreement.LEFT_OUT_CODES``), so an empty field of it was written, not
         missing (T-600)."""
-        from malspark.reporting.section_agreement import DROPPED_CODE
+        from malspark.reporting.section_agreement import LEFT_OUT_CODES
 
         return any(
-            row.get("code") == DROPPED_CODE and str(row.get("subject") or "") == subject
+            row.get("code") in LEFT_OUT_CODES and str(row.get("subject") or "") == subject
             for row in self.unresolved
         )
 
@@ -2894,17 +2894,17 @@ class _Context:
         """The clause a line saying nothing was written for a passage says instead where the
         agreement question left its sentences out (T-600), with their count, naming no one
         as having left them out (its checks or the round's own drop): the records of them
-        (``section_agreement.DROPPED_CODE``) whose subject is one of ``subjects``, or, for
+        (``section_agreement.LEFT_OUT_CODES``) whose subject is one of ``subjects``, or, for
         one ending in ".", a record of that list ("key_findings."); ``on`` follows "wrote"
         (" on it"); ``""`` where none was left out."""
-        from malspark.reporting.section_agreement import DROPPED_CODE
+        from malspark.reporting.section_agreement import LEFT_OUT_CODES
 
         whole = {s for s in subjects if not s.endswith(".")}
         lists = tuple(s for s in subjects if s.endswith("."))
         count = sum(
             1
             for row in self.unresolved
-            if row.get("code") == DROPPED_CODE
+            if row.get("code") in LEFT_OUT_CODES
             and (
                 (subject := str(row.get("subject") or "")) in whole
                 or (bool(lists) and subject.startswith(lists))

@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -714,12 +713,11 @@ def test_haiku12_s_true_limitation_kept_on_the_named_source_stands() -> None:
     assert counts["held_kept"] == 1
     # Only the sentences the ledger's own lines hold that no row answers are left out, and
     # each sentence of a value cell or a capability bullet no row answers (T-600).
-    whole = _whole_unanswered(passages)
+    whole = _whole_unanswered()
     assert len(whole) == 15
-    judged = _judged_unanswered(passages, records, whole)
-    assert counts["dropped"] == 3 + len(whole) + len(judged)
+    assert counts["dropped"] == 3 + len(whole)
     assert sorted(v.message for v in records if v.code == DROPPED_CODE) == sorted(
-        [_UNANSWERED_EVASION, _UNANSWERED_PAYLOADS, _UNANSWERED_LIMITATIONS, *whole, *judged]
+        [_UNANSWERED_EVASION, _UNANSWERED_PAYLOADS, _UNANSWERED_LIMITATIONS, *whole]
     )
     # Tied by its address alone (review r4): recorded, as no subject word backs it.
     (held,) = [v for v in records if v.code == HELD_KEPT_CODE]
@@ -864,40 +862,19 @@ _HAIKU12_WHOLE = (
 )
 
 
-def _whole_unanswered(passages: Sequence[Any] = ()) -> list[str]:
+def _whole_unanswered() -> list[str]:
     """The records of every sentence of haiku12's value cells and capability bullets, which
     are answered whole and which the rows below never answer: each left out, with that
-    reason (T-600), and, for one held to the judge's decision among ``passages``, the judge's
-    passages that hold it (T-717)."""
+    reason (T-600)."""
     whole = {
         _BULLET: "a capability bullet of the summary, every sentence of which is answered",
         _CELL: "a table cell, every sentence of which is answered",
     }
-    judged = {s: ids for p in passages for s, ids in p.judged}
-
-    def _judge(sentence: str) -> str:
-        ids = next((i for s, i in judged.items() if s.startswith(sentence.rstrip("…"))), ())
-        return f"; held to the judge's decision ({', '.join(ids)})" if ids else ""
-
     return [
         f"The agreement question leaves a sentence of {section}, {field} out of the section "
-        f"(no answer was given for it; {whole[section]}{_judge(sentence)}): {sentence!r}."
+        f"(no answer was given for it; {whole[section]}): {sentence!r}."
         for field, section, sentence in _HAIKU12_WHOLE
     ]
-
-
-def _judged_unanswered(passages: Sequence[Any], records: list[Any], whole: list[str]) -> list[str]:
-    """The records of the body sentences held to the judge's decision that no row answers,
-    each left out naming the judge's passages that hold it, one per such sentence (T-717)."""
-    found = [
-        v.message
-        for v in records
-        if v.code == DROPPED_CODE
-        and "held to the judge's decision" in v.message
-        and v.message not in whole
-    ]
-    assert len(found) == sum(len(p.judged) for p in passages if not p.whole)
-    return found
 
 
 def _unanswered(records: list[Any]) -> list[str]:
@@ -921,15 +898,14 @@ def test_haiku12_s_c1_to_c6_kept_unsourced_again_are_left_out_and_recorded() -> 
     # Beside them, the two body sentences the ledger's own lines hold that no row answers; the
     # limitations sentence saying a redone call failed is among the five (T-600).
     assert _unanswered(records) == [_UNANSWERED_EVASION, _UNANSWERED_PAYLOADS]
-    whole = _whole_unanswered(passages)
+    whole = _whole_unanswered()
     assert sorted(v.message for v in records if v.message in whole) == sorted(whole)
-    judged = _judged_unanswered(passages, records, whole)
     dropped = [
         v.message
         for v in records
-        if v.code == DROPPED_CODE and v.message not in (*_UNANSWERED, *whole, *judged)
+        if v.code == DROPPED_CODE and v.message not in (*_UNANSWERED, *whole)
     ]
-    assert counts["dropped"] == 7 + len(whole) + len(judged) and len(dropped) == 5
+    assert counts["dropped"] == 7 + len(whole) and len(dropped) == 5
     assert all(any(said[n][:40] in m for m in dropped) for n in names)
 
 
@@ -965,16 +941,15 @@ def test_haiku12_s_c2_to_c5_kept_unsourced_on_both_answers_are_left_out_and_reco
     body = _limitations(report)
     # Beside them, each sentence the ledger's own lines hold that no row answers (T-600).
     assert _unanswered(records) == list(_UNANSWERED)
-    whole = _whole_unanswered(passages)
+    whole = _whole_unanswered()
     assert sorted(v.message for v in records if v.message in whole) == sorted(whole)
-    judged = _judged_unanswered(passages, records, whole)
-    assert counts["dropped"] == 6 + len(whole) + len(judged)
+    assert counts["dropped"] == 6 + len(whole)
     for which in ("C2", "C4", "C5"):
         assert said[which] not in body, which
     dropped = [
         v.message
         for v in records
-        if v.code == DROPPED_CODE and v.message not in (*_UNANSWERED, *whole, *judged)
+        if v.code == DROPPED_CODE and v.message not in (*_UNANSWERED, *whole)
     ]
     assert len(dropped) == 3
     # C2 "read only in part" of listed code: the ledger says otherwise of it.
