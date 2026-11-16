@@ -703,6 +703,9 @@ PLATFORM_OBSERVING = frozenset(
         "sandbox_registry",
         "sandbox_mutexes",
         "pcap",
+        "packet_overview",
+        "dns",
+        "http",
         "event_rules",
         "behaviour_code_links",
         "emulated_strings",
@@ -736,26 +739,32 @@ class TestThePlatformsOwnToolsAreReadByTheirShippedKind:
     """An entry of the platform's own server that stored no kind is read by the kind it ships."""
 
     def _report(
-        self, tool: str, value: str, steps: list[dict[str, Any]] | None = None
+        self,
+        tool: str,
+        value: str,
+        steps: list[dict[str, Any]] | None = None,
+        *,
+        source: str = "mcp:analysis",
+        kind_of_row: str = "path",
     ) -> MalwareReport:
         entry = LedgerEntry(
             id="ev_0140",
             agent="static",
             tool=tool,
-            source="mcp:analysis",
+            source=source,
             facts={"v": 1, "kind": ""},
             args={"steps": steps} if steps is not None else {},
             output=f"text: {value}",
         )
         report = _report(
-            StringIOC(kind="path", value=value),
+            StringIOC(kind=kind_of_row, value=value),  # type: ignore[arg-type]
             _finding("ev_0140"),
             index=[
                 EvidenceIndexRow(
                     id="ev_0140",
                     agent="static",
                     tool=tool,
-                    source="mcp:analysis",
+                    source=source,
                     facts={"v": 1, "kind": ""},
                 )
             ],
@@ -782,3 +791,63 @@ class TestThePlatformsOwnToolsAreReadByTheirShippedKind:
         report = _held_by(None, RUNTIME_PATH)
 
         assert publishes(_answer(report, RUNTIME_PATH))
+
+    def test_an_operator_s_tool_named_as_a_platform_tool_keeps_full_strength(self) -> None:
+        # Its server is not the platform's own: what the platform ships for a
+        # tool of that name is never read for it.
+        answer = _answer(self._report("strings", "C:\\Temp", source="mcp:example"), "C:\\Temp")
+
+        assert publishes(answer), answer
+        assert confirmed_only_by_undeclared(answer)
+
+    def test_its_capture_s_answer_is_an_observation(self) -> None:
+        mutex = "Global\\RelayLock7"
+        report = self._report("extract_dns", mutex, source="mcp:network", kind_of_row="mutex")
+
+        answer = _answer(report, mutex)
+        assert publishes(answer), answer
+        assert not confirmed_only_by_undeclared(answer)
+
+    def test_a_name_two_servers_share_reads_each_server_s_own_kind(self) -> None:
+        # The network server ships ``pcap_summary``, the analysis server ships
+        # no tool of that name: there it is a tool the declarations do not
+        # know, used at full strength and said as one.
+        mutex = "Global\\RelayLock7"
+
+        def answer(source: str) -> str:
+            report = self._report("pcap_summary", mutex, source=source, kind_of_row="mutex")
+            return _answer(report, mutex)
+
+        assert publishes(answer("mcp:network"))
+        assert not confirmed_only_by_undeclared(answer("mcp:network"))
+        assert publishes(answer("mcp:analysis"))
+        assert confirmed_only_by_undeclared(answer("mcp:analysis"))
+
+    def test_each_kind_is_read_from_the_server_s_shipped_declaration(self) -> None:
+        from malspark.core.declared_reading import own_server_kind
+
+        assert own_server_kind("network", "pcap_summary") == "pcap"
+        assert own_server_kind("analysis", "pcap_summary") == ""
+        assert own_server_kind("analysis", "strings") == "strings"
+        assert own_server_kind("example", "strings") == ""
+
+
+class TestABuiltRecordIsTheOnlyRecord:
+    """A report carrying the build's per-entry record decides from it, never from its sections."""
+
+    def test_a_section_the_record_does_not_hold_the_value_in_confirms_nothing(self) -> None:
+        # The section prints the value; the build read the cited entry and
+        # found it not there (its answer was blanked by the byte budget).
+        value = "Global\\RelayLock7"
+        report = _report(
+            StringIOC(kind="mutex", value=value),
+            _tool("sbx", ["ev_0150"], f"created: {value}"),
+            _finding("ev_0150"),
+            index=[_row("ev_0150", "sbx", "sandbox_report_section")],
+        )
+        assert publishes(_answer(report, value))
+
+        ledger = [LedgerEntry(id="ev_0150", agent="dynamic", tool="sbx", output="")]
+        report.second_source_reads = second_source_reads(report, ledger)
+
+        assert not publishes(_answer(report, value))

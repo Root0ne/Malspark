@@ -734,6 +734,37 @@ def legacy_by_name() -> Mapping[str, ToolFacts]:
     return facts_by_name()
 
 
+# What each of the platform's own servers declares of its tools as it ships,
+# per server, as data: the capture its own listing is held equal to, field by
+# field (``tests/unit/servers/test_each_own_server_declares_its_tools.py``).
+OWN_SERVER_FACTS_PATH = "data/own_server_tool_facts_v1.json"
+
+
+@cache
+def _own_server_facts() -> Mapping[str, Mapping[str, Any]]:
+    from malspark.core.paths import resolve_data
+
+    held = json.loads(resolve_data(OWN_SERVER_FACTS_PATH).read_text(encoding="utf-8"))
+    return {str(key): dict(tools) for key, tools in held.items() if isinstance(tools, Mapping)}
+
+
+def own_server_kind(key: str, tool: str) -> str:
+    """The kind the platform's own server ``key`` ships for its tool ``tool``; ``""`` for none.
+
+    Read per server from the shipped declarations (:data:`OWN_SERVER_FACTS_PATH`),
+    by the tool's name on that server alone, its own ``<key>__`` prefix taken
+    off: a name another server ships says nothing of this one's tool, and a
+    server that is not one of the platform's own ships nothing here.
+    """
+    from malspark.core.tool_declarations import renamed_tool
+
+    tools = _own_server_facts().get(str(key))
+    if not tools:
+        return ""
+    facts = tools.get(str(tool)) or tools.get(renamed_tool(str(key), str(tool)))
+    return str(facts.get("kind") or "") if isinstance(facts, Mapping) else ""
+
+
 @cache
 def reader_reference_facts(kind: str) -> ToolFacts | None:
     """The facts a kind's built-in reader code was written for; ``None`` for a kind with none.

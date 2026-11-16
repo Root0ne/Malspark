@@ -541,21 +541,18 @@ def second_source_standing(row: Any, named: str, steps: int | None = None) -> st
 def stored_platform_kind(entry: Any) -> str:
     """The kind the platform ships for a tool of its own server, for a stored entry of it with none.
 
-    An entry of one of the platform's own servers (a built-in server whose
-    block the platform ships, ``core.builtin_declarations.server_declaration``)
-    that was written without the server's declaration in force stored no
-    kind; the platform declares its own tools, and the entry is read by the
-    kind its shipped declaration gives the tool (``legacy_tool_names``), as an
-    entry with no source is. Any other server's tool that declares nothing
-    stays undeclared, and is used at full strength.
+    An entry of one of the platform's own servers that was written without
+    the server's declaration in force stored no kind; the platform declares
+    its own tools, and the entry is read by the kind that server's shipped
+    declaration gives its tool (``declared_reading.own_server_kind``), read
+    per server as data. A tool that declaration does not know, and any other
+    server's tool that declares nothing whatever it is called, stays
+    undeclared, and is used at full strength.
     """
-    from malspark.core.builtin_declarations import server_declaration
-
     source = source_of(entry)
-    if source is None or source.kind != "mcp" or not server_declaration(source.key):
+    if source is None or source.kind != "mcp":
         return ""
-    facts = legacy.builtin_facts(declared_reading.bare_name(tool_of(entry)))
-    return facts.kind if facts is not None else ""
+    return declared_reading.own_server_kind(source.key, declared_reading.declared_name(entry))
 
 
 def display_name(entry: Any, tool: str | None = None) -> str:
