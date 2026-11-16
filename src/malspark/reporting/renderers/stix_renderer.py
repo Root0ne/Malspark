@@ -2806,10 +2806,6 @@ def _evidence_reason(
             return _kept_with_the_fact(kept_by, unattributed, kept_address) or _recovered_and_held(
                 host, recovered, verdict, unattributed
             )
-        if _from_the_strings(source) and on_a_denied_url_host(value):
-            # A developer's or a package registry's URL read out of the
-            # file's text: a build's own reference, whoever else names it.
-            return None
         admitted = url_corroboration_reason(value, source, reputation)
         if admitted or not host_is_public(host):
             return admitted
@@ -4817,13 +4813,6 @@ def publish_answer(
     # refused for that first, as before the shape was asked.
     if kind == "path" and corroborated and _string_path_shape(text):
         return f"no: {_string_path_shape(text)}"
-    if (
-        kind == "url"
-        and from_strings
-        and on_a_denied_url_host(text)
-        and url_corroboration_reason(text, source, reputation)
-    ):
-        return "no: it is on a developer or package-registry host"
     if kind == "hash" and not _is_a_whole_digest(text):
         return "no: not a whole digest"
     if bound and _is_benign_verdict(verdict):

@@ -306,21 +306,49 @@ class TestTheRowRecordsWhatTheExportCarries:
         assert domain["indicator_types"] == ["compromised"]
 
 
-def test_a_url_the_strings_hold_on_a_developer_host_is_withheld_whoever_vouches() -> None:
-    from malspark.reporting.models import NetworkURL
+class TestADeveloperHostIsAskedOfTheStringSweepsValuesOnly:
+    """The developer or package-registry host question binds a value only the string sweep holds.
 
-    url = "https://android.googlesource.com/platform/stage.bin"
-    report = _report("Malware")
-    report.network = NetworkIOCs(
-        urls=[NetworkURL(url=url, source="strings")],
-        domains=[
-            NetworkDomain(
-                fqdn="android.googlesource.com",
-                source="strings",
-                reputation={"source": "virustotal", "malicious": 9},
-            )
-        ],
-    )
+    A URL the network block records is answered by its own row, a reputation
+    record among its sources; one only the file's strings hold is refused on
+    such a host, on every surface.
+    """
 
-    assert _rows(report)[url].published == "no: it is on a developer or package-registry host"
-    assert url not in str(_indicators(_export(report)[0]))
+    URL = "https://pypi.org/simple/evilpkg/evil-1.0.tar.gz"
+
+    def _surfaces(self, report: MalwareReport) -> tuple[Any, bool, bool, bool]:
+        row = _rows(report)[self.URL]
+        feed = [r["published"] for r in _feed(report) if r["value"] == self.URL]
+        misp = build_misp_attributes(report, build_consolidated_iocs(report), owner="r")
+        bundle, _renderer = _export(report)
+        return (
+            row.published,
+            feed == [True],
+            any(a["value"] == self.URL for a in misp),
+            self.URL in str(_indicators(bundle)),
+        )
+
+    def test_a_network_row_a_reputation_record_vouches_for_is_published(self) -> None:
+        from malspark.reporting.models import NetworkURL
+
+        report = _report("Malware")
+        report.network = NetworkIOCs(
+            urls=[NetworkURL(url=self.URL, source="strings")],
+            domains=[NetworkDomain(fqdn="pypi.org", source="strings", reputation={"malicious": 4})],
+        )
+
+        answer, *carried = self._surfaces(report)
+        assert publishes(answer), answer
+        assert carried == [True, True, True]
+
+    def test_a_url_only_the_strings_hold_is_refused_everywhere(self) -> None:
+        report = _report("Malware")
+        report.network = NetworkIOCs()
+        report.static = StaticAnalysis(interesting_strings=[StringIOC(kind="url", value=self.URL)])
+        report.dynamic = DynamicBehavior(
+            process_tree=[{"pid": 1, "name": "sample.exe", "command_line": self.URL}]
+        )
+
+        answer, *carried = self._surfaces(report)
+        assert not publishes(answer), answer
+        assert carried == [False, False, False]
