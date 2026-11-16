@@ -85,6 +85,7 @@ def _texts() -> EntryTexts:
                             "ExampleCounter123456789",
                             "ExampleCache.dat.bak",
                             "evil.exe",
+                            "usageError: --alpha cannot be combined with --beta.zz",
                         ]
                     }
                 ),
@@ -204,6 +205,26 @@ class TestACompositeCell:
 
         assert found.code == STATED_VALUE_UNHELD_CODE
 
+    def test_a_name_and_its_number_are_held_only_as_the_pair(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [_entry("ev_0050", "decoder", json.dumps({"seed": "0x5a17c0de", "first_key": "0x2b"}))]
+        )
+        # Each part stands in the entry; the pair it states does not.
+        (found,) = stated_value_violations(
+            _items("first_key 0x5a17c0de; seed 0x5a17c0de", "ev_0050"), texts
+        )
+        assert found.code == STATED_VALUE_UNHELD_CODE
+        assert "'first_key 0x5a17c0de'" in found.message
+        assert (
+            stated_value_violations(_items("first_key 0x2b; seed 0x5a17c0de", "ev_0050"), texts)
+            == []
+        )
+
+    def test_a_hive_written_apart_from_its_path_opens_it(self) -> None:
+        cell = "HKCU \\Software\\ExampleVendor\\Tool\\Hosts, loaded by LoadLibraryA"
+
+        assert stated_value_violations(_items(cell, "ev_0010"), _texts()) == []
+
 
 class TestTheQuestion:
     def test_feedback_names_the_literals_no_cited_entry_holds(self) -> None:
@@ -271,6 +292,15 @@ class TestInsideALongerToken:
         cell = "ExampleNoteFile-READ.txt, loaded by LoadLibraryA"
 
         (found,) = stated_value_violations(_items(cell, "ev_0010", "ev_0012"), _texts())
+
+        assert found.code == STATED_VALUE_INSIDE_A_TOKEN_CODE
+
+    def test_a_cell_whose_whole_text_runs_on_is_recorded(self) -> None:
+        # ``--beta`` alone runs on through a dot; the cell's whole text is read
+        # out of the longer run.
+        cell = "Error: --alpha cannot be combined with --beta."
+
+        (found,) = stated_value_violations(_items(cell, "ev_0012"), _texts())
 
         assert found.code == STATED_VALUE_INSIDE_A_TOKEN_CODE
 

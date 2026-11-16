@@ -131,3 +131,45 @@ def test_a_row_read_out_of_a_longer_run_states_the_fact_first() -> None:
         f"{STATED_VALUE_INSIDE_A_TOKEN_CODE})"
     ) in host
     assert STATED_VALUE_INSIDE_A_TOKEN_CODE not in config
+
+
+def test_the_analyst_report_leaves_a_row_read_out_of_a_longer_run_to_the_bundle() -> None:
+    from malspark.reporting.renderers.layout import ANALYST
+
+    report = MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
+        verdict="Malware",
+        technical_analysis=TechnicalAnalysis(
+            configuration=[
+                ConfigItem(
+                    key="Interval",
+                    value="7000",
+                    how_obtained="decrypted",
+                    evidence_refs=["ev_0020"],
+                ),
+                ConfigItem(
+                    key="Note",
+                    value="ExampleNote.txt",
+                    how_obtained="decrypted",
+                    evidence_refs=["ev_0020"],
+                ),
+            ],
+        ),
+        run_summary={
+            "validation": {
+                "unresolved": [
+                    {
+                        "agent": "composer:configuration",
+                        "code": STATED_VALUE_INSIDE_A_TOKEN_CODE,
+                        "message": "configuration item 2 (Note: 'ExampleNote.txt') is read out …",
+                        "asked": "false",
+                    }
+                ]
+            }
+        },
+    )
+
+    analyst = MarkdownRenderer(layout=ANALYST).render(report)
+
+    assert "7000" in analyst
+    assert "ExampleNote.txt" not in analyst
