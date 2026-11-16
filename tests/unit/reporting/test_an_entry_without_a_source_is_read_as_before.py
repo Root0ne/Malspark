@@ -289,12 +289,15 @@ BENCHMARK = Path(".superpowers") / "sdd" / "mandate-2026-09-17" / "benchmark" / 
 # 83 batch functions; nothing else changed): the section count and the digest of the sections'
 # JSON (sorted keys). Beside them each run now draws the rules its undeclared tool's answers
 # name as matched, read by their shape, in a table of its own (T-509): every other section is
-# the one dev drew.
+# the one dev drew, but for the capture summary's conversation lines and their heading,
+# written by the summary's own line (T-710): these records counted the packets toward each
+# peer alone, so each line says the peer was sent them and that what it sent and the other
+# end are not recorded. Every other line of the capture summary is the one dev drew.
 STORED_REBUILDS = {
-    "run7": (89, "5622126326362a4b"),
-    "run5": (102, "26962def958da05d"),
-    "run4": (92, "a1b9e99cea2318db"),
-    "local8": (40, "38eef84aca43089b"),
+    "run7": (89, "f5f95c2eece28f65"),
+    "run5": (102, "68747843c60c739d"),
+    "run4": (92, "4d22957ad99361a5"),
+    "local8": (40, "8d89c8149fb17c4f"),
 }
 # Each run's table of the rules its undeclared tool's answers name as matched: each row's
 # rule and tool (the Tool cell also names the entry's own server), and the entries it cites.
@@ -378,3 +381,45 @@ def test_a_stored_run_s_ledger_rebuilds_the_sections_dev_drew(run: str) -> None:
     rest = [s for s in sections if s.key != SHAPE_RULE_SECTION]
     text = json.dumps(_dumped(rest), sort_keys=True)
     assert (len(rest), hashlib.sha256(text.encode()).hexdigest()[:16]) == STORED_REBUILDS[run]
+
+
+# The stored runs whose ledger holds a capture's facts beside the text its writer stored: rows
+# that counted the packets toward each peer alone, and rows that also counted the peer's share.
+STORED_CAPTURES = (
+    "run4",
+    "run5",
+    "run7",
+    "local8",
+    "haiku13",
+    "hk14-ref-haiku",
+    "gentlemen-r1/1",
+    "lockbit5-r1/1",
+)
+
+
+@pytest.mark.parametrize("run", STORED_CAPTURES)
+def test_a_stored_capture_rebuilds_its_text_but_for_the_flow_lines(run: str) -> None:
+    from malspark.analysis.pcap_summary import conversation_line, summary_text
+    from tests.unit.analysis.test_a_capture_line_names_both_ends_of_a_flow import (
+        beside_the_flows,
+    )
+
+    root = _benchmark()
+    if root is None or not (root / run / "evidence.json").is_file():
+        pytest.skip("the stored benchmark runs are not on this machine")
+    items = json.loads((root / run / "evidence.json").read_text())["items"]
+    records = [
+        item["structured"]
+        for item in items
+        if item.get("tool") == "pcap_summary"
+        and isinstance(item.get("structured"), dict)
+        and "packets_read" in item["structured"]
+        and item["structured"].get("summary")
+    ]
+    assert records
+    for record in records:
+        stored, rebuilt = record["summary"], summary_text(record)
+        assert len(rebuilt.split("\n")) == len(stored.split("\n"))
+        assert beside_the_flows(rebuilt) == beside_the_flows(stored)
+        lines = [f"- {conversation_line(row)}" for row in record["conversations"]]
+        assert [line for line in rebuilt.split("\n") if line in lines] == lines

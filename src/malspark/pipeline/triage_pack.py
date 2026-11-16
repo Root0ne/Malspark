@@ -4892,7 +4892,8 @@ def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
                 "in the entry)"
             )
         )
-        rows = ", ".join(conversation_line(row) for row in conversations[:shown])
+        # Each line holds commas and semicolons of its own: the rows are parted by a bar.
+        rows = " | ".join(conversation_line(row) for row in conversations[:shown])
         return f"{head}; {said}" + (f": {rows}" if shown else "") + tail
 
     whole = _line(len(conversations))

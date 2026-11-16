@@ -141,7 +141,7 @@ def _usd(calls: list[dict[str, Any]]) -> tuple[float, int]:
 def read_run(run: Path) -> dict[str, Any]:
     """One stored run's retry episodes, each with what the turn rule decides for it."""
     from malspark.pipeline.validation import (
-        CLAIM_DOES_NOT_DESCRIBE_CODE,
+        OPENS_NO_TURN_OF_ITS_OWN,
         Violation,
         describe_stands_alone,
     )
@@ -169,7 +169,8 @@ def read_run(run: Path) -> dict[str, Any]:
                 "usd": round(usd, 6),
                 "unpriced": unpriced,
                 "opens_a_turn": not alone,
-                "describe_beside_another": not alone and CLAIM_DOES_NOT_DESCRIBE_CODE in codes,
+                "describe_beside_another": not alone
+                and not OPENS_NO_TURN_OF_ITS_OWN.isdisjoint(codes),
             }
         )
     return {"run": run.name, "events": True, "episodes": rows}

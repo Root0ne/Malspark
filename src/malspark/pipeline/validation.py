@@ -228,6 +228,11 @@ class Violation:
     # run record keeps it (``unparsed_answer_rows``); the event that asks says
     # only where. Never shown to the producer and never stored on the channel.
     answer: str = ""
+    # What the finding left out of a checked text or put another text in place of, whole,
+    # as it stood (a sentence the section agreement round left out or replaced): the run
+    # record keeps it on the row (``"stood"``), where the message holds a bounded copy.
+    # Never shown to the producer and never stored on the channel.
+    stood: str = ""
     # What the question shows after the finding's words: the ledger's own text
     # the finding is about (a routine's code, the object that names an
     # address), so the producer can state what the entry shows. Only the
@@ -329,6 +334,7 @@ class ValidationTally:
                 **({"answered": "true"} if v.answered else {}),
                 **({"subject": v.subject} if v.subject else {}),
                 **({"statements": STATEMENT_SEPARATOR.join(v.statements)} if v.statements else {}),
+                **({"stood": v.stood} if v.stood else {}),
             }
             for v in violations
         )
@@ -2035,6 +2041,14 @@ def _negated_after(text: str, start: int, end: int) -> bool:
 # and the judge's technique question asks about each technique no claim naming
 # it describes.
 CLAIM_DOES_NOT_DESCRIBE_CODE = "attck.claim_does_not_describe"
+
+# The findings that open no validation turn of their own: each joins a turn
+# another finding opens, as the same question, and standing alone is recorded
+# as not asked (:func:`describe_stands_alone`, :func:`describe_without_a_turn`).
+# A check is declared here only where another question asks about the same
+# thing without the analyst: the judge's technique question carries the
+# describe check's finding. Every other code opens its turn.
+OPENS_NO_TURN_OF_ITS_OWN: frozenset[str] = frozenset({CLAIM_DOES_NOT_DESCRIBE_CODE})
 
 # The words of a catalogue name that name no behaviour of their own.
 _NAME_FILLER_WORDS = frozenset(
@@ -16568,8 +16582,9 @@ DESCRIBE_NOT_ASKED = (
 def describe_stands_alone(violations: Sequence[Violation]) -> bool:
     """Whether the findings about an answer are the describe check's and nothing that opens a turn.
 
-    A claim whose sentence does not describe its technique
-    (:data:`CLAIM_DOES_NOT_DESCRIBE_CODE`) opens no validation turn of its
+    A finding whose code is declared in :data:`OPENS_NO_TURN_OF_ITS_OWN` (a
+    claim whose sentence does not describe its technique,
+    :data:`CLAIM_DOES_NOT_DESCRIBE_CODE`) opens no validation turn of its
     own: it joins one another finding opens, as the same question with the
     same card, and standing alone it is recorded
     (:func:`describe_without_a_turn`) and left to the judge's technique
@@ -16577,13 +16592,13 @@ def describe_stands_alone(violations: Sequence[Violation]) -> bool:
     (``capability_matrix.judge_questions``). Alone means at least one such
     finding, and beside it only what a retry may not ask about (a check that
     could not run) or a question that is no finding (``question_only``, the
-    exit branches that joined it). One pass, by code.
+    exit branches that joined it). One pass, by the declared codes.
     """
     describes = False
     for v in _askable(violations):
         if v.question_only:
             continue
-        if v.code != CLAIM_DOES_NOT_DESCRIBE_CODE:
+        if v.code not in OPENS_NO_TURN_OF_ITS_OWN:
             return False
         describes = True
     return describes
@@ -16592,15 +16607,16 @@ def describe_stands_alone(violations: Sequence[Violation]) -> bool:
 def describe_without_a_turn(violations: Sequence[Violation]) -> list[Violation]:
     """``violations`` as an answer whose describe findings stood alone records them.
 
-    Each describe finding is the validator's own row, changed only by being
-    marked not asked (``asked=False``): its message, wrapped where the check
+    Each finding of a declared code (:data:`OPENS_NO_TURN_OF_ITS_OWN`) is the
+    validator's own row, changed only by being marked not asked
+    (``asked=False``): its message, wrapped where the check
     wrote it, is left as it is. Every other finding is recorded as it is, and
     a question that is no finding is left out, as
     :func:`exit_branches_left_out` leaves it. Why no turn was asked is
     :data:`DESCRIBE_NOT_ASKED`, which the caller logs.
     """
     return [
-        replace(v, asked=False) if v.code == CLAIM_DOES_NOT_DESCRIBE_CODE else v
+        replace(v, asked=False) if v.code in OPENS_NO_TURN_OF_ITS_OWN else v
         for v in exit_branches_left_out(violations)
     ]
 
