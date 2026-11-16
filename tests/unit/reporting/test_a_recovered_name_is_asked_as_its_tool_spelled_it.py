@@ -137,6 +137,8 @@ class TestOnlyAnIdentifierShapeIsCode:
             # A capitalised label a further label follows is a host's label.
             ("domain", "cdn.Microsoft.com"),
             ("domain", "login.Live.com"),
+            # A first label that opens with a capital is no lower-case label.
+            ("domain", "Update.Online"),
             ("url", "https://api.Telegram.org/bot/x"),
         ],
     )

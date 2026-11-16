@@ -833,6 +833,7 @@ class TestThePlatformsOwnToolsAreReadByTheirShippedKind:
         # A name its server's own prefix renamed is that server's tool; another prefix is not.
         assert own_server_kind("network", "network__pcap_summary") == "pcap"
         assert own_server_kind("analysis", "network__pcap_summary") == ""
+        assert own_server_kind("network", "analysis__release_job") == ""
 
     def test_a_tool_offered_renamed_is_read_by_the_name_it_recorded_as_declared(self) -> None:
         from malspark.reporting.tool_kinds import stored_platform_kind
