@@ -8242,6 +8242,12 @@ UNCITED_IDENTIFIER_CODE = "report.identifier_uncited"
 # (``stated_value_violations``). Asked once; a row kept after it is marked
 # beside its evidence.
 STATED_VALUE_UNHELD_CODE = "report.value_not_in_cited_entry"
+# A table row whose value a cited entry holds only inside a longer run of
+# letters or digits (``stated_value_violations``): read out of that run, as
+# from a string pool written with no separator. Never asked
+# (``ASKED_BY_NO_TURN``); the row is kept, marked beside its evidence, and
+# counted in the run's record with each row.
+STATED_VALUE_INSIDE_A_TOKEN_CODE = "report.value_inside_a_longer_token"
 # A table row whose id none of the entries it cites holds, while another entry
 # of the run does (``cited_id_violations``): a number where that entry's one
 # compared expression holds the most of the table's numbers, in a table of
@@ -8283,6 +8289,9 @@ MARKED_IN_PLACE: frozenset[str] = frozenset(
 # an answer that rewrites the sentence around the same value was asked all the
 # same.
 ASKED_BY_VALUE: frozenset[str] = frozenset({CITATION_WRONG_ENTRY_CODE, ID_NOT_IN_CITED_ENTRY_CODE})
+# The findings no validation turn asks, by declaration: each is recorded as not
+# asked, beside the rows it is about, and opens no turn and joins none.
+ASKED_BY_NO_TURN: frozenset[str] = frozenset({STATED_VALUE_INSIDE_A_TOKEN_CODE})
 
 
 def raised_only_in_retry(violation: Violation, shown: Sequence[Violation]) -> bool:
@@ -8293,6 +8302,9 @@ def raised_only_in_retry(violation: Violation, shown: Sequence[Violation]) -> bo
     one about sentences (``quoted``) one that shares a sentence. A new value
     or a new sentence under a question already asked was not asked.
     """
+    if violation.code in ASKED_BY_NO_TURN:
+        # Never asked by declaration: its row says so, not that a retry left it.
+        return False
     same = [v for v in shown if (v.code, v.path) == (violation.code, violation.path)]
     if not same:
         return True
@@ -8315,6 +8327,7 @@ KEPT_WITH_A_FINDING: frozenset[str] = frozenset(
         ABSENCE_CONTRADICTS_LEDGER_CODE,
         UNCITED_IDENTIFIER_CODE,
         STATED_VALUE_UNHELD_CODE,
+        STATED_VALUE_INSIDE_A_TOKEN_CODE,
         ID_NOT_IN_CITED_ENTRY_CODE,
         UNPUBLISHED_VALUE_CODE,
         TECHNIQUE_NAME_CODE,
@@ -10928,20 +10941,41 @@ _UNITS = frozenset(
         "kb", "kib", "kilobytes", "mb", "mib", "megabytes", "gb", "gib", "gigabytes",
     }
 )  # fmt: skip
+# A 32-bit constant's top bit, its bits, and the bits a sign extension to 64
+# bits sets above them.
+_SIGN_BIT_32 = 1 << 31
+_LOW_32 = (1 << 32) - 1
+_HIGH_32 = _LOW_32 << 32
+# The handles Windows predefines for its registry hives (``winreg.h``), by the
+# label the typed model gives a hive (``ledger_projection._HIVES``): code
+# passes a hive by its handle where a report names it.
+_PREDEFINED_HIVE_HANDLES = {
+    "HKCR": 0x80000000,
+    "HKCU": 0x80000001,
+    "HKLM": 0x80000002,
+    "HKU": 0x80000003,
+    "HKCC": 0x80000005,
+}
 
 
 def _stated_spellings(value: str, *, numbers: bool = False) -> list[str]:
     """The spellings an entry may hold a stated value in: as written, and a number's two.
 
-    With ``numbers`` (a configuration value), a number is also held when the
+    A value with a backslash is also held with each backslash doubled, as a C
+    string literal writes it in a decompile. With ``numbers`` (a configuration
+    value), a number is also held when the
     entry writes it in decimal or in hex, the way a decompiler or a
     configuration dump does, and a number written with a unit of ``_UNITS``
     is held by the number. The unit follows a space, or is written against
     the number only when its first letter is no hex digit: ``1000ms`` is a
-    number and a unit, ``1deadbeef`` and ``2bytes`` are not. A value the
-    conversion cannot read is looked for as written and nothing else.
+    number and a unit, ``1deadbeef`` and ``2bytes`` are not. A 32-bit
+    constant with its top bit set is also held sign-extended to 64 bits, as a
+    64-bit decompile writes it, and the reverse. A value the conversion cannot
+    read is looked for as written and nothing else.
     """
     spellings = [value]
+    if "\\" in value:
+        spellings.append(value.replace("\\", "\\\\"))
     if not numbers:
         return spellings
     try:
@@ -10954,7 +10988,11 @@ def _stated_spellings(value: str, *, numbers: bool = False) -> list[str]:
         ):
             return spellings
         amount = int(written, 16) if written.lower().startswith("0x") else int(written)
-        forms = (str(amount), hex(amount))
+        forms: tuple[str, ...] = (str(amount), hex(amount))
+        if _SIGN_BIT_32 <= amount <= _LOW_32:
+            forms = (*forms, hex(amount | _HIGH_32))
+        elif _HIGH_32 | _SIGN_BIT_32 <= amount <= _HIGH_32 | _LOW_32:
+            forms = (*forms, hex(amount & _LOW_32))
     except (ValueError, OverflowError):
         return spellings
     spellings.extend(form for form in forms if form not in spellings)
@@ -10965,18 +11003,154 @@ def _stated_spellings(value: str, *, numbers: bool = False) -> list[str]:
 # is held by almost any text, and holds nothing.
 _LISTED_PART_FLOOR = 3
 
+# A quoted span of a configuration cell: one literal, whatever it holds.
+_CELL_QUOTED_RE = re.compile(r'"([^"\n]+)"')
+# Where a configuration cell's parts end: a clause or a list goes on, or a
+# parenthesis opens or closes. A run of spaces is read from its first, once.
+_CELL_PART_RE = re.compile(r";\s+|,\s+|(?<!\s)\s+(?:and|then)\s+|[()]")
+# One unquoted span of a part: what no space ends. A comma ends a part only
+# where a space follows it (``/GRANT:Everyone,FULL`` is one span), and a
+# backslash or a slash never ends a span: a path is one literal.
+_CELL_SPAN_RE = re.compile(r"\S+")
+# What a span loses at its ends before its shape is read: a sentence's and a
+# list's punctuation, and an unbalanced quote.
+_CELL_SPAN_EDGE = ".,;:!?'\""
+# A character only a literal is written with: a digit, or a character of a
+# name, a path, an address or an assignment.
+_LITERAL_CHARACTER_RE = re.compile(r"[0-9_$%\\/:.=]")
+# A name written before the value it names: ``first_key 0x2b``.
+_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
+# Where a path's components part.
+_PATH_SEPARATOR_RE = re.compile(r"[\\/]+")
+
+
+def _cell_literals(cell: str) -> list[str]:
+    """The literals a configuration cell of several parts states, once each, in order.
+
+    A cell is several parts where a clause or a list goes on, or a parenthesis
+    opens (:data:`_CELL_PART_RE`); a cell of one part is one statement, read
+    whole, and has none. A quoted span is one literal. Of the rest, a span
+    (:data:`_CELL_SPAN_RE`) is a literal by its shape: it holds a digit or a
+    character of :data:`_LITERAL_CHARACTER_RE`, opens with ``-`` (an option),
+    or changes case after its first letter (``LoadLibraryA``, ``WSAStartup``).
+    A word of prose has none of these. A part that is a name and a number
+    (``first_key 0x2b``) is one literal, the pair: the number is that name's,
+    never held apart from it. A hive written apart from its path (``HKLM
+    \\SOFTWARE\\…``) opens it. A span shorter than :data:`_LISTED_PART_FLOOR`
+    is read by no text and is left out.
+    """
+    plain = _CELL_QUOTED_RE.sub(' " ', cell)
+    parts = [part.strip() for part in _CELL_PART_RE.split(plain) if part.strip()]
+    if len(parts) < 2:
+        return []
+    found: list[str] = []
+    for quoted in _CELL_QUOTED_RE.findall(cell):
+        if len(quoted.strip()) >= _LISTED_PART_FLOOR and quoted.strip() not in found:
+            found.append(quoted.strip())
+    for part in parts:
+        spans = [
+            span
+            for span in (
+                match.group(0).strip(_CELL_SPAN_EDGE) for match in _CELL_SPAN_RE.finditer(part)
+            )
+            if span
+        ]
+        if (
+            len(spans) == 2
+            and _NAME_RE.fullmatch(spans[0])
+            and _ONLY_A_NUMBER_RE.fullmatch(spans[1])
+        ):
+            spans = [" ".join(spans)]
+        for at, span in enumerate(spans):
+            hive = _hive_and_rest(spans[at - 1]) if at else None
+            if span[:1] in ("\\", "/") and hive is not None and not hive[1]:
+                span = spans[at - 1] + span
+            if len(span) < _LISTED_PART_FLOOR or span in found:
+                continue
+            if (
+                _LITERAL_CHARACTER_RE.search(span)
+                or span.startswith("-")
+                or (re.search(r"[a-z]", span) and re.search(r"[A-Z]", span[1:]))
+            ):
+                found.append(span)
+    return found
+
+
+def _carries_a_cell(literal: str) -> bool:
+    """Whether a literal held can stand for its cell: anything but a bare number.
+
+    A number is held by chance by many texts (:func:`decidable`); an address
+    is a value of its own, whatever its digits.
+    """
+    if decidable(literal):
+        return True
+    try:
+        ipaddress.ip_address(literal)
+    except ValueError:
+        return False
+    return True
+
+
+def _hive_and_rest(literal: str) -> tuple[str, str] | None:
+    """The hive a registry path opens with, by its label, and the path after it; ``None`` for none.
+
+    The hive's names are the typed model's (``ledger_projection._HIVES``); the
+    hive stands alone or is followed by a separator.
+    """
+    from malspark.reporting.ledger_projection import _HIVES
+
+    lowered = literal.lower()
+    for prefix, label in _HIVES:
+        if lowered.startswith(prefix) and lowered[len(prefix) : len(prefix) + 1] in ("", "\\", "/"):
+            return label, literal[len(prefix) :].lstrip("\\/")
+    return None
+
+
+def _hive_spellings(label: str) -> list[str]:
+    """Every name of one hive, and its predefined handle as 32 bits and sign-extended to 64."""
+    from malspark.reporting.ledger_projection import _HIVES
+
+    names = [prefix for prefix, named in _HIVES if named == label]
+    handle = _PREDEFINED_HIVE_HANDLES.get(label)
+    if handle is not None:
+        names.extend((hex(handle), hex(handle | _HIGH_32)))
+    return names
+
 
 def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Violation]:
-    """Table rows whose whole value is in none of the entries the row cites.
+    """Table rows whose value is in none of the entries the row cites.
 
     A configuration item or a host identifier states one value and cites the
     entries it was read in. The whole value is looked for in each cited entry
     under the citation check's own normalisation (:meth:`EntryTexts.holds`),
     a number also in decimal and hex (:func:`_stated_spellings`); a value that
     lists items joined by ", " is held where one cited entry holds every item.
-    Held by one, the row stands. Held by none, the row is asked about once, together with
-    the other rows of its table that cite the same entries; each row is named
-    by its number, which is how the report marks a row kept after it.
+    A configuration cell that states several literals (:func:`_cell_literals`)
+    is held where some cited entry holds each literal it states, and at least
+    one of them is no bare number (:func:`_carries_a_cell`); a path is one
+    literal and an identifier row is read whole. A value with a backslash is
+    also held as a C string writes it, a 32-bit constant also sign-extended
+    to 64 bits, and a registry path's leading hive also by its other name or
+    its predefined handle (:func:`_hive_spellings`) where the same entry
+    holds the rest of the path.
+
+    Held by one, the row stands. Held by none, the row is one of three:
+
+    - read out of a longer run (``STATED_VALUE_INSIDE_A_TOKEN_CODE``): a cited
+      entry holds the exact text of the value, or of each literal no entry
+      holds, with letters or digits running on at an end
+      (:func:`~malspark.agents._indicator_denylists.inside_a_longer_token`),
+      each such text at least ``absence_answers.QUOTE_FLOOR`` characters, the
+      keep check's floor. Never asked (``ASKED_BY_NO_TURN``): recorded with
+      the rows it is about, together with the other such rows of its table
+      that cite the same entries;
+    - otherwise not held (``STATED_VALUE_UNHELD_CODE``): asked about once,
+      together with the other rows of its table that cite the same entries,
+      naming the literals no cited entry holds and, for a path, what a cited
+      entry holds of it.
+
+    Each row is named by its number, which is how the report marks a row kept
+    after it.
 
     Not asked here: a row citing no entry the run holds text for (the uncited
     questions ask it), a row with a cited entry known to be partial (the value
@@ -10988,6 +11162,9 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
     """
     if payload is None or entries is None or not (entries.texts or entries.items is not None):
         return []
+    from malspark.agents._indicator_denylists import inside_a_longer_token
+    from malspark.reporting.absence_answers import QUOTE_FLOOR
+
     out: list[Violation] = []
     # Whether another entry holds a value, once per value however many rows state it.
     held_elsewhere: dict[str, bool] = {}
@@ -11001,9 +11178,93 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
             for ref in [*(entries.may_hold(form, fields=True) & among), *cited_items]
         )
 
+    def _literal_held(literal: str, among: set[str], numbers: bool) -> bool:
+        # As written, or a hive by another of its spellings in an entry that
+        # holds the rest of the path.
+        if _held_by(literal, among, numbers):
+            return True
+        hive = _hive_and_rest(literal)
+        if hive is None:
+            return False
+        label, rest = hive
+        return any(
+            any(_held_by(name, {ref}, False) for name in _hive_spellings(label))
+            and (not rest or _held_by(rest, {ref}, False))
+            for ref in sorted(among)
+        )
+
+    def _inside(literal: str, among: set[str]) -> list[str]:
+        # The cited entries that hold the literal's text inside a longer run. A
+        # text holds the value's inner runs whole (:meth:`EntryTexts.may_hold`).
+        if len(literal) < QUOTE_FLOOR:
+            return []
+        runs = _TEXT_RUN_RE.findall(literal.lower())
+        inner = " ".join(runs[1:-1])
+        candidates = (entries.may_hold(inner) & among) if inner else set(among)
+        return [
+            ref
+            for ref in sorted(candidates)
+            if any(
+                inside_a_longer_token(form, entries.text_of(ref))
+                for spelling in _stated_spellings(literal)
+                for form in written_forms(spelling.lower())
+            )
+        ]
+
+    def _what_is_held(literal: str, among: set[str]) -> str:
+        # For a path no cited entry holds: the longest leading part of it, or of
+        # it without its hive, that one does, with the entry; "" for none.
+        bases = [literal]
+        hive = _hive_and_rest(literal)
+        if hive is not None and hive[1]:
+            bases.append(hive[1])
+        best = ("", "")
+        for base in bases:
+            parts = [part for part in _PATH_SEPARATOR_RE.split(base) if part]
+            joints = [match.group(0) for match in _PATH_SEPARATOR_RE.finditer(base.strip("\\/"))]
+            lead = base[: len(base) - len(base.lstrip("\\/"))]
+            # Each part narrows the entries whose runs it could stand in.
+            holders = set(among)
+            ends: list[int] = []
+            for count, part in enumerate(parts, start=1):
+                holders &= entries.may_hold(part) | {r for r in among if r not in entries.texts}
+                if not holders:
+                    break
+                if count >= 2 and count < len(parts):
+                    ends.append(count)
+            # A path held whole holds each leading part of it: the longest held
+            # is found by halving.
+            low, high, found = 0, len(ends) - 1, ("", "")
+            while low <= high:
+                middle = (low + high) // 2
+                count = ends[middle]
+                prefix = lead + "".join(
+                    part + (joints[at] if at < count - 1 else "")
+                    for at, part in enumerate(parts[:count])
+                )
+                ref = next((r for r in sorted(among) if _literal_held(prefix, {r}, False)), "")
+                if ref:
+                    found, low = (prefix, ref), middle + 1
+                else:
+                    high = middle - 1
+            if len(found[0]) > len(best[0]):
+                best = found
+        if not best[0]:
+            return ""
+        return (
+            f"{entries.named(best[1])} holds {safe_finding_value(best[0])!r} of "
+            f"{safe_finding_value(literal)!r}, not the whole path."
+        )
+
     for list_key, (noun, nouns) in _STATED_VALUE_ROWS.items():
-        unheld: dict[tuple[str, ...], list[tuple[int, str, str]]] = {}
+        numbers = list_key == "items"
+        # By the entries cited: each row's number, label, value, the literals
+        # no cited entry holds, and what a cited entry holds of a path.
+        unheld: dict[tuple[str, ...], list[tuple[int, str, str, list[str], list[str]]]] = {}
         unheld_at: dict[tuple[str, ...], list[int]] = {}
+        # By the entries cited: each row read out of a longer run, and its holders.
+        inside: dict[tuple[str, ...], list[tuple[int, str, str, list[str]]]] = {}
+        inside_at: dict[tuple[str, ...], list[int]] = {}
         for index, (at, row) in enumerate(_placed_rows(payload, list_key)):
             value = str(row.get("value") or "").strip()
             if not value or str(row.get("how_obtained") or "").strip().lower() == "inferred":
@@ -11011,8 +11272,9 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
             cited = [ref for ref in _ids_in(row.get("evidence_refs")) if entries.has_text(ref)]
             if not cited or any(ref in entries.partial for ref in cited):
                 continue
+            among = set(cited)
             try:
-                if _held_by(value, set(cited), list_key == "items"):
+                if _literal_held(value, among, numbers):
                     continue
                 # A list the row writes as one value ("extra, follower, run"):
                 # held where one cited entry holds every item of it (T-555).
@@ -11020,58 +11282,142 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                 if (
                     len(parts) > 1
                     and all(len(part) >= _LISTED_PART_FLOOR for part in parts)
-                    and any(
-                        all(_held_by(part, {ref}, list_key == "items") for part in parts)
-                        for ref in cited
-                    )
+                    and any(all(_held_by(part, {ref}, numbers) for part in parts) for ref in cited)
                 ):
+                    continue
+                # A configuration cell's literals, each held by some cited
+                # entry; read whole where none of them can stand for the cell.
+                literals = _cell_literals(value) if numbers else []
+                if not any(_carries_a_cell(literal) for literal in literals):
+                    literals = [value]
+                missing = [lit for lit in literals if not _literal_held(lit, among, numbers)]
+                if not missing:
                     continue
                 if value not in held_elsewhere:
                     held_elsewhere[value] = decidable(value) and any(
                         entries.holds(ref, value, fields=True)
                         for ref in entries.may_hold(value, fields=True)
                     )
+                if held_elsewhere[value]:
+                    continue
+                # The cell's whole text read out of a longer run, or each
+                # literal no entry holds.
+                whole = _inside(value, among)
+                read_out = (
+                    {value: whole} if whole else {lit: _inside(lit, among) for lit in missing}
+                )
+                notes = [
+                    note
+                    for lit in missing
+                    if not read_out.get(lit)
+                    and _PATH_SEPARATOR_RE.search(lit)
+                    and not any(character.isspace() for character in lit)
+                    for note in [_what_is_held(lit, among)]
+                    if note
+                ]
             except (ValueError, OverflowError, RecursionError) as exc:
                 # A value no reader can take is not decidable: nothing is said of it.
                 logger.debug("validation: a stated value was not read (%s).", type(exc).__name__)
                 continue
-            if held_elsewhere[value]:
-                continue
             label = str(row.get("key") or row.get("kind") or "").strip()
-            unheld.setdefault(tuple(cited), []).append((index + 1, label, value))
+            if all(read_out.values()):
+                holders = list(dict.fromkeys(ref for refs in read_out.values() for ref in refs))
+                inside.setdefault(tuple(cited), []).append((index + 1, label, value, holders))
+                inside_at.setdefault(tuple(cited), []).append(at)
+                continue
+            named_literals = [lit for lit in missing if not read_out.get(lit)]
+            unheld.setdefault(tuple(cited), []).append(
+                (
+                    index + 1,
+                    label,
+                    value,
+                    [] if named_literals == [value] else named_literals,
+                    notes,
+                )
+            )
             unheld_at.setdefault(tuple(cited), []).append(at)
         for refs, rows in unheld.items():
             named = safe_finding_value(", ".join(entries.named(ref) for ref in refs))
             if len(rows) == 1:
-                ((number, label, value),) = rows
+                ((number, label, value, literals, notes),) = rows
+                head = (
+                    f"{noun} {number} ({safe_finding_value(label)}: {safe_finding_value(value)!r})"
+                )
                 said = (
-                    f"{noun} {number} ({safe_finding_value(label)}: "
-                    f"{safe_finding_value(value)!r}) is in none of the entries it cites: {named}."
+                    f"{head}: none of the entries it cites ({named}) holds "
+                    f"{_named_literals(literals)}."
+                    if literals
+                    else f"{head} is in none of the entries it cites: {named}."
                 )
             else:
                 values = "; ".join(
                     f"{number}: {safe_finding_value(value)!r}"
-                    for number, _label, value in rows[:_MAX_NAMED_IDS]
+                    + (f" (not held: {_named_literals(literals)})" if literals else "")
+                    for number, _label, value, literals, _notes in rows[:_MAX_NAMED_IDS]
                 )
                 more = len(rows) - _MAX_NAMED_IDS
                 said = (
-                    f"{nouns} {', '.join(str(number) for number, _l, _v in rows)} are each in "
+                    f"{nouns} {', '.join(str(number) for number, *_rest in rows)} are each in "
                     f"none of the entries they cite: {named}. Their values: {values}"
                     f"{f' and {more} more' if more > 0 else ''}."
                 )
+            notes = list(dict.fromkeys(note for *_rest, row_notes in rows for note in row_notes))
             out.append(
                 Violation(
                     code=STATED_VALUE_UNHELD_CODE,
                     message=(
-                        f"{said} A value in this table is one an entry records as written. "
-                        "Cite the entry that holds the whole value, write the value as that "
-                        "entry records it, or leave the row out."
+                        f"{said} {' '.join(notes[:_MAX_NAMED_IDS])}"
+                        f"{' ' if notes else ''}A value in this table is one an entry records "
+                        "as written. Cite an entry that holds each value the row states, or "
+                        "leave the row out."
                     ),
                     path=f"{list_key}.value:{','.join(refs)}",
                     statements=tuple(f"{list_key}.{row_at}.value" for row_at in unheld_at[refs]),
                 )
             )
+        for refs, read in inside.items():
+            holders = list(
+                dict.fromkeys(ref for *_rest, row_holders in read for ref in row_holders)
+            )
+            where = safe_finding_value(", ".join(entries.named(ref) for ref in holders))
+            if len(read) == 1:
+                ((number, label, value, _holders),) = read
+                said = (
+                    f"{noun} {number} ({safe_finding_value(label)}: "
+                    f"{safe_finding_value(value)!r}) is read out of a longer run of text in "
+                    f"{where}: the entry holds the value's text with letters or digits running "
+                    "on at an end, and no entry the row cites holds it as a value of its own."
+                )
+            else:
+                values = "; ".join(
+                    f"{number}: {safe_finding_value(value)!r}"
+                    for number, _label, value, _holders in read[:_MAX_NAMED_IDS]
+                )
+                more = len(read) - _MAX_NAMED_IDS
+                said = (
+                    f"{nouns} {', '.join(str(number) for number, *_rest in read)} are each "
+                    f"read out of a longer run of text in {where}: the entry holds each "
+                    "value's text with letters or digits running on at an end, and no entry "
+                    f"the row cites holds it as a value of its own. Their values: {values}"
+                    f"{f' and {more} more' if more > 0 else ''}."
+                )
+            out.append(
+                Violation(
+                    code=STATED_VALUE_INSIDE_A_TOKEN_CODE,
+                    message=f"{said} Recorded, not asked.",
+                    path=f"{list_key}.value:{','.join(refs)}",
+                    statements=tuple(f"{list_key}.{row_at}.value" for row_at in inside_at[refs]),
+                    asked=False,
+                )
+            )
     return out
+
+
+def _named_literals(literals: Sequence[str]) -> str:
+    """Literals as a question names them, quoted: a few, and how many more."""
+    shown = ", ".join(f"{safe_finding_value(lit)!r}" for lit in literals[:_MAX_NAMED_IDS])
+    more = len(literals) - _MAX_NAMED_IDS
+    return shown + (f" and {more} more" if more > 0 else "")
 
 
 # A statement that an entry holds nothing, or one line and no more. Asked of
@@ -14405,12 +14751,15 @@ def _askable(violations: Sequence[Violation], *, every: bool = True) -> list[Vio
 
     ``every=False`` is ``validation.feedback`` set to ``record_only``: only a
     finding that says the answer could not be read is asked
-    (:data:`REASKED_IN_EVERY_MODE_CODES`).
+    (:data:`REASKED_IN_EVERY_MODE_CODES`). A finding of a code no turn asks
+    (:data:`ASKED_BY_NO_TURN`) is asked in neither mode.
     """
     return [
         v
         for v in violations
-        if v.code != CHECK_FAILED_CODE and (every or v.code in REASKED_IN_EVERY_MODE_CODES)
+        if v.code != CHECK_FAILED_CODE
+        and v.code not in ASKED_BY_NO_TURN
+        and (every or v.code in REASKED_IN_EVERY_MODE_CODES)
     ]
 
 

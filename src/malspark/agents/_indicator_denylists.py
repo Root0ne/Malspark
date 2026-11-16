@@ -459,6 +459,48 @@ def whole_value_starts(literal: str, haystack: str) -> Iterator[int]:
         start = haystack.find(lowered, start + 1)
 
 
+# What runs on into a value inside a longer run of text: a letter or a digit.
+_RUNS_ON_RE = re.compile(r"[a-z0-9]")
+
+
+def inside_a_longer_token(literal: str, haystack: str) -> bool:
+    """Whether ``haystack`` holds ``literal``'s exact text with letters or digits running on.
+
+    The other answer to :func:`whole_value_in`'s question: the text is there,
+    but at one end or both a letter or a digit of a longer run goes on, as in a
+    string pool written with no separator. Each end of some place it stands at
+    either bounds a value (:func:`whole_value_in`'s rule) or runs on by a letter
+    or a digit, and at least one runs on. A digit of the value against a digit
+    of the text is a cut number, not a value read out of a run, and so is any
+    other character that continues a label (``evil.com`` in ``evil.com.br``).
+    Lower-cased, as :func:`whole_value_in` compares.
+    """
+    lowered = str(literal or "").lower()
+    if not lowered:
+        return False
+    continues = _continuation_for(lowered)
+    start = haystack.find(lowered)
+    while start != -1:
+        end = start + len(lowered)
+        before, after = haystack[start - 1 : start] if start else "", haystack[end : end + 1]
+        opens = _opens_a_value(haystack, start, continues)
+        closes = _closes_a_value(haystack, end, continues)
+        runs_before = (
+            not opens
+            and bool(_RUNS_ON_RE.match(before))
+            and not (before.isdigit() and lowered[0].isdigit())
+        )
+        runs_after = (
+            not closes
+            and bool(_RUNS_ON_RE.match(after))
+            and not (after.isdigit() and lowered[-1].isdigit())
+        )
+        if (opens or runs_before) and (closes or runs_after) and (runs_before or runs_after):
+            return True
+        start = haystack.find(lowered, start + 1)
+    return False
+
+
 class _Automaton:
     """Every occurrence of a set of literals in a text, in one left-to-right reading.
 
