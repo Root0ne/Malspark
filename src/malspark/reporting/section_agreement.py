@@ -7806,8 +7806,8 @@ def apply_rows(
         taken.append((*left_out_span(passage.text, span[0], span[1]), ""))
         counts["dropped"] += 1
         written.append(_left_out(passage, path, span[2], why, refusals, every_code=True))
-    for passage, at, path, span, row, found, source, said in moved:
-        written.append(_moved(passage, at, path, span, row, found, source, said, spans, counts))
+    for passage, at, path, span, row, refusals, source, said in moved:
+        written.append(_moved(passage, at, path, span, row, refusals, source, said, spans, counts))
     for pid, rewrites in spans.items():
         if not rewrites:
             continue

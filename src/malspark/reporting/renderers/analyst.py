@@ -808,8 +808,9 @@ _SENTENCE_CLOSE = "\"'\u2019\u201d)]*_"
 # Citation brackets right after a flagged text, read past to its end.
 _CITED_AFTER = re.compile(r"(?:[ \t]*\[[^\]\n]*\])*")
 # What may stand on a line before the sentence that opens it: a list item's or a quoted
-# block's marker, or nothing.
-_LINE_OPEN = re.compile(r"[ \t]*(?:[-*+>]|\d+[.)])?[ \t]*")
+# block's marker, or nothing. A marker is one sign or a number with its mark, never both: the
+# number is read only where no sign stands right before it.
+_LINE_OPEN = re.compile(r"[ \t]*[-*+>]?(?:(?<![-*+>])\d+[.)])?[ \t]*")
 # A word of single letters each followed by a period ("e.g.", "i.e."): its last period ends
 # no sentence.
 _ABBREVIATION = re.compile(r"[\"'(\[]*(?:[A-Za-z]\.){2,}")
@@ -847,7 +848,8 @@ def _stands_whole(text: str, start: int, end: int) -> bool:
     core = said.rstrip().rstrip(_SENTENCE_CLOSE)
     if core[-1:] in (".", "!", "?"):
         return _ends_sentence(text, start + len(core) - 1)
-    after = _CITED_AFTER.match(text, end).end()
+    cited = _CITED_AFTER.match(text, end)
+    after = cited.end() if cited else end
     rest = text[after:].lstrip(" \t")
     return not rest or rest[0] == "\n" or _ends_sentence(text, len(text) - len(rest))
 
