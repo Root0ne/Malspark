@@ -320,7 +320,8 @@
       {
         "key": "HKEY_CURRENT_USER\\Software\\Synthetic\\Trace",
         "operation": "delete",
-        "value": null
+        "value": null,
+        "value_name": "Trace"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Synthetic\\Policies",

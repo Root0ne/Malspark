@@ -259,29 +259,56 @@ class TestRegistryOps:
             ("beta", ["22"]),
         ]
 
-    def test_one_value_written_after_an_unnamed_write_names_both_processes(self) -> None:
-        unnamed = (
+    @staticmethod
+    def _unnamed(data: str) -> tuple[str, list[dict[str, str]]]:
+        return (
             "RegSetValueExW",
             [
                 {"name": "FullName", "value": "HKEY_CURRENT_USER\\Software\\Example"},
-                {"name": "Buffer", "value": "C:\\x.exe"},
+                {"name": "Buffer", "value": data},
             ],
         )
+
+    def test_a_write_naming_no_value_is_the_key_s_own_row_with_its_own_pids(self) -> None:
         report = {
             "behavior": {
                 "calls": [
                     {"api": api, "pid": pid, "arguments": arguments}
                     for pid, (api, arguments) in (
-                        ("11", unnamed),
-                        ("22", self._set("alpha", "C:\\a.exe")),
+                        ("1234", self._set("alpha", "C:\\a.exe")),
+                        ("55", self._unnamed("C:\\x.exe")),
+                        ("77", self._set("beta", "C:\\b.exe")),
                     )
                 ]
             }
         }
 
-        (row,) = sandbox_tools.sandbox_registry_ops(report)["registry"]
+        rows = sandbox_tools.sandbox_registry_ops(report)["registry"]
 
-        assert (row["value_name"], row["pids"]) == ("alpha", ["11", "22"])
+        assert [(row.get("value_name"), row["value"], row["pids"]) for row in rows] == [
+            ("alpha", "C:\\a.exe", ["1234"]),
+            (None, "C:\\x.exe", ["55"]),
+            ("beta", "C:\\b.exe", ["77"]),
+        ]
+
+    def test_a_value_deleted_touches_only_its_own_row(self) -> None:
+        delete = (
+            "RegDeleteValueW",
+            [
+                {"name": "FullName", "value": "HKEY_CURRENT_USER\\Software\\Example"},
+                {"name": "ValueName", "value": "alpha"},
+            ],
+        )
+        report = self._argued_calls(
+            self._set("alpha", "C:\\a.exe"), self._set("beta", "C:\\b.exe"), delete
+        )
+
+        rows = sandbox_tools.sandbox_registry_ops(report)["registry"]
+
+        assert [(row["value_name"], row["operation"], row["value"]) for row in rows] == [
+            ("alpha", "delete", None),
+            ("beta", "modify", "C:\\b.exe"),
+        ]
 
     def test_one_value_written_twice_or_read_after_is_one_row_with_the_last_write(self) -> None:
         read = (
@@ -304,7 +331,7 @@ class TestRegistryOps:
             }
         ]
 
-    def test_a_key_deleted_after_its_values_were_written_is_one_row(self) -> None:
+    def test_a_key_deleted_after_its_values_were_written_is_a_row_of_its_own(self) -> None:
         delete = (
             "RegDeleteKeyW",
             [{"name": "FullName", "value": "HKEY_CURRENT_USER\\Software\\Example"}],
@@ -313,8 +340,12 @@ class TestRegistryOps:
             self._set("alpha", "C:\\a.exe"), self._set("beta", "C:\\b.exe"), delete
         )
 
-        assert sandbox_tools.sandbox_registry_ops(report)["registry"] == [
-            {"key": "HKEY_CURRENT_USER\\Software\\Example", "operation": "delete", "value": None}
+        rows = sandbox_tools.sandbox_registry_ops(report)["registry"]
+
+        assert [(row.get("value_name"), row["operation"]) for row in rows] == [
+            ("alpha", "modify"),
+            ("beta", "modify"),
+            (None, "delete"),
         ]
 
     def test_without_a_full_path_the_subkey_is_the_key_not_the_handle(self) -> None:
