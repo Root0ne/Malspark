@@ -465,10 +465,21 @@ class TestAValueOnlyTheJudgeRecordsIsTheJudgesIndicator:
                 process_tree=[{"pid": 1, "name": "sample.exe", "command_line": "runmark"}]
             ),
         )
+        # As the builder records them: each value with the type the judge gave it.
+        report.judge_indicators = [
+            JudgeIndicator(
+                kind=v.kind,
+                value=v.value,
+                algorithm=v.algorithm,
+                indicator_types=list(v.indicator_types),
+            )
+            for v in exported_indicator_values(judge)
+        ]
         exported, _renderer = _export(report, judge)
 
         row = _row(report, "runmark")
         assert (row.source, publishes(row.published)) == ("judge", True), row.published
+        assert row.indicator_type == "malicious-activity"
         naming = [
             o["pattern"]
             for o in exported["objects"]
