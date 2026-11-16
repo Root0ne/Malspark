@@ -86,10 +86,15 @@ The reporter writes; the code checks. Before the report is stored:
   section that establishes the fact. A closing sentence, a value cell or a
   summary bullet the reporter keeps stays only on the quoted words of a source
   that state the same; where the quote stands word for word in a section 5
-  passage and is refused only for naming too few of
-  the words of what the sentence denies, the source's own sentence holding the
-  quote is printed in its place, with its citations, and the run records the
-  sentence it replaced (`agreement.kept_in_source_words`);
+  passage and is refused only by the two word tests (it holds too few of the
+  words before the sentence's negation, or none of what a denied item is), the
+  one sentence of that passage holding the whole quote, in whole words, is
+  printed in its place, with its citations, and the run records the sentence it
+  replaced (`agreement.kept_in_source_words`). That sentence is moved only where
+  it reads as prose on its own: not a list item, a table row or a heading, not
+  opening on a word that points to the sentences before it ("It", "Its",
+  "These", "Which"…), and not one the round itself leaves out or changes;
+  otherwise the closing sentence is left out;
 - an absence sentence ("no file was written") is held against the ledger;
 - an indicator is published only with a reason, and the reason is printed
   beside it in the IOC feed and the detection drafts.
@@ -98,7 +103,9 @@ A failed check goes back to the reporter with a [validation
 code](/docs/concepts/validation/) and one turn to fix it. A problem it does not
 fix stays visible in the run summary, with each sentence left out or replaced
 recorded whole. The analyst report leaves a sentence a check flagged out only
-where it stands whole (a sentence, or the whole of a table cell), never out of
+where it stands whole (a sentence, a list item's or one in emphasis among them,
+or the whole of a table cell; the period of a number or an abbreviation ends
+no sentence), never out of
 another sentence that names the same value, and each section ends with a line
 counting the sentences, bullets and cell sentences left out of it, if any; the
 evidence bundle lists each with the reason.
