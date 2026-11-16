@@ -3992,9 +3992,11 @@
         "first_seen": "2026-08-13 20:29:13,677",
         "name": "b09a8639b204d9529a66.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       }
     ],
+    "staged_by_sandbox_note": "The sandbox started the submitted file from the path of the row marked staged_by_sandbox: where the file was placed is the sandbox's doing, not the sample's.",
     "total": 7
   },
   "sandbox_registry_ops": {

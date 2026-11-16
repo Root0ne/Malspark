@@ -47,7 +47,11 @@ from malspark.schemas.sandbox_report import (
     LINEAGE_REASON_KEY,
     LINEAGE_SAMPLE,
     PROCESS_TASK_KEY,
+    STAGED_KEY,
+    STAGED_NOTE,
+    STAGED_NOTE_KEY,
     dropped_size,
+    started_by_the_sandbox,
 )
 from malspark.schemas.signature_indicators import (
     CHARS_LEFT_OUT,
@@ -304,43 +308,75 @@ def sandbox_processes(
         report, "processes", normalised_by=normalised_by
     ):
         return _absent("processes")
-    rows: list[dict[str, Any]] = []
-    page, meta = _page(processes, offset, limit)
     # In a report a generated launcher's run produced, the sandbox's own
     # "this is the sample" mark points at the picked script or a wrapper,
     # never at the sample: it is set aside, and only the launch lineage says.
     launched = _launcher_attributed(report, processes)
-    if page:
-        for proc in page:
-            if not isinstance(proc, dict):
-                continue
-            row = {
-                "pid": proc.get("pid"),
-                "ppid": proc.get("ppid") or proc.get("parent_id"),
-                "name": proc.get("process_name") or proc.get("name") or "",
-                "command_line": proc.get("command_line") or proc.get("cmd") or "",
-                "first_seen": proc.get("first_seen"),
-                "call_count": len(proc.get("calls") or []),
-            }
-            # The sandbox's own mark that the process is the sample's, where
-            # the record carries one: one of the two lineage facts. Where the
-            # run submitted a generated launcher, the lineage the launch
-            # record gives (``sandbox_report.attribute_the_launcher``) is
-            # stated and decides it: a launcher's process is never the sample's.
-            lineage = _launch_lineage(proc)
-            if lineage:
-                row[LINEAGE_KEY] = lineage
-            # The task the reader listed it in, where the report holds several
-            # whose process ids are each the task's own.
-            task = _task_of(proc)
-            if task:
-                row["task"] = task
-            if lineage == LINEAGE_SAMPLE or (
-                not launched and not lineage and _marked_as_the_sample(proc)
-            ):
-                row["marked"] = True
-            rows.append(row)
-    return {"processes": rows, "total": len(processes), **meta}
+    # Every process's row, so the place the sandbox started the submitted file
+    # from is read over the whole listing, whichever page is asked for.
+    built = [_process_row(proc, launched) if isinstance(proc, dict) else None for proc in processes]
+    staged = {
+        id(row)
+        for row in started_by_the_sandbox(
+            [row for row in built if row is not None], *_submitted(report)
+        )
+    }
+    page, meta = _page(built, offset, limit)
+    rows: list[dict[str, Any]] = []
+    for row in page:
+        if row is None:
+            continue
+        # The process whose image is the submitted file as the sandbox
+        # started it: its path is the sandbox's, never the sample's doing.
+        if id(row) in staged:
+            row[STAGED_KEY] = True
+        rows.append(row)
+    answer: dict[str, Any] = {"processes": rows, "total": len(processes), **meta}
+    if any(STAGED_KEY in row for row in rows):
+        answer = {STAGED_NOTE_KEY: STAGED_NOTE, **answer}
+    return answer
+
+
+def _submitted(report: dict[str, Any]) -> tuple[str, str]:
+    """The name and digest the report's target states the submitted file under.
+
+    On the target block, or on its ``file`` block where the document keeps a
+    sandbox's own arrangement (``target.file.*``), as the reader reads either.
+    """
+    target = place(report, "target")
+    held: dict[str, Any] = target if isinstance(target, dict) else {}
+    block = held.get("file")
+    nested: dict[str, Any] = block if isinstance(block, dict) else {}
+    name, sha256 = (str(held.get(key) or nested.get(key) or "") for key in ("name", "sha256"))
+    return name, sha256
+
+
+def _process_row(proc: dict[str, Any], launched: bool) -> dict[str, Any]:
+    """One process's row of the view; ``launched``: a generated launcher's run."""
+    row = {
+        "pid": proc.get("pid"),
+        "ppid": proc.get("ppid") or proc.get("parent_id"),
+        "name": proc.get("process_name") or proc.get("name") or "",
+        "command_line": proc.get("command_line") or proc.get("cmd") or "",
+        "first_seen": proc.get("first_seen"),
+        "call_count": len(proc.get("calls") or []),
+    }
+    # The sandbox's own mark that the process is the sample's, where the
+    # record carries one: one of the two lineage facts. Where the run
+    # submitted a generated launcher, the lineage the launch record gives
+    # (``sandbox_report.attribute_the_launcher``) is stated and decides it: a
+    # launcher's process is never the sample's.
+    lineage = _launch_lineage(proc)
+    if lineage:
+        row[LINEAGE_KEY] = lineage
+    # The task the reader listed it in, where the report holds several whose
+    # process ids are each the task's own.
+    task = _task_of(proc)
+    if task:
+        row["task"] = task
+    if lineage == LINEAGE_SAMPLE or (not launched and not lineage and _marked_as_the_sample(proc)):
+        row["marked"] = True
+    return row
 
 
 def _task_of(proc: dict[str, Any]) -> str:
@@ -1917,6 +1953,8 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
 
     def _processes(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
         """List the processes the sandbox observed, with their command lines.
+
+        A row marked ``staged_by_sandbox`` is where the sandbox started the submitted file from.
 
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.

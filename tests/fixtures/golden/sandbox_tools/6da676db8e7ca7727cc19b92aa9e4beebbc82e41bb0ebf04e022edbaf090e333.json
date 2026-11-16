@@ -4557,7 +4557,8 @@
         "first_seen": "2026-07-25 17:55:18,700",
         "name": "6da676db8e7ca7727cc1.exe",
         "pid": null,
-        "ppid": 712
+        "ppid": 712,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 5659,
@@ -4629,9 +4630,11 @@
         "first_seen": "2026-08-13 22:41:30,964",
         "name": "6da676db8e7ca7727cc1.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       }
     ],
+    "staged_by_sandbox_note": "The sandbox started the submitted file from the path of the row marked staged_by_sandbox: where the file was placed is the sandbox's doing, not the sample's.",
     "total": 14
   },
   "sandbox_registry_ops": {

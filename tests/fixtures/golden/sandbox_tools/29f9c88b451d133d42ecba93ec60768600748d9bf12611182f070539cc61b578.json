@@ -3514,7 +3514,8 @@
         "first_seen": "2026-08-10 22:14:09,883",
         "name": "29f9c88b451d133d42ec.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 12592,
@@ -3525,6 +3526,7 @@
         "ppid": 484
       }
     ],
+    "staged_by_sandbox_note": "The sandbox started the submitted file from the path of the row marked staged_by_sandbox: where the file was placed is the sandbox's doing, not the sample's.",
     "total": 2
   },
   "sandbox_registry_ops": {

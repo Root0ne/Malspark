@@ -3680,7 +3680,8 @@
         "first_seen": "2026-08-10 22:37:29,603",
         "name": "a7c4aae68e13b16ed7d9.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 883,
@@ -3688,7 +3689,8 @@
         "first_seen": "2026-08-10 22:37:47,447",
         "name": "a7c4aae68e13b16ed7d9.exe",
         "pid": null,
-        "ppid": 4552
+        "ppid": 4552,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 775,
@@ -3707,6 +3709,7 @@
         "ppid": 1192
       }
     ],
+    "staged_by_sandbox_note": "The sandbox started the submitted file from the path of the row marked staged_by_sandbox: where the file was placed is the sandbox's doing, not the sample's.",
     "total": 14
   },
   "sandbox_registry_ops": {

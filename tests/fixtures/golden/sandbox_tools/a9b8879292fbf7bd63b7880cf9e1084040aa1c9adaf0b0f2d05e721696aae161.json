@@ -3200,7 +3200,8 @@
         "first_seen": "2026-07-25 17:52:54,840",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 1704
+        "ppid": 1704,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 925,
@@ -3208,7 +3209,8 @@
         "first_seen": "2026-07-25 17:52:57,517",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 4108
+        "ppid": 4108,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 911,
@@ -3216,7 +3218,8 @@
         "first_seen": "2026-07-25 17:52:59,373",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 5324
+        "ppid": 5324,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 949,
@@ -3224,7 +3227,8 @@
         "first_seen": "2026-07-25 17:53:01,443",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 5716
+        "ppid": 5716,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 933,
@@ -3232,7 +3236,8 @@
         "first_seen": "2026-07-25 17:53:05,913",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 6124
+        "ppid": 6124,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 935,
@@ -3240,7 +3245,8 @@
         "first_seen": "2026-07-25 17:53:08,590",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 6692
+        "ppid": 6692,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 932,
@@ -3248,7 +3254,8 @@
         "first_seen": "2026-07-25 17:53:11,781",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 3784
+        "ppid": 3784,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 935,
@@ -3256,7 +3263,8 @@
         "first_seen": "2026-07-25 17:53:15,338",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 7360
+        "ppid": 7360,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 927,
@@ -3264,7 +3272,8 @@
         "first_seen": "2026-07-25 17:53:21,392",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 7768
+        "ppid": 7768,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 937,
@@ -3272,7 +3281,8 @@
         "first_seen": "2026-07-25 17:53:23,798",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 7636
+        "ppid": 7636,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 926,
@@ -3280,7 +3290,8 @@
         "first_seen": "2026-07-25 17:53:28,485",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 7980
+        "ppid": 7980,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 947,
@@ -3288,7 +3299,8 @@
         "first_seen": "2026-07-25 17:53:31,631",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 768
+        "ppid": 768,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 937,
@@ -3296,7 +3308,8 @@
         "first_seen": "2026-07-25 17:53:35,097",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 8316
+        "ppid": 8316,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 941,
@@ -3304,7 +3317,8 @@
         "first_seen": "2026-07-25 17:53:39,050",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 8964
+        "ppid": 8964,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 931,
@@ -3312,7 +3326,8 @@
         "first_seen": "2026-07-25 17:53:42,300",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 9200
+        "ppid": 9200,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 934,
@@ -3320,7 +3335,8 @@
         "first_seen": "2026-07-25 17:53:44,644",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 9520
+        "ppid": 9520,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 940,
@@ -3328,7 +3344,8 @@
         "first_seen": "2026-07-25 17:53:49,077",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 9892
+        "ppid": 9892,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 930,
@@ -3336,7 +3353,8 @@
         "first_seen": "2026-07-25 17:53:56,163",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 9572
+        "ppid": 9572,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 940,
@@ -3344,7 +3362,8 @@
         "first_seen": "2026-07-25 17:53:59,110",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 10508
+        "ppid": 10508,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 933,
@@ -3352,7 +3371,8 @@
         "first_seen": "2026-07-25 17:54:02,217",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 10896
+        "ppid": 10896,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 927,
@@ -3360,7 +3380,8 @@
         "first_seen": "2026-07-25 17:54:05,230",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 4632
+        "ppid": 4632,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 949,
@@ -3368,7 +3389,8 @@
         "first_seen": "2026-07-25 17:54:08,058",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 10956
+        "ppid": 10956,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 940,
@@ -3376,7 +3398,8 @@
         "first_seen": "2026-07-25 17:54:11,868",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 11476
+        "ppid": 11476,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 932,
@@ -3384,7 +3407,8 @@
         "first_seen": "2026-07-25 17:54:15,247",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 12016
+        "ppid": 12016,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 944,
@@ -3392,7 +3416,8 @@
         "first_seen": "2026-07-25 17:54:19,390",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 11572
+        "ppid": 11572,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 937,
@@ -3400,7 +3425,8 @@
         "first_seen": "2026-07-25 17:54:22,310",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 12292
+        "ppid": 12292,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 933,
@@ -3408,7 +3434,8 @@
         "first_seen": "2026-07-25 17:54:24,997",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 12656
+        "ppid": 12656,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 930,
@@ -3416,7 +3443,8 @@
         "first_seen": "2026-07-25 17:54:27,997",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 13008
+        "ppid": 13008,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 932,
@@ -3424,7 +3452,8 @@
         "first_seen": "2026-07-25 17:54:31,971",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 12680
+        "ppid": 12680,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 945,
@@ -3432,7 +3461,8 @@
         "first_seen": "2026-07-25 17:54:37,174",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 13536
+        "ppid": 13536,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 924,
@@ -3440,7 +3470,8 @@
         "first_seen": "2026-07-25 17:54:40,799",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 13984
+        "ppid": 13984,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 930,
@@ -3448,7 +3479,8 @@
         "first_seen": "2026-07-25 17:54:44,471",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 4748
+        "ppid": 4748,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 913,
@@ -3456,7 +3488,8 @@
         "first_seen": "2026-07-25 17:54:48,049",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 1132
+        "ppid": 1132,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 931,
@@ -3464,7 +3497,8 @@
         "first_seen": "2026-07-25 17:54:51,392",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 14684
+        "ppid": 14684,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 927,
@@ -3472,7 +3506,8 @@
         "first_seen": "2026-07-25 17:54:53,817",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 15128
+        "ppid": 15128,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 949,
@@ -3480,7 +3515,8 @@
         "first_seen": "2026-07-25 17:54:56,692",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 6984
+        "ppid": 6984,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 929,
@@ -3488,7 +3524,8 @@
         "first_seen": "2026-07-25 17:54:59,395",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 15460
+        "ppid": 15460,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 914,
@@ -3496,7 +3533,8 @@
         "first_seen": "2026-07-25 17:55:01,692",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 15812
+        "ppid": 15812,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 951,
@@ -3504,7 +3542,8 @@
         "first_seen": "2026-07-25 17:55:04,192",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 16160
+        "ppid": 16160,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 945,
@@ -3512,7 +3551,8 @@
         "first_seen": "2026-07-25 17:55:06,521",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 16036
+        "ppid": 16036,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 932,
@@ -3520,7 +3560,8 @@
         "first_seen": "2026-07-25 17:55:08,957",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 16664
+        "ppid": 16664,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 959,
@@ -3528,7 +3569,8 @@
         "first_seen": "2026-07-25 17:55:11,660",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 17016
+        "ppid": 17016,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 949,
@@ -3536,7 +3578,8 @@
         "first_seen": "2026-07-25 17:55:14,145",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 17364
+        "ppid": 17364,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 925,
@@ -3544,7 +3587,8 @@
         "first_seen": "2026-07-25 17:55:16,957",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 17452
+        "ppid": 17452,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 933,
@@ -3552,7 +3596,8 @@
         "first_seen": "2026-07-25 17:55:20,051",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 17804
+        "ppid": 17804,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 941,
@@ -3560,7 +3605,8 @@
         "first_seen": "2026-07-25 17:55:22,426",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 18176
+        "ppid": 18176,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 937,
@@ -3568,7 +3614,8 @@
         "first_seen": "2026-07-25 17:55:25,222",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 17824
+        "ppid": 17824,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 944,
@@ -3576,7 +3623,8 @@
         "first_seen": "2026-07-25 17:55:27,863",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 18600
+        "ppid": 18600,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 936,
@@ -3584,7 +3632,8 @@
         "first_seen": "2026-07-25 17:55:30,754",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 18972
+        "ppid": 18972,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 921,
@@ -3592,7 +3641,8 @@
         "first_seen": "2026-07-25 17:55:33,457",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 19324
+        "ppid": 19324,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 939,
@@ -3600,7 +3650,8 @@
         "first_seen": "2026-07-25 17:55:36,269",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 19480
+        "ppid": 19480,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 927,
@@ -3608,7 +3659,8 @@
         "first_seen": "2026-07-25 17:55:39,097",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 19924
+        "ppid": 19924,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 943,
@@ -3616,7 +3668,8 @@
         "first_seen": "2026-07-25 17:55:41,722",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 20312
+        "ppid": 20312,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 801,
@@ -3624,7 +3677,8 @@
         "first_seen": "2026-07-25 17:55:44,425",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 20344
+        "ppid": 20344,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 935,
@@ -3632,7 +3686,8 @@
         "first_seen": "2026-08-13 20:17:34,939",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 949,
@@ -3640,9 +3695,11 @@
         "first_seen": "2026-08-13 20:17:38,563",
         "name": "a9b8879292fbf7bd63b7.exe",
         "pid": null,
-        "ppid": 4648
+        "ppid": 4648,
+        "staged_by_sandbox": true
       }
     ],
+    "staged_by_sandbox_note": "The sandbox started the submitted file from the path of the row marked staged_by_sandbox: where the file was placed is the sandbox's doing, not the sample's.",
     "total": 56
   },
   "sandbox_registry_ops": {

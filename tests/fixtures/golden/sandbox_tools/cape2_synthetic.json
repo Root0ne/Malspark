@@ -276,7 +276,8 @@
         "first_seen": "2000-01-01 00:00:00,000",
         "name": "synthetic.exe",
         "pid": null,
-        "ppid": 900
+        "ppid": 900,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 3,
@@ -287,6 +288,7 @@
         "ppid": 1000
       }
     ],
+    "staged_by_sandbox_note": "The sandbox started the submitted file from the path of the row marked staged_by_sandbox: where the file was placed is the sandbox's doing, not the sample's.",
     "total": 2
   },
   "sandbox_registry_ops": {
