@@ -242,9 +242,13 @@ an environment name of the system root (`%SystemRoot%\System32\rundll32.exe`),
 and a further path the data names after it (a library, a script, a second
 program) is selected in the field that records the data, a registry event's
 `Details` or a process's `CommandLine`; data naming nothing specific selects no
-image. An unquoted program whose path holds a space is read as the loader
-reads it, words joined up to the first that ends in a file name
-(`C:\Program Files\Vendor\svc host.exe`), and a further name written with no
+image. An unquoted program whose first word begins a rooted path (a drive, an
+environment name, `\\`) and names no file is read with the words after it
+joined by their spaces up to the first that ends in a file name
+(`C:\Program Files\Vendor\svc host.exe`); the first word stands alone at a
+switch (`/…`, `-…`), at a word that begins another rooted path, and where
+the words so far with `.exe` added end in a program Windows ships
+(`%windir%\system32\cmd /c x.bat`). A further name written with no
 folder is never selected alone. Only a write names a program, never a read.
 Each value written to one key keeps its own name and data. A value is asked about in the
 form the draft prints: a path keeps what a log writes the same on every host

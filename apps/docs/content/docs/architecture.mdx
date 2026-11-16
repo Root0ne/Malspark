@@ -6051,8 +6051,14 @@ is assembled from what the run gathered rather than recomputed beside it:
   `CommandLine` in a process creation, `_PAYLOAD_FIELDS`). `Image` is printed
   only in a process-creation draft: a registry event's draft selects a
   program in its data, and leaves one no data holds out (`NO_FIELD_REASON`,
-  `_Registered.selections`). An unquoted program whose first word begins a
-  rooted path is read as the loader reads it (`_unquoted_program`). Only a
+  `_Registered.selections`). The rule drafter reads the data's words
+  itself (`data_words`): an unquoted program whose first word begins a
+  rooted path and names no file is joined by its spaces up to the first
+  word that ends in a file name, and stands alone at a switch, at another
+  rooted path, and where the words so far with `.exe` added end in a
+  program Windows ships (`_unquoted_program`, asked of `shipped_match`).
+  The sandbox's check of which process runs the submitted file reads a
+  command line word by word, split at spaces and commas. Only a
   write names a program. A registry row (`sandbox_registry_ops`) is a key and
   the value an operation names, each with its own operation and pids; an
   operation naming no value is the key's own row.
