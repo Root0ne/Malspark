@@ -96,7 +96,11 @@ class TestTheRowIsMarked:
 
     def test_the_sentence_states_the_fact_first_and_is_said_once(self) -> None:
         answer = sandbox_processes(_triage())
-        assert STAGED_NOTE.startswith("The sandbox started the submitted file from")
+        # What the record shows first, then what it means; nothing of what the
+        # sample did elsewhere.
+        assert STAGED_NOTE.startswith(f"The row marked {STAGED_KEY} is the first process")
+        assert STAGED_NOTE.endswith("the sandbox started the submitted file from there.")
+        assert "sample" not in STAGED_NOTE
         assert str(answer).count(STAGED_NOTE) == 1
 
 

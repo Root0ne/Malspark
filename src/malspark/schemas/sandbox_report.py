@@ -1336,8 +1336,9 @@ STAGED_KEY = "staged_by_sandbox"
 STAGED_WORDS = "the sandbox started the submitted file from this path"
 STAGED_NOTE_KEY = "staged_by_sandbox_note"
 STAGED_NOTE = (
-    f"The sandbox started the submitted file from the path of the row marked {STAGED_KEY}: "
-    "where the file was placed is the sandbox's doing, not the sample's."
+    f"The row marked {STAGED_KEY} is the first process that runs the submitted file, "
+    "started by no process that runs it, at a path the report does not show written "
+    "during the run: the sandbox started the submitted file from there."
 )
 
 
