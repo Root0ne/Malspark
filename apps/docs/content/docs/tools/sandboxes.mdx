@@ -116,8 +116,13 @@ declares holds it (`Reading.dropped_writer_fields`: a Triage task report's
 declares the field its source writes the writer's guest pid under
 (`Reading.dropped_guest_pid_fields`: a Triage task report's `pid`) and it is
 another number, that pid as `guest_pid`; a row naming its writer by the guest
-pid alone is named by it. The pack reads every sandbox view with the job's
-reader, as an agent's call of it does. A long answer is sized by the job's
+pid alone is named by it. A row's size is read from every field the reader
+declares states one (`Reading.dropped_size_fields`: a Triage report's `size`,
+then a dumped region's `length`), the first one stated, then from `size`; a row
+stating none states no size. Every sandbox view is read through one entry
+point that takes the reader's declaration (`sandbox_tools.sandbox_view`): the
+pack, the read of a later detonation and an agent's call each read a view with
+the reader that built its report. A long answer is sized by the job's
 answer guardrail as every other view's is: the rows it does not show are
 counted, and `offset` and `limit` page them. The document holds each such block once per
 task, by reference (`{"task_report": ..., "block_rows": <block>}`), and every
