@@ -88,6 +88,46 @@ class TestTheReaderOfACommandLine:
             '"C:\\Program Files\\Vendor7731\\up7731.exe" /s C:\\x\\a.dll,Start'
         ) == ["C:\\Program Files\\Vendor7731\\up7731.exe", "/s", "C:\\x\\a.dll", "Start"]
 
+    @pytest.mark.parametrize(
+        ("line", "read"),
+        [
+            (
+                "C:\\Program Files (x86)\\Vendor7731\\svc host.exe /s",
+                ["C:\\Program Files (x86)\\Vendor7731\\svc host.exe", "/s"],
+            ),
+            (
+                "%ProgramFiles%\\Vendor7731\\up date.exe",
+                ["%ProgramFiles%\\Vendor7731\\up date.exe"],
+            ),
+            (
+                "\\\\srv7731\\a share\\x7731.dll,Start",
+                ["\\\\srv7731\\a share\\x7731.dll", "Start"],
+            ),
+        ],
+    )
+    def test_reads_an_unquoted_rooted_program_as_the_loader_does(
+        self, line: str, read: list[str]
+    ) -> None:
+        from malspark.schemas.sandbox_report import command_line_paths
+
+        assert command_line_paths(line) == read
+
+    @pytest.mark.parametrize(
+        ("line", "read"),
+        [
+            # The first word names a file: read word by word, as before.
+            ("C:\\x\\a7731.exe C:\\y b.dll", ["C:\\x\\a7731.exe", "C:\\y", "b.dll"]),
+            # Not rooted: the loader looks the word up on the search path.
+            ("run me.exe", ["run", "me.exe"]),
+            # No word names a file.
+            ("C:\\Vendor7731\\run -k", ["C:\\Vendor7731\\run", "-k"]),
+        ],
+    )
+    def test_reads_word_by_word_otherwise(self, line: str, read: list[str]) -> None:
+        from malspark.schemas.sandbox_report import command_line_paths
+
+        assert command_line_paths(line) == read
+
 
 class TestAWrittenValue:
     def test_whose_program_is_its_own_in_a_user_folder_selects_it_with_its_folder(self) -> None:
@@ -269,8 +309,6 @@ class TestWhatTheDataNames:
         [
             # A switch and an address are no files.
             ("cmd.exe /c C:\\ProgramData\\evil7731.exe -config7731.ini 10.0.0.7", "\\evil7731.exe"),
-            # A file named bare is written bare on the command line.
-            ("rundll32.exe evil7731.dll,Start", "evil7731.dll"),
             # A file no process runs as its image is read where the data is.
             ("C:\\Users\\a\\AppData\\Roaming\\page7731.hta", "\\page7731.hta"),
         ],
@@ -301,6 +339,34 @@ class TestWhatTheDataNames:
 
         assert detection["selection_persistence"] == {"Image|endswith": [image]}
         assert "selection_payload" not in detection
+
+    def test_a_further_name_with_no_folder_is_left_out_and_says_so(self) -> None:
+        report = _sandboxed([_written("r", "rundll32.exe evil7731.dll,Start")])
+
+        (rule,) = [r for r in report.detection_signatures if r.kind == "sigma"]
+        assert "selection_payload" not in _detection(report)
+        assert ("evil7731.dll", ds.NO_FOLDER_REASON) in [
+            (v.value, v.why) for v in rule.values_left_out
+        ]
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "C:\\Program Files (x86)\\Vendor7731\\svc host.exe",
+            "C:\\Program Files (x86)\\Vendor7731\\svc host.exe /s",
+        ],
+    )
+    def test_an_unquoted_program_with_a_space_is_its_image_whole(self, payload: str) -> None:
+        report = _report(
+            [],
+            persistence=[PersistenceMechanism(kind="registry_run", target=RUN, payload=payload)],
+        )
+
+        (body,) = _sigma(report)
+        assert body["detection"] == {
+            "selection_persistence": {"Image|endswith": ["\\svc host.exe"]},
+            "condition": "selection_persistence",
+        }
 
     def test_a_system_program_left_out_is_recorded_once_with_the_catalogue_s_reason(self) -> None:
         report = _sandboxed([_written("r", "rundll32.exe C:\\Users\\a\\evil7731.dll,Start")])

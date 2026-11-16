@@ -1598,8 +1598,6 @@ def _persistence_image_source(mech: PersistenceMechanism, admitted: frozenset[st
 
 # A program's file name in a path or a command line.
 _IMAGE_RE = re.compile(r"([^\\/]+\.(?:exe|dll|bat|ps1|vbs|js))", re.IGNORECASE)
-# A path that names a file: its last component a name and an extension.
-_FILE_NAME_RE = re.compile(r"[^\\/.]\.[A-Za-z][A-Za-z0-9]{0,3}$")
 
 
 def _named_paths(data: str) -> list[str]:
@@ -1609,14 +1607,14 @@ def _named_paths(data: str) -> list[str]:
     (``sandbox_report.command_line_paths``): each word that names a file,
     never a URL nor a switch.
     """
-    from malspark.schemas.sandbox_report import command_line_paths
+    from malspark.schemas.sandbox_report import FILE_NAME_END_RE, command_line_paths
 
     return [
         word
         for word in command_line_paths(data)
         if "://" not in word
         and not word.startswith(("-", "/"))
-        and _FILE_NAME_RE.search(word) is not None
+        and FILE_NAME_END_RE.search(word) is not None
     ]
 
 
@@ -1767,7 +1765,8 @@ def selection_specific(
     stated, which ``asked`` names (by selection and folded value). Last, a
     value some path or key Windows ships matches under the field's own
     operator (``stated_host_values.shipped_match``) is taken out: it fires on
-    every host. Then containment, read with case and separators folded
+    every host. A path matched by ``contains`` that names no folder is taken
+    out (:data:`NO_FOLDER_REASON`). Then containment, read with case and separators folded
     (:func:`_contained`): a value matched by ``contains`` that another
     selected value lies under (a folder and a file in it, a key and its
     subkey) matches everything that value matches and more; a ``contains``
@@ -1786,7 +1785,9 @@ def selection_specific(
         for field_name, values in selection.items():
             for value in values if isinstance(values, list) else []:
                 stated = str((asked or {}).get((name, value.lower()), value))
-                why = _why_not_specific(name, field_name, value, stated)
+                why = _why_not_specific(name, field_name, value, stated) or _no_folder(
+                    name, field_name, value
+                )
                 if why:
                     left_out.append((value, why))
                 else:
@@ -1840,6 +1841,27 @@ def _why_not_specific(selection: str, field_name: str, value: str, stated: str) 
     if shipped_match(kind.shape, operator, value):
         return _SHIPPED_REASON[kind.shape == "key"][operator]
     return ""
+
+
+def _no_folder(selection: str, field_name: str, value: str) -> str:
+    """:data:`NO_FOLDER_REASON` for a path matched by ``contains`` that names no folder, or
+    ``""``."""
+    kind = _selection_kind(selection)
+    if (
+        kind is not None
+        and kind.shape != "key"
+        and field_name.endswith("|contains")
+        and not re.search(r"[\\/]", value)
+    ):
+        return NO_FOLDER_REASON
+    return ""
+
+
+# Why a path matched by ``contains`` is left out that names no folder: the
+# name alone is found inside every longer name that ends with it.
+NO_FOLDER_REASON = (
+    "it names no folder, and a name alone matched anywhere is found inside longer names"
+)
 
 
 # Why a value is left out that a path Windows ships (a key every installation

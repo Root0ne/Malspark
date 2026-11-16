@@ -925,6 +925,12 @@ def _basename(path: str) -> str:
 # A command line's word: a span in double quotes whole, else a run between
 # spaces and commas.
 _COMMAND_WORD_RE = re.compile(r'"[^"]*"|[^\s,"]+')
+# A path that names a file: its last component a name and an extension.
+FILE_NAME_END_RE = re.compile(r"[^\\/.]\.[A-Za-z][A-Za-z0-9]{0,3}$")
+# What a rooted path begins with: a drive, an environment name, a share.
+_ROOTED_RE = re.compile(r"[A-Za-z]:[\\/]|%[^%\s]+%|\\\\")
+# A run of characters between white space.
+_SPACED_RE = re.compile(r"\S+")
 
 
 def command_line_paths(command_line: Any) -> list[str]:
@@ -932,14 +938,41 @@ def command_line_paths(command_line: Any) -> list[str]:
 
     Its first word and every comma- or space-separated one after it
     (``rundll32.exe <dll>,#1`` runs the DLL); a path in double quotes is one
-    word, spaces and all (``"C:\\Program Files\\x.exe" /s``).
+    word, spaces and all (``"C:\\Program Files\\x.exe" /s``). An unquoted
+    program whose first word begins a rooted path is read as the loader
+    reads it (:func:`_unquoted_program`): ``C:\\Program Files\\x\\svc host.exe``
+    is one path, never ``host.exe``.
     """
-    out = []
-    for token in _COMMAND_WORD_RE.findall(str(command_line or "")):
+    text = str(command_line or "").lstrip()
+    program = _unquoted_program(text)
+    out = [program] if program else []
+    for token in _COMMAND_WORD_RE.findall(text[len(program) :]):
         cleaned = token.strip().strip('"').strip("'")
         if cleaned:
             out.append(cleaned)
     return out
+
+
+def _unquoted_program(text: str) -> str:
+    """The program an unquoted command line names where a space is in its path, or ``""``.
+
+    Where the first word begins a rooted path (a drive, an environment name,
+    ``\\\\``) and names no file, the words are joined by the spaces between
+    them until one ends in a file name (before a comma, which ends a
+    rundll32-style entry): that run is the program. A first word that names
+    a file, a quote before the end, or no word ending in a file name leave
+    the line to be read word by word.
+    """
+    if not _ROOTED_RE.match(text):
+        return ""
+    for match in _SPACED_RE.finditer(text):
+        word = match.group(0)
+        if '"' in word:
+            return ""
+        head = word.partition(",")[0]
+        if FILE_NAME_END_RE.search(head):
+            return text[: match.start() + len(head)] if match.start() else ""
+    return ""
 
 
 def _named_files(proc: dict[str, Any]) -> set[str]:
