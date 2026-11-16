@@ -6631,12 +6631,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableTaskMgr",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "DisableTaskMgr"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableRegistryTools",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "DisableRegistryTools"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM",
@@ -6676,17 +6678,20 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile\\EnableFirewall",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableFirewall"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile\\DisableNotifications",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "DisableNotifications"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableLUA"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software",
@@ -6706,12 +6711,14 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Security Center\\AntiVirusDisableNotify",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "AntiVirusDisableNotify"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Security Center\\UpdatesDisableNotify",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "UpdatesDisableNotify"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Services\\wscsvc",
@@ -6721,7 +6728,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Services\\wscsvc\\Start",
         "operation": "modify",
-        "value": "4"
+        "value": "4",
+        "value_name": "Start"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows",
@@ -6751,7 +6759,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\CurrentVersion\\Explorern\\NoControlPanel",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "NoControlPanel"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\DC2_USERS",
@@ -7006,7 +7015,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\MicroUpdate",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\AppData\\Roaming\\MSDCSC\\msdcsc.exe"
+        "value": "C:\\Users\\Admin\\AppData\\Roaming\\MSDCSC\\msdcsc.exe",
+        "value_name": "MicroUpdate"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\DC3_FEXEC",
@@ -7261,7 +7271,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\UserInit",
         "operation": "modify",
-        "value": "C:\\Windows\\system32\\userinit.exe,C:\\Users\\Admin\\AppData\\Roaming\\MSDCSC\\msdcsc.exe"
+        "value": "C:\\Windows\\system32\\userinit.exe,C:\\Users\\Admin\\AppData\\Roaming\\MSDCSC\\msdcsc.exe",
+        "value_name": "UserInit"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\WindowsRuntime\\ActivatableClassId\\Windows.Internal.StateRepository.FileTypeAssociation",

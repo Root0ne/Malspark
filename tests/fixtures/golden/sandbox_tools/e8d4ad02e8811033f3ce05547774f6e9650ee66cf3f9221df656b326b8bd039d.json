@@ -3616,7 +3616,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\Runtime Broker",
         "operation": "modify",
-        "value": "C:\\Windows\\system32\\MSDCSC\\Runtime Broker.exe"
+        "value": "C:\\Windows\\system32\\MSDCSC\\Runtime Broker.exe",
+        "value_name": "Runtime Broker"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
@@ -3631,7 +3632,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\UserInit",
         "operation": "modify",
-        "value": "C:\\Windows\\system32\\userinit.exe,C:\\Windows\\system32\\MSDCSC\\Runtime Broker.exe"
+        "value": "C:\\Windows\\system32\\userinit.exe,C:\\Windows\\system32\\MSDCSC\\Runtime Broker.exe",
+        "value_name": "UserInit"
       }
     ],
     "total": 84

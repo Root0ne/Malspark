@@ -4354,7 +4354,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\MicroUpdate",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\Documents\\MSDCSC\\msdcsc.exe"
+        "value": "C:\\Users\\Admin\\Documents\\MSDCSC\\msdcsc.exe",
+        "value_name": "MicroUpdate"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FolderDescriptions\\{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}",
@@ -7834,7 +7835,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\COMPONENTS\\ServicingStackVersions\\10.0.19041.5967 (WinBuild.160101.0800)",
         "operation": "modify",
-        "value": "2026/7/25:17:55:20.101 10.0.19041.5967 (WinBuild.160101.0800)"
+        "value": "2026/7/25:17:55:20.101 10.0.19041.5967 (WinBuild.160101.0800)",
+        "value_name": "10.0.19041.5967 (WinBuild.160101.0800)"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\System\\Setup",
@@ -8109,7 +8111,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\UserInit",
         "operation": "modify",
-        "value": "C:\\Windows\\system32\\userinit.exe,C:\\Users\\Admin\\Documents\\MSDCSC\\msdcsc.exe"
+        "value": "C:\\Windows\\system32\\userinit.exe,C:\\Users\\Admin\\Documents\\MSDCSC\\msdcsc.exe",
+        "value_name": "UserInit"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\MountPoints2\\CPC\\Volume\\{705a300d-7a5e-11f1-89db-806e6f6e6963}\\",

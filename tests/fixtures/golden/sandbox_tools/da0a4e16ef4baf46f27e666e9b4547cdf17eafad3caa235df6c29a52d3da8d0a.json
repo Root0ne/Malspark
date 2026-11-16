@@ -3670,7 +3670,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\MicroUpdate",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\AppData\\Local\\Temp\\windows\\msdcsc.exe"
+        "value": "C:\\Users\\Admin\\AppData\\Local\\Temp\\windows\\msdcsc.exe",
+        "value_name": "MicroUpdate"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FolderDescriptions",
@@ -6065,7 +6066,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\UserInit",
         "operation": "modify",
-        "value": "C:\\Windows\\system32\\userinit.exe,C:\\Users\\Admin\\AppData\\Local\\Temp\\windows\\msdcsc.exe"
+        "value": "C:\\Windows\\system32\\userinit.exe,C:\\Users\\Admin\\AppData\\Local\\Temp\\windows\\msdcsc.exe",
+        "value_name": "UserInit"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ShellCompatibility\\Applications\\da0a4e16ef4baf46f27e.exe",

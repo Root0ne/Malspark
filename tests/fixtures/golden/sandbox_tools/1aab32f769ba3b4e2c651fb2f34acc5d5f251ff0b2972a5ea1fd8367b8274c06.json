@@ -5866,7 +5866,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\EnableConsoleTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableConsoleTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Tracing\\RegSvcs_RASAPI32",
@@ -5891,37 +5892,44 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\EnableFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\EnableAutoFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableAutoFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\EnableConsoleTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableConsoleTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\FileTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "FileTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\ConsoleTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "ConsoleTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\MaxFileSize",
         "operation": "modify",
-        "value": "1048576"
+        "value": "1048576",
+        "value_name": "MaxFileSize"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\FileDirectory",
         "operation": "modify",
-        "value": "%windir%\\tracing"
+        "value": "%windir%\\tracing",
+        "value_name": "FileDirectory"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Tracing\\RegSvcs_RASMANCS",
@@ -5936,37 +5944,44 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\EnableFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\EnableAutoFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableAutoFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\EnableConsoleTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableConsoleTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\FileTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "FileTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\ConsoleTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "ConsoleTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\MaxFileSize",
         "operation": "modify",
-        "value": "1048576"
+        "value": "1048576",
+        "value_name": "MaxFileSize"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\FileDirectory",
         "operation": "modify",
-        "value": "%windir%\\tracing"
+        "value": "%windir%\\tracing",
+        "value_name": "FileDirectory"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\rasman\\parameters",
@@ -6856,7 +6871,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\sgxIb",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\AppData\\Roaming\\sgxIb\\sgxIb.exe"
+        "value": "C:\\Users\\Admin\\AppData\\Roaming\\sgxIb\\sgxIb.exe",
+        "value_name": "sgxIb"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run",
@@ -6866,7 +6882,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run\\sgxIb",
         "operation": "modify",
-        "value": "\\x02\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "\\x02\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "sgxIb"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Office\\11.0\\Outlook\\Profiles",
@@ -7531,12 +7548,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\DeliveryOptimization\\Config\\DownloadMode_BackCompat",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "DownloadMode_BackCompat"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\DeliveryOptimization\\Config\\DODownloadMode",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "DODownloadMode"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\PolicyManager\\default\\DeliveryOptimization\\DOSetHoursToLimitForegroundDownloadBandwidth",

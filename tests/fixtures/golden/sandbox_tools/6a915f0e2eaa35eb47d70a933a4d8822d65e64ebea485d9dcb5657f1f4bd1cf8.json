@@ -5821,37 +5821,44 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASAPI32\\EnableFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASAPI32\\EnableAutoFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableAutoFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASAPI32\\EnableConsoleTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableConsoleTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASAPI32\\FileTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "FileTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASAPI32\\ConsoleTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "ConsoleTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASAPI32\\MaxFileSize",
         "operation": "modify",
-        "value": "1048576"
+        "value": "1048576",
+        "value_name": "MaxFileSize"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASAPI32\\FileDirectory",
         "operation": "modify",
-        "value": "%windir%\\tracing"
+        "value": "%windir%\\tracing",
+        "value_name": "FileDirectory"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Tracing\\powershell_RASMANCS",
@@ -5861,37 +5868,44 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASMANCS\\EnableFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASMANCS\\EnableAutoFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableAutoFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASMANCS\\EnableConsoleTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableConsoleTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASMANCS\\FileTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "FileTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASMANCS\\ConsoleTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "ConsoleTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASMANCS\\MaxFileSize",
         "operation": "modify",
-        "value": "1048576"
+        "value": "1048576",
+        "value_name": "MaxFileSize"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Tracing\\powershell_RASMANCS\\FileDirectory",
         "operation": "modify",
-        "value": "%windir%\\tracing"
+        "value": "%windir%\\tracing",
+        "value_name": "FileDirectory"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\rasman\\parameters",

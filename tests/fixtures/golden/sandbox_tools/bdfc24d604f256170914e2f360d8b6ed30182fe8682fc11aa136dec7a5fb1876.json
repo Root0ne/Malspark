@@ -5610,7 +5610,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\SCSI Subsystem",
         "operation": "modify",
-        "value": "C:\\Program Files (x86)\\SCSI Subsystem\\scsiss.exe"
+        "value": "C:\\Program Files (x86)\\SCSI Subsystem\\scsiss.exe",
+        "value_name": "SCSI Subsystem"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",

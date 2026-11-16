@@ -3419,22 +3419,26 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\ProxyBypass",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "ProxyBypass"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\IntranetName",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "IntranetName"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\UNCAsIntranet",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "UNCAsIntranet"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\AutoDetect",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "AutoDetect"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\2",

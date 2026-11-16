@@ -3102,7 +3102,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\DontShowUI",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "DontShowUI"
       }
     ],
     "total": 21

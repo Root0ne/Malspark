@@ -22870,7 +22870,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\kcrashdumper\\reginfo\\WerRet",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "WerRet"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FolderDescriptions",
@@ -23175,17 +23176,20 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\processActiveTime",
         "operation": "modify",
-        "value": "1785002125"
+        "value": "1785002125",
+        "value_name": "processActiveTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\alreadyHandleStockNewDeviceInfo",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "alreadyHandleStockNewDeviceInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\alreadyHandleRecordNewDeviceInfo",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "alreadyHandleRecordNewDeviceInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\closeForcedLoginConfig",
@@ -23305,7 +23309,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kconfigcentersdk\\db_path_type",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "db_path_type"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kconfigcentersdk\\kccsdklog",
@@ -23325,7 +23330,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\userinfo\\forceLoginState",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "forceLoginState"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\common\\DomainMgr\\",
@@ -26570,22 +26576,26 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\ProxyBypass",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "ProxyBypass"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\IntranetName",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "IntranetName"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\UNCAsIntranet",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "UNCAsIntranet"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\AutoDetect",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "AutoDetect"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\2",
@@ -27930,7 +27940,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ksomisc\\AssoWpsAndPdfPreview",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "AssoWpsAndPdfPreview"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ksomisc\\AssoImagePreview",
@@ -28050,17 +28061,20 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}\\InProcServer32\\ThreadingModel",
         "operation": "modify",
-        "value": "Apartment"
+        "value": "Apartment",
+        "value_name": "ThreadingModel"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}\\AppID",
         "operation": "modify",
-        "value": "{B02DA394-9290-4FA5-80B7-17A47A357F2C}"
+        "value": "{B02DA394-9290-4FA5-80B7-17A47A357F2C}",
+        "value_name": "AppID"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}\\DisableLowILProcessIsolation",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "DisableLowILProcessIsolation"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Classes\\.zip\\ShellEx\\{8895b1c6-b41f-4c1c-a562-0d564250836f}",
@@ -28100,7 +28114,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\AppID\\{B02DA394-9290-4FA5-80B7-17A47A357F2C}\\DllSurrogate",
         "operation": "modify",
-        "value": "%SystemRoot%\\System32\\prevhost.exe"
+        "value": "%SystemRoot%\\System32\\prevhost.exe",
+        "value_name": "DllSurrogate"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\PreviewHandlers",
@@ -28110,7 +28125,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PreviewHandlers\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}",
         "operation": "modify",
-        "value": "ArchivePreviewHandler"
+        "value": "ArchivePreviewHandler",
+        "value_name": "{A3DA03D4-2B35-4072-83DC-5E5631AF019D}"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software",
@@ -28165,7 +28181,8 @@
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{D5A42435-00FB-427E-ADE7-B753DEF2E9D7}\\LocalServer32\\ServerExecutable",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll"
+        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll",
+        "value_name": "ServerExecutable"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{D5A42435-00FB-427E-ADE7-B753DEF2E9D7}\\TypeLib\\(Default)",
@@ -28205,7 +28222,8 @@
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\InprocServer32\\ThreadingModel",
         "operation": "modify",
-        "value": "Apartment"
+        "value": "Apartment",
+        "value_name": "ThreadingModel"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\TypeLib\\(Default)",
@@ -28220,22 +28238,26 @@
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\AppID",
         "operation": "modify",
-        "value": "{E734B12F-9D7C-47B4-8EAD-CDC253A967D8}"
+        "value": "{E734B12F-9D7C-47B4-8EAD-CDC253A967D8}",
+        "value_name": "AppID"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\DisplayName",
         "operation": "modify",
-        "value": "@C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,-101"
+        "value": "@C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,-101",
+        "value_name": "DisplayName"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\Icon",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,201"
+        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,201",
+        "value_name": "Icon"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\DisableLowILProcessIsolation",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "DisableLowILProcessIsolation"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software",
@@ -28285,7 +28307,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\InprocServer32\\ThreadingModel",
         "operation": "modify",
-        "value": "Apartment"
+        "value": "Apartment",
+        "value_name": "ThreadingModel"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\TypeLib\\(Default)",
@@ -28300,22 +28323,26 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\AppID",
         "operation": "modify",
-        "value": "{E734B12F-9D7C-47B4-8EAD-CDC253A967D8}"
+        "value": "{E734B12F-9D7C-47B4-8EAD-CDC253A967D8}",
+        "value_name": "AppID"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\DisplayName",
         "operation": "modify",
-        "value": "@C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,-101"
+        "value": "@C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,-101",
+        "value_name": "DisplayName"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\Icon",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,201"
+        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,201",
+        "value_name": "Icon"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\DisableLowILProcessIsolation",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "DisableLowILProcessIsolation"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft",
@@ -28340,7 +28367,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PreviewHandlers\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}",
         "operation": "modify",
-        "value": "Preview Handler Class"
+        "value": "Preview Handler Class",
+        "value_name": "{d7ac9243-9d84-4498-8192-d7ad263b63c8}"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft",
@@ -28365,7 +28393,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PreviewHandlers\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}",
         "operation": "modify",
-        "value": "Preview Handler Class"
+        "value": "Preview Handler Class",
+        "value_name": "{d7ac9243-9d84-4498-8192-d7ad263b63c8}"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\classes",
@@ -28490,7 +28519,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\AppID\\{E734B12F-9D7C-47B4-8EAD-CDC253A967D8}\\DllSurrogate",
         "operation": "modify",
-        "value": "%SystemRoot%\\System32\\prevhost.exe"
+        "value": "%SystemRoot%\\System32\\prevhost.exe",
+        "value_name": "DllSurrogate"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\Compression",
@@ -28770,7 +28800,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Orchestrator\\UpdateManagerCtorFailures",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "UpdateManagerCtorFailures"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Orchestrator\\Settings",
@@ -52515,7 +52546,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\EnableConsoleTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableConsoleTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASAPI32",
@@ -52540,37 +52572,44 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASAPI32\\EnableFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASAPI32\\EnableAutoFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableAutoFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASAPI32\\EnableConsoleTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableConsoleTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASAPI32\\FileTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "FileTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASAPI32\\ConsoleTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "ConsoleTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASAPI32\\MaxFileSize",
         "operation": "modify",
-        "value": "1048576"
+        "value": "1048576",
+        "value_name": "MaxFileSize"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASAPI32\\FileDirectory",
         "operation": "modify",
-        "value": "%windir%\\tracing"
+        "value": "%windir%\\tracing",
+        "value_name": "FileDirectory"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASMANCS",
@@ -52585,37 +52624,44 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASMANCS\\EnableFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASMANCS\\EnableAutoFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableAutoFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASMANCS\\EnableConsoleTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableConsoleTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASMANCS\\FileTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "FileTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASMANCS\\ConsoleTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "ConsoleTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASMANCS\\MaxFileSize",
         "operation": "modify",
-        "value": "1048576"
+        "value": "1048576",
+        "value_name": "MaxFileSize"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\d1832886bd31bf7129fb_RASMANCS\\FileDirectory",
         "operation": "modify",
-        "value": "%windir%\\tracing"
+        "value": "%windir%\\tracing",
+        "value_name": "FileDirectory"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\rasman\\parameters",

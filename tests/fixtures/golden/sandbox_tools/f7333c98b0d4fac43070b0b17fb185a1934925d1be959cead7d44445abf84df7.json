@@ -4273,7 +4273,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Orchestrator\\UpdateManagerCtorFailures",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "UpdateManagerCtorFailures"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Orchestrator\\Settings",

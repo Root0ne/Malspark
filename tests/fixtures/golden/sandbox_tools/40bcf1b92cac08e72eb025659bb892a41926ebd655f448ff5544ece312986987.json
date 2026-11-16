@@ -3848,7 +3848,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\WinRAR\\HWID",
         "operation": "modify",
-        "value": "{8A8DB2BA-993D-479F-81D8-53F2D2D94F0E}"
+        "value": "{8A8DB2BA-993D-479F-81D8-53F2D2D94F0E}",
+        "value_name": "HWID"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Far\\Plugins\\FTP\\Hosts",
@@ -5693,7 +5694,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\5.0\\Cache\\Content\\CachePrefix",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "CachePrefix"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\5.0\\Cache\\Content\\CacheVersion",
@@ -5713,7 +5715,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\5.0\\Cache\\Cookies\\CachePrefix",
         "operation": "modify",
-        "value": "Cookie:"
+        "value": "Cookie:",
+        "value_name": "CachePrefix"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\5.0\\Cache\\Cookies\\CacheVersion",
@@ -5858,7 +5861,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\5.0\\Cache\\History\\CachePrefix",
         "operation": "modify",
-        "value": "Visited:"
+        "value": "Visited:",
+        "value_name": "CachePrefix"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\5.0\\Cache\\History\\CacheVersion",

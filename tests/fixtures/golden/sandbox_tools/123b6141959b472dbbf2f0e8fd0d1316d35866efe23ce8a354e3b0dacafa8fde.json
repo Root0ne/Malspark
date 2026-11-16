@@ -5802,17 +5802,20 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\KBinLayoutOpt\\35\\ColdBooted",
         "operation": "modify",
-        "value": "\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "ColdBooted"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\KBinLayoutOpt\\35\\BootTime",
         "operation": "modify",
-        "value": "\\xf6\\xd1\\xc5\\x10\\x00\\x00\\x00\\x00"
+        "value": "\\xf6\\xd1\\xc5\\x10\\x00\\x00\\x00\\x00",
+        "value_name": "BootTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\KBinLayoutOpt\\35\\BootComponent",
         "operation": "modify",
-        "value": "\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "BootComponent"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\KBinLayoutOpt",
@@ -5832,7 +5835,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\KBinLayoutOpt\\35\\BootDuration",
         "operation": "modify",
-        "value": "G\\xdb\\x04\\xcb^\\x1c\\xdd\\x01"
+        "value": "G\\xdb\\x04\\xcb^\\x1c\\xdd\\x01",
+        "value_name": "BootDuration"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\KBinLayoutOpt\\FragmentSource",
@@ -5917,7 +5921,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\KeccDatPath",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KeccDatPath"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Kingsoft\\Office\\6.0\\Common\\KeccDatPath",
@@ -6427,7 +6432,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ResourceManager\\prereadimage_time_et_sync",
         "operation": "modify",
-        "value": "1785002054"
+        "value": "1785002054",
+        "value_name": "prereadimage_time_et_sync"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ResourceManager\\prereadimages_et",
@@ -6617,7 +6623,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ResourceManager\\prereadimage_time_et_async",
         "operation": "modify",
-        "value": "1785002063"
+        "value": "1785002063",
+        "value_name": "prereadimage_time_et_async"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\",
@@ -6757,7 +6764,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kdcsdk\\lastUpdateDeviceInfoDate",
         "operation": "modify",
-        "value": "2026/7/25"
+        "value": "2026/7/25",
+        "value_name": "lastUpdateDeviceInfoDate"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\disableGlobalInfoCollect",
@@ -7517,17 +7525,20 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\processActiveTime",
         "operation": "modify",
-        "value": "1785002069"
+        "value": "1785002069",
+        "value_name": "processActiveTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\alreadyHandleStockNewDeviceInfo",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "alreadyHandleStockNewDeviceInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\alreadyHandleRecordNewDeviceInfo",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "alreadyHandleRecordNewDeviceInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\localizeDataFirstMainFrameActiveTime",
@@ -7642,7 +7653,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\userinfo\\forceLoginState",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "forceLoginState"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\InfoHDS",
@@ -7712,7 +7724,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\wpsoffice\\Application Settings\\coldStartup",
         "operation": "modify",
-        "value": "r\\x10j\\x9a\\x9f\\x01\\x00\\x00"
+        "value": "r\\x10j\\x9a\\x9f\\x01\\x00\\x00",
+        "value_name": "coldStartup"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\Local\\",
@@ -7782,7 +7795,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\wpsoffice\\Application Settings\\promelist\\5524",
         "operation": "modify",
-        "value": "2026-07-25"
+        "value": "2026-07-25",
+        "value_name": "5524"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kcatondlg\\",
@@ -7807,7 +7821,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\wpsoffice\\Application Settings\\RestartAppInfo",
         "operation": "modify",
-        "value": ",5524"
+        "value": ",5524",
+        "value_name": "RestartAppInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\wpsoffice\\Application Settings\\UpdateRecoverCheckTag",
@@ -7847,7 +7862,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\wpsoffice\\Application Settings\\BackupSuccess",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "BackupSuccess"
       },
       {
         "key": "HKEY_CURRENT_USER\\Control Panel\\International\\User Profile",
@@ -9337,7 +9353,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\DcWindowCount",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "DcWindowCount"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Kingsoft\\Office\\6.0\\Common\\DcWindowCount",
@@ -9367,7 +9384,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\WindowCount",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "WindowCount"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Kingsoft\\Office\\6.0\\Common\\WindowCount",
@@ -9402,7 +9420,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\lastwpsofficeact",
         "operation": "modify",
-        "value": "1785002070724"
+        "value": "1785002070724",
+        "value_name": "lastwpsofficeact"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\office",
@@ -9987,7 +10006,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\activeTimeReportTime",
         "operation": "modify",
-        "value": "1785002070"
+        "value": "1785002070",
+        "value_name": "activeTimeReportTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\hookdnsnew\\geo.wps.cn\\",
@@ -10007,7 +10027,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\lastActiveTime",
         "operation": "modify",
-        "value": "1785002070"
+        "value": "1785002070",
+        "value_name": "lastActiveTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\hookdnsnew\\home.wps.cn\\",
@@ -10047,7 +10068,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\prome\\HardAcc\\LastHardAccMode",
         "operation": "modify",
-        "value": "Raster"
+        "value": "Raster",
+        "value_name": "LastHardAccMode"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\hookdnsnew\\iaas.wps.cn\\",
@@ -10072,7 +10094,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\prome\\HardAcc\\ManualHardAccDevice",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ManualHardAccDevice"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\hookdnsnew\\kdocs.cn\\",
@@ -10252,7 +10275,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\fileOpenSource\\6729e37e53820826f7936985aae35913",
         "operation": "modify",
-        "value": "wps.exe"
+        "value": "wps.exe",
+        "value_name": "6729e37e53820826f7936985aae35913"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\Backup\\OldAutoRecoverFilePath",
@@ -10452,7 +10476,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kpromeworkarea\\switchNewCrossV2",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "switchNewCrossV2"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Kingsoft\\Office\\6.0\\plugins\\kpromeworkarea\\",
@@ -11262,7 +11287,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\infoRec\\tab_max",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "tab_max"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Kingsoft\\Office\\6.0\\common\\infoRec\\",
@@ -11272,7 +11298,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\infoRec\\tab_ulk_max",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "tab_ulk_max"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\wpsoffice\\Application Settings\\tabIconUniformMode",
@@ -11457,7 +11484,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\workarea\\ActivePid",
         "operation": "modify",
-        "value": "\\x94\\x15\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "\\x94\\x15\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "ActivePid"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\CTF\\Compatibility\\AppCompatClassName",
@@ -11552,12 +11580,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\PluginMgr\\channelV3\\requestedTime",
         "operation": "modify",
-        "value": "\\=j\\x9a\\x9f\\x01\\x00\\x00"
+        "value": "\\=j\\x9a\\x9f\\x01\\x00\\x00",
+        "value_name": "requestedTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\PluginMgr\\channelV3\\nextReuqestTime",
         "operation": "modify",
-        "value": "\\xedm\\x8f\\xfd\\x9f\\x01\\x00\\x00"
+        "value": "\\xedm\\x8f\\xfd\\x9f\\x01\\x00\\x00",
+        "value_name": "nextReuqestTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\wpscloud\\proxy\\data",
@@ -11612,7 +11642,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kentrycontrol\\ControledIdList",
         "operation": "modify",
-        "value": "version:12.1.0.26886,pid:6848|app/aiocr2pdf,app/kdoctranslate,app/photoscanapp,entry/companyMiniPix,entry/DocPropPage"
+        "value": "version:12.1.0.26886,pid:6848|app/aiocr2pdf,app/kdoctranslate,app/photoscanapp,entry/companyMiniPix,entry/DocPropPage",
+        "value_name": "ControledIdList"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kaccountsdk\\isUnreadMsgNotify_v2_Enable",
@@ -11622,7 +11653,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\lastetact",
         "operation": "modify",
-        "value": "1785002125318"
+        "value": "1785002125318",
+        "value_name": "lastetact"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Kingsoft\\Office\\6.0\\Common\\lastetact",
@@ -12132,7 +12164,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\PluginMgr\\channelV3\\requestFinishedTime",
         "operation": "modify",
-        "value": "\\xb3>j\\x9a\\x9f\\x01\\x00\\x00"
+        "value": "\\xb3>j\\x9a\\x9f\\x01\\x00\\x00",
+        "value_name": "requestFinishedTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\PluginMgr\\channelV3\\IntervalTimeShrinkedInSec",
@@ -12167,12 +12200,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kaccountsdk\\device\\deviceInfo\\x-kso-device-trademark",
         "operation": "modify",
-        "value": "ml92fgMJfXO/3/6vsqr8UBKWyiNqe/wDbbXMM9t2ftF7b10FC1/5IDqbOBB98Ls7AUp0EBUruHPP0HDiu55FUVyu0ryzy99nCHZ0Z+42S1TFRSzvkbDbiGfNNaXuuYfy3Ty7EaEdY/xNt26JFyjDAqA4w16lTJCbFqpcdyOY1K5CkHTiJew1L4BKDT8ftDVQrwUcvyJ0MDdW5mh7kEZlEOAZeXD4TRjQQwi84RpMSxBIF63kk3PDdV7ixZevg+KR"
+        "value": "ml92fgMJfXO/3/6vsqr8UBKWyiNqe/wDbbXMM9t2ftF7b10FC1/5IDqbOBB98Ls7AUp0EBUruHPP0HDiu55FUVyu0ryzy99nCHZ0Z+42S1TFRSzvkbDbiGfNNaXuuYfy3Ty7EaEdY/xNt26JFyjDAqA4w16lTJCbFqpcdyOY1K5CkHTiJew1L4BKDT8ftDVQrwUcvyJ0MDdW5mh7kEZlEOAZeXD4TRjQQwi84RpMSxBIF63kk3PDdV7ixZevg+KR",
+        "value_name": "x-kso-device-trademark"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kaccountsdk\\device\\deviceInfo\\x-kso-device-version",
         "operation": "modify",
-        "value": "Ps1HPPs9JUNG0lB5tQQfUdpTRUZde+A1GGbN11s7dc+KjBWPIX2hBUTM4EF0v07XnQmIUOPFoXIsMbsouyXQRFZP4DloHXA8n5F1J4F2xXgluxmi6+IoIWHgxDYhjc4nnXo3KH0O2dUw/gKrIROGPUSh9qouqOCOxoBXwuiKU5EKM9bY8keoW25znBhNjmrIL6gEwvx/RbeX4ApudDaNvmNx8WBVi1oJHO5FIQX/aGtZfOZmO8UF/jqrry+wRqyK"
+        "value": "Ps1HPPs9JUNG0lB5tQQfUdpTRUZde+A1GGbN11s7dc+KjBWPIX2hBUTM4EF0v07XnQmIUOPFoXIsMbsouyXQRFZP4DloHXA8n5F1J4F2xXgluxmi6+IoIWHgxDYhjc4nnXo3KH0O2dUw/gKrIROGPUSh9qouqOCOxoBXwuiKU5EKM9bY8keoW25znBhNjmrIL6gEwvx/RbeX4ApudDaNvmNx8WBVi1oJHO5FIQX/aGtZfOZmO8UF/jqrry+wRqyK",
+        "value_name": "x-kso-device-version"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\knetwork\\",
@@ -13982,7 +14017,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\VLGDeviceKey",
         "operation": "modify",
-        "value": "1785002099390"
+        "value": "1785002099390",
+        "value_name": "VLGDeviceKey"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\common\\OFInfo\\",
@@ -14027,7 +14063,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\OFInfo\\et_2147483649",
         "operation": "delete",
-        "value": null
+        "value": null,
+        "value_name": "et_2147483649"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\yunkitapi\\",
@@ -14037,7 +14074,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\overFileSizeUpload_yunkit",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "overFileSizeUpload_yunkit"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\setup_mui_pkg_success",
@@ -14082,7 +14120,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\qing\\whatsnewbubble\\wps_latest_version",
         "operation": "modify",
-        "value": "12.1.0.26886"
+        "value": "12.1.0.26886",
+        "value_name": "wps_latest_version"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ResourceManager\\preloadCef",
@@ -14142,7 +14181,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kpromeworkarea\\lastActiveWorkAreaId",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "lastActiveWorkAreaId"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\common\\Application Settings\\",
@@ -14167,7 +14207,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\infoRec\\dt",
         "operation": "modify",
-        "value": "@\\x00V\\x00a\\x00r\\x00i\\x00a\\x00n\\x00t\\x00(\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0e\\x00\\x00\\x00%\\x00\\x8e\\x00?\\x00)\\x00"
+        "value": "@\\x00V\\x00a\\x00r\\x00i\\x00a\\x00n\\x00t\\x00(\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0e\\x00\\x00\\x00%\\x00\\x8e\\x00?\\x00)\\x00",
+        "value_name": "dt"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\infoRec\\tab_lk_max",
@@ -14412,12 +14453,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kfpccomb\\60\\filters_lang",
         "operation": "modify",
-        "value": "@\\x00V\\x00a\\x00r\\x00i\\x00a\\x00n\\x00t\\x00(\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0c\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0e\\x00\\x00\\x00v\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00s\\x00\\x00\\x00i\\x00\\x00\\x00o\\x00\\x00\\x00n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x18\\x00\\x00\\x001\\x00\\x00\\x002\\x00\\x00\\x00.\\x00\\x00\\x001\\x00\\x00\\x00.\\x00\\x00\\x000\\x00\\x00\\x00.\\x00\\x00\\x002\\x00\\x00\\x006\\x00\\x00\\x008\\x00\\x00\\x008\\x00\\x00\\x006\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0e\\x00\\x00\\x00u\\x00\\x00\\x00s\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00_\\x00\\x00\\x00i\\x00\\x00\\x00d\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\x00\\x000\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x18\\x00\\x00\\x00p\\x00\\x00\\x00r\\x00\\x00\\x00o\\x00\\x00\\x00d\\x00\\x00\\x00u\\x00\\x00\\x00c\\x00\\x00\\x00t\\x00\\x00\\x00_\\x00\\x00\\x00t\\x00\\x00\\x00y\\x00\\x00\\x00p\\x00\\x00\\x00e\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x10\\x00\\x00\\x002\\x00\\x00\\x00c\\x00\\x00\\x00_\\x00\\x00\\x00i\\x00\\x00\\x00n\\x00\\x00\\x00t\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x12\\x00\\x00\\x00o\\x00\\x00\\x00s\\x00\\x00\\x00v\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00s\\x00\\x00\\x00i\\x00\\x00\\x00o\\x00\\x00\\x00n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x001\\x00\\x00\\x000\\x00\\x00\\x00.\\x00\\x00\\x000\\x00\\x00\\x00.\\x00\\x00\\x001\\x00\\x00\\x009\\x00\\x00\\x000\\x00\\x00\\x004\\x00\\x00\\x005\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0c\\x00\\x00\\x00o\\x00\\x00\\x00s\\x00\\x00\\x00n\\x00\\x00\\x00a\\x00\\x00\\x00m\\x00\\x00\\x00e\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x00W\\x00\\x00\\x00i\\x00\\x00\\x00n\\x00\\x00\\x00d\\x00\\x00\\x00o\\x00\\x00\\x00w\\x00\\x00\\x00s\\x00\\x00\\x00 \\x00\\x00\\x001\\x00\\x00\\x000\\x00\\x00\\x00\\x00\\x00\\x00\\x00(\\x00\\x00\\x00l\\x00\\x00\\x00a\\x00\\x00\\x00t\\x00\\x00\\x00e\\x00\\x00\\x00s\\x00\\x00\\x00"
+        "value": "@\\x00V\\x00a\\x00r\\x00i\\x00a\\x00n\\x00t\\x00(\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0c\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0e\\x00\\x00\\x00v\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00s\\x00\\x00\\x00i\\x00\\x00\\x00o\\x00\\x00\\x00n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x18\\x00\\x00\\x001\\x00\\x00\\x002\\x00\\x00\\x00.\\x00\\x00\\x001\\x00\\x00\\x00.\\x00\\x00\\x000\\x00\\x00\\x00.\\x00\\x00\\x002\\x00\\x00\\x006\\x00\\x00\\x008\\x00\\x00\\x008\\x00\\x00\\x006\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0e\\x00\\x00\\x00u\\x00\\x00\\x00s\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00_\\x00\\x00\\x00i\\x00\\x00\\x00d\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\x00\\x000\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x18\\x00\\x00\\x00p\\x00\\x00\\x00r\\x00\\x00\\x00o\\x00\\x00\\x00d\\x00\\x00\\x00u\\x00\\x00\\x00c\\x00\\x00\\x00t\\x00\\x00\\x00_\\x00\\x00\\x00t\\x00\\x00\\x00y\\x00\\x00\\x00p\\x00\\x00\\x00e\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x10\\x00\\x00\\x002\\x00\\x00\\x00c\\x00\\x00\\x00_\\x00\\x00\\x00i\\x00\\x00\\x00n\\x00\\x00\\x00t\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x12\\x00\\x00\\x00o\\x00\\x00\\x00s\\x00\\x00\\x00v\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00s\\x00\\x00\\x00i\\x00\\x00\\x00o\\x00\\x00\\x00n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x001\\x00\\x00\\x000\\x00\\x00\\x00.\\x00\\x00\\x000\\x00\\x00\\x00.\\x00\\x00\\x001\\x00\\x00\\x009\\x00\\x00\\x000\\x00\\x00\\x004\\x00\\x00\\x005\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0c\\x00\\x00\\x00o\\x00\\x00\\x00s\\x00\\x00\\x00n\\x00\\x00\\x00a\\x00\\x00\\x00m\\x00\\x00\\x00e\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x00W\\x00\\x00\\x00i\\x00\\x00\\x00n\\x00\\x00\\x00d\\x00\\x00\\x00o\\x00\\x00\\x00w\\x00\\x00\\x00s\\x00\\x00\\x00 \\x00\\x00\\x001\\x00\\x00\\x000\\x00\\x00\\x00\\x00\\x00\\x00\\x00(\\x00\\x00\\x00l\\x00\\x00\\x00a\\x00\\x00\\x00t\\x00\\x00\\x00e\\x00\\x00\\x00s\\x00\\x00\\x00",
+        "value_name": "filters_lang"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\AuthInfo\\AuthType",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "AuthType"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kdcsdk\\PeakShavingStrategy",
@@ -14427,12 +14470,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\updateinfo\\cacheStatusInfo\\version_before",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "version_before"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\updateinfo\\cacheStatusInfo\\preupgrade",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "preupgrade"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\photo\\",
@@ -14442,7 +14487,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\photo\\ai_photoShow",
         "operation": "modify",
-        "value": "photo/TextPicService,app/photorepairapp,app/photoerasepen2,app/photobatchcompress,app/photomattingapp"
+        "value": "photo/TextPicService,app/photorepairapp,app/photoerasepen2,app/photobatchcompress,app/photomattingapp",
+        "value_name": "ai_photoShow"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kfpccomb\\128\\",
@@ -14452,7 +14498,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kfpccomb\\128\\filters_lang",
         "operation": "modify",
-        "value": "@\\x00V\\x00a\\x00r\\x00i\\x00a\\x00n\\x00t\\x00(\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0c\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0e\\x00\\x00\\x00v\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00s\\x00\\x00\\x00i\\x00\\x00\\x00o\\x00\\x00\\x00n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x18\\x00\\x00\\x001\\x00\\x00\\x002\\x00\\x00\\x00.\\x00\\x00\\x001\\x00\\x00\\x00.\\x00\\x00\\x000\\x00\\x00\\x00.\\x00\\x00\\x002\\x00\\x00\\x006\\x00\\x00\\x008\\x00\\x00\\x008\\x00\\x00\\x006\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0e\\x00\\x00\\x00u\\x00\\x00\\x00s\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00_\\x00\\x00\\x00i\\x00\\x00\\x00d\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\x00\\x000\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x18\\x00\\x00\\x00p\\x00\\x00\\x00r\\x00\\x00\\x00o\\x00\\x00\\x00d\\x00\\x00\\x00u\\x00\\x00\\x00c\\x00\\x00\\x00t\\x00\\x00\\x00_\\x00\\x00\\x00t\\x00\\x00\\x00y\\x00\\x00\\x00p\\x00\\x00\\x00e\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x10\\x00\\x00\\x002\\x00\\x00\\x00c\\x00\\x00\\x00_\\x00\\x00\\x00i\\x00\\x00\\x00n\\x00\\x00\\x00t\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x12\\x00\\x00\\x00o\\x00\\x00\\x00s\\x00\\x00\\x00v\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00s\\x00\\x00\\x00i\\x00\\x00\\x00o\\x00\\x00\\x00n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x001\\x00\\x00\\x000\\x00\\x00\\x00.\\x00\\x00\\x000\\x00\\x00\\x00.\\x00\\x00\\x001\\x00\\x00\\x009\\x00\\x00\\x000\\x00\\x00\\x004\\x00\\x00\\x005\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0c\\x00\\x00\\x00o\\x00\\x00\\x00s\\x00\\x00\\x00n\\x00\\x00\\x00a\\x00\\x00\\x00m\\x00\\x00\\x00e\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x00W\\x00\\x00\\x00i\\x00\\x00\\x00n\\x00\\x00\\x00d\\x00\\x00\\x00o\\x00\\x00\\x00w\\x00\\x00\\x00s\\x00\\x00\\x00 \\x00\\x00\\x001\\x00\\x00\\x000\\x00\\x00\\x00\\x00\\x00\\x00\\x00(\\x00\\x00\\x00l\\x00\\x00\\x00a\\x00\\x00\\x00t\\x00\\x00\\x00e\\x00\\x00\\x00s\\x00\\x00\\x00"
+        "value": "@\\x00V\\x00a\\x00r\\x00i\\x00a\\x00n\\x00t\\x00(\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0c\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0e\\x00\\x00\\x00v\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00s\\x00\\x00\\x00i\\x00\\x00\\x00o\\x00\\x00\\x00n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x18\\x00\\x00\\x001\\x00\\x00\\x002\\x00\\x00\\x00.\\x00\\x00\\x001\\x00\\x00\\x00.\\x00\\x00\\x000\\x00\\x00\\x00.\\x00\\x00\\x002\\x00\\x00\\x006\\x00\\x00\\x008\\x00\\x00\\x008\\x00\\x00\\x006\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0e\\x00\\x00\\x00u\\x00\\x00\\x00s\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00_\\x00\\x00\\x00i\\x00\\x00\\x00d\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\x00\\x000\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x18\\x00\\x00\\x00p\\x00\\x00\\x00r\\x00\\x00\\x00o\\x00\\x00\\x00d\\x00\\x00\\x00u\\x00\\x00\\x00c\\x00\\x00\\x00t\\x00\\x00\\x00_\\x00\\x00\\x00t\\x00\\x00\\x00y\\x00\\x00\\x00p\\x00\\x00\\x00e\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x10\\x00\\x00\\x002\\x00\\x00\\x00c\\x00\\x00\\x00_\\x00\\x00\\x00i\\x00\\x00\\x00n\\x00\\x00\\x00t\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x12\\x00\\x00\\x00o\\x00\\x00\\x00s\\x00\\x00\\x00v\\x00\\x00\\x00e\\x00\\x00\\x00r\\x00\\x00\\x00s\\x00\\x00\\x00i\\x00\\x00\\x00o\\x00\\x00\\x00n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x001\\x00\\x00\\x000\\x00\\x00\\x00.\\x00\\x00\\x000\\x00\\x00\\x00.\\x00\\x00\\x001\\x00\\x00\\x009\\x00\\x00\\x000\\x00\\x00\\x004\\x00\\x00\\x005\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x0c\\x00\\x00\\x00o\\x00\\x00\\x00s\\x00\\x00\\x00n\\x00\\x00\\x00a\\x00\\x00\\x00m\\x00\\x00\\x00e\\x00\\x00\\x00\\x00\\x00\\x00\\x00\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x00W\\x00\\x00\\x00i\\x00\\x00\\x00n\\x00\\x00\\x00d\\x00\\x00\\x00o\\x00\\x00\\x00w\\x00\\x00\\x00s\\x00\\x00\\x00 \\x00\\x00\\x001\\x00\\x00\\x000\\x00\\x00\\x00\\x00\\x00\\x00\\x00(\\x00\\x00\\x00l\\x00\\x00\\x00a\\x00\\x00\\x00t\\x00\\x00\\x00e\\x00\\x00\\x00s\\x00\\x00\\x00",
+        "value_name": "filters_lang"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kfpccomb\\EnableTestHeader",
@@ -14472,7 +14519,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kfpccomb\\60\\notify_lang\\notify_lang",
         "operation": "modify",
-        "value": "\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "notify_lang"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kfpccomb\\128\\notify_lang\\",
@@ -14482,7 +14530,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kfpccomb\\128\\notify_lang\\notify_lang",
         "operation": "modify",
-        "value": "\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "notify_lang"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\enableForceLoginFori18n2c",
@@ -14577,7 +14626,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ResourceManager\\Images\\35662412",
         "operation": "modify",
-        "value": "1785002133"
+        "value": "1785002133",
+        "value_name": "35662412"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\Office\\6.0\\Common\\kcrashdumper\\reginfo",
@@ -14587,7 +14637,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\kcrashdumper\\reginfo\\WerRet",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "WerRet"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\Office\\6.0\\et\\Application Settings",
@@ -14707,7 +14758,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kconfigcentersdk\\db_path_type",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "db_path_type"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\common\\DomainMgr\\CfgSign\\",
@@ -14947,7 +14999,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\coldStartup",
         "operation": "modify",
-        "value": "\\xa4\\x12j\\x9a\\x9f\\x01\\x00\\x00"
+        "value": "\\xa4\\x12j\\x9a\\x9f\\x01\\x00\\x00",
+        "value_name": "coldStartup"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Kingsoft\\Office\\6.0\\et\\Application Settings\\",
@@ -14982,7 +15035,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\lastActiveTimeReportDate",
         "operation": "modify",
-        "value": "2026-07-07"
+        "value": "2026-07-07",
+        "value_name": "lastActiveTimeReportDate"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\common\\UserInfo\\",
@@ -15177,17 +15231,20 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\RestartAppInfo",
         "operation": "modify",
-        "value": ",6848"
+        "value": ",6848",
+        "value_name": "RestartAppInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\AutoRecoverAppInfo",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "AutoRecoverAppInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\BackupSuccess",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "BackupSuccess"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\MaxReconnectTimes",
@@ -15222,7 +15279,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\UserInfo\\UserName",
         "operation": "modify",
-        "value": "Admin"
+        "value": "Admin",
+        "value_name": "UserName"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\kxstartupnotifyenable",
@@ -15237,12 +15295,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\HardAcc\\LastHardAccDevice",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "LastHardAccDevice"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\HardAcc\\LastHardAccMode",
         "operation": "modify",
-        "value": "Raster"
+        "value": "Raster",
+        "value_name": "LastHardAccMode"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\HardAcc\\DeviceWarpMode",
@@ -15252,7 +15312,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\HardAcc\\ManualHardAccDevice",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ManualHardAccDevice"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\Office\\6.0\\et",
@@ -16697,37 +16758,44 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\Backup\\EnableBackup",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "EnableBackup"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\Backup\\BackupInitMode",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "BackupInitMode"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\Backup\\EnableIncBackup",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "EnableIncBackup"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\Backup\\EnableTimeBackup",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableTimeBackup"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\Backup\\TimeBackupInterval",
         "operation": "modify",
-        "value": "10"
+        "value": "10",
+        "value_name": "TimeBackupInterval"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\Backup\\AutoRecoverFilePath",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\office6\\backup"
+        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\office6\\backup",
+        "value_name": "AutoRecoverFilePath"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\Backup\\EtOldAutoRecoverFilePath",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\office6/backup"
+        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\office6/backup",
+        "value_name": "EtOldAutoRecoverFilePath"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\Backup\\IncBackupAvailable",
@@ -16757,7 +16825,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\ICExceptExitMode",
         "operation": "modify",
-        "value": "promeembedding"
+        "value": "promeembedding",
+        "value_name": "ICExceptExitMode"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ICNotSend",
@@ -16767,17 +16836,20 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\ICExceptExit",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "ICExceptExit"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\ICExceptExitDate",
         "operation": "modify",
-        "value": "20260725"
+        "value": "20260725",
+        "value_name": "ICExceptExitDate"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\ICExceptExitEx",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "ICExceptExitEx"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\Office\\6.0\\wps",
@@ -16842,12 +16914,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\ICExceptExit_12.1.0.26886",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "ICExceptExit_12.1.0.26886"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\ICExceptExitEx_12.1.0.26886",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "ICExceptExitEx_12.1.0.26886"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\wps\\Application Settings\\ICExceptExit_12.1.0.26886",
@@ -16932,7 +17006,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\GrabScreen\\HideWhileGrabbingScreen",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "HideWhileGrabbingScreen"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\bubble\\",
@@ -16972,7 +17047,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\TabbarFloatWidgetHeight",
         "operation": "modify",
-        "value": "81"
+        "value": "81",
+        "value_name": "TabbarFloatWidgetHeight"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Kingsoft\\Office\\6.0\\et\\Application Settings\\TabbarFloatWidgetHeight",
@@ -17057,12 +17133,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\wps\\Application Settings\\ICCTS",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "ICCTS"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ICIsProofreadBottomSelectedUser",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "ICIsProofreadBottomSelectedUser"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ICPercentCT_IC",
@@ -17072,7 +17150,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ICCTS_IC",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "ICCTS_IC"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kaccountsdk\\isSwitchAccountSupportWaitRunningTaskDone_v2_Enable",
@@ -17552,7 +17631,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\ExceptExitOp\\info.6848.yst",
         "operation": "modify",
-        "value": "1|0|0|0|1|0|f|f|1"
+        "value": "1|0|0|0|1|0|f|f|1",
+        "value_name": "info.6848.yst"
       },
       {
         "key": "HKEY_CURRENT_USER\\Control Panel\\International\\Geo",
@@ -17577,7 +17657,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\ExceptExitOp\\yo",
         "operation": "delete",
-        "value": null
+        "value": null,
+        "value_name": "yo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\RecentFunction",
@@ -17597,7 +17678,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\ExceptExitOp\\info.6848.yo",
         "operation": "delete",
-        "value": null
+        "value": null,
+        "value_name": "info.6848.yo"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\OLE\\Tracing",
@@ -17607,7 +17689,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\ExceptExitOp\\sub.yo.yo_10",
         "operation": "delete",
-        "value": null
+        "value": null,
+        "value_name": "sub.yo.yo_10"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\EnableBadAllocThrow",
@@ -17672,7 +17755,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\et\\opencnt",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "opencnt"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes",
@@ -17837,12 +17921,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\ExceptExitOp\\yoc",
         "operation": "delete",
-        "value": null
+        "value": null,
+        "value_name": "yoc"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\ExceptExitOp\\sub.yoc.ycc",
         "operation": "delete",
-        "value": null
+        "value": null,
+        "value_name": "sub.yoc.ycc"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\wpp\\Application Settings\\WriteOpLog",
@@ -17897,7 +17983,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\TabFileButtonClassicMenuDefault",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "TabFileButtonClassicMenuDefault"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\DelaySubTabBarScrollArrow",
@@ -17922,7 +18009,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\ktipsclientmanager\\unifiedguide\\LastCleanDate",
         "operation": "modify",
-        "value": "2026-07-25"
+        "value": "2026-07-25",
+        "value_name": "LastCleanDate"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\ktipsclientmanager\\unifiedguide\\supportUnifiedTips",
@@ -19132,7 +19220,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\etongmani\\taskpane\\barTextShow_v2",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "barTextShow_v2"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\Office\\6.0\\plugins\\kfpccomb\\128\\notify_lang",
@@ -19177,7 +19266,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\RoamingStyleIndex",
         "operation": "modify",
-        "value": "2"
+        "value": "2",
+        "value_name": "RoamingStyleIndex"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Kingsoft\\Office\\6.0\\plugins\\officespace\\RoamingStyleIndex",
@@ -19217,7 +19307,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\pluginfeaturetag",
         "operation": "modify",
-        "value": "oldCacheUsing=12.1.0.26886&supportcmdopen=12.1.0.26886&supportroamingpush=12.1.0.26886"
+        "value": "oldCacheUsing=12.1.0.26886&supportcmdopen=12.1.0.26886&supportroamingpush=12.1.0.26886",
+        "value_name": "pluginfeaturetag"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\activeclient\\",
@@ -19227,7 +19318,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\activeclient\\6848",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "6848"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\user_file_count\\",
@@ -19237,7 +19329,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\user_file_count\\et.6848",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "et.6848"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\last_login_type_string",
@@ -19247,7 +19340,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\notifyMemberView",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "notifyMemberView"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Kingsoft\\Office\\6.0\\plugins\\officespace\\notifyMemberView",
@@ -19257,7 +19351,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\sendToShareFolder",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "sendToShareFolder"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Kingsoft\\Office\\6.0\\plugins\\officespace\\sendToShareFolder",
@@ -19372,17 +19467,20 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\limitGuide\\syncBtnGuideSwitch",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "syncBtnGuideSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\limitGuide\\tabCloseGuide",
         "operation": "modify",
-        "value": "TurnOff"
+        "value": "TurnOff",
+        "value_name": "tabCloseGuide"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\limitGuide\\localFileSyncBtn",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "localFileSyncBtn"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\funcRegSw\\SharePagePreLoadOpen3",
@@ -19392,7 +19490,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\AuthInfo\\launchedFlag",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "launchedFlag"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kaccountsdk\\isqingipc_v2_Enable",
@@ -19452,7 +19551,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\RecentFiles\\Sequence\\C:/Users/Admin/AppData/Local/Temp/\\x7528\\x6237\\x7c7b\\x578b\\x9700\\x6c42\\x8c03\\x7814\\x8868.xlsx",
         "operation": "modify",
-        "value": "1785002137"
+        "value": "1785002137",
+        "value_name": "C:/Users/Admin/AppData/Local/Temp/\\x7528\\x6237\\x7c7b\\x578b\\x9700\\x6c42\\x8c03\\x7814\\x8868.xlsx"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\AppID\\et.exe",
@@ -24242,7 +24342,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\first_detect_file_association_while_startup",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "first_detect_file_association_while_startup"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Kingsoft\\Office\\6.0\\Common\\first_detect_file_association_while_startup",
@@ -24412,7 +24513,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\ExceptExitOp\\ye_42003",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "ye_42003"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\Office\\6.0",
@@ -24427,7 +24529,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\ksavepopuptip\\fromCommand",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "fromCommand"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\UserInfo\\UsingLocal",
@@ -24442,7 +24545,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\ExceptExitOp\\sub.ye_42003.ys",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "sub.ye_42003.ys"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\Application Settings\\EAA76D643B7B4DDAB0449059527FFC5F",
@@ -24887,7 +24991,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\COMPONENTS\\ServicingStackVersions\\10.0.19041.5967 (WinBuild.160101.0800)",
         "operation": "modify",
-        "value": "2026/7/25:17:55:21.885 10.0.19041.5967 (WinBuild.160101.0800)"
+        "value": "2026/7/25:17:55:21.885 10.0.19041.5967 (WinBuild.160101.0800)",
+        "value_name": "10.0.19041.5967 (WinBuild.160101.0800)"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\System\\Setup",
@@ -26222,7 +26327,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\wpscloudsvr\\SupportStrictValidationForElevation",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "SupportStrictValidationForElevation"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\wpscloudsvr",
@@ -35577,7 +35683,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ApplicationAssociationToasts\\ET.Xlsx.6_.xlsx",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "ET.Xlsx.6_.xlsx"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\ET.Xlsx.6\\Application",
@@ -35637,7 +35744,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.xlsx\\OpenWithProgids\\ET.Xlsx.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ET.Xlsx.6"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\RegisteredApplications",
@@ -37837,22 +37945,26 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\ProxyBypass",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "ProxyBypass"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\IntranetName",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "IntranetName"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\UNCAsIntranet",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "UNCAsIntranet"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\AutoDetect",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "AutoDetect"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\2",

@@ -15969,22 +15969,26 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\ProxyBypass",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "ProxyBypass"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\IntranetName",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "IntranetName"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\UNCAsIntranet",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "UNCAsIntranet"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\AutoDetect",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "AutoDetect"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\2",
@@ -19504,7 +19508,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\kcrashdumper\\reginfo\\WerRet",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "WerRet"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FolderDescriptions\\{3EB685DB-65F9-4CF6-A03A-E3EF65729F3D}",
@@ -19784,17 +19789,20 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\processActiveTime",
         "operation": "modify",
-        "value": "1785002133"
+        "value": "1785002133",
+        "value_name": "processActiveTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\alreadyHandleStockNewDeviceInfo",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "alreadyHandleStockNewDeviceInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\alreadyHandleRecordNewDeviceInfo",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "alreadyHandleRecordNewDeviceInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\closeForcedLoginConfig",
@@ -19914,7 +19922,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kconfigcentersdk\\db_path_type",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "db_path_type"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kconfigcentersdk\\kccsdklog",
@@ -19934,7 +19943,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\userinfo\\forceLoginState",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "forceLoginState"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\common\\DomainMgr\\",

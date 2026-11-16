@@ -4585,7 +4585,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows Script\\Settings\\Telemetry\\wscript.exe\\VBScriptSetScriptStateStarted",
         "operation": "modify",
-        "value": "`\\x90\\x05\\x00\\x00\\x00\\x00\\x00"
+        "value": "`\\x90\\x05\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "VBScriptSetScriptStateStarted"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\GRE_Initialize",
@@ -7750,7 +7751,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\kcrashdumper\\reginfo\\WerRet",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "WerRet"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FolderDescriptions",
@@ -8060,17 +8062,20 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\processActiveTime",
         "operation": "modify",
-        "value": "1785002099"
+        "value": "1785002099",
+        "value_name": "processActiveTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\alreadyHandleStockNewDeviceInfo",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "alreadyHandleStockNewDeviceInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\alreadyHandleRecordNewDeviceInfo",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "alreadyHandleRecordNewDeviceInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\closeForcedLoginConfig",
@@ -8190,7 +8195,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kconfigcentersdk\\db_path_type",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "db_path_type"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kconfigcentersdk\\kccsdklog",
@@ -8210,7 +8216,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\userinfo\\forceLoginState",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "forceLoginState"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\common\\DomainMgr\\",
@@ -11905,22 +11912,26 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\ProxyBypass",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "ProxyBypass"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\IntranetName",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "IntranetName"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\UNCAsIntranet",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "UNCAsIntranet"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\AutoDetect",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "AutoDetect"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\2",
@@ -13400,12 +13411,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ksomisc\\AssoWpsAndPdfPreview",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "AssoWpsAndPdfPreview"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\ksomisc\\AssoImagePreview",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "AssoImagePreview"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\pdfwspv\\",
@@ -13640,7 +13653,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\pdfwspv\\hasUnregisterByUser",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "hasUnregisterByUser"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\.dll",
@@ -13715,7 +13729,8 @@
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{D5A42435-00FB-427E-ADE7-B753DEF2E9D7}\\LocalServer32\\ServerExecutable",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll"
+        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll",
+        "value_name": "ServerExecutable"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{D5A42435-00FB-427E-ADE7-B753DEF2E9D7}\\TypeLib\\(Default)",
@@ -13755,7 +13770,8 @@
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\InprocServer32\\ThreadingModel",
         "operation": "modify",
-        "value": "Apartment"
+        "value": "Apartment",
+        "value_name": "ThreadingModel"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\TypeLib\\(Default)",
@@ -13770,22 +13786,26 @@
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\AppID",
         "operation": "modify",
-        "value": "{E734B12F-9D7C-47B4-8EAD-CDC253A967D8}"
+        "value": "{E734B12F-9D7C-47B4-8EAD-CDC253A967D8}",
+        "value_name": "AppID"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\DisplayName",
         "operation": "modify",
-        "value": "@C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,-101"
+        "value": "@C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,-101",
+        "value_name": "DisplayName"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\Icon",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,201"
+        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,201",
+        "value_name": "Icon"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\DisableLowILProcessIsolation",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "DisableLowILProcessIsolation"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software",
@@ -13835,7 +13855,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\InprocServer32\\ThreadingModel",
         "operation": "modify",
-        "value": "Apartment"
+        "value": "Apartment",
+        "value_name": "ThreadingModel"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\TypeLib\\(Default)",
@@ -13850,22 +13871,26 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\AppID",
         "operation": "modify",
-        "value": "{E734B12F-9D7C-47B4-8EAD-CDC253A967D8}"
+        "value": "{E734B12F-9D7C-47B4-8EAD-CDC253A967D8}",
+        "value_name": "AppID"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\DisplayName",
         "operation": "modify",
-        "value": "@C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,-101"
+        "value": "@C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,-101",
+        "value_name": "DisplayName"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\Icon",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,201"
+        "value": "C:\\Users\\Admin\\AppData\\Roaming\\Kingsoft\\wps_intl\\addons\\pool\\win-x64\\pdfwspv_3.1.0.7621\\pdfwspv.dll,201",
+        "value_name": "Icon"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}\\DisableLowILProcessIsolation",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "DisableLowILProcessIsolation"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft",
@@ -13890,7 +13915,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PreviewHandlers\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}",
         "operation": "modify",
-        "value": "Preview Handler Class"
+        "value": "Preview Handler Class",
+        "value_name": "{d7ac9243-9d84-4498-8192-d7ad263b63c8}"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft",
@@ -13915,7 +13941,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PreviewHandlers\\{d7ac9243-9d84-4498-8192-d7ad263b63c8}",
         "operation": "modify",
-        "value": "Preview Handler Class"
+        "value": "Preview Handler Class",
+        "value_name": "{d7ac9243-9d84-4498-8192-d7ad263b63c8}"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\classes",
@@ -14035,7 +14062,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\AppID\\{E734B12F-9D7C-47B4-8EAD-CDC253A967D8}\\DllSurrogate",
         "operation": "modify",
-        "value": "%SystemRoot%\\System32\\prevhost.exe"
+        "value": "%SystemRoot%\\System32\\prevhost.exe",
+        "value_name": "DllSurrogate"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Classes\\CLSID\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}",
@@ -14060,17 +14088,20 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}\\InProcServer32\\ThreadingModel",
         "operation": "modify",
-        "value": "Apartment"
+        "value": "Apartment",
+        "value_name": "ThreadingModel"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}\\AppID",
         "operation": "modify",
-        "value": "{B02DA394-9290-4FA5-80B7-17A47A357F2C}"
+        "value": "{B02DA394-9290-4FA5-80B7-17A47A357F2C}",
+        "value_name": "AppID"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}\\DisableLowILProcessIsolation",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "DisableLowILProcessIsolation"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Classes\\.zip\\ShellEx\\{8895b1c6-b41f-4c1c-a562-0d564250836f}",
@@ -14110,7 +14141,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\AppID\\{B02DA394-9290-4FA5-80B7-17A47A357F2C}\\DllSurrogate",
         "operation": "modify",
-        "value": "%SystemRoot%\\System32\\prevhost.exe"
+        "value": "%SystemRoot%\\System32\\prevhost.exe",
+        "value_name": "DllSurrogate"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\PreviewHandlers",
@@ -14120,7 +14152,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PreviewHandlers\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}",
         "operation": "modify",
-        "value": "ArchivePreviewHandler"
+        "value": "ArchivePreviewHandler",
+        "value_name": "{A3DA03D4-2B35-4072-83DC-5E5631AF019D}"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Svchost",
@@ -22510,7 +22543,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Orchestrator\\UpdateManagerCtorFailures",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "UpdateManagerCtorFailures"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Orchestrator\\Settings",
@@ -43890,7 +43924,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Services\\Google installer\\ReleiceName",
         "operation": "modify",
-        "value": "Wqakki kswemi"
+        "value": "Wqakki kswemi",
+        "value_name": "ReleiceName"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Wqakki kswemi",
@@ -43900,17 +43935,20 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Services\\Wqakki kswemi\\ConnectGroup",
         "operation": "modify",
-        "value": "\\xffc4\\xffac\\xffc8\\xffcf\\xffb7\\xffd6\\xffd7\\xffe9"
+        "value": "\\xffc4\\xffac\\xffc8\\xffcf\\xffb7\\xffd6\\xffd7\\xffe9",
+        "value_name": "ConnectGroup"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Services\\Wqakki kswemi\\MarkTime",
         "operation": "modify",
-        "value": "2026-08-13 12:49"
+        "value": "2026-08-13 12:49",
+        "value_name": "MarkTime"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Services\\Wqakki kswemi\\Description",
         "operation": "modify",
-        "value": "Tkeqdr qiagotka usejdiesqnc"
+        "value": "Tkeqdr qiagotka usejdiesqnc",
+        "value_name": "Description"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ShellCompatibility\\Applications\\21c3b30041dc16f6fb0f.exe",
@@ -46855,7 +46893,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ApplicationAssociationToasts\\VBSFile_.vbs",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "VBSFile_.vbs"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\VBSFile\\NoStaticDefaultVerb",
@@ -46995,12 +47034,14 @@
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\Shell\\MuiCache\\C:\\Windows\\System32\\WScript.exe.FriendlyAppName",
         "operation": "modify",
-        "value": "Microsoft \\xae Windows Based Script Host"
+        "value": "Microsoft \\xae Windows Based Script Host",
+        "value_name": "C:\\Windows\\System32\\WScript.exe.FriendlyAppName"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\Shell\\MuiCache\\C:\\Windows\\System32\\WScript.exe.ApplicationCompany",
         "operation": "modify",
-        "value": "Microsoft Corporation"
+        "value": "Microsoft Corporation",
+        "value_name": "C:\\Windows\\System32\\WScript.exe.ApplicationCompany"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\Directory",
@@ -47280,7 +47321,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.vbs\\OpenWithProgids\\VBSFile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "VBSFile"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\RegisteredApplications",

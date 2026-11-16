@@ -6191,7 +6191,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\SystemProtectedUserData\\S-1-5-21-1795187001-776152809-4276559823-1000\\AnyoneRead\\ScaleFactors\\ScaleFactors",
         "operation": "modify",
-        "value": "\\xa2\\xffP\\x83^\\x1c\\xdd\\x01d\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xa8\\xf8\\x17\\x03\\x00\\x00\\x00\\x00 \\xad<\\x01\\x00\\x00\\x00\\x00"
+        "value": "\\xa2\\xffP\\x83^\\x1c\\xdd\\x01d\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xa8\\xf8\\x17\\x03\\x00\\x00\\x00\\x00 \\xad<\\x01\\x00\\x00\\x00\\x00",
+        "value_name": "ScaleFactors"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\MountPoints2\\CPC\\Volume",
@@ -6246,7 +6247,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\replikken\\contrastiveness\\munkeordners",
         "operation": "modify",
-        "value": "%associateship%\\Cucurbite.Lbe"
+        "value": "%associateship%\\Cucurbite.Lbe",
+        "value_name": "munkeordners"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Korstogstider\\ekspertenhed",
@@ -6486,7 +6488,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\vibes\\senatsudvalget",
         "operation": "modify",
-        "value": "%Cypraeid%\\lsesvagt.dom"
+        "value": "%Cypraeid%\\lsesvagt.dom",
+        "value_name": "senatsudvalget"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\skudriglers\\Uninstall\\populationless\\profitmarginen",
@@ -6496,7 +6499,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\skudriglers\\Uninstall\\populationless\\profitmarginen\\Morphea",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "Morphea"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\univalent\\sultanaterne",
@@ -6506,7 +6510,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\univalent\\sultanaterne\\voivodeship",
         "operation": "modify",
-        "value": "\\xff\\x84\n^"
+        "value": "\\xff\\x84\n^",
+        "value_name": "voivodeship"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\pastorats\\bortkaldelses",
@@ -6526,7 +6531,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Tisses146\\stourness\\Readjourning106",
         "operation": "modify",
-        "value": "%farvefilmenes%\\overrendendes.Kat239"
+        "value": "%farvefilmenes%\\overrendendes.Kat239",
+        "value_name": "Readjourning106"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\oxpecker\\Uninstall\\brndemrkningers",
@@ -6626,7 +6632,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\udvandrere\\Malduck194",
         "operation": "modify",
-        "value": "c\\x16\\x08"
+        "value": "c\\x16\\x08",
+        "value_name": "Malduck194"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\outparamour",
@@ -6656,7 +6663,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\autoinfusion\\Uninstall\\teknikken\\perlustrate\\elevatorvogns",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "elevatorvogns"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\garanter\\",
@@ -6671,7 +6679,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\cryptolunatic\\Inflammatorisk\\treskiftsarbejdes",
         "operation": "modify",
-        "value": "alrighty"
+        "value": "alrighty",
+        "value_name": "treskiftsarbejdes"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\fristoverskridelser\\Uninstall\\albin",
@@ -6691,7 +6700,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\vaginolabial\\iatrophysicist",
         "operation": "modify",
-        "value": "allegorizing"
+        "value": "allegorizing",
+        "value_name": "iatrophysicist"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\Indberettes\\Uninstall\\crimea\\exorbital",
@@ -6701,7 +6711,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\Indberettes\\Uninstall\\crimea\\exorbital\\kontrolpunktets",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "kontrolpunktets"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\kontraktbruddenes\\unremotely",
@@ -6711,7 +6722,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\kontraktbruddenes\\unremotely\\Giovanna135",
         "operation": "modify",
-        "value": "\\xff\\xec\\x99\\x98"
+        "value": "\\xff\\xec\\x99\\x98",
+        "value_name": "Giovanna135"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\illuminationen\\oprettelsesdatoerne",
@@ -6721,7 +6733,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\illuminationen\\oprettelsesdatoerne\\breadness",
         "operation": "modify",
-        "value": "\\xff\\xcbZ"
+        "value": "\\xff\\xcbZ",
+        "value_name": "breadness"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Arving255\\chroococcaceae",
@@ -6731,7 +6744,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Arving255\\chroococcaceae\\snathe",
         "operation": "modify",
-        "value": "[Z"
+        "value": "[Z",
+        "value_name": "snathe"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Knoklendes",
@@ -6741,7 +6755,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Knoklendes\\Storeslemmene",
         "operation": "modify",
-        "value": "lytteren"
+        "value": "lytteren",
+        "value_name": "Storeslemmene"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\ildebefindende",
@@ -6946,7 +6961,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\reindifferent\\Uninstall\\Thankworthiness\\stetikeres",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "stetikeres"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\musikradioerne\\Uninstall\\mattress\\faqir",
@@ -6956,7 +6972,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\musikradioerne\\Uninstall\\mattress\\faqir\\scalpel",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "scalpel"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Control\\Session Manager\\SafeProcessSearchMode",
@@ -6971,7 +6988,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\lavenergihuse\\corabecan",
         "operation": "modify",
-        "value": "%maximins%\\kortlaegning.und"
+        "value": "%maximins%\\kortlaegning.und",
+        "value_name": "corabecan"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\SideBySide",
@@ -7006,7 +7024,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\scripula\\stiklagenet",
         "operation": "modify",
-        "value": "V.\\xd8"
+        "value": "V.\\xd8",
+        "value_name": "stiklagenet"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\ges",
@@ -7016,7 +7035,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\ges\\xylosma",
         "operation": "modify",
-        "value": "%claudette%\\synderegister.for"
+        "value": "%claudette%\\synderegister.for",
+        "value_name": "xylosma"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\Filtervirkning\\Uninstall\\Amebiform",
@@ -7026,7 +7046,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\Filtervirkning\\Uninstall\\Amebiform\\scurry",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "scurry"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\arthrochondritis\\birit",
@@ -7056,7 +7077,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\brtsejlere\\Flanrs",
         "operation": "modify",
-        "value": "%limning%\\Sprgetids.sam"
+        "value": "%limning%\\Sprgetids.sam",
+        "value_name": "Flanrs"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\marksmanships",
@@ -7446,7 +7468,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\SessionInfo\\1\\ApplicationViewManagement\\W32:000000000006003E\\VirtualDesktop",
         "operation": "modify",
-        "value": "\\x10\\x00\\x00\\x0000DV\\x90\\x12\\x15 \\x90mLJ\\xb3,\\x83\\x7f\\xb5\\xbb\\xb8\\x07"
+        "value": "\\x10\\x00\\x00\\x0000DV\\x90\\x12\\x15 \\x90mLJ\\xb3,\\x83\\x7f\\xb5\\xbb\\xb8\\x07",
+        "value_name": "VirtualDesktop"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\Interface\\{2C1448E1-7540-41B2-9B0D-188C012DA2F1}",
@@ -7621,7 +7644,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Search\\TraySearchBoxVisible",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "TraySearchBoxVisible"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\AppModel\\Lookaside\\user\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CloudExperienceHost",
@@ -8106,7 +8130,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\SessionInfo\\1\\ApplicationViewManagement\\W32:000000000008024A\\VirtualDesktop",
         "operation": "modify",
-        "value": "\\x10\\x00\\x00\\x0000DV\\x90\\x12\\x15 \\x90mLJ\\xb3,\\x83\\x7f\\xb5\\xbb\\xb8\\x07"
+        "value": "\\x10\\x00\\x00\\x0000DV\\x90\\x12\\x15 \\x90mLJ\\xb3,\\x83\\x7f\\xb5\\xbb\\xb8\\x07",
+        "value_name": "VirtualDesktop"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\Applications\\powershell.exe",
@@ -8211,7 +8236,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\SessionInfo\\1\\ApplicationViewManagement\\W32:000000000007003E\\VirtualDesktop",
         "operation": "modify",
-        "value": "\\x10\\x00\\x00\\x0000DV\\x90\\x12\\x15 \\x90mLJ\\xb3,\\x83\\x7f\\xb5\\xbb\\xb8\\x07"
+        "value": "\\x10\\x00\\x00\\x0000DV\\x90\\x12\\x15 \\x90mLJ\\xb3,\\x83\\x7f\\xb5\\xbb\\xb8\\x07",
+        "value_name": "VirtualDesktop"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Policies\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\0",
@@ -8461,7 +8487,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.106\\CheckSetting",
         "operation": "modify",
-        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\xb5m\\xf7&\\x00\\x00\\x00\\x00"
+        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\xb5m\\xf7&\\x00\\x00\\x00\\x00",
+        "value_name": "CheckSetting"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.101",
@@ -8471,7 +8498,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.101\\CheckSetting",
         "operation": "modify",
-        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\xb5m\\xf7&\\x00\\x00\\x00\\x00"
+        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\xb5m\\xf7&\\x00\\x00\\x00\\x00",
+        "value_name": "CheckSetting"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.100",
@@ -8481,7 +8509,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.100\\CheckSetting",
         "operation": "modify",
-        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\xc8\\xde4\\xd9\\x00\\x00\\x00\\x00"
+        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\xc8\\xde4\\xd9\\x00\\x00\\x00\\x00",
+        "value_name": "CheckSetting"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.102",
@@ -8491,7 +8520,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.102\\CheckSetting",
         "operation": "modify",
-        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "CheckSetting"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.104",
@@ -8501,7 +8531,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.104\\CheckSetting",
         "operation": "modify",
-        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "CheckSetting"
       },
       {
         "key": "HKEY_CURRENT_USER\\AppEvents\\Schemes\\Apps\\.Default\\CCSelect\\.current",

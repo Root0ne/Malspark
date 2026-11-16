@@ -3532,7 +3532,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run\\WinHost32",
         "operation": "modify",
-        "value": "C:\\Windows\\System32\\WinHost32.exe"
+        "value": "C:\\Windows\\System32\\WinHost32.exe",
+        "value_name": "WinHost32"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\GRE_Initialize",
