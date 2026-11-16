@@ -286,6 +286,26 @@ class TestTheSourcesOfATechnique:
         held = technique_sources(isrs, ledger)["T1547.001"]
         assert _readings(held) == {"ev_0003": READING_UNPLACED}
 
+    def test_a_rule_scan_that_matched_nothing_is_no_rule_match_where_the_claim_says_so(
+        self,
+    ) -> None:
+        from malspark.core.declared_reading import legacy_by_name, stored_record
+
+        declared = dict(stored_record(legacy_by_name()["yara_scan"]))
+        said = _claim(
+            "The sample encrypts files.", "[ev_0009] ransomware rules (no match)", "T1486"
+        )
+
+        def read(matches: list[dict[str, str]]) -> dict[str, str]:
+            scan = _entry("ev_0009", "yara_scan", {"matches": matches}, agent="pipeline")
+            ledger = [*_ledger(), scan.model_copy(update={"facts": declared})]
+            return _readings(technique_sources({"a": _isr("a", said)}, ledger)["T1486"])
+
+        # Its declared rows place holds no row: the scan asserts nothing for the technique.
+        assert read([]) == {"ev_0009": READING_UNPLACED}
+        # The same words beside a scan that did match leave it a rule match.
+        assert read([{"rule": "ransom_note"}]) == {"ev_0009": READING_RULE}
+
     def test_a_technique_on_an_external_assessment_alone_is_unobserved(self) -> None:
         held = technique_sources(_restating(3, "[ev_0007]"), _ledger())["T1547.001"]
 
