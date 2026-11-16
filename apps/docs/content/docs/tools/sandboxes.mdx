@@ -107,7 +107,14 @@ flows to those addresses the same way. A flow to an address several names
 resolved to counts for each of them, which errs toward hiding nothing. A dropped file's guest path is shown where the reader declares the field its
 source writes it under (`Reading.guest_path_fields`: a Triage task report's
 `path`); a field of that name a reader does not declare, such as CAPE's host
-storage path, is not shown. The document holds each such block once per
+storage path, is not shown. Each row keeps the `kind` and `origin` it states
+(a written file or a dumped region, and where it came from), and names its
+writer by the process list's own id first (`procid`, then `pids`, `pid`,
+`process_id`), with the `task` the reader listed it in and, where the reader
+declares the field its source writes the writer's guest pid under
+(`Reading.dropped_guest_pid_fields`: a Triage task report's `pid`) and it is
+another number, that pid as `guest_pid`. The pack reads every sandbox view
+with the job's reader, as an agent's call of it does. The document holds each such block once per
 task, by reference (`{"task_report": ..., "block_rows": <block>}`), and every
 reader reads it as the block's items: each signature, flow or other item is its
 own row naming its task, built when it is read, so `offset` and `limit` page
