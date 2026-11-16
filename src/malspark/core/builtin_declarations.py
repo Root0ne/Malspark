@@ -659,6 +659,25 @@ CONSUMER_KINDS: dict[str, dict[str, Any]] = {
     "evidence_summary.catalogue_associations": {"kinds": ["api_catalogue"]},
 }
 
+# The kinds whose answer is an observation independent of the file's text: what
+# a sandbox or a capture watched the sample do, a rule matched on those events,
+# and what an emulator, a decoder or a hash resolver recovered from bytes that
+# do not spell it. A value taken from the file's text is confirmed only by an
+# entry of one of these an analyst cites, or by a tool that declares no kind
+# (``reporting.tool_kinds.second_source_standing``); every other declared kind
+# reads the file's text again, and one source said twice is one source.
+OBSERVING_KINDS: frozenset[str] = frozenset(
+    {
+        *CONSUMER_KINDS["evidence_bundles.SANDBOX_TOOL_PREFIXES"]["kinds"],
+        *CONSUMER_KINDS["network_analyst._PCAP_TOOLS"]["kinds"],
+        "event_rules",
+        "behaviour_code_links",
+        "emulated_strings",
+        "decoded_strings",
+        "api_hash_resolution",
+    }
+)
+
 # The parts of a kind's answer that are a structured record of what a sandbox
 # observed, not text a tool printed (``reporting.ledger_projection``): a value
 # an answer holds only there is no string sighting. Dotted paths, ``*`` for
