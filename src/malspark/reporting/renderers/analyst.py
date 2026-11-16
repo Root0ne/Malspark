@@ -1894,10 +1894,12 @@ class _Analyst:
             for index, item in enumerate(ta.configuration, start=1):
                 # A row that cites nothing, or whose value none of its cited
                 # entries holds whole, is the bundle's, which prints it with the
-                # finding (T-555); the IOC table's state of each value stays.
+                # finding (T-555), and so is one read out of a longer run, which
+                # the bundle marks; the IOC table's state of each value stays.
                 if (
                     index in ctx.config_findings
                     or index in ctx.config_unheld
+                    or index in ctx.config_inside
                     or self._flagged_whole(item.key)
                     or self._flagged_whole(item.value)
                 ):
@@ -2261,10 +2263,12 @@ class _Analyst:
             if item.value.strip().lower() in seen or publishes(answer):
                 continue
             # A row that cites nothing, or whose value none of its cited entries
-            # holds whole, is the bundle's, which prints it with the finding (T-555).
+            # holds whole, is the bundle's, which prints it with the finding (T-555),
+            # and so is one read out of a longer run, which the bundle marks.
             if (
                 index in ctx.identifier_findings
                 or index in ctx.identifier_unheld
+                or index in ctx.identifier_inside
                 or self._flagged_whole(item.value)
             ):
                 left += 1

@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**133 codes in 12 families:** [agreement](#agreement) 19 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 20 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**134 codes in 12 families:** [agreement](#agreement) 19 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 21 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -703,6 +703,14 @@ No comment names its meaning; the message at `malspark.pipeline.validation:unpub
 
 - **Raised at** `malspark.pipeline.validation:unpublished_value_violations`
 - **Constant** `malspark.pipeline.validation:UNPUBLISHED_VALUE_CODE`
+- **Docs** [Architecture](/docs/architecture/)
+
+### `report.value_inside_a_longer_token`
+
+A table row whose value a cited entry holds only inside a longer run of letters or digits (`stated_value_violations`): read out of that run, as from a string pool written with no separator. Never asked (`ASKED_BY_NO_TURN`); the row is kept, marked beside its evidence, and counted in the run's record with each row.
+
+- **Raised at** `malspark.pipeline.validation:stated_value_violations`
+- **Constant** `malspark.pipeline.validation:STATED_VALUE_INSIDE_A_TOKEN_CODE`, `malspark.reporting.renderers.markdown:_INSIDE_A_TOKEN_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
 ### `report.value_not_carried`
