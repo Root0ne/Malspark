@@ -1595,6 +1595,32 @@ Two producers use it:
   block with a claim it did not add (`added_by_retry_in_round` is compared). The
   ATT&CK table, the matrix and `ttp_mappings` keep one row per technique.
 
+  The section agreement round (`reporting.section_agreement`) reads every
+  passage the report models wrote against the platform's facts, section 5, the
+  debate's mediations and the judge's decision as the run records it
+  (`reporting.judge_decision`): the verdict and its confidence band where the
+  judge assessed one, the family the judge named or none, each published
+  technique by id and name, and each technique the judge dropped with the
+  judge's reason as the capability matrix keeps it. The decision is shown under
+  THE JUDGE'S DECISION (`judge.verdict`, `judge.family`, `judge.technique.<ID>`)
+  and is the source of a drop and of nothing else. A drop gives its reason or is
+  not read. A row of any other form that names a judge passage ends as the same
+  row without the judge passage would end: every check and every end are that
+  row's, so naming the decision neither removes a sentence nor spares it a
+  check, and the refusal of the judge passage opens no turn of its own and is
+  counted and recorded nowhere: it is told to the model only in a retry another
+  refusal opens. A drop on the decision leaves a sentence out only of a section
+  5 passage the round may rewrite, the conclusion, the limitations, a value cell
+  or a capability bullet, and supports no answer for a sentence of any other
+  passage, a text printed in its writer's own words included. Which sentence
+  states otherwise than the decision is the model's answer; no code reads a
+  sentence for what it asserts. A sentence left out on the decision is counted
+  where it is left out and recorded with the row's sources, the reason and the
+  sentence whole (`agreement.judge_left_out`). The decision starts no question
+  of its own, and nothing here changes the verdict, the mappings or the matrix.
+  A refusal of the round's last answer is recorded with the passage and the
+  sentence its row was about, and says that no turn was left to answer it.
+
   A function name the run resolved at runtime from a stored value is not an
   import. `api_capability` takes such names as `resolved_names` and marks them
   in its answer (`obtained`, `resolved_at_runtime_from_hashes`); the report's

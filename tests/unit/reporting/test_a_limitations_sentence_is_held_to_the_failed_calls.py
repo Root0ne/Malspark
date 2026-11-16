@@ -820,6 +820,14 @@ def test_a_denial_or_a_kind_word_counts_in_its_own_clause(rewrite: str) -> None:
     assert rewrite in report.technical_analysis.analyst_limitations.body
 
 
+def _said(row: dict[str, str]) -> str:
+    """A refusal of the round's last answer, without what its record adds once no turn is
+    left: that no turn was, and the row's sentence of limitations (T-717)."""
+    said, _sep, left = row["message"].partition(" No turn was left to answer this refusal; ")
+    assert left.startswith("the row's sentence of limitations: ")
+    return said
+
+
 @pytest.mark.parametrize(
     "rewrite",
     [
@@ -843,7 +851,8 @@ def test_a_denial_of_its_own_is_about_the_call_before_it(rewrite: str) -> None:
     _left_out_alone(report, done, body)
     # The finding names the call the denial is about, with the call that redid it, and the
     # ends of the sentence it answers, held to every call it says failed.
-    assert [r["message"] for r in done.tally.unresolved if r["code"] == FAILURE_REDONE_CODE] == [
+    # Its last answer's refusal says no turn was left, naming the row's sentence (T-717).
+    assert [_said(r) for r in done.tally.unresolved if r["code"] == FAILURE_REDONE_CODE] == [
         "row 1: the rewrite of limitations: it says a call failed or a reading could not be "
         "made, while a later call redid it (ev_0168 by ev_0171). Rewrite it citing ev_0171 and "
         f"saying what it answered, {_UNREDONE_DENIAL}, or drop it. It says a call failed that a "
@@ -904,7 +913,7 @@ def test_a_section_5_sentence_saying_a_comparison_fails_is_put_in() -> None:
     assert done.summary["rewritten"] == 1
     # No finding of the payloads row: the one finding is the limitations sentence's, whose
     # refused row stays its last answer (T-600).
-    assert [r["message"] for r in done.tally.unresolved if r["code"] == FAILURE_REDONE_CODE] == [
+    assert [_said(r) for r in done.tally.unresolved if r["code"] == FAILURE_REDONE_CODE] == [
         "row 55: limitations keeps the sentence, but it says a call failed or a reading could "
         "not be made, while a later call redid it (ev_0168 by ev_0171; ev_0187 by ev_0191; "
         "ev_0169 by ev_0170). Rewrite it citing ev_0171 and ev_0191 and ev_0170 and saying what "
