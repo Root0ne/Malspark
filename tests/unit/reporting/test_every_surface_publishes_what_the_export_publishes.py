@@ -778,3 +778,33 @@ def test_a_sweep_path_of_the_toolchain_s_shape_stays_refused_everywhere() -> Non
         False
     ]
     assert "librelay" not in str(_indicators_of(exported))
+
+
+def test_a_host_row_a_declined_judge_indicator_names_keeps_the_platform_s_type() -> None:
+    """The judge's keep publishes the row; its declined indicator lends no type."""
+    judge = _judge(f"[file:name = '{_RELAY}']")  # single backslashes: the grammar refuses it
+    report = _report(
+        judge,
+        overall_confidence=0.9,
+        dynamic=DynamicBehavior(
+            process_tree=[{"pid": 1, "name": f"{SHA256}.exe"}],
+            file_operations=[{"operation": "write", "path": _RELAY, "pid": 1}],
+        ),
+    )
+    report.judge_indicators = [
+        JudgeIndicator(
+            kind=v.kind,
+            value=v.value,
+            algorithm=v.algorithm,
+            indicator_types=list(v.indicator_types),
+        )
+        for v in exported_indicator_values(judge)
+    ]
+    exported, _renderer = _export(report, judge)
+
+    row = _row(report, _RELAY)
+    assert (row.source, publishes(row.published)) == ("sandbox", True), row.published
+    assert row.indicator_type == "anomalous-activity"
+    assert _indicators_of(exported) == [
+        ("File path C:\\ProgramData\\relay.dat", _RELAY_PLATFORM[1], ["anomalous-activity"])
+    ]
