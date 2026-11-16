@@ -195,17 +195,14 @@ row for the same sentence is not applied. A quote shorter than
 The judge's decision as the run records it (``reporting.judge_decision``: the verdict and its
 confidence band where the judge assessed one, its family or none, each technique published by
 id and name and each it dropped with its reason) is shown after the facts, one passage each
-(``judge.verdict``, ``judge.family``, ``judge.technique.<ID>``), and is a source of every
-passage the round may rewrite, section 5 included; another analyst's words, a debate round and
-the judge's free notes stay none (T-717). Which sentence states otherwise than it is the
-model's to say: code picks none. A section 5 sentence answered on it is only left out, the
+(``judge.verdict``, ``judge.family``, ``judge.technique.<ID>``). It is the source of a drop
+and of nothing else: a row naming it in another form is refused, whatever else it names, and
+no sentence is read for what it asserts (T-717). Which sentence states otherwise than it is
+the model's to say: code picks none. A section 5 sentence answered on it is only left out, the
 row naming the judge passage and giving its reason; it is counted where it is left out and
-recorded with the sentence whole (``JUDGE_LEFT_OUT_CODE``), and a row of any other form on it
-is refused, the sentence standing as written. A rewrite resting on it is refused where its own
-words write, in a clause denying nothing, what the decision denies
-(:func:`judge_decision.denied_in`), and ends as any refused rewrite does. The decision starts
-no question of its own, and nothing changes it. A refusal of the round's last answer is
-recorded with the sentence its row was about, saying no turn was left (:func:`_no_turn_left`).
+recorded with the sentence whole (``JUDGE_LEFT_OUT_CODE``). The decision starts no question of
+its own, and nothing changes it. A refusal of the round's last answer is recorded with the
+sentence its row was about, saying no turn was left (:func:`_no_turn_left`).
 
 Every step is one pass over the passages and the answer's rows.
 """
@@ -433,10 +430,6 @@ FAILURE_COUNT_CODE = "agreement.failure_count"
 JUDGE_LEFT_OUT_CODE = "agreement.judge_left_out"
 # The records of a sentence the round left out, which the analyst report counts.
 LEFT_OUT_CODES = frozenset({DROPPED_CODE, JUDGE_LEFT_OUT_CODE})
-# A rewrite resting on the judge's decision whose own words write, in a clause denying
-# nothing, what the decision denies: a technique the judge dropped, another verdict or a
-# family the judge did not name (``judge_decision.denied_in``, T-717).
-JUDGE_DENIED_CODE = "agreement.judge_denied"
 # What every retry turn of the round asks besides the fix: the whole answer.
 _EVERY_ROW = " Answer with every row again, this one included."
 
@@ -616,9 +609,6 @@ class Passage:
     # source only, named by another row, taking no row and no end of its own, and supplying no
     # keep's quote (T-613).
     source_only: bool = False
-    # The judge's decision a passage of its (``JUDGE``) is read off, which a rewrite resting on
-    # one is read against (:func:`judge_denied`); ``None`` for any other passage (T-717).
-    decision: JudgeDecision | None = None
 
 
 def _ids(*sources: Any) -> frozenset[str]:
@@ -905,8 +895,7 @@ def judge_passages(decision: JudgeDecision) -> list[Passage]:
     confidence band, the family or none, then each technique published, by id and name, and
     each the judge dropped with the record's words, the judge's reason among them (T-717).
     None for a decision the run did not record. A dropped technique rests on the entries its
-    reason cites, which its words show; no other passage of the judge's cites any. Each carries
-    the decision, which a rewrite resting on it is read against (:func:`judge_denied`)."""
+    reason cites, which its words show; no other passage of the judge's cites any."""
     out: list[Passage] = []
     if decision.assessed:
         out.append(
@@ -915,7 +904,6 @@ def judge_passages(decision: JudgeDecision) -> list[Passage]:
                 label="the judge's verdict",
                 text=f"{decision.verdict}, {decision.band}",
                 kind=JUDGE,
-                decision=decision,
             )
         )
         out.append(
@@ -924,7 +912,6 @@ def judge_passages(decision: JudgeDecision) -> list[Passage]:
                 label="the judge's family",
                 text=quoted_value(decision.family) if decision.family else "no family named",
                 kind=JUDGE,
-                decision=decision,
             )
         )
     for technique in decision.techniques:
@@ -945,21 +932,9 @@ def judge_passages(decision: JudgeDecision) -> list[Passage]:
                 kind=JUDGE,
                 # A dropped one rests on what its reason cites; a published one says nothing.
                 cites=_ids(technique.said),
-                decision=decision,
             )
         )
     return out
-
-
-def judge_denied(text: str, by_id: Mapping[str, Passage]) -> tuple[str, ...]:
-    """What ``text`` writes, in its own words, that the judge's decision the round shows
-    denies (:func:`judge_decision.denied_in`); ``()`` where the round shows none (T-717)."""
-    from malspark.reporting.judge_decision import denied_in
-
-    decision = next(
-        (p.decision for p in by_id.values() if p.kind == JUDGE and p.decision is not None), None
-    )
-    return denied_in(text, decision) if decision is not None else ()
 
 
 def passages_of(
@@ -4501,15 +4476,18 @@ def _row_violations(
             )
         )
     sources = [by_id.get(_form(source)) for source in row.sources]
-    if _on_the_judge(passage, sources) and row.decision != "drop":
-        # A section 5 sentence answered on the judge's decision is only left out; a row of any
-        # other form is refused, and the sentence stands as written (T-717).
+    judged = _judge_named(sources)
+    if judged and row.decision != "drop":
+        # A passage of the judge's decision is a source of a drop alone: a row naming one in
+        # any other form is refused, whatever else it names (T-717).
         out.append(
             Violation(
                 code=UNKNOWN_PASSAGE_CODE,
                 message=(
-                    f"row {safe_finding_value(index + 1)}: {safe_finding_value(passage.id)} is "
-                    f"a section 5 passage, and {_ON_THE_JUDGE}."
+                    f"row {safe_finding_value(index + 1)}: "
+                    f"{safe_finding_value(', '.join(judged))} "
+                    + ("is a passage" if len(judged) == 1 else "are passages")
+                    + f" of the judge's decision, {_ON_THE_JUDGE}."
                 ),
                 path=f"{path}.decision",
             )
@@ -4800,10 +4778,16 @@ def _denial_cited(unredone: bool) -> str:
     return _UNREDONE_DENIAL_CITED if unredone else _DENIAL_CITED
 
 
+def _judge_named(sources: Sequence[Passage | None]) -> list[str]:
+    """The ids of the passages of the judge's decision among a row's ``sources``, each once:
+    a row naming one is a drop or is refused (T-717)."""
+    return list(dict.fromkeys(s.id for s in sources if s is not None and s.kind == JUDGE))
+
+
 def _on_the_judge(passage: Passage, sources: Sequence[Passage | None]) -> bool:
     """Whether a row answers a sentence of a section 5 passage on a passage of the judge's
     decision: one it may only leave out (T-717)."""
-    return passage.kind == SECTION_5 and any(s is not None and s.kind == JUDGE for s in sources)
+    return passage.kind == SECTION_5 and bool(_judge_named(sources))
 
 
 # What the refusal of a source a section 5 passage may not rest on says of the judge's
@@ -4812,12 +4796,11 @@ _JUDGE_SOURCE_SAID = (
     "; a sentence of it is left out on a passage of the judge's decision (judge.verdict, "
     "judge.family, judge.technique.ID)"
 )
-# What a section 5 sentence answered on the judge's decision may end as, as the question and
-# every refusal of another end say (T-717).
+# What the refusal of a row naming the judge's decision in another form than a drop says
+# (T-717).
 _ON_THE_JUDGE = (
-    "a section 5 sentence the judge's decision states otherwise than is only left out: "
-    'answer it "decision": "drop", naming the judge passage in "sources", with "reason"; '
-    "no other answer on the judge's decision is taken, and the sentence then stands as written"
+    'which supports a drop alone: answer the sentence "decision": "drop", naming the judge '
+    'passage in "sources", with "reason", or name no judge passage for it'
 )
 
 
@@ -5624,28 +5607,6 @@ def _answer_violations(
                     path=f"{path}.rewrite",
                 )
             )
-    denied = (
-        judge_denied(row.rewrite, by_id or {})
-        if row.decision == "rewrite" and any(s is not None and s.kind == JUDGE for s in sources)
-        else ()
-    )
-    if denied:
-        # A rewrite resting on the judge's decision writes, in its own words and a clause
-        # denying nothing, what the decision denies (T-717).
-        out.append(
-            Violation(
-                code=JUDGE_DENIED_CODE,
-                message=(
-                    f"row {number}: the rewrite of {where} writes "
-                    + ", ".join(repr(safe_finding_value(d)) for d in denied)
-                    + ", which the judge's decision it rests on denies: a technique the judge "
-                    "dropped, another verdict or a family the judge did not name is written "
-                    "only in a clause that denies it, or as a quoted label. Rewrite it so, "
-                    f"{safe_finding_value(_otherwise(passage, sentence))}."
-                ),
-                path=f"{path}.rewrite",
-            )
-        )
     if row.decision == "rewrite":
         facts = [s for s in sources if s is not None and s.kind == FACT]
         # Both read without their citations: an entry id in brackets cuts no clause, so a
@@ -7493,14 +7454,12 @@ _VERBATIM_TASK = (
 _JUDGE_TASK = (
     "THE JUDGE'S DECISION is the run's record of what the judge decided: its verdict and "
     "confidence band, its family or none, each technique it published and each it dropped "
-    "with its reason. It is a source of every passage you may rewrite, section 5 included, and "
-    "of no passage marked (verbatim). List each sentence of such a passage that states as "
-    "present, or as serving its purpose, a technique the judge dropped, calls absent or not "
-    "observed one it published, or states another verdict, family or confidence band, naming "
-    'the judge passage. A section 5 sentence so listed is only dropped, with "reason": no '
-    "other answer on the judge's decision is taken for it. A rewrite resting on the judge's "
-    "decision writes a technique the judge dropped, another verdict or a family the judge did "
-    "not name only in a clause that denies it, or as a quoted label."
+    "with its reason. It is a source of a drop alone, never of a keep or a rewrite, and of no "
+    "passage marked (verbatim). List each sentence of a passage you may rewrite, section 5 "
+    "included, that states as present, or as serving its purpose, a technique the judge "
+    "dropped, calls absent or not observed one it published, or states another verdict, family "
+    "or confidence band, naming the judge passage: a sentence so listed is only dropped, with "
+    '"reason".'
 )
 
 
@@ -7559,11 +7518,11 @@ def _names_a_source(row: AgreementRow, by_id: dict[str, Passage]) -> bool:
 
 def _rests_on_a_source(row: AgreementRow, by_id: dict[str, Passage]) -> bool:
     """Whether every source a row names is one a passage written without the code is
-    answered by: a fact, the judge's decision (T-717), a section 5 passage or a debate round
-    it was shown."""
+    answered by: a fact, a section 5 passage or a debate round it was shown; the judge's
+    decision supports a drop alone (T-717)."""
     return bool(row.sources) and all(
         (source := by_id.get(_form(name))) is not None
-        and (source.kind in (FACT, JUDGE, SECTION_5, DEBATE) or source.source_only)
+        and (source.kind in (FACT, SECTION_5, DEBATE) or source.source_only)
         for name in row.sources
     )
 
@@ -8146,14 +8105,15 @@ def _unbacked(found: Sequence[Violation]) -> bool:
 
 
 def _keep_sources(sources: Sequence[Passage | None], *, body: bool) -> list[Passage]:
-    """The named sources a keep's quote may stand in: a fact, the judge's decision (T-717), a
-    section 5 passage or a debate round, and for a body absence a passage written without the
-    code too; never a passage shown as a source only (T-613)."""
+    """The named sources a keep's quote may stand in: a fact, a section 5 passage or a debate
+    round, and for a body absence a passage written without the code too; never a passage
+    shown as a source only (T-613), nor the judge's decision, which supports a drop alone
+    (T-717)."""
     return [
         s
         for s in sources
         if s is not None
-        and (s.kind in (FACT, JUDGE, SECTION_5, DEBATE) or (body and s.kind == CLAIM_LED))
+        and (s.kind in (FACT, SECTION_5, DEBATE) or (body and s.kind == CLAIM_LED))
         and not s.source_only
     ]
 

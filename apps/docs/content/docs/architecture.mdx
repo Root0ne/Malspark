@@ -1603,23 +1603,16 @@ Two producers use it:
   technique by id and name, and each technique the judge dropped with the
   judge's reason as the capability matrix keeps it. The decision is shown under
   THE JUDGE'S DECISION (`judge.verdict`, `judge.family`,
-  `judge.technique.<ID>`) and is a source of every passage the round may
-  rewrite, section 5 included; another analyst's words, a debate round and the
-  judge's own notes are no source of a section 5 sentence. Which sentence states
-  otherwise than the decision is the model's answer; code picks no sentence by a
-  name. A section 5 sentence answered on the decision is only left out, the row
-  naming the judge passage with a reason: it is counted where it is left out and
-  recorded with the sentence whole (`agreement.judge_left_out`); a row of any
-  other form on it is refused and the sentence stands as written. A rewrite of
-  any other passage resting on the decision is refused where its own words
-  write, in a clause with no denial, the id or the catalogue name of a technique
-  the judge dropped (a sub-technique of a dropped parent included), a verdict
-  word other than the judge's, or a family name the run's records hold that the
-  judge did not name (`agreement.judge_denied`); a quoted label, a heading and a
-  tag list write none. The decision starts no question of its own, and nothing
-  here changes the verdict, the mappings or the matrix. A refusal of the round's
-  last answer is recorded with the passage and the sentence its row was about,
-  and says that no turn was left to answer it.
+  `judge.technique.<ID>`) and is the source of a drop and of nothing else: a
+  row naming a judge passage is a drop, whatever else it names, and a row of
+  any other form naming one is refused. Which sentence states otherwise than
+  the decision is the model's answer; no code reads a sentence for what it
+  asserts. A section 5 sentence left out on the decision is counted where it
+  is left out and recorded with the judge passage, the reason and the sentence
+  whole (`agreement.judge_left_out`). The decision starts no question of its
+  own, and nothing here changes the verdict, the mappings or the matrix. A
+  refusal of the round's last answer is recorded with the passage and the
+  sentence its row was about, and says that no turn was left to answer it.
 
   A function name the run resolved at runtime from a stored value is not an
   import. `api_capability` takes such names as `resolved_names` and marks them
