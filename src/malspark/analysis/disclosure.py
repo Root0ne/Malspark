@@ -1664,6 +1664,13 @@ def _lookup_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
 
 
 def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
+    line = _upload_sentence(row, code)
+    return line + _launch_clause(row, code) if row.get("by") == BY_SANDBOX else line
+
+
+def _upload_sentence(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
+    """An upload row's sentence: what was sent, how often, to which host; a sandbox
+    submission's launch arguments are :func:`_upload_line`'s alone."""
     calls = int(row.get("calls") or 0)
     failed = int(row.get("failed") or 0)
     times = _times(calls)
@@ -1681,7 +1688,6 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
             f"Sample upload{_detonation_of(row)}: {_submitted_subject(row, code)} was "
             f"submitted {times} to the "
             f"{code(str(row.get('source') or ''))} sandbox{at}{failure}{untold}."
-            + _launch_clause(row, code)
         )
     server = _server(str(row.get("source") or ""), code)
     if by == BY_STAGING:
@@ -1988,6 +1994,27 @@ def _nothing_sentence(record: Mapping[str, Any], code: Callable[[str], str]) -> 
         parts.append("the sample went only to local addresses")
     parts.append("no lookup was asked, and tracing is off")
     return "Nothing left this machine. This rests on: " + "; ".join(parts) + "."
+
+
+# What the analyst report's limitations say after what left this machine (T-719).
+LEFT_THE_MACHINE_RECORD = "The full record of what left this machine is in the bundle."
+
+
+def left_the_machine(record: Any, code: Callable[[str], str] = _code) -> str:
+    """One sentence run stating what left this machine, for the analyst report's limitations:
+    each lookup and each sample upload the record places outside it, in the words the block
+    of :func:`disclosure_lines` gives them (a submission without its launch arguments), and
+    that the full record is in the bundle; ``""`` where the record places none outside.
+    Hosts, kinds and counts only, as the record holds them (T-719)."""
+    if not isinstance(record, Mapping) or "models" not in record:
+        return ""
+    lines = [
+        write(row, code)
+        for part, write in (("lookups", _lookup_line), ("uploads", _upload_sentence))
+        for row in record.get(part) or []
+        if isinstance(row, Mapping) and row.get("where") == REMOTE and row.get("host")
+    ]
+    return " ".join([*lines, LEFT_THE_MACHINE_RECORD]) if lines else ""
 
 
 def disclosure_lines(record: Any, code: Callable[[str], str] = _code) -> list[str]:

@@ -400,8 +400,8 @@ def _failed_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[I
     out: list[InventoryRow] = []
     # Entries trimmed to the budget are a limit of the evidence too: the row prints for them.
     trimmed = (
-        f"{_number(inv.trimmed)} of {_number(inv.entries)} ledger "
-        f"{_plural(inv.trimmed, 'entry was', 'entries were')} trimmed to the budget."
+        f"{_number(inv.trimmed)} of {_number(inv.entries)} ledger entries "
+        f"{_plural(inv.trimmed, 'was', 'were')} trimmed to the budget."
         if inv.trimmed
         else ""
     )
