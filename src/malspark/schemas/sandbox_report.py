@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import re
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -1341,21 +1341,36 @@ STAGED_NOTE = (
 )
 
 
-def started_by_the_sandbox(roots: list[Any], file_name: str = "", sha256: str = "") -> list[Any]:
+def started_by_the_sandbox(
+    roots: list[Any],
+    file_name: str = "",
+    sha256: str = "",
+    written: Callable[[], Iterable[str]] | None = None,
+) -> list[Any]:
     """The listed processes whose image is the submitted file as the sandbox started it.
 
     A process that runs the submitted file (its name or its digest,
     :func:`runs_the_submitted_file`), whose image is that file, and that
     starts the sample's tree by that fact: no process its parent chain
-    reaches runs the file (:func:`_placed`'s links). Its image path is where
-    the sandbox placed the file, the sandbox's doing and never the sample's. A
-    copy the sample makes of itself and runs is under a process that runs the
-    file: behaviour, never this. A process that names the file only on its
-    command line (``rundll32.exe <file>,#1``) has another image and is not
-    it, and a listing that runs the file under a name the reading does not
-    know names none. Each task's processes are read on their own, a process
-    being its task and its id (``schemas.process_identity``), each listed
-    process by its own place in the listing; in listing order.
+    reaches runs the file (:func:`_placed`'s links). A copy the sample makes
+    of itself and runs is under a process that runs the file: behaviour,
+    never this. A process that names the file only on its command line
+    (``rundll32.exe <file>,#1``) has another image and is not it, and a
+    listing that runs the file under a name the reading does not know names
+    none.
+
+    The mark is given only where the record does not contradict it. A path
+    the report shows written during the run (``written``, the paths its
+    record of written files holds, read once and only where a process
+    qualifies) is the sample's doing and never this: an image that states no
+    folder is read against the written paths' file names. The processes of
+    one task so read share one image path: where they run from more than one,
+    only the path of the process the record states started first
+    (``first_seen``, :func:`_started_order`) is theirs, and none where the
+    record states no order among them. Each task's processes are read on
+    their own, a process being its task and its id
+    (``schemas.process_identity``), each listed process by its own place in
+    the listing; in listing order.
     """
     from malspark.schemas.process_identity import TASK_KEY
 
@@ -1364,17 +1379,97 @@ def started_by_the_sandbox(roots: list[Any], file_name: str = "", sha256: str = 
     grouped: dict[str, list[Any]] = {}
     for node in roots:
         grouped.setdefault(str(_node_field(node, TASK_KEY) or ""), []).append(node)
+    paths: tuple[frozenset[str], frozenset[str]] | None = None
     found: set[int] = set()
     for held in grouped.values():
         placed = _placed(held, file_name, sha256)
-        for index in placed.runs:
+        qualifying: list[tuple[Any, str]] = []
+        for index in sorted(placed.runs):
             parent = placed.parents[index]
             node, _pid, name = placed.nodes[index]
             if (parent is None or parent not in placed.by_file) and runs_the_submitted_file(
                 name, "", file_name, sha256
             ):
-                found.add(id(node))
+                qualifying.append((node, _image_path(name)))
+        if not qualifying:
+            continue
+        if paths is None:
+            paths = _written_paths(written() if written is not None else ())
+        full, names = paths
+        kept = [
+            (node, path)
+            for node, path in qualifying
+            if path not in full and not (_is_bare(path) and path in names)
+        ]
+        chosen = {path for _node, path in kept}
+        if len(chosen) > 1:
+            first = _started_first([(_node_field(node, "first_seen"), path) for node, path in kept])
+            chosen = {first} if first else set()
+        found.update(id(node) for node, path in kept if path in chosen)
     return [node for node in _listed(roots) if id(node) in found]
+
+
+def _image_path(name: str) -> str:
+    """A listed image as a written path is compared with it: lower case, backslashes, unquoted.
+
+    The path inside the first pair of quotes of a quoted name, else the text
+    before a listing's note (``(cmdline: ...)``), as :func:`_image_of` reads it.
+    """
+    quoted = _QUOTED.search(name or "")
+    path = quoted.group(1) if quoted else (name or "").split("(", 1)[0]
+    return path.strip().strip('"').strip("'").replace("/", "\\").lower()
+
+
+def _is_bare(path: str) -> bool:
+    """Whether a compared path states no folder: a file name alone."""
+    return "\\" not in path
+
+
+def _written_paths(paths: Iterable[str]) -> tuple[frozenset[str], frozenset[str]]:
+    """The written paths as :func:`_image_path` writes them, and their file names."""
+    full = frozenset(key for key in (_image_path(str(p)) for p in paths) if key)
+    return full, frozenset(key.rsplit("\\", 1)[-1] for key in full)
+
+
+# A start a record states as a timestamp: a date, then a time of day, read in
+# the order its text sorts in where every value has the one form.
+_STARTED_AT_RE = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?Z?")
+
+
+def _started_order(value: Any) -> tuple[str, Any] | None:
+    """A process's stated start as an order key: a number, or a timestamp; ``None`` for none.
+
+    A number (a sandbox's offset from the run's start) is compared as one; a
+    timestamp by its text, which sorts in time order where two have the same
+    length. Anything else states no order.
+    """
+    text = "" if value is None or isinstance(value, bool) else str(value).strip()
+    if not text:
+        return None
+    try:
+        return ("number", float(text))
+    except ValueError:
+        pass
+    if _STARTED_AT_RE.fullmatch(text):
+        return (f"time{len(text)}", text)
+    return None
+
+
+def _started_first(starts: list[tuple[Any, str]]) -> str:
+    """The path of the process the record states started first; ``""`` where it states no order.
+
+    Every process must state a start of one form, and one start must come
+    before every other path's: a tie between two paths, a process with no
+    stated start, or two forms state no order among them.
+    """
+    keyed = [(_started_order(value), path) for value, path in starts]
+    if any(key is None for key, _path in keyed) or len({key[0] for key, _ in keyed if key}) != 1:
+        return ""
+    ordered = sorted(((key[1], path) for key, path in keyed if key), key=lambda one: one[0])
+    first, path = ordered[0]
+    if any(at == first and other != path for at, other in ordered[1:]):
+        return ""
+    return path
 
 
 def _listed(roots: list[Any]) -> list[Any]:

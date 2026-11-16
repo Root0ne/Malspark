@@ -318,7 +318,9 @@ def sandbox_processes(
     staged = {
         id(row)
         for row in started_by_the_sandbox(
-            [row for row in built if row is not None], *_submitted(report)
+            [row for row in built if row is not None],
+            *_submitted(report),
+            written=lambda: _written_paths(report, normalised_by),
         )
     }
     page, meta = _page(built, offset, limit)
@@ -335,6 +337,27 @@ def sandbox_processes(
     if any(STAGED_KEY in row for row in rows):
         answer = {STAGED_NOTE_KEY: STAGED_NOTE, **answer}
     return answer
+
+
+def _written_paths(report: dict[str, Any], normalised_by: Sequence[str] | None) -> list[str]:
+    """Every path the report records as written during the run, as the dropped-files view reads it.
+
+    Its rows of the sample's files and the platform's alike, each row's guest
+    path (or paths) and its name, read through :func:`read_view`
+    with the run's reader: the one reading of the record. Read once per
+    answer, and only where a process could be marked.
+    """
+    answer = read_view("sandbox_dropped_files", report, normalised_by)
+    out: list[str] = []
+    for key in ("dropped", "platform_files"):
+        for row in answer.get(key) or []:
+            if not isinstance(row, dict):
+                continue
+            path = row.get("path")
+            out.extend(str(p) for p in (path if isinstance(path, list) else [path]) if p)
+            if row.get("name"):
+                out.append(str(row["name"]))
+    return out
 
 
 def _submitted(report: dict[str, Any]) -> tuple[str, str]:
