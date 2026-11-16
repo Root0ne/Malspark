@@ -5104,8 +5104,10 @@ def table_row_record(row: Any, report: Any) -> tuple[str, str | None]:
         # A host value the judge's own indicator names is exported as that
         # indicator, under the judge's type (``ExtendedSTIXRenderer._render``).
         return INDICATOR_ROLE, judged
+    # The stated verdict, as the sample's own type reads it: a report never
+    # claims more about a host than about its sample.
     return INDICATOR_ROLE, minted_indicator_type(
-        _field(report, "verdict"), suspicious=_row_is_suspicious(row, report)
+        stated_verdict(report), suspicious=_row_is_suspicious(row, report)
     )
 
 

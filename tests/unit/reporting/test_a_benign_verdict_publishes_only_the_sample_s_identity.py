@@ -415,6 +415,50 @@ class TestAVerdictStatedWithoutAConfidenceIsNotStatedEverywhere:
         assert [c.not_published for c in report.capability_matrix] == [""]
 
 
+class TestAMintedIndicatorClaimsNoMoreThanTheSample:
+    """An indicator the platform mints is typed by the stated verdict, as the sample's is."""
+
+    @pytest.mark.parametrize(
+        ("verdict", "confidence", "own", "minted"),
+        [
+            ("Malware", 0.9, "malicious-activity", "malicious-activity"),
+            ("Suspicious", 0.9, "anomalous-activity", "anomalous-activity"),
+            ("Malware", None, "unknown", "anomalous-activity"),
+            ("Suspicious", None, "unknown", "anomalous-activity"),
+        ],
+    )
+    def test_every_surface_types_a_flagged_host_as_the_sample(
+        self, verdict: str, confidence: float | None, own: str, minted: str
+    ) -> None:
+        from malspark.reporting.models import NetworkURL
+
+        url = f"https://{OBSERVED}/gate"
+        report = _report(verdict, confidence)
+        report.network = NetworkIOCs(
+            domains=[NetworkDomain(fqdn=OBSERVED, source="sandbox", is_suspicious=True)],
+            urls=[NetworkURL(url=url, source="sandbox")],
+        )
+        rows = _rows(report)
+        feed = {_value(row): row for row in _feed(report)}
+        misp = {
+            a["value"]
+            for a in build_misp_attributes(report, build_consolidated_iocs(report), owner="r")
+        }
+        bundle, _renderer = _export(report)
+        typed = {
+            value.value.lower(): obj["indicator_types"]
+            for obj in _indicators(bundle)
+            for value in exported_indicator_values({"objects": [obj]}) or []
+        }
+
+        assert {rows[v].indicator_type for v in IDENTITY} == {own}
+        for value in (OBSERVED, url):
+            assert rows[value].indicator_type == minted, value
+            assert feed[value]["indicator_type"] == minted, value
+            assert value in misp, value
+            assert typed[value.lower()] == [minted], value
+
+
 def test_the_developer_host_question_decides_a_recovered_url() -> None:
     """The same recovered URL on a developer's host and on another host, all else equal."""
     from malspark.reporting.models import EmulatedStrings, NetworkURL, RecoveredValue
