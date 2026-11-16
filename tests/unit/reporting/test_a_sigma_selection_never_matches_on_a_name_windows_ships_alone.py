@@ -79,12 +79,19 @@ class TestAStatedPath:
 
         assert body["detection"]["selection_file"] == {"TargetFilename|endswith": [selected]}
 
-    def test_a_long_path_prefix_is_read_off_a_specific_path(self) -> None:
-        (body,) = _sigma(_report([("file path", "\\\\?\\C:\\ProgramData\\Vendor7731\\x7731.exe")]))
+    @pytest.mark.parametrize(
+        ("stated", "selected"),
+        [
+            ("\\\\?\\C:\\ProgramData\\Vendor7731\\x7731.exe", "\\Vendor7731\\x7731.exe"),
+            ("\\\\?\\UNC\\srv7731\\share\\x7731.exe", "\\srv7731\\share\\x7731.exe"),
+        ],
+    )
+    def test_a_long_path_prefix_is_read_off_a_specific_path(
+        self, stated: str, selected: str
+    ) -> None:
+        (body,) = _sigma(_report([("file path", stated)]))
 
-        assert body["detection"]["selection_file"] == {
-            "TargetFilename|endswith": ["\\Vendor7731\\x7731.exe"]
-        }
+        assert body["detection"]["selection_file"] == {"TargetFilename|endswith": [selected]}
 
     def test_a_value_left_out_of_a_built_draft_keeps_its_true_reason(self) -> None:
         report = _report(
