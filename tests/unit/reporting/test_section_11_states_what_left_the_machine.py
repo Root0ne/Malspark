@@ -171,3 +171,20 @@ def test_a_trimmed_count_agrees_with_its_own_number() -> None:
     report.limitation_inventory = build_inventory(report, _ledger())
     (row,) = [r for r in printed_rows(report.limitation_inventory) if r.part == "failed"]
     assert row.text.endswith(" 1 of 6 ledger entries was trimmed to the budget.")
+
+
+def test_the_disclosure_row_prints_where_the_inventory_prints_none() -> None:
+    from tests.unit.reporting.test_the_limitations_inventory_is_written_by_code import (
+        GATE,
+        _listing,
+    )
+
+    ledger = [_listing("ev_0003", GATE)]
+    report = _report(ledger)
+    report.sections = []
+    report.degradation_reasons = []
+    report.limitation_inventory = build_inventory(report, ledger)
+    assert printed_rows(report.limitation_inventory) == []
+    report.run_summary["disclosure"] = _record([LOOKUP], [])
+    section = _section_11(report)
+    assert LIST_LABEL in section and LEFT_THE_MACHINE_RECORD in section

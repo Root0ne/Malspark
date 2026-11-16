@@ -4379,10 +4379,7 @@ def _answered_span(
     """Where the sentence a row copied stands (:meth:`_Sentences.span`): a copy of the whole
     field is found for a keep or a drop, which answer each of its sentences; a rewrite of more
     than one sentence would put one text in place of several, and is not one (T-719)."""
-    found = sentences.span(sentence, whole=decision != "rewrite")
-    if found is not None and decision == "rewrite" and len(sentences.units(found)) > 1:
-        return None
-    return found
+    return sentences.span(sentence, whole=decision != "rewrite")
 
 
 def _cut(passage: Passage) -> _Sentences:

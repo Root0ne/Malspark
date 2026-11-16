@@ -245,3 +245,57 @@ def test_a_joined_sentence_is_held_where_a_part_of_it_would_be() -> None:
     assert whole_code_absences(absent, unsettled=True) == (absent,)
     assert whole_code_absences(text, unsettled=True) == (f"{absent} {named}",)
     assert whole_code_absences(named, unsettled=True) == ()
+
+
+def test_a_word_with_a_digit_or_a_line_break_still_follows_an_end() -> None:
+    assert _units("It reads keys. ev_0060 shows the call.") == [
+        "It reads keys.",
+        "ev_0060 shows the call.",
+    ]
+    text = "It reads keys, e.g.\nthe run key."
+    assert ends_sentence(text, text.index("e.g.") + 3)
+
+
+def test_a_whole_field_answer_is_refused_for_what_any_of_its_sentences_is() -> None:
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        _UNKNOWN,
+    )
+
+    first = "The gate reads a host mode [ev_0107]."
+    report = _report(f"{first} {_UNKNOWN}")
+    alone = _answered(report, [_row(_UNKNOWN, "keep", [], reason="no source states it")])[1]
+    whole = _answered(
+        _report(f"{first} {_UNKNOWN}"),
+        [_row(f"{first} {_UNKNOWN}", "keep", [], reason="no source states it")],
+    )[1]
+    refusals = {v.code for v in alone if v.path.startswith("sentences.0")}
+    assert refusals
+    assert refusals <= {v.code for v in whole if v.path.startswith("sentences.0")}
+    assert SENTENCE_NOT_FOUND_CODE not in {v.code for v in whole}
+
+
+def test_a_refused_whole_field_answer_leaves_out_only_the_sentence_it_ends_on() -> None:
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        _UNKNOWN,
+    )
+
+    body = "Routine 0x5a10 reads a host mode through a slot [ev_0107]."
+    report = _report("The gate reads a host mode [ev_0107].")
+    report.intro_background = f"{body} {_UNKNOWN}"
+    keep = {
+        **_row(f"{body} {_UNKNOWN}", "keep", [], reason="no source states it"),
+        "passage": "introduction",
+    }
+    counts, found = _answered(report, [keep])
+    assert "agreement.keep_unquoted" in {v.code for v in found}
+    # The held sentence the refused keep ends on is left out; the other stands, as it
+    # would where the same keep answered each sentence apart.
+    assert report.intro_background == body
+    assert counts["dropped"] == 1
+
+
+def test_a_whole_field_answer_lists_every_sentence_of_it() -> None:
+    report = _cell(TWO)
+    keep = {**_row(TWO, "keep", [], reason="no source speaks of the key"), "passage": CELL_ID}
+    _counts, found = _answered(report, [keep, _beside()])
+    assert "agreement.held_unlisted" not in {v.code for v in found}
