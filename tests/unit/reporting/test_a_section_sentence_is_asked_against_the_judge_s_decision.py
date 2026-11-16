@@ -436,3 +436,41 @@ def test_a_sentence_left_out_on_the_judge_s_decision_is_counted_where_it_is_left
     analyst = MarkdownRenderer(layout=ANALYST).render(report)
     conclusion = analyst.split("## 7. Conclusion", 1)[1].split("\n## ", 1)[0]
     assert "_1 sentence of this section was left out" in conclusion
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"decision": "drop", "sources": ["judge.verdict"], "reason": "The judge says otherwise."},
+        {"decision": "drop", "sources": ["judge.technique.T1055"], "reason": "Dropped by it."},
+        {"decision": "keep", "sources": ["judge.verdict"], "quote": "Benign"},
+    ],
+)
+def test_a_judge_passage_is_no_source_of_any_answer_on_a_verbatim_passage(
+    row: dict[str, Any],
+) -> None:
+    from tests.unit.reporting.test_one_verbatim_text_is_one_passage_wherever_it_prints import (
+        _CLAIM_SENTENCE,
+        _twice,
+    )
+
+    report = _twice()
+    report.overall_confidence = 0.8
+    row = {"passage": "attack_claim.T1497.001", "sentence": _CLAIM_SENTENCE, **row}
+    assert {"judge.verdict", "judge.technique.T1055"} <= {p.id for p in passages_of(report)}
+
+    found = [
+        v
+        for v in agreement_violations({"sentences": [row]}, passages_of(report))
+        if v.path.startswith("sentences.")
+    ]
+    assert found and found[0].code in (UNKNOWN_PASSAGE_CODE, UNKNOWN_SOURCE_CODE)
+    assert "no source of a passage marked (verbatim)" in found[0].message
+    _counts, records = apply_rows({"sentences": [row]}, passages_of(report))
+    # A drop naming the judge alone drops nothing; no answer on it is the judge's left out.
+    assert agreement.JUDGE_LEFT_OUT_CODE not in [v.code for v in records]
+    if row["decision"] == "drop":
+        assert not [v for v in records if v.code in agreement.LEFT_OUT_CODES]
+        assert not report.flagged_statements or all(
+            not f.left_out for f in report.flagged_statements
+        )

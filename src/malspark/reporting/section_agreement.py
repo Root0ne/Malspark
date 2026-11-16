@@ -4477,6 +4477,22 @@ def _row_violations(
         )
     sources = [by_id.get(_form(source)) for source in row.sources]
     judged = _judge_named(sources)
+    if judged and passage.verbatim:
+        # A passage printed in its writer's own words takes no answer on the judge's decision:
+        # not a drop, not a keep (T-717).
+        out.append(
+            Violation(
+                code=UNKNOWN_SOURCE_CODE,
+                message=(
+                    f"row {safe_finding_value(index + 1)} names "
+                    f"{safe_finding_value(', '.join(judged))}, of the judge's decision, which is "
+                    "no source of a passage marked (verbatim): name no judge passage for a "
+                    f"sentence of {safe_finding_value(passage.id)}."
+                ),
+                path=f"{path}.sources",
+            )
+        )
+        return out
     if judged and row.decision != "drop":
         # A passage of the judge's decision is a source of a drop alone: a row naming one in
         # any other form is refused, whatever else it names (T-717).
