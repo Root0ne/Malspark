@@ -881,6 +881,9 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
             value,
             "strings",
             corroborating=corroborating,
+            # A value the judge's indicator names is the judge's, whichever
+            # row holds it: the sweep did not bring it alone.
+            judge_s_value=(kind, value.strip().lower()) in judged,
             **emulation_kwargs(report, kind, value, emulated),
         )
 

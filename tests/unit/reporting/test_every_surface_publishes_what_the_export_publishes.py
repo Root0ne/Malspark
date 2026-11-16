@@ -540,3 +540,66 @@ class TestTheShapeQuestionIsNotAskedOfAJudgesValue:
         assert value not in str(
             [o.get("pattern") for o in exported["objects"] if o.get("type") == "indicator"]
         )
+
+
+class TestAValueTheSweepAndTheJudgeBothHoldIsTheJudges:
+    """The shape question binds a value the string sweep alone brought.
+
+    The judge names a value the file's text holds too, and a second source in
+    the run holds it whole: it is the judge's, published on every surface as
+    the judge's own indicator, as on a run where the sweep never read it.
+    """
+
+    @pytest.mark.parametrize("value", ["/opt/relay/bin/agentd", "relay_agent"])
+    def test_it_is_published_everywhere_as_the_judge_s_indicator(self, value: str) -> None:
+        from malspark.reporting.misp import build_misp_attributes
+        from malspark.reporting.models import StaticAnalysis, StringIOC
+
+        judge = _judge(f"[file:name = '{value}']")
+        report = _report(
+            judge,
+            overall_confidence=0.9,
+            static=StaticAnalysis(interesting_strings=[StringIOC(kind="path", value=value)]),
+            dynamic=DynamicBehavior(
+                process_tree=[{"pid": 1, "name": "s", "command_line": f"s {value}"}]
+            ),
+        )
+        report.judge_indicators = [
+            JudgeIndicator(
+                kind=v.kind,
+                value=v.value,
+                algorithm=v.algorithm,
+                indicator_types=list(v.indicator_types),
+            )
+            for v in exported_indicator_values(judge)
+        ]
+        exported, _renderer = _export(report, judge)
+
+        assert _row(report, value).published == "yes: a second source in this run records it"
+        feed = [r["published"] for r in ioc_feed_rows(report.model_dump()) if r["value"] == value]
+        assert feed == [True]
+        misp = build_misp_attributes(report, build_consolidated_iocs(report), owner="r")
+        assert any(a["value"] == value for a in misp)
+        naming = [
+            o.get("pattern")
+            for o in exported["objects"]
+            if o.get("type") == "indicator" and value.rsplit("/", 1)[-1] in str(o.get("pattern"))
+        ]
+        assert naming == [f"[file:name = '{value}']"]
+
+    @pytest.mark.parametrize("value", ["/opt/relay/bin/agentd", "relay_agent"])
+    def test_without_a_second_source_nothing_changes(self, value: str) -> None:
+        from malspark.reporting.models import StaticAnalysis, StringIOC
+
+        judge = _judge(f"[file:name = '{value}']")
+        report = _report(
+            judge,
+            overall_confidence=0.9,
+            static=StaticAnalysis(interesting_strings=[StringIOC(kind="path", value=value)]),
+        )
+        exported, _renderer = _export(report, judge)
+
+        assert not publishes(_row(report, value).published)
+        assert value.rsplit("/", 1)[-1] not in str(
+            [o.get("pattern") for o in exported["objects"] if o.get("type") == "indicator"]
+        )

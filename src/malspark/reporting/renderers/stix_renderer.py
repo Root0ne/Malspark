@@ -5100,9 +5100,10 @@ def table_row_record(row: Any, report: Any) -> tuple[str, str | None]:
     if str(_field(row, "source") or "") == "judge":
         # The judge's own indicator carries it, under the judge's type.
         return INDICATOR_ROLE, judged
-    if _host_row(row) and judged:
-        # A host value the judge's own indicator names is exported as that
-        # indicator, under the judge's type (``ExtendedSTIXRenderer._render``).
+    if _written_after_the_judge(row, report) and judged:
+        # A host value, or a value the string sweep and the judge both hold,
+        # the judge's own indicator names is exported as that indicator, under
+        # the judge's type (``ExtendedSTIXRenderer._render``).
         return INDICATOR_ROLE, judged
     # The stated verdict, as the sample's own type reads it: a report never
     # claims more about a host than about its sample.
@@ -5361,6 +5362,32 @@ def _host_row(row: Any) -> bool:
     )
 
 
+def _named_by_the_judge(row: Any, report: Any) -> bool:
+    """Whether a value of the judge's indicators is the row's, as the builder records them."""
+    kind = str(_field(row, "kind") or "")
+    key = str(_field(row, "value") or "").strip().lower()
+    return any(
+        str(_field(item, "kind") or "") == kind
+        and str(_field(item, "value") or "").strip().lower() == key
+        for item in _field(report, "judge_indicators") or []
+    )
+
+
+def _written_after_the_judge(row: Any, report: Any) -> bool:
+    """Whether a row's indicator is written after the judge's own, and only where none names it.
+
+    A host value a sandbox, a record or the analysis recorded (:func:`_host_row`),
+    and a value other than a network one the string sweep holds that the
+    judge's indicator also names: such a value is the judge's, exported as the
+    judge's indicator where it carries one.
+    """
+    return _host_row(row) or (
+        str(_field(row, "kind") or "") not in NETWORK_KINDS
+        and _from_the_strings(_field(row, "source"))
+        and _named_by_the_judge(row, report)
+    )
+
+
 # The order the network rows are written in: addresses, URLs, the network
 # block's names, then the names the network block has no row for (the host of
 # a published URL), then every other row.
@@ -5494,7 +5521,7 @@ def _row_indicators(
             indicator_types=[str(row.indicator_type)],
             description=_row_description(row, report),
         )
-        if _host_row(row):
+        if _written_after_the_judge(row, report):
             late.append((row, made))
         else:
             early.append((_row_order(row, report), position, made))
