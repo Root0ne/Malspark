@@ -1695,19 +1695,31 @@ Four rules follow from the statement:
   neither the judge's nor one the renderer would mint — and the decline is
   recorded as `stix.malware_object_under_benign`. The relationships that would
   dangle go through the integrity pass that already prunes them. Nothing is
-  rewritten: the judge's own bundle is stored with the object in it. The
-  indicator carrying the sample's own hash says what the published verdict
-  says, through `schemas/judgement.indicator_type_for` and STIX 2.1's
-  `indicator-type-ov`: Malware is `malicious-activity`, Suspicious
-  `anomalous-activity`, Benign `benign`, and a verdict that mapping does not
-  name is `unknown`. The sample's indicator therefore claims `malicious-activity` only when the published verdict is Malware: a consumer blocks on the indicator and reads the objects afterwards.
-  An indicator for anything else — a domain, an address, a URL the analysts
-  observed — keeps the type it already had (`malicious-activity` when the row
-  is marked suspicious, `anomalous-activity` otherwise, and
-  `anomalous-activity` for a `file:name` out of the string scan); a Benign run
-  can carry them, because a benign sample still talks to hosts, and they are
-  exported as they are. A judge-written indicator keeps the type the judge
-  gave it, and on one shape the judge is asked about it first: a Benign verdict
+  rewritten: the judge's own bundle is stored with the object in it. What
+  each verdict publishes is one declared table,
+  `schemas/judgement.PUBLICATION_BY_VERDICT`, read by the one publish rule and
+  nowhere else; every surface reads the row the rule answered
+  (`ConsolidatedIOC.role`, `indicator_type`). The indicator carrying the
+  sample's own digests (SHA-256, SHA-1, MD5, SHA-512) says what the verdict
+  says in STIX 2.1's `indicator-type-ov`: Malware is `malicious-activity`,
+  Suspicious `anomalous-activity`, Benign `benign`, and a verdict the judge
+  stated with no confidence, or one the table does not name, `unknown`. The
+  sample's indicator therefore claims `malicious-activity` only when the
+  published verdict is Malware: a consumer blocks on the indicator and reads
+  the objects afterwards. Its imphash, ssdeep and TLSH also match files that
+  are not the sample: they are an indicator of their own, `anomalous-activity`,
+  and never `benign`. Under Malware, Suspicious or no stated verdict, an
+  indicator for anything else — a domain, an address, a URL the analysts
+  observed — is published by the evidence rule with the type it already had
+  (`malicious-activity` when the row is marked suspicious under Malware,
+  `anomalous-activity` otherwise). Under Benign the sample's own digests are
+  published as its identity and nothing else is: its similarity digests and
+  every other value are withheld as indicators, whoever recorded them, each
+  with the verdict's reason first and what the evidence said of it after, and
+  each stays listed in the report's IOC table and in `/iocs?include=all`. A
+  judge-written indicator is carried only when every value it names has a
+  published row, and keeps the type the judge gave it; on one shape the judge
+  is asked about it first: a Benign verdict
   beside an indicator the judge typed `malicious-activity` publishes a value as
   malicious activity under a verdict that says the opposite — on a recorded run
   it was the analysed vendor's own project domain. `stix.indicator_type_contradicts_verdict`
@@ -1723,7 +1735,7 @@ Four rules follow from the statement:
   indicator is a claim about the value it names, and a malicious sample may
   touch something harmless. A summary
   note then has no malware object to be about, so it refers to the indicator
-  carrying the sample's own hash, which the cap keeps in a band of its own; a
+  carrying the sample's own digests, which every verdict publishes; a
   bundle holding nothing the note could truthfully refer to emits no note, and
   the summary stays in the report where a reader reads it. STIX requires a
   note's and a report's `object_refs` and forbids an empty one, and a bundle
@@ -5376,6 +5388,19 @@ is assembled from what the run gathered rather than recomputed beside it:
   two: it is advisory, and the technique is published and flagged. The three
   surfaces are built from one source, so a report, its bundle and its
   `ttp_mappings` never disagree about which techniques the run published.
+* **Under a Benign verdict no technique is published.** The capability matrix
+  is given the run's verdict (`build_capability_matrix(verdict=)`). Under Benign
+  every cell stays in the matrix, unpublished, with the reason "the verdict is
+  Benign: a capability is listed in the matrix, not published as the sample's
+  behaviour" first, the reason the cell already had after it, then the judge's
+  own words about the technique where it gave any — its reason when it was
+  asked, its attack-pattern's description — whole. The cell's statements and
+  notes, the judge's bundle and the analysts' claims are kept as they are, and
+  the judge is still asked its technique question. `mitre.json`, the STIX
+  attack-patterns, the report's ATT&CK table, its references and the navigator
+  layer read the empty published list; a report the builder wrote is never
+  read back from the judge's bundle for `mitre.json`. Malware, Suspicious and
+  an unstated verdict publish by the rules above.
 * **Every surface that prints a technique id says whether the run published
   it.** The markdown's ATT&CK section names the unpublished ones under *Claims
   that were not published as techniques*; the Findings table writes
@@ -5876,6 +5901,29 @@ is assembled from what the run gathered rather than recomputed beside it:
   add it as a domain row and indicator when nothing else did. The export
   carries every row the table publishes, whatever their number. The rule's report-wide lookups
   are built once per table, export or feed (`one_reading`).
+* **The IOC table's row is the one record every surface reads.** The table's
+  builder (`builder.ioc_table`) asks the rule once per value and records on the
+  row its answer, its role (`sample_identity`, `similarity`, `indicator`,
+  `listed`) and the STIX type an export carries it under
+  (`ConsolidatedIOC.indicator_type`, `stix_renderer.table_row_record`). The
+  report's §9, `/iocs`, MISP, the STIX export and the rule drafts read the row
+  and ask the rule nothing of their own; a source-reading test fails the build
+  when any of them names it. The export's indicators are one loop over the
+  published rows: the sample's own digests as one indicator, its similarity
+  digests as another, then each published row the platform mints, with the
+  row's pattern (`row_pattern`) and type — a network value and a value the
+  string sweep read before the judge's own indicators, a host value a sandbox,
+  a persistence record, a static carve, a binding or the analysis recorded
+  after them, once (a host value the judge's indicator names is that
+  indicator, and its row carries the judge's type). A judge indicator is
+  carried only when each value it names has a published row; the decline
+  quotes the row's answer. The shape questions a path the file's strings hold
+  is asked are the rule's: a toolchain's own path, a bundled runtime's class
+  reference, and a path with neither a listed file extension
+  (`IOC_FILE_EXTENSIONS`) nor a system location (`IOC_OS_RESOURCE_PREFIXES`)
+  are not the shape of a file the sample uses, and a URL the strings hold on a
+  developer's or a package registry's host is no indicator. The reason states
+  the shape where it is what refused a value a second source holds.
 * **A host value the analysis states is exported when code finds it whole.**
   The report model's host-identifier call types each row with a closed
   vocabulary (`data/host_identifier_kinds_v1.json`: mutex, file path, file

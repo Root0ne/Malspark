@@ -574,7 +574,7 @@ the analysis states, `path`, `folder`, `registry`, `registry_value`, `mutex`,
 
 | `include` | what comes back |
 | :-- | :-- |
-| `published` (default) | only what the platform's publish rule would publish — the same rule the exported STIX bundle is built with |
+| `published` (default) | only what the platform's publish rule publishes — the rows of the report's IOC table the exported STIX bundle is built from |
 | `unpublished` | only the rows it withholds, for a reader who is triaging rather than acting |
 | `all` | both |
 
@@ -590,6 +590,15 @@ states](/docs/usage/reports-and-exports/#host-values-the-analysis-states)) —
 **`published`**, and
 **`publish_answer`**: the publish rule's answer as the report's IOC table
 prints it, `yes:` and why the row is published, or `no:` and why not.
+**`role`** is what the row is: `sample_identity` (a digest of the sample's own
+bytes: SHA-256, SHA-1, MD5, SHA-512), `similarity` (its imphash, ssdeep or
+TLSH, which also match other files), `indicator` (a value an export carries as
+an indicator when published) or `listed` (a value the report lists and no
+export matches on). **`indicator_type`** is the STIX `indicator-type-ov` word
+the exported bundle carries the row under, and `null` where no export carries
+it. The table builds each row once and every surface reads it: the report's
+IOC table, this feed, MISP, the STIX bundle and the rule drafts ask the rule
+nothing of their own.
 A domain, address or URL the sample hid also carries **`recovered_by`**: the
 tool that recovered it (`floss` by emulation, `decode_string_blobs` from the
 file's bytes), its ledger entry and where in the file, as the report's IOC
@@ -601,8 +610,19 @@ analysis states — only ids the run's ledger holds, and
 is empty when it ties none. **`tlp`** is the report's TLP level by its TLP 2.0
 name (`TLP:CLEAR`, `TLP:GREEN`, `TLP:AMBER`, `TLP:AMBER+STRICT`, `TLP:RED`).
 A judge value is asked the same publish rule as every other row, with the
-judge not counting as a second source; the exported bundle carries it only
-when the rule publishes it, and this feed says the same. A name only the sample's own byte image knows is not an
+judge not counting as a second source; the exported bundle carries a judge
+indicator only when every value it names has a published row, and this feed
+says the same.
+What each verdict publishes is one table. Under Malware the sample's own
+digests are typed `malicious-activity`, under Suspicious `anomalous-activity`,
+and with no verdict stated with a confidence `unknown`; its similarity digests
+are `anomalous-activity`; every other value is published by the evidence rule.
+Under Benign the sample's own digests are published as its identity, typed
+`benign`; its similarity digests and every other value are withheld as
+indicators, each with the verdict's reason first (`no: the verdict is Benign,
+which publishes no malicious indicator; …`, and for a similarity digest `no:
+the verdict is Benign; a similarity digest also matches other files; …`) and
+what the evidence said of it after, and each stays in `include=all`. A name only the sample's own byte image knows is not an
 observation of infrastructure, so it is withheld from the default feed and
 labelled in the wider ones rather than shipped looking like one the sandbox
 watched. A `sandbox` address is the sample's observation only when the
@@ -625,7 +645,9 @@ one to one); `Tag` holds the report's `tlp:` level, its verdict
 (`malspark:verdict="…"`) and the ATT&CK galaxy cluster of each published
 technique; `Attribute` is the report's published MISP attributes, each with
 the `tlp:` tag and, in its comment, the ledger entries of its IOC row; and a
-`file` object names the sample by its name, size and identity digests.
+`file` object names the sample by its name, size and identity digests. A
+similarity digest and a row typed `benign` (the sample's identity under a
+Benign verdict) are not marked for detection (`to_ids` `false`).
 
 `signatures/{kind}` serves the drafts of one kind as one file of that kind:
 each rule's name is a comment line of the kind's own syntax (`//` YARA, `#`

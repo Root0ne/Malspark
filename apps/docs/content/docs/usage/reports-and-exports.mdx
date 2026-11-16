@@ -93,13 +93,21 @@ decides what comes back:
 
 | `include` | What comes back |
 | :-- | :-- |
-| `published` (default) | Only what the platform's publish rule would publish — the same rule the exported STIX bundle is built with. |
+| `published` (default) | Only what the platform's publish rule publishes — the rows of the report's IOC table the exported STIX bundle is built from. |
 | `unpublished` | Only the rows it withholds, for a reader who is triaging rather than acting. |
 | `all` | Both. |
 
 Every row carries its `kind`, its `value`, a `source` (`sandbox`, `analyst`,
 `strings`, `identity`, `judge`, `call_argument` or `analysis`), whether it is `published`, and
-`publish_answer`: `yes:` and why the row is published, or `no:` and why not. A
+`publish_answer`: `yes:` and why the row is published, or `no:` and why not;
+its `role` (`sample_identity` for a digest of the sample's own bytes,
+`similarity` for its imphash, ssdeep or TLSH, `indicator`, or `listed` for a
+value no export matches on) and `indicator_type`, the STIX word the exported
+bundle carries it under, absent where no export carries it. The IOC table
+builds each row once, and the report's §9, this feed, MISP, the STIX bundle
+and the rule drafts read it. A path the file's strings hold is asked its shape
+by the same rule: one with neither a listed file extension nor a system
+location is not the shape of a file the sample uses, and is withheld. A
 value the sample hid carries `recovered_by`, naming the tool that recovered it
 and its ledger entry. `evidence_ids` lists the ledger entries the run's record
 ties to the row (the entries an analyst's listing cites, the entry a call
@@ -109,6 +117,18 @@ is the report's TLP level by its TLP 2.0 name (`TLP:AMBER`), the one its cover
 prints. The full rule — which kinds exist, when a sandbox address
 counts as the sample's — is in [Reports](/docs/api/#reports) in the REST API
 reference.
+
+What each verdict publishes is one table. The sample's own digests are
+published under every verdict: typed `malicious-activity` under Malware,
+`anomalous-activity` under Suspicious, `unknown` when the judge stated no
+verdict with a confidence, and `benign` under Benign, where they are the
+sample's identity. Its similarity digests are `anomalous-activity`, and are
+withheld under Benign. Under Benign every other value is withheld as an
+indicator, whoever recorded it: its answer is `no: the verdict is Benign, which
+publishes no malicious indicator;` followed by what the evidence said of it,
+and it stays in `include=all`. Under Benign no ATT&CK technique is published
+either: the capability matrix keeps every cell, with the verdict's reason and
+the judge's own words.
 
 ### Host values the analysis states
 
@@ -209,7 +229,9 @@ report was built, `analysis` is `2` (complete), `distribution` is `0` (this
 organisation only: the receiver decides how far it shares) and
 `threat_level_id` is `4` (undefined): no field of the report maps to MISP's
 levels one to one. Each attribute carries the `tlp:` tag, and its comment names
-the ledger entries of its IOC row. The console's Export menu offers the event
+the ledger entries of its IOC row. A similarity digest and a row typed `benign`
+(the sample's identity under a Benign verdict) are not marked for detection
+(`to_ids` off). The console's Export menu offers the event
 beside the bare attributes.
 
 ## Detection drafts
