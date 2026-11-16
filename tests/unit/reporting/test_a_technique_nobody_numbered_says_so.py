@@ -68,7 +68,12 @@ def test_the_report_and_the_narrative_prompt_print_not_given(verdict: str) -> No
     (row,) = [line for line in attack.splitlines() if "| T1490 |" in line]
     assert "| judge | not given |" in row
     assert "0.00" not in attack
-    assert "conf=not given" in prompt
+    if verdict == "Benign":
+        # Under Benign the technique is listed in the matrix and not published,
+        # so the narrative's published techniques hold none.
+        assert "(none mapped)" in prompt
+    else:
+        assert "conf=not given" in prompt
 
 
 def test_a_number_somebody_gave_is_still_printed() -> None:

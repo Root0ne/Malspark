@@ -256,6 +256,8 @@ class MalwareReportBuilder:
             # Every call, repeats included: a statement citing a repeat cites
             # the entry that holds its answer, and its roots are that entry's.
             ledger=self.evidence_ledger,
+            # The run's verdict: under Benign no technique is published.
+            verdict=self._verdict_literal(self.final_decision),
         )
         severity = self._severity_from_judge(static, dynamic, identity)
         verdict = self._verdict_literal(self.final_decision)
