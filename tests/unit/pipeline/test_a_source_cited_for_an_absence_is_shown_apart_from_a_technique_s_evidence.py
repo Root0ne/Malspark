@@ -17,7 +17,14 @@ from __future__ import annotations
 import json
 
 from malspark.extractors.capability_matrix import build_capability_matrix
-from malspark.pipeline.validation import _cited_for_an_absence, _negates, corroboration
+from malspark.pipeline.validation import (
+    _cited_for_an_absence,
+    _cites_to_negate,
+    _denies,
+    _negated_for_its_technique,
+    _negates,
+    corroboration,
+)
 from malspark.reporting.models import TTPMapping
 from malspark.reporting.technique_evidence import (
     ABSENCE_LABEL,
@@ -41,12 +48,29 @@ REF = (
 SAID = f"{CLAIM} {REF}"
 
 
-def test_no_match_and_does_not_appear_are_forms_of_denial() -> None:
-    assert _negates("[ev_0203] DNS names (no match)")
-    assert _negates("no matches in the hosts")
-    assert _negates("the addresses do not appear in the capture")
-    assert _negates("the name never appears in the strings")
-    assert not _negates("[ev_0006] IOC strings chat.example")
+def test_no_match_and_does_not_appear_are_forms_of_denial_read_by_the_clause() -> None:
+    assert _denies("[ev_0203] DNS names (no match)")
+    assert _denies("no matches in the hosts")
+    assert _denies("the addresses do not appear in the capture")
+    assert _denies("the name never appears in the strings")
+    assert not _denies("[ev_0006] IOC strings chat.example")
+    # The sentence reader keeps its own forms: these are the clause reader's alone.
+    assert not _negates("[ev_0203] DNS names (no match)")
+    assert not _negates("the addresses do not appear in the capture")
+
+
+def test_a_denial_form_reaches_only_the_source_its_clause_cites() -> None:
+    said = "ev_0050 encrypts files - ev_0051 (no match)"
+    assert not _cites_to_negate(said, "ev_0050")
+    assert not _negated_for_its_technique(said, "ev_0050")
+    assert _negated_for_its_technique(said, "ev_0051")
+
+
+def test_a_denial_in_another_sentence_of_the_claim_negates_no_evidence_line_citation() -> None:
+    claim = "The sample encrypts files with AES. The note does not appear in the sandbox capture."
+    said = f"{claim} ev_0010 AES S-box constants"
+    assert not _cites_to_negate(said, "ev_0010", claim)
+    assert not _negated_for_its_technique(said, "ev_0010", claim)
 
 
 def test_each_citation_is_read_by_the_clause_that_writes_it() -> None:

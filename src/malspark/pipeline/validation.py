@@ -16107,10 +16107,9 @@ def support_of(sources: Mapping[str, Any]) -> str:
 _WHOLE_ANSWER_OPENING = "the whole answer of "
 # A statement that says a source holds no record of something: a negation
 # governing what was recorded, matched or found ("capa has no injection rule",
-# "the sandbox recorded no HTTP traffic", "no write is recorded", "not found",
-# "(no match)", "does not appear"), beside ``_NOT_SEEN_RE``'s negation of an
-# observation. A negating word elsewhere ("resolved, not imported") says nothing
-# of the source.
+# "the sandbox recorded no HTTP traffic", "no write is recorded", "not found"),
+# beside ``_NOT_SEEN_RE``'s negation of an observation. A negating word
+# elsewhere ("resolved, not imported") says nothing of the source.
 _HOLDS_NO_RE = re.compile(
     r"\b(?:has|have|had|holds?|held|shows?|showed|shown|lists?|listed|records?|recorded"
     r"|reports?|reported|contains?|contained|carries|carried|finds?|found|gives?|gave"
@@ -16118,11 +16117,22 @@ _HOLDS_NO_RE = re.compile(
     r"|\bno\b(?:\s+[\w-]+){1,3}?\s+(?:is|are|was|were)\s+(?:recorded|seen|observed|found"
     r"|matched|listed|reported|shown|present)\b"
     r"|\b(?:not|never)\s+(?:recorded|seen|observed|found|matched|listed|reported|shown"
-    r"|present)\b"
-    r"|\bno\s+match(?:es)?\b"
-    r"|\b(?:do|does|did)\s+not\s+(?:appear|occur)\b|\bnever\s+(?:appears?|occurs?)\b",
+    r"|present)\b",
     re.IGNORECASE,
 )
+
+# Forms of denial read only in the clause that writes a citation
+# (:func:`_denies`): "(no match)", "do not appear", "never occurs".
+_DENIAL_FORM_RE = re.compile(
+    r"\bno\s+match(?:es)?\b|\b(?:do|does|did)\s+not\s+(?:appear|occur)\b"
+    r"|\bnever\s+(?:appears?|occurs?)\b",
+    re.IGNORECASE,
+)
+
+
+def _denies(clause: str) -> bool:
+    """Whether ``clause`` states a denial in one of the clause reader's own forms."""
+    return _DENIAL_FORM_RE.search(clause) is not None
 
 
 # Where a statement's sentences and its evidence line's items break.
@@ -16157,23 +16167,43 @@ def _cites_to_negate(said: str, citation: str, claim: str | None = None) -> bool
 _CITING_CLAUSE_BREAK = re.compile(r"[,:]\s+|\s+-\s+")
 
 
-def _cited_for_an_absence(said: str, citation: str) -> bool:
-    """Whether ``said`` cites ``citation`` to state an absence.
+def _citing_clauses(said: str, citation: str) -> list[str]:
+    """The clauses of ``said`` that write ``citation``.
 
-    Read in the clauses that write the citation, each a part of a sentence or
-    an evidence-line item (``_CITING_PIECE_BREAK``) between commas, colons and
-    dashes: one of them negates what was recorded, matched or found
-    (:func:`_negates`), as "[ev_0203] DNS names (no match)" does. A negation in
-    another clause, or a citation the statement does not write, is no absence.
+    A clause is a part of a sentence or an evidence-line item
+    (``_CITING_PIECE_BREAK``) between commas, colons and dashes.
     """
     text = _read_dashes(said)
     written = re.compile(r"(?<![\w:])" + re.escape(citation) + r"(?![\w])", re.IGNORECASE)
-    return any(
-        _negates(clause)
+    return [
+        clause
         for piece in _CITING_PIECE_BREAK.split(text)
         if written.search(piece)
         for clause in _CITING_CLAUSE_BREAK.split(piece)
         if written.search(clause)
+    ]
+
+
+def _cited_for_an_absence(said: str, citation: str) -> bool:
+    """Whether ``said`` cites ``citation`` to state an absence.
+
+    Read in the clauses that write the citation (:func:`_citing_clauses`): one
+    of them negates what was recorded, matched or found (:func:`_negates`), or
+    denies in the clause reader's own forms (:func:`_denies`), as
+    "[ev_0203] DNS names (no match)" does. A negation in another clause, or a
+    citation the statement does not write, is no absence.
+    """
+    return any(_negates(clause) or _denies(clause) for clause in _citing_clauses(said, citation))
+
+
+def _negated_for_its_technique(said: str, citation: str, claim: str | None = None) -> bool:
+    """Whether a statement cites ``citation`` for an absence, as a technique's sources read it.
+
+    The pieces that cite it negate (:func:`_cites_to_negate`), or a clause that
+    writes it denies in the clause reader's own forms (:func:`_denies`).
+    """
+    return _cites_to_negate(said, citation, claim) or any(
+        _denies(clause) for clause in _citing_clauses(said, citation)
     )
 
 
@@ -16255,8 +16285,9 @@ def technique_sources(
     asserting tool's entry a statement cites is a rule match for the technique
     only when its own rows name the technique or the statement places one of
     its rows; otherwise it is placed nowhere. A run observation or a rule cited
-    by a piece of the statement that negates (``_cites_to_negate``) is cited
-    for its absence: a source, placed nowhere. Empty
+    by a piece of the statement that negates, or by a clause that denies
+    (``_negated_for_its_technique``), is cited for its absence: a source,
+    placed nowhere. Empty
     without a ledger. ``found`` is the run's ``RunRoots`` where the caller
     already read it.
     """
@@ -16306,7 +16337,7 @@ def technique_sources(
         held = roots.sources_of_statement(said, cited)
         found_here: dict[str, tuple[str, tuple[str, ...]]] = {}
         for source, (reading, placed) in held.items():
-            negates = _cites_to_negate(said, source, claim)
+            negates = _negated_for_its_technique(said, source, claim)
             rows = [root for root in placed if not root.startswith(_WHOLE_ANSWER_OPENING)]
             if source in asserts:
                 # An asserting entry is a rule match for this technique when
