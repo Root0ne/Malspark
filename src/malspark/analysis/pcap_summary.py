@@ -367,12 +367,15 @@ def capture_facts(pcap_path: str, packet_limit: Any = None) -> dict[str, Any] | 
     Keys: ``packets_read``, ``packets_in_capture``, ``packet_limit`` (the
     caller's, or ``None``), ``bytes``, ``duration_s``, ``protocols`` (count per
     ``tcp``/``udp``/``other`` of the IP packets read), ``conversations`` (every
-    external host and port as ``{dst, dport, proto, packets, bytes}``, both
-    directions counted, the heaviest first; ``packets_from_host`` and
-    ``bytes_from_host`` added when the external host sent any of them, and
-    ``inbound_only`` when it sent all of them),
+    external peer and port as ``{dst, dport, proto, packets, bytes}``, both
+    directions counted, the heaviest first; ``internal``, the addresses of the
+    other end that are not public; ``packets_to_peer``/``bytes_to_peer``, what
+    those sent to the peer; ``packets_from_peer``/``bytes_from_peer``, what the
+    peer sent them; ``public_senders`` with ``packets_public_to_peer``/
+    ``bytes_public_to_peer`` when a public address sent to the peer too; and
+    ``inbound_only`` when the peer sent every packet),
     ``sni`` (``{name: ClientHello count}``) and ``beacons`` (``{dst, dport,
-    proto, callbacks, interval_s}``, measured on the packets toward the host;
+    proto, callbacks, interval_s}``, measured on the packets toward the peer;
     when those are not regular, on the TCP connections the other side opened
     toward it, one per SYN source address and port, and then marked ``unit:
     "connection"``).
@@ -420,23 +423,35 @@ def capture_facts(pcap_path: str, packet_limit: Any = None) -> dict[str, Any] | 
             if dst is None:
                 return
             # The summary is about the external (C2) surface: a conversation is
-            # an external host and its port, and holds the packets both ways.
+            # an external peer and its port, and holds the packets both ways.
             # A packet to an external address is toward it, as it always was;
-            # one from an external address to an internal one is from it.
+            # one from an external address to an internal one is from it. The
+            # other end is the packet's other address: internal by the same
+            # rule, or a public sender when the capture gives no internal one.
             if _is_external(dst):
-                key, from_host = (dst, dport, proto), False
+                key, from_peer, end = (dst, dport, proto), False, pkt.ip_src
             elif pkt.ip_src is not None and _is_external(pkt.ip_src):
-                key, from_host = (pkt.ip_src, sport, proto), True
+                key, from_peer, end = (pkt.ip_src, sport, proto), True, dst
             else:
                 return
             c = convs.setdefault(key, _conversation())
             c["pkts"] += 1
             c["bytes"] += plen
-            if from_host:
+            if from_peer:
+                c["internal"].add(end)
                 c["pkts_from"] += 1
                 c["bytes_from"] += plen
                 return
-            # The beacon is measured on the packets toward the host, as before,
+            if end is not None and not _is_external(end):
+                c["internal"].add(end)
+                c["pkts_to"] += 1
+                c["bytes_to"] += plen
+            else:
+                if end is not None:
+                    c["public"].add(end)
+                c["pkts_public"] += 1
+                c["bytes_public"] += plen
+            # The beacon is measured on the packets toward the peer, as before,
             # and on the connections the sandbox's side opened toward it: one
             # per source address and port, so a retransmitted SYN is one.
             if t:
@@ -495,17 +510,35 @@ def _conversation() -> dict[str, Any]:
     return {
         "pkts": 0,
         "bytes": 0,
+        "pkts_to": 0,
+        "bytes_to": 0,
         "pkts_from": 0,
         "bytes_from": 0,
+        "pkts_public": 0,
+        "bytes_public": 0,
+        "internal": set(),
+        "public": set(),
         "times": _Intervals(),
         "opens": _Intervals(),
         "openers": set(),
     }
 
 
+def _address_order(ip: str) -> tuple[int, int, str]:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return (7, 0, ip)
+    return (addr.version, int(addr), ip)
+
+
+def _addresses(found: set[str]) -> list[str]:
+    """The addresses of one end, in address order."""
+    return sorted(found, key=_address_order)
+
+
 def _conversation_row(key: tuple[str, int, str], c: dict[str, Any]) -> dict[str, Any]:
-    """One conversation's row: packets and bytes both ways, and the part from
-    the external host when there is one."""
+    """One conversation's row: its two ends, and the packets and bytes each sent."""
     dst, dport, proto = key
     row: dict[str, Any] = {
         "dst": dst,
@@ -513,34 +546,80 @@ def _conversation_row(key: tuple[str, int, str], c: dict[str, Any]) -> dict[str,
         "proto": proto,
         "packets": c["pkts"],
         "bytes": c["bytes"],
+        "internal": _addresses(c["internal"]),
+        "packets_to_peer": c["pkts_to"],
+        "bytes_to_peer": c["bytes_to"],
+        "packets_from_peer": c["pkts_from"],
+        "bytes_from_peer": c["bytes_from"],
     }
-    if c["pkts_from"]:
-        row["packets_from_host"] = c["pkts_from"]
-        row["bytes_from_host"] = c["bytes_from"]
+    if c["pkts_public"]:
+        row["public_senders"] = _addresses(c["public"])
+        row["packets_public_to_peer"] = c["pkts_public"]
+        row["bytes_public_to_peer"] = c["bytes_public"]
     if c["pkts_from"] == c["pkts"]:
-        # Every packet came from the external host: the sandbox never sent to
-        # it, so it is no host the sample contacted.
+        # Every packet came from the external peer: the sandbox never sent to
+        # it, so it is no peer the sample contacted.
         row["inbound_only"] = True
     return row
 
 
-def conversation_line(row: dict[str, Any]) -> str:
-    """``"<dst>:<port>/<proto> — N pkts, M bytes"``: one conversation as every surface writes it.
+def _sent(packets: Any, size: Any) -> str:
+    return f"{packets} pkts, {size} bytes" if packets else "none"
 
-    Both directions are in the totals; the part from the external host follows
-    when the row states one: ``"(K pkts, B bytes from the host)"``.
+
+def conversation_line(row: dict[str, Any]) -> str:
+    """One conversation as every surface writes it: its two ends and what each sent.
+
+    ``"<peer>:<port>/<proto> — N pkts, M bytes: <internal> → <peer> K pkts, B
+    bytes; <peer> → <internal> K pkts, B bytes"``, a direction that carried
+    nothing written ``none``. Several internal ends are joined with ``and``; a
+    public address that sent to the peer is named apart, and a conversation
+    with no internal end says so. A row recorded before the ends were named
+    (``packets_from_host``, the peer's share) gives each direction against the
+    peer and says the record does not name the internal end; one recorded
+    without the peer's share, when only the packets toward the peer were
+    counted, says the record does not state what the peer sent.
     """
+    peer = row.get("dst")
     line = (
-        f"{row.get('dst')}:{row.get('dport')}/{row.get('proto')} — "
-        f"{row.get('packets')} pkts, {row.get('bytes')} bytes"
+        f"{peer}:{row.get('dport')}/{row.get('proto')} — "
+        f"{row.get('packets')} pkts, {row.get('bytes')} bytes: "
     )
-    if row.get("packets_from_host"):
-        line += (
-            f" ({row.get('packets_from_host')} pkts, "
-            f"{row.get('bytes_from_host')} bytes from the host"
-            + ("; inbound only)" if row.get("inbound_only") else ")")
+    inbound = " (inbound only)" if row.get("inbound_only") else ""
+    if "internal" not in row:
+        if "packets_from_host" not in row:
+            # Counted toward the peer alone, or both ways with nothing from
+            # the peer: the totals are what was sent to it either way.
+            return line + (
+                f"toward {peer} {_sent(row.get('packets'), row.get('bytes'))}; the record "
+                f"does not state what {peer} sent or name the internal end"
+            )
+        got_p = int(row.get("packets_from_host") or 0)
+        got_b = int(row.get("bytes_from_host") or 0)
+        sent_p = int(row.get("packets") or 0) - got_p
+        sent_b = int(row.get("bytes") or 0) - got_b
+        return line + (
+            f"toward {peer} {_sent(sent_p, sent_b)}; from {peer} {_sent(got_p, got_b)}"
+            f"{inbound}; the record does not name the internal end"
         )
-    return line
+    parts: list[str] = []
+    internal = " and ".join(str(ip) for ip in row.get("internal") or ())
+    if internal:
+        parts += [
+            f"{internal} → {peer} " + _sent(row.get("packets_to_peer"), row.get("bytes_to_peer")),
+            f"{peer} → {internal} "
+            + _sent(row.get("packets_from_peer"), row.get("bytes_from_peer"))
+            + inbound,
+        ]
+    else:
+        parts.append("no internal end in the capture")
+    if row.get("packets_public_to_peer"):
+        senders = " and ".join(str(ip) for ip in row.get("public_senders") or ())
+        parts.append(
+            (f"{senders} → {peer} " if senders else f"toward {peer} ")
+            + _sent(row.get("packets_public_to_peer"), row.get("bytes_public_to_peer"))
+        )
+    return line + "; ".join(parts)
 
 
 def summary_text(facts: dict[str, Any]) -> str:
@@ -565,7 +644,8 @@ def summary_text(facts: dict[str, Any]) -> str:
         heading,
         overview,
         "",
-        f"External conversations (all {len(conversations)}, by volume):",
+        f"External conversations (all {len(conversations)}, by volume; each names its two "
+        "ends and the bytes each sent):",
         *[f"- {conversation_line(row)}" for row in conversations],
     ]
     sni = facts.get("sni") or {}

@@ -289,12 +289,15 @@ BENCHMARK = Path(".superpowers") / "sdd" / "mandate-2026-09-17" / "benchmark" / 
 # 83 batch functions; nothing else changed): the section count and the digest of the sections'
 # JSON (sorted keys). Beside them each run now draws the rules its undeclared tool's answers
 # name as matched, read by their shape, in a table of its own (T-509): every other section is
-# the one dev drew.
+# the one dev drew, but for the capture summary, whose conversations are written by the
+# summary's own line (T-710): these records counted the packets toward each peer alone, so
+# each line gives them as sent toward the peer and says the record does not state what the
+# peer sent or name the internal end.
 STORED_REBUILDS = {
-    "run7": (89, "5622126326362a4b"),
-    "run5": (102, "26962def958da05d"),
-    "run4": (92, "a1b9e99cea2318db"),
-    "local8": (40, "38eef84aca43089b"),
+    "run7": (89, "9739d97d08ce0752"),
+    "run5": (102, "f8eff4f2239f06f3"),
+    "run4": (92, "797c9ef7c957e968"),
+    "local8": (40, "f501fb65fee4f8ed"),
 }
 # Each run's table of the rules its undeclared tool's answers name as matched: each row's
 # rule and tool (the Tool cell also names the entry's own server), and the entries it cites.

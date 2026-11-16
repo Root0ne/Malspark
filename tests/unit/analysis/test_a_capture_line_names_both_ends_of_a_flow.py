@@ -216,8 +216,8 @@ _OLD_LINES = [
     "from 93.123.17.252 65 pkts, 84775 bytes; the record does not name the internal end",
     "8.8.4.4:6000/udp — 3 pkts, 96 bytes: toward 8.8.4.4 none; from 8.8.4.4 3 pkts, 96 bytes "
     "(inbound only); the record does not name the internal end",
-    "8.8.8.8:9/udp — 2 pkts, 62 bytes: toward 8.8.8.8 2 pkts, 62 bytes; from 8.8.8.8 none; "
-    "the record does not name the internal end",
+    "8.8.8.8:9/udp — 2 pkts, 62 bytes: toward 8.8.8.8 2 pkts, 62 bytes; the record does not "
+    "state what 8.8.8.8 sent or name the internal end",
 ]
 
 
@@ -242,6 +242,15 @@ def _old_record() -> dict[str, Any]:
 
 def test_an_old_record_s_line_gives_the_peer_s_share_as_the_peer_s() -> None:
     assert [conversation_line(row) for row in _OLD_ROWS] == _OLD_LINES
+
+
+def test_a_record_that_counted_only_toward_the_peer_says_nothing_of_what_it_sent() -> None:
+    # Before the replies were counted, a row held the packets toward the peer
+    # alone: the peer's packets were not read, so they are not "none".
+    line = conversation_line(_OLD_ROWS[2])
+    assert "from 8.8.8.8" not in line
+    assert "none" not in line
+    assert "does not state what 8.8.8.8 sent" in line
 
 
 def test_the_report_prints_an_old_record_truthfully() -> None:

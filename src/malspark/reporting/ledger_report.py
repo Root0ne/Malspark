@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any
 
 from malspark.agents.output_shortening import BOOKKEEPING_KEY, our_key_in
 from malspark.analysis import behaviour_code
+from malspark.analysis.pcap_summary import summary_text
 from malspark.analysis.technique_ids import (
     says_no_technique,
     sigma_technique_ids,
@@ -1240,6 +1241,10 @@ def _pcap(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -> None:
     summary = data.get("summary")
     if not summary:
         return
+    if "packets_read" in data and isinstance(data.get("conversations"), list):
+        # The facts are written by the summary's own writer, so a record stored
+        # before the lines named both ends prints each direction truthfully.
+        summary = summary_text(data)
     section = acc.get("pcap_summary", "Capture summary", "text")
     section.text = _cut_text(str(summary), entry.id)
     acc.credit(section, entry)

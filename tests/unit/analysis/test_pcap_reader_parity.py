@@ -84,6 +84,12 @@ _BOTH_WAYS = (
     "answers from 8.8.8.8 and the HTTP response from 93.184.216.34 were left out, "
     "and are now in their conversation's totals with the part from the host stated"
 )
+_ENDS_ONLY = (
+    "each conversation names its two ends, the internal one told from the capture by "
+    "the module's own internal/external rule, and the packets and bytes each end sent, "
+    "where it stated only the peer's share and called it the host's"
+)
+_ENDS = "; and " + _ENDS_ONLY
 _ANY_METHOD = (
     "; and an HTTP request with a method other than GET, POST, PUT, DELETE or HEAD "
     "(the OPTIONS request here) is read, where it was skipped"
@@ -93,76 +99,81 @@ _ANY_METHOD = (
 # other surface of it must still answer exactly as before.
 IMPROVED: dict[str, tuple[str, tuple[str, ...]]] = {
     "ethernet_mixed.pcap": (
-        _SNI + _IPV6 + _BOTH_WAYS + _ANY_METHOD,
+        _SNI + _IPV6 + _BOTH_WAYS + _ANY_METHOD + _ENDS,
         (*_FACTS_LIMITED, "extract_http"),
     ),
     "ethernet_mixed.pcap.gz": (
-        _SNI + _IPV6 + _BOTH_WAYS + _ANY_METHOD,
+        _SNI + _IPV6 + _BOTH_WAYS + _ANY_METHOD + _ENDS,
         (*_FACTS_LIMITED, "extract_http"),
     ),
     "ethernet_mixed_be_nano.pcap": (
-        _SNI + _IPV6 + _BOTH_WAYS + _ANY_METHOD,
+        _SNI + _IPV6 + _BOTH_WAYS + _ANY_METHOD + _ENDS,
         (*_FACTS_LIMITED, "extract_http"),
     ),
     "truncated_in_header.pcap": (
-        _SNI + _FRAMING + _IPV6 + _BOTH_WAYS + _ANY_METHOD,
+        _SNI + _FRAMING + _IPV6 + _BOTH_WAYS + _ANY_METHOD + _ENDS,
         _FRAMING_SURFACES,
     ),
     "truncated_in_record.pcap": (
-        _SNI + _FRAMING + _IPV6 + _BOTH_WAYS + _ANY_METHOD,
+        _SNI + _FRAMING + _IPV6 + _BOTH_WAYS + _ANY_METHOD + _ENDS,
         _FRAMING_SURFACES,
     ),
-    "edge_layers.pcap": (_IPV6_ONLY, _FACTS_ALL),
-    "linux_sll.pcap": (_IPV6_ONLY, _FACTS_LIMITED),
-    "linux_sll2.pcap": (_IPV6_ONLY, _FACTS_LIMITED),
-    "raw_ip_dlt101.pcap": (_IPV6_ONLY, _FACTS_LIMITED),
-    "raw_ip_dlt12.pcap": (_IPV6_ONLY, _FACTS_LIMITED),
+    "edge_layers.pcap": (_IPV6_ONLY + _ENDS, _FACTS_LIMITED),
+    "linux_sll.pcap": (_IPV6_ONLY + _ENDS, _FACTS_LIMITED),
+    "linux_sll2.pcap": (_IPV6_ONLY + _ENDS, _FACTS_LIMITED),
+    "raw_ip_dlt101.pcap": (_IPV6_ONLY + _ENDS, _FACTS_LIMITED),
+    "raw_ip_dlt12.pcap": (_IPV6_ONLY + _ENDS, _FACTS_LIMITED),
+    "ipv4_dlt228.pcap": (_ENDS_ONLY, _FACTS_LIMITED),
+    "segmentation_offload.pcap": (_ENDS_ONLY, _FACTS_LIMITED),
     "loopback_families.pcap": (
-        _LOOPBACK,
-        (*_FACTS, "read_pcap_summary_page", "network_pcap_summary"),
+        _LOOPBACK + _ENDS,
+        (*_FACTS_LIMITED, "read_pcap_summary_page"),
     ),
     "openbsd_loopback.pcap": (
-        _LOOPBACK,
+        _LOOPBACK + _ENDS,
         (*_FACTS_LIMITED, "extract_dns_limit_5"),
     ),
-    "null_loopback.pcap": (_LOOPBACK, (*_FACTS_LIMITED, "extract_dns", "extract_dns_limit_5")),
-    "two_interfaces.pcapng": (_SNI + _IPV6, _FACTS_ALL),
+    "null_loopback.pcap": (
+        _LOOPBACK + _ENDS,
+        (*_FACTS_LIMITED, "extract_dns", "extract_dns_limit_5"),
+    ),
+    "two_interfaces.pcapng": (_SNI + _IPV6 + _ENDS, _FACTS_LIMITED),
     "truncated_block.pcapng": (
         "a pcapng file cut inside a block: the old reader raised and every surface "
         "answered that the capture could not be read; the new one ends the capture "
         "at the cut and reads the six packets before it, as a pcap file cut short "
-        "always was; the answer says at which byte the block was cut" + _IPV6,
+        "always was; the answer says at which byte the block was cut" + _IPV6 + _ENDS,
         _EVERY_SURFACE,
     ),
     "odd_records.pcap": (
         "an IPv4 header length of 0 and an empty record: the old reader read a TCP "
         "header out of the IP header's own bytes and counted 14 bytes for the empty "
         "record; the new one reads no transport header past an invalid header "
-        "length and counts the empty record as 0 bytes",
+        "length and counts the empty record as 0 bytes" + _ENDS,
         _FACTS_LIMITED,
     ),
     "hostile_vlan_stack.pcap": (
         "a frame under 500 stacked 802.1Q tags: the old reader dropped its IP "
-        "header; the new walk is a loop and reads the DNS query beneath the tags",
+        "header; the new walk is a loop and reads the DNS query beneath the tags" + _ENDS,
         _FACTS_LIMITED,
     ),
     "deep_ipip_tunnels.pcap": (
         "a datagram under 1,000 nested IPv4-in-IPv4 headers, each stating its total "
         "length: the old reader stopped at the outer header; the new walk is a loop "
-        "and reaches the UDP datagram at the bottom",
+        "and reaches the UDP datagram at the bottom" + _ENDS,
         _FACTS_LIMITED,
     ),
     "hostile_ipip_nesting.pcap": (
         "a datagram under 1,000 nested IPv4-in-IPv4 headers, each with a total "
         "length of 0 as segmentation offload writes: the old reader stopped at the "
-        "outer header; the new walk is a loop and reaches the DNS query at the bottom",
+        "outer header; the new walk is a loop and reaches the DNS query at the bottom" + _ENDS,
         _FACTS_LIMITED,
     ),
     "unreadable_blocks.pcapng": (
         "three correctly framed pcapng blocks that cannot be read: the old reader "
         "ended the capture at the first and said the 2 packets before it were the "
         "whole capture; the new one skips each by its length, reads the 2 packets "
-        "after them and says 3 blocks were unreadable and why",
+        "after them and says 3 blocks were unreadable and why" + _ENDS,
         _EVERY_SURFACE,
     ),
     "pcapng_without_interface.pcapng": (
@@ -181,7 +192,7 @@ IMPROVED: dict[str, tuple[str, tuple[str, ...]]] = {
     "spb_snaplen0.pcapng": (
         "simple packet blocks on an interface whose snapshot length is 0, which "
         "pcapng defines as no limit: the old reader read 0 bytes of each; the new "
-        "one reads the packets",
+        "one reads the packets" + _ENDS,
         tuple(x for x in _EVERY_SURFACE if x != "read_pcap_summary_page"),
     ),
 }
