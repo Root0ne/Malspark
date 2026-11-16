@@ -905,9 +905,10 @@ JUDGE_TECHNIQUE_ID = "judge.technique."
 
 def judge_passages(decision: JudgeDecision) -> list[Passage]:
     """The judge's decision as the round is shown it, one passage each: the verdict with its
-    confidence and band, the family or none, then each technique published and each the
-    judge dropped with the record's words, the judge's reason among them; their entries the
-    record's (T-717). None for a decision the run did not record."""
+    confidence and band, the family or none, then each technique published, citing its
+    evidence, and each the judge dropped with the record's words, the judge's reason among
+    them, citing the entries that reason cites (the row's where it cites none) (T-717). None
+    for a decision the run did not record."""
     out: list[Passage] = []
     if decision.assessed:
         confidence = f"{decision.confidence:.2f}" if decision.confidence is not None else "none"
@@ -944,7 +945,13 @@ def judge_passages(decision: JudgeDecision) -> list[Passage]:
                     else f"not published, {quoted_value(technique.said)}"
                 ),
                 kind=JUDGE,
-                cites=_ids(technique.evidence_ids, technique.said),
+                # A dropped technique rests on the entries the judge's own reason cites, the
+                # row's where it cites none; a published one on the technique's evidence.
+                cites=(
+                    _ids(technique.evidence_ids)
+                    if technique.published
+                    else _ids(technique.said) or _ids(technique.evidence_ids)
+                ),
             )
         )
     return out
