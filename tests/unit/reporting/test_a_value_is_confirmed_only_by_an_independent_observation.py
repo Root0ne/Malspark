@@ -45,7 +45,9 @@ from malspark.reporting.renderers.stix_renderer import (
     corroborating_values,
     publish_answer,
     publishes,
+    second_source_reads,
 )
+from malspark.schemas.evidence import LedgerEntry
 from malspark.tools.strings import iter_string_iocs
 
 # This run's example: a runtime metric name the sweep cut out of its table.
@@ -190,6 +192,10 @@ class TestTheDecisionIsPerEntry:
 
     def test_the_corpus_is_read_entry_by_entry(self) -> None:
         report = self._shared()
+        ledger = [
+            LedgerEntry(id="ev_0050", agent="static", tool="decoder"),
+            LedgerEntry(id="ev_0051", agent="static", tool="decoder"),
+        ]
         uncited = RunEvidenceCorpus(1 << 20)
         uncited.remember("ev_0050", "decoder", "result: nothing printable")
         uncited.remember("ev_0051", "decoder", f"result: {REGISTRY_KEY}")
@@ -197,11 +203,14 @@ class TestTheDecisionIsPerEntry:
         cited.remember("ev_0050", "decoder", f"result: {REGISTRY_KEY}")
 
         def answer(corpus: RunEvidenceCorpus) -> str:
+            recorded = report.model_copy(
+                update={"second_source_reads": second_source_reads(report, ledger, corpus)}
+            )
             return publish_answer(
                 "registry",
                 REGISTRY_KEY,
                 "strings",
-                corroborating=corroborating_values(report, corpus),
+                corroborating=corroborating_values(recorded),
             )
 
         assert not publishes(answer(uncited))
@@ -215,11 +224,14 @@ class TestTheDecisionIsPerEntry:
         )
         corpus = RunEvidenceCorpus(1 << 20)
         corpus.remember("ev_0070", "reader", f"bytes: {REGISTRY_KEY}")
+        ledger = [LedgerEntry(id="ev_0070", agent="static", tool="reader")]
+        report.second_source_reads = second_source_reads(report, ledger, corpus)
 
         answer = publish_answer(
-            "registry", REGISTRY_KEY, "strings", corroborating=corroborating_values(report, corpus)
+            "registry", REGISTRY_KEY, "strings", corroborating=corroborating_values(report)
         )
         assert not publishes(answer), answer
+        assert "reads the file's text again" in answer
 
     def test_a_section_citing_no_entry_confirms_nothing(self) -> None:
         report = _report(
@@ -315,3 +327,88 @@ class TestACutIsNoWholeValue:
         answer = _answer(report, "/f /q C")
         assert not publishes(answer), answer
         assert "cut out of" in answer
+
+
+def _exported_with(report: MalwareReport, value: str, corpus: RunEvidenceCorpus) -> bool:
+    escaped = value.replace("\\", "\\\\")
+    bundle = ExtendedSTIXRenderer().render(report, corpus=corpus)
+    return any(
+        escaped in str(getattr(obj, "pattern", ""))
+        for obj in bundle.objects
+        if getattr(obj, "type", "") == "indicator"
+    )
+
+
+class TestEverySurfaceReadsOneRecord:
+    """The IOC table, the feed and the export decide from the same per-entry record."""
+
+    def _split(self, kind: str, value: str) -> tuple[MalwareReport, RunEvidenceCorpus]:
+        # One sandbox section of two entries; the claim cites the first, which
+        # holds the value, and the run's corpus holds each entry apart.
+        report = _report(
+            StringIOC(kind=kind, value=value),  # type: ignore[arg-type]
+            _tool("sbx", ["ev_0101", "ev_0102"], f"created: {value}", "other"),
+            _finding("ev_0101"),
+            index=[
+                _row("ev_0101", "sbx", "sandbox_report_section"),
+                _row("ev_0102", "sbx", "sandbox_report_section"),
+            ],
+        )
+        corpus = RunEvidenceCorpus(1 << 20)
+        corpus.remember("ev_0101", "sbx", f"created: {value}")
+        corpus.remember("ev_0102", "sbx", "other")
+        return report, corpus
+
+    @pytest.mark.parametrize(
+        ("kind", "value"),
+        [("mutex", "Global\\RelayLock7"), ("registry", REGISTRY_KEY)],
+    )
+    def test_the_table_and_the_export_answer_the_same(self, kind: str, value: str) -> None:
+        report, corpus = self._split(kind, value)
+
+        answer = _answer(report, value)
+        assert publishes(answer) == _exported_with(report, value, corpus), answer
+
+    def test_the_reason_is_true_of_a_section_with_a_cited_entry(self) -> None:
+        report, _corpus = self._split("mutex", "Global\\RelayLock7")
+
+        answer = _answer(report, "Global\\RelayLock7")
+        # The entry that holds it is cited: the section prints it beside one that is not.
+        assert "only in entries no analyst claim cites" not in answer, answer
+        assert "beside an entry no analyst claim cites" in answer, answer
+
+    def _recorded(
+        self, kind: str, value: str, output: str, corpus: RunEvidenceCorpus | None
+    ) -> MalwareReport:
+        report, _corpus = self._split(kind, value)
+        ledger = [
+            LedgerEntry(id="ev_0101", agent="dynamic", tool="sbx", output=output),
+            LedgerEntry(id="ev_0102", agent="dynamic", tool="sbx", output="other"),
+        ]
+        report.second_source_reads = second_source_reads(report, ledger, corpus)
+        return report
+
+    @pytest.mark.parametrize(
+        ("kind", "value"),
+        [("mutex", "Global\\RelayLock7"), ("registry", REGISTRY_KEY)],
+    )
+    def test_the_build_s_record_reads_the_cited_entry_on_its_own(
+        self, kind: str, value: str
+    ) -> None:
+        report = self._recorded(kind, value, f"created: {value}", None)
+
+        assert publishes(_answer(report, value))
+        assert _exported_with(report, value, RunEvidenceCorpus(1 << 20))
+
+    def test_an_answer_the_byte_budget_blanked_is_read_from_the_corpus(self) -> None:
+        corpus = RunEvidenceCorpus(1 << 20)
+        corpus.remember("ev_0101", "sbx", f"created: {REGISTRY_KEY}")
+
+        blanked = self._recorded("registry", REGISTRY_KEY, "", corpus)
+        unread = self._recorded("registry", REGISTRY_KEY, "", None)
+
+        assert publishes(_answer(blanked, REGISTRY_KEY))
+        assert _exported_with(blanked, REGISTRY_KEY, RunEvidenceCorpus(1 << 20))
+        assert not publishes(_answer(unread, REGISTRY_KEY))
+        # The export decides from the report's record, not from a corpus it is handed.
+        assert not _exported_with(unread, REGISTRY_KEY, corpus)

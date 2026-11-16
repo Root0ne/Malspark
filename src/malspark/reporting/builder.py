@@ -126,6 +126,7 @@ class MalwareReportBuilder:
         sample_file_type: str | None = None,
         evidence_ledger: list[LedgerEntry] | None = None,
         job_id: str | None = None,
+        evidence_corpus: Any = None,
     ) -> None:
         self.file_hash = file_hash
         self.file_name = file_name
@@ -162,6 +163,11 @@ class MalwareReportBuilder:
         # derived from. A build with none (the command line, a test) uses the
         # report's own number.
         self.job_id = job_id
+        # What the run saw of each answer (``agents.run_evidence_corpus``),
+        # which the evidence byte budget never blanks: the record of how each
+        # entry stands to a value taken from the file's text reads it where
+        # the stored answer is gone. ``None``: the stored answers alone.
+        self.evidence_corpus = evidence_corpus
 
     # ------------------------------------------------------------------
     # Deterministic build
@@ -174,6 +180,7 @@ class MalwareReportBuilder:
             emulation_from_ledger,
             exported_indicator_values,
             recovered_network_values,
+            second_source_reads,
         )
 
         # What the calls answered. A repeat the guard answered from an earlier
@@ -332,6 +339,10 @@ class MalwareReportBuilder:
         for section in report.sections:
             section.source_server = source_server(section, index)
         report.reputation = _reputation_answers(self.evidence_ledger)
+        # How each entry stands to the values asked as the file's text, read
+        # entry by entry: the one record the IOC table, the feed and the
+        # export decide a string row's second source from.
+        report.second_source_reads = second_source_reads(report, ledger, self.evidence_corpus)
 
         # Deterministic front-matter, version history,
         # and consolidated IOC table (the professional-report scaffolding the

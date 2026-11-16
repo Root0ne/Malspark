@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import dataclasses
 import ipaddress
+import json
 import re
 import uuid
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -83,6 +84,7 @@ from malspark.reporting.models import (
     NetworkURL,
     ProcessNode,
     RecoveredValue,
+    SecondSourceRead,
     StringIOC,
     stated_family,
 )
@@ -5321,23 +5323,29 @@ def _section_text(section: Any) -> list[str]:
 class SecondSources:
     """What this run recorded that could confirm a value taken from the file's text.
 
-    Built once per render (:func:`corroborating_values`), lowercased, and asked
-    by :func:`second_source` and nothing else. ``observed`` is the text of an
-    observation independent of the file's text: what a sandbox watched, what a
-    persistence mechanism names, and every entry an analyst cites whose kind
-    observes or recovers. ``undeclared`` holds each cited entry of a tool that
-    declares no kind, by tool, and ``plain`` the string sweep's own record —
+    Built once per render (:func:`corroborating_values`) from the report
+    alone, lowercased, and asked by :func:`second_source` and nothing else, so
+    the IOC table, the feed and the export decide from one record.
+    ``observed`` is the text of an observation independent of the file's
+    text: what a sandbox watched, what a persistence mechanism names, and, on
+    a report stored before the build recorded its entries, every section of
+    an entry an analyst cites whose kind observes or recovers. ``reads`` is
+    the build's record, entry by entry (``MalwareReport.second_source_reads``):
+    each entry's tool, standing, whether a claim cites it, and the asked
+    values it holds whole. ``undeclared`` holds each cited section of a tool
+    that declares no kind, by tool, and ``plain`` the string sweep's own record —
     its rows' values and its sections — which such an entry is read against.
-    ``rereads`` and ``uncited`` hold, by tool, the text of the entries that
+    ``rereads`` and ``uncited`` hold, by tool, the text of the sections that
     confirm nothing — a cited reading of the file's bytes, and a section that
-    stands on an entry no claim cites — so a refusal can name them. ``cut``
-    maps each value the sweep cut out of a longer token to that token.
-    ``recovered`` holds each value the run's recovery record
+    prints a cited entry's answer beside one no claim cites — so a refusal can
+    name them. ``cut`` maps each value the sweep cut out of a longer token to
+    that token. ``recovered`` holds each value the run's recovery record
     (:func:`emulation_from_ledger`) says a cited entry recovered: the record
     names the entry value by value, where a section prints several as one.
     """
 
     observed: str = ""
+    reads: tuple[tuple[str, str, bool, frozenset[str]], ...] = ()
     undeclared: tuple[tuple[str, str], ...] = ()
     plain: str = ""
     rereads: tuple[tuple[str, str], ...] = ()
@@ -5348,7 +5356,16 @@ class SecondSources:
     def __contains__(self, text: object) -> bool:
         """Whether any text that can confirm a value holds ``text``, as a plain search."""
         needle = str(text).lower()
-        return needle in self.observed or any(needle in held for _t, held in self.undeclared)
+        return (
+            needle in self.observed
+            or any(needle in held for _t, held in self.undeclared)
+            or any(
+                needle in value
+                for _t, standing, cited, holds in self.reads
+                if cited and standing != tool_kinds.REREADS
+                for value in holds
+            )
+        )
 
 
 def _as_record(corroborating: Any) -> SecondSources:
@@ -5377,13 +5394,18 @@ def second_source(value: Any, corroborating: Any) -> str:
     """
     record = _as_record(corroborating)
     text = str(value or "").strip()
-    if not text or text.lower() in record.cut:
+    low = text.lower()
+    if not text or low in record.cut:
         return ""
-    if whole_value_in(text, record.observed) or text.lower().rstrip(".") in record.recovered:
+    if whole_value_in(text, record.observed) or low.rstrip(".") in record.recovered:
         return SECOND_SOURCE
-    if any(whole_value_in(text, held) for _tool, held in record.undeclared) and not (
-        whole_value_in(text, record.plain)
-    ):
+    held = [standing for _t, standing, cited, holds in record.reads if cited and low in holds]
+    if tool_kinds.OBSERVES in held:
+        return SECOND_SOURCE
+    undeclared = tool_kinds.UNDECLARED in held or any(
+        whole_value_in(text, part) for _tool, part in record.undeclared
+    )
+    if undeclared and not whole_value_in(text, record.plain):
         return SECOND_SOURCE
     return ""
 
@@ -5396,7 +5418,8 @@ def second_source_refusal(value: Any, corroborating: Any) -> str:
     """
     record = _as_record(corroborating)
     text = str(value or "").strip()
-    token = record.cut.get(text.lower(), "")
+    low = text.lower()
+    token = record.cut.get(low, "")
     if token:
         quoted = token if len(token) <= _CUT_QUOTED else token[:_CUT_QUOTED] + "…"
         return f'cut out of the longer string "{quoted}" in the file, so not a whole value'
@@ -5404,22 +5427,38 @@ def second_source_refusal(value: Any, corroborating: Any) -> str:
     def holders(held: tuple[tuple[str, str], ...]) -> list[str]:
         return list(dict.fromkeys(tool for tool, part in held if whole_value_in(text, part)))
 
+    def read_by(standings: tuple[str, ...], cited: bool) -> list[str]:
+        return [
+            tool
+            for tool, standing, by_a_claim, holds in record.reads
+            if standing in standings and by_a_claim is cited and low in holds
+        ]
+
     said: list[str] = []
-    undeclared = holders(record.undeclared)
+    undeclared = list(
+        dict.fromkeys([*read_by((tool_kinds.UNDECLARED,), True), *holders(record.undeclared)])
+    )
     if undeclared:
         said.append(
             f"{_tools_said(undeclared)} {_declares(undeclared)} no kind, and the value stands "
             "as plain text in the file's strings, so its answer reads the file's own text "
             "(a declared kind would let it confirm)"
         )
-    rereads = holders(record.rereads)
+    rereads = list(dict.fromkeys([*read_by((tool_kinds.REREADS,), True), *holders(record.rereads)]))
     if rereads:
         verb = "reads" if len(rereads) == 1 else "read"
         said.append(f"{_tools_said(rereads)} {verb} the file's text again, which confirms nothing")
-    uncited = holders(record.uncited)
+    uncited = list(dict.fromkeys(read_by((tool_kinds.OBSERVES, tool_kinds.UNDECLARED), False)))
     if uncited:
         verb = "holds" if len(uncited) == 1 else "hold"
         said.append(f"{_tools_said(uncited)} {verb} it only in entries no analyst claim cites")
+    beside = holders(record.uncited)
+    if beside:
+        verb = "prints" if len(beside) == 1 else "print"
+        said.append(
+            f"{_tools_said(beside)} {verb} it only in a section that holds a cited entry "
+            "beside an entry no analyst claim cites"
+        )
     return "; ".join(said)
 
 
@@ -5431,32 +5470,119 @@ def _declares(tools: list[str]) -> str:
     return "declares" if len(tools) == 1 else "declare"
 
 
+def _cited_entries(report: Any) -> set[str]:
+    """The entries an analyst's artefact or finding cites: what a claim stands on."""
+    cited: set[str] = set()
+    for section in list(getattr(report, "sections", None) or []):
+        origin = str(getattr(section, "source", "") or "").strip().lower()
+        if origin.startswith(ANALYST_SECTION_SOURCES):
+            cited.update(str(eid) for eid in (getattr(section, "evidence_ids", None) or []))
+    return cited
+
+
+def _asked_values(report: Any) -> list[str]:
+    """Every value the publish rule may ask as the file's text, lower case.
+
+    The string sweep's rows, the network block's values and the judge's
+    indicator values: what :func:`publish_answer` asks of the record.
+    """
+    asked: list[str] = []
+    static = getattr(report, "static", None)
+    asked.extend(str(row.value or "") for row in getattr(static, "interesting_strings", None) or [])
+    network = getattr(report, "network", None)
+    if network is not None:
+        asked.extend(str(row.fqdn or "") for row in network.domains)
+        asked.extend(str(row.address or "") for row in network.ips)
+        asked.extend(str(row.url or "") for row in network.urls)
+    asked.extend(str(row.value or "") for row in getattr(report, "judge_indicators", None) or [])
+    return list(dict.fromkeys(value.strip().lower() for value in asked if value.strip()))
+
+
+def _entry_text(entry: Any, corpus: Any) -> str:
+    """What the run saw of one entry: the corpus's read of it, else its stored answer."""
+    if corpus is not None:
+        try:
+            read = _read_of_entry(corpus, str(entry.id))
+        except Exception:  # noqa: BLE001 — the stored answer is read instead
+            read = ""
+        if read:
+            return read
+    text = str(getattr(entry, "output", "") or "")
+    structured = getattr(entry, "structured", None)
+    if not text and structured is not None:
+        text = json.dumps(structured, default=str)
+    return text
+
+
+def second_source_reads(
+    report: Any, ledger: Iterable[Any], corpus: Any = None
+) -> list[SecondSourceRead]:
+    """How each entry of the run stands to the values asked as the file's text: the build's record.
+
+    For every entry that is not the string sweep's and holds an asked value
+    (:func:`_asked_values`) whole: its tool, its standing
+    (``tool_kinds.second_source_standing``), whether a claim cites it, and the
+    values. The entry's text is what the run saw of it — the corpus's read,
+    which the evidence byte budget never blanks, else its stored answer — read
+    entry by entry, so a section printing several entries as one decides
+    nothing. Built once at build time and stored on the report
+    (``MalwareReport.second_source_reads``): the IOC table, the feed and the
+    export read this one record.
+    """
+    asked = _asked_values(report)
+    if not asked:
+        return []
+    cited = _cited_entries(report)
+    index = tool_kinds.index_by_id(getattr(report, "evidence_index", None) or [])
+    reads: list[SecondSourceRead] = []
+    for entry in ledger or ():
+        entry_id = str(getattr(entry, "id", "") or "")
+        named = str(getattr(entry, "tool", "") or "")
+        row = index.get(entry_id)
+        if not entry_id or _sweeps_the_strings(row, named):
+            continue
+        text = _entry_text(entry, corpus).lower()
+        if not text:
+            continue
+        holds = sorted(first_holders(asked, [text]))
+        if not holds:
+            continue
+        reads.append(
+            SecondSourceRead(
+                entry=entry_id,
+                tool=tool_kinds.display_name(row, named) if row is not None else named,
+                standing=tool_kinds.second_source_standing(row, named),
+                cited=entry_id in cited,
+                holds=holds,
+            )
+        )
+    return reads
+
+
 def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
     """Everything that could confirm a value taken from the file's text, built once.
 
-    One record per render (:class:`SecondSources`), searched for whole values
-    rather than by containment, and deliberately narrow about what confirms:
+    One record per render (:class:`SecondSources`), from the report alone —
+    ``corpus`` is not read, so no surface decides with more than another —
+    searched for whole values rather than by containment, and deliberately
+    narrow about what confirms:
 
     * what a sandbox watched — the process tree, the registry modifications,
       the file operations, the notable API rows;
     * what a persistence mechanism names;
-    * the output of a ledger entry an analyst cited in an artefact or a
-      finding whose kind observes the sample or recovers the value, and of one
-      whose tool declares no kind (``tool_kinds.second_source_standing``).
+    * an entry an analyst cited in an artefact or a finding whose kind
+      observes the sample or recovers the value, or whose tool declares no
+      kind (``tool_kinds.second_source_standing``): read from the build's
+      record of each entry (:func:`second_source_reads`), and on a report
+      stored before that record from the entry's section, which counts only
+      when every entry it stands on is cited.
 
-    The third is the one that had to be narrowed, twice. Reading the analyst's
-    own prose corroborated anything an analyst quoted, and analysts quote the
-    strings table — one sentence carrying a parse artefact out of embedded
-    source published it as an indicator. Then every tool that was not the
-    sweep counted, section by section: a decompile, a string search, a byte
-    read and an extractor re-read the sweep's own cuts, and an entry nobody
-    cited counted when another entry of its section was cited, which
-    published fragments of a language runtime. A claim is a second source
-    only when it points at an entry that saw the value, and an entry that read
-    the file's bytes again did not. A section is read only when every entry it
-    stands on is cited; with a corpus, a cited entry of a section that also
-    stands on an uncited one is read on its own.
+    Reading the analyst's own prose corroborated anything an analyst quoted,
+    and analysts quote the strings table; a claim is a second source only
+    when it points at an entry that saw the value, and an entry that read the
+    file's bytes again did not.
     """
+    del corpus
     parts: list[str] = []
     dynamic = getattr(report, "dynamic", None)
     if dynamic is not None:
@@ -5481,25 +5607,13 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
     undeclared: list[tuple[str, str]] = []
     rereads: list[tuple[str, str]] = []
     uncited: list[tuple[str, str]] = []
-
-    def held(standing: str, tool: str, text: str) -> None:
-        if standing == tool_kinds.OBSERVES:
-            parts.append(text)
-        elif standing == tool_kinds.UNDECLARED:
-            undeclared.append((tool, text.lower()))
-        else:
-            rereads.append((tool, text.lower()))
-
-    sections = list(getattr(report, "sections", None) or [])
+    cited = _cited_entries(report)
+    recorded = getattr(report, "second_source_reads", None)
+    reads = tuple(
+        (read.tool, read.standing, read.cited, frozenset(read.holds)) for read in recorded or ()
+    )
+    sections = list(getattr(report, "sections", None) or []) if recorded is None else []
     index = tool_kinds.index_by_id(getattr(report, "evidence_index", None) or [])
-    cited: set[str] = set()
-    # The cited entries a section already contributed text for, so the corpus
-    # is read only where the stored record has nothing left.
-    drawn: set[str] = set()
-    for section in sections:
-        origin = str(getattr(section, "source", "") or "").strip().lower()
-        if origin.startswith(ANALYST_SECTION_SOURCES):
-            cited.update(str(eid) for eid in (getattr(section, "evidence_ids", None) or []))
     for section in sections:
         origin = str(getattr(section, "source", "") or "").strip().lower()
         if not origin.startswith("tool:"):
@@ -5516,31 +5630,15 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
         standing = tool_kinds.second_source_standing(row, origin.removeprefix("tool:"))
         if standing != tool_kinds.REREADS and not entries <= cited:
             # A section prints its entries' answers as one: it confirms only
-            # when no claim-less entry is among them.
+            # when no claim-less entry is among them, and the record of a
+            # report built since reads each entry on its own.
             uncited.append((tool, text.lower()))
-            continue
-        drawn.update(entries)
-        held(standing, tool, text)
-
-    # What the run saw, for the cited entries whose stored output is gone, or
-    # whose section stands on an uncited entry too. The evidence byte budget
-    # blanks an entry after the model has read it, so an answer an analyst
-    # cited can leave no section at all and a value a tool really returned
-    # stops corroborating anything. The narrowing is unchanged — an analyst
-    # has to have cited it, and only an entry that observed or recovered
-    # confirms — only the place the text is read from.
-    if corpus is not None:
-        for entry_id in sorted(cited - drawn):
-            try:
-                named = str(corpus.tool_of(entry_id) or "")
-                row = index.get(str(entry_id))
-                if _sweeps_the_strings(row, named):
-                    continue
-                standing = tool_kinds.second_source_standing(row, named)
-                tool = tool_kinds.display_name(row, named) if row is not None else named
-                held(standing, tool, _read_of_entry(corpus, entry_id))
-            except Exception:  # noqa: BLE001 — a weaker record, never a failed render
-                continue
+        elif standing == tool_kinds.OBSERVES:
+            parts.append(text)
+        elif standing == tool_kinds.UNDECLARED:
+            undeclared.append((tool, text.lower()))
+        else:
+            rereads.append((tool, text.lower()))
     emulated = getattr(report, "emulated_strings", None)
     recovered = frozenset(
         value
@@ -5554,6 +5652,7 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
     return SecondSources(
         recovered=recovered,
         observed=" ".join(part for part in parts if part).lower(),
+        reads=reads,
         undeclared=tuple(undeclared),
         plain=" ".join(part for part in plain if part).lower(),
         rereads=tuple(rereads),
