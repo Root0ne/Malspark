@@ -254,3 +254,22 @@ def test_a_mock_round_that_replaces_the_answers_in_force_records_them() -> None:
         if row.get("record") == CLAIMS_UNREAD_REPLACED_RECORD
     ]
     assert [(r["agent"], r["replaced_by"]) for r in rows] == [("reverser", "round 1")]
+
+
+def test_a_reason_without_counts_is_a_row_with_empty_counts() -> None:
+    from malspark.schemas.isr_models import AgentISR
+
+    replaced = AgentISR(agent_id="reverser", domain="static")
+    replaced.note_claims_unread("Parts of the input were not analysed.")
+    assert replaced.claims_unread_counts is None
+    row = claims_unread_replaced_row("reverser", replaced, None, "retry")
+    assert row is not None
+    assert (row["begun"], row["read"], row["unread"]) == ("", "", "")
+    # A count it cannot read is an empty field, never an error.
+    odd = AgentISR(agent_id="reverser", domain="static")
+    odd.note_claims_unread("Parts of the input were not analysed.")
+    object.__setattr__(odd, "_claims_unread_counts", ("two", None, 1))
+    odd.revision_round = 0
+    row = claims_unread_replaced_row("reverser", odd, None, "retry")
+    assert row is not None
+    assert (row["round"], row["begun"], row["read"], row["unread"]) == ("0", "", "", "1")

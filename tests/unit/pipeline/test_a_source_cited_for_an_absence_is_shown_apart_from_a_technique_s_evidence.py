@@ -271,3 +271,27 @@ def test_the_judge_s_summary_names_the_absence_cited_sources_apart() -> None:
     assert _source_facts(plain) == (
         " [traced to 2 cited source(s), each counted once: ev_0006, ev_0007]"
     )
+
+
+def test_a_finding_s_title_is_read_for_an_absence() -> None:
+    from malspark.pipeline.validation import technique_absence_sources
+    from malspark.schemas.isr_models import Finding
+
+    finding = Finding(
+        title="The hosts give no match [ev_0204]",
+        detail="The files are rewritten",
+        technique_ids=["T1486"],
+        evidence_ids=["ev_0204"],
+        confidence=0.8,
+    )
+    isrs = {"network": AgentISR(agent_id="network", domain="network", findings=[finding])}
+    assert technique_absence_sources(isrs, LEDGER) == {"T1486": ["ev_0204"]}
+
+
+def test_a_claim_whose_technique_is_invalid_is_not_read_for_an_absence() -> None:
+    from malspark.pipeline.validation import technique_absence_sources
+
+    claim = _claim("The hosts give no match for the mailbox [ev_0204].", "")
+    claim.technique_id_valid = False
+    isrs = {"network": AgentISR(agent_id="network", domain="network", claims=[claim])}
+    assert technique_absence_sources(isrs, LEDGER) == {}

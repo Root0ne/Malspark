@@ -15084,9 +15084,10 @@ def claims_unread_replaced_row(
     carry: the analyst, the replaced answer's round, the claims its read began,
     read and left unread (``""`` where the reader gave no count), why in the
     platform's words (``revision_merge.claims_unread_why_of``) and what replaced
-    it (``retry``, ``round N``). Only the answer in force degrades the run
-    (``nodes.claims_unread_in_force``); this is the record's alone. Read into
-    ``run_summary.validation.claims_unread_replaced``.
+    it (``retry``, ``round N``, ``further turn``). Only the answer in force
+    degrades the run (``nodes.claims_unread_in_force``); this is the record's
+    alone. Read into ``run_summary.validation.claims_unread_replaced``. It
+    never raises: a count or a round it cannot read is ``""``.
     """
     from malspark.pipeline.revision_merge import claims_unread_why_of
 
@@ -15097,20 +15098,31 @@ def claims_unread_replaced_row(
         return None
     counts = getattr(replaced, "claims_unread_counts", None)
     begun, read, unread = (
-        (str(int(n)) for n in counts)
+        (_count_text(n) for n in counts)
         if isinstance(counts, tuple) and len(counts) == 3
         else ("", "", "")
     )
+    try:
+        why = claims_unread_why_of(replaced)
+    except Exception:  # noqa: BLE001 — a fact of the record, never a failed answer
+        why = ""
     return {
         "record": CLAIMS_UNREAD_REPLACED_RECORD,
         "agent": str(agent),
-        "round": str(int(getattr(replaced, "revision_round", 0) or 0)),
+        "round": _count_text(getattr(replaced, "revision_round", 0) or 0),
         "begun": begun,
         "read": read,
         "unread": unread,
-        "why": claims_unread_why_of(replaced),
+        "why": why,
         "replaced_by": str(replaced_by),
     }
+
+
+def _count_text(value: Any) -> str:
+    """A whole number as the record writes it, or ``""`` where it is none."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return ""
+    return str(value)
 
 
 # ---------------------------------------------------------------------------
