@@ -7,8 +7,11 @@ with other arguments, which is how the export and the feed came to publish
 different values for one run. This test reads the source.
 
 What counts as the rule: the functions that answer for it (:data:`RULE`) and
-every function of the rule's modules (:data:`RULE_MODULES`) that names one of
-them, directly or through another such function. A name is read as imported,
+every function of any module of the reporting package or the API app
+(:data:`RULE_MODULES`) that names one of them, directly or through another such
+function. A function that reaches the rule only through one an allowance names
+(:data:`ALLOWED`: the table the builder builds, the identifier answers) reads
+what the rule decided and is not the rule itself. A name is read as imported,
 whatever alias it is imported under, and a name used under an alias is read as
 the name it aliases.
 
@@ -49,10 +52,8 @@ RULE = frozenset(
 
 # The modules whose functions can ask the rule: a function of one of them that
 # names the rule, directly or through another, counts as the rule.
-RULE_MODULES = (
-    EXPORT,
-    REPORTING / "builder.py",
-    REPORTING / "stated_host_values.py",
+RULE_MODULES = tuple(
+    sorted([*REPORTING.rglob("*.py"), *(ROOT / "apps" / "api" / "app").rglob("*.py")])
 )
 
 # Every other surface of a report's indicators: the Markdown, HTML and analyst
@@ -121,20 +122,34 @@ def _functions(tree: ast.Module) -> dict[str, ast.AST]:
     }
 
 
-def _asking(modules: Iterable[Path] = RULE_MODULES) -> set[str]:
-    """The rule and every function of the rule's modules that reaches it."""
+def _allowed_anywhere(allowed: dict[str, dict[str, str]]) -> set[str]:
+    return {name for names in allowed.values() for name in names}
+
+
+def _asking(
+    modules: Iterable[Path] = RULE_MODULES, allowed: dict[str, dict[str, str]] | None = None
+) -> set[str]:
+    """The rule and every function of the modules read that reaches it, not through an allowance."""
+    through = _allowed_anywhere(ALLOWED if allowed is None else allowed)
     reads: dict[str, set[str]] = {}
     for path in modules:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         aliases = _aliases(tree)
         for name, node in _functions(tree).items():
             reads.setdefault(name, set()).update(_names(node, aliases))
-    asking = set(RULE)
-    while True:
-        more = {name for name, read in reads.items() if read & asking} - asking
-        if not more:
-            return asking
-        asking |= more
+
+    def _closure(seed: set[str], blocked: set[str]) -> set[str]:
+        asking = set(seed)
+        while True:
+            more = {name for name, read in reads.items() if (read & asking) - blocked} - asking
+            if not more:
+                return asking
+            asking |= more
+
+    # An allowed function that reaches the rule is the rule; a function that
+    # reaches it only through one is not.
+    reaching = _closure(set(RULE), set())
+    return _closure(set(RULE) | (through & reaching), through)
 
 
 def _export_reach() -> dict[str, set[str]]:
@@ -203,11 +218,24 @@ def test_an_alias_and_a_helper_that_asks_the_rule_are_the_rule(tmp_path: Path) -
         assert _forbidden("misp.py", _names(tree, _aliases(tree)), asking), source
 
 
-def test_every_allowance_is_a_part_of_the_rule_its_surface_reaches() -> None:
-    """An allowance names a function that reaches the rule and that its surface reads."""
-    asking = _asking()
+def _stale(allowed: dict[str, dict[str, str]]) -> list[tuple[str, str]]:
+    """Each allowance that names no part of the rule, or that its surface does not read."""
+    asking = _asking(allowed=allowed)
+    out: list[tuple[str, str]] = []
     for path in (EXPORT, *SURFACES):
-        allowed = set(ALLOWED.get(path.name, {}))
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        assert allowed <= asking, path.name
-        assert allowed <= _names(tree, _aliases(tree)), path.name
+        read = _names(tree, _aliases(tree))
+        for name in allowed.get(path.name, {}):
+            if name not in asking or name not in read:
+                out.append((path.name, name))
+    return out
+
+
+def test_every_allowance_is_a_part_of_the_rule_its_surface_reaches() -> None:
+    assert _stale(ALLOWED) == []
+
+
+def test_an_allowance_no_surface_uses_fails_the_guard() -> None:
+    unused = {**ALLOWED, "misp.py": {"ioc_table": _THE_TABLE}}
+
+    assert _stale(unused) == [("misp.py", "ioc_table")]
