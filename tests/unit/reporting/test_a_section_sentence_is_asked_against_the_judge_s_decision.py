@@ -416,7 +416,10 @@ def test_the_round_s_texts_say_what_its_code_takes() -> None:
     # The one answer the decision supports, where it supports one, and when to list.
     assert agreement._JUDGE_TASK in text
     assert 'It supports one answer only, leaving a sentence out: "decision": "drop"' in text
-    assert "A row naming a judge passage is a drop whatever else it names" in text
+    assert (
+        "A row naming a judge passage is a drop whatever else it names; a keep or a rewrite "
+        "names other sources only."
+    ) in text
     assert (
         "It leaves a sentence out only of a section 5 passage you may rewrite or of a passage "
         "whose EVERY sentence the TASK asks you to answer"
@@ -987,3 +990,51 @@ def test_a_row_naming_a_judge_passage_that_is_no_drop_ends_as_its_twin(case: Any
     assert [v.code for v in told if "of the judge's decision" not in v.message] == [
         v.code for v in _told(make, twin, ledger)
     ]
+
+
+def test_the_task_s_passages_are_the_ones_the_code_takes_a_judge_drop_for() -> None:
+    import re
+
+    from malspark.reporting.models import C2Channel, CapabilityBullet
+
+    report = report_of(OTHER)
+    report.executive_summary = _SUMMARY_VERDICT
+    _closing(report).body = _CONCLUSION_VERDICT
+    _config_row(report)
+    report.c2_channels = [C2Channel(name="HTTP channel", encryption="Not established.")]
+    assert report.technical_analysis is not None
+    report.technical_analysis.capability_summary = [
+        CapabilityBullet(
+            text="The sample formats a host name [ev_0302].", evidence_refs=["ev_0302"]
+        )
+    ]
+    shown = passages_of(report, narrative_written=True)
+    text = prompt_text(shown)
+    # What the task names: a section 5 passage you may rewrite (listed under section 5, not
+    # marked read only), or one whose EVERY sentence the task asks to be answered.
+    section = text[text.index("SECTION 5, WRITTEN") :].split("\n\n", 1)[0]
+    named = {
+        found.group(1)
+        for found in re.finditer(r"^- \[([^\]]+)\] (.*)$", section, re.M)
+        if "(read only)" not in found.group(2)
+    }
+    every = re.search(r"answer EVERY sentence of ((?:\[[^\]]+\](?:, )?)+)", text)
+    assert every is not None
+    named |= set(re.findall(r"\[([^\]]+)\]", every.group(1)))
+    # What the code takes: a drop on the decision passes for a sentence of exactly these.
+    taken = set()
+    for passage in shown:
+        if passage.kind not in (agreement.CLAIM_LED, agreement.SECTION_5) or passage.source_only:
+            continue
+        sentence = agreement._sentences_of(passage.text)[0]
+        row = {
+            **_row(sentence, "drop", reason="The judge decided otherwise."),
+            "passage": passage.id,
+            "sources": ["judge.verdict"],
+        }
+        found = agreement_violations({"sentences": [row]}, shown, CITABLE)
+        if not [v for v in found if v.path.startswith("sentences.")]:
+            taken.add(passage.id)
+    assert {"string_resolution", "conclusion", "communications.1.encryption"} <= taken
+    assert "executive_summary" not in taken and "configuration.1" not in taken
+    assert taken == named
