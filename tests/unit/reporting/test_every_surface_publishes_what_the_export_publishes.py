@@ -407,3 +407,71 @@ class TestTheExportReadsTheRowAndAsksNothing:
 
         assert OBSERVED not in patterns
         assert SWEPT in patterns
+
+
+class TestTheShapeQuestionBindsTheStringSweepOnly:
+    """A path a sandbox watched the sample write is the sample's record, whatever its extension."""
+
+    PATH = "/opt/kit/notes.cfg"
+
+    def test_an_observed_path_without_a_listed_extension_stays_published(self) -> None:
+        judge = _judge("[file:name = 'notes.cfg' AND file:parent_directory_ref.path = '/opt/kit']")
+        report = _report(
+            judge,
+            # The sample's own process, staged under its digest, wrote it.
+            dynamic=DynamicBehavior(
+                process_tree=[{"pid": 1, "name": f"{SHA256}.exe"}],
+                file_operations=[{"operation": "write", "path": self.PATH, "pid": 1}],
+            ),
+        )
+        exported, _renderer = _export(report, judge)
+
+        row = _row(report, self.PATH)
+        assert (row.source, publishes(row.published)) == ("sandbox", True), row.published
+        assert "notes.cfg" in str(
+            [o.get("pattern") for o in exported["objects"] if o.get("type") == "indicator"]
+        )
+
+
+class TestTheNetworkRowsAreWrittenInTheNetworkBlocksOrder:
+    def test_addresses_then_urls_then_names(self) -> None:
+        from malspark.reporting.models import NetworkIP, NetworkURL
+
+        flagged = {"source": "virustotal", "malicious": 9}
+        report = _report(_judge())
+        report.network = NetworkIOCs(
+            domains=[NetworkDomain(fqdn=OBSERVED, source="sandbox")],
+            ips=[NetworkIP(address="45.77.12.9", source="strings", reputation=flagged)],
+            urls=[NetworkURL(url=f"https://{OBSERVED}/gate", source="sandbox")],
+        )
+        exported, _renderer = _export(report, _judge())
+
+        kinds = [
+            str(o["pattern"]).split(":", 1)[0].lstrip("[")
+            for o in exported["objects"]
+            if o.get("type") == "indicator" and not str(o["pattern"]).startswith("[file:")
+        ]
+        assert kinds == ["ipv4-addr", "url", "domain-name"]
+
+
+class TestAValueOnlyTheJudgeRecordsIsTheJudgesIndicator:
+    """A row the table holds because the judge named it is exported as the judge's own indicator."""
+
+    def test_it_is_written_once_in_the_judge_s_spelling(self) -> None:
+        judge = _judge("[mutex:name='runmark']")
+        report = _report(
+            judge,
+            dynamic=DynamicBehavior(
+                process_tree=[{"pid": 1, "name": "sample.exe", "command_line": "runmark"}]
+            ),
+        )
+        exported, _renderer = _export(report, judge)
+
+        row = _row(report, "runmark")
+        assert (row.source, publishes(row.published)) == ("judge", True), row.published
+        naming = [
+            o["pattern"]
+            for o in exported["objects"]
+            if o.get("type") == "indicator" and "runmark" in str(o.get("pattern"))
+        ]
+        assert naming == ["[mutex:name='runmark']"]

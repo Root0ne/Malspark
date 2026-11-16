@@ -92,9 +92,21 @@ def test_a_technique_the_judge_dropped_keeps_its_reason_after_the_verdict() -> N
     )
 
 
-def test_mitre_json_reads_the_empty_published_list_not_the_judge_s_bundle() -> None:
+@pytest.mark.parametrize("verdict", ["Malware", "Benign"])
+def test_mitre_json_reads_an_empty_published_list_as_the_published_list(verdict: str) -> None:
     from app.worker.analysis_worker import _extract_mitre
 
-    result = {"malware_report": {"ttp_mappings": []}, "stix_output": _bundle()}
+    result = {
+        "malware_report": {"verdict": verdict, "ttp_mappings": []},
+        "stix_output": _bundle(),
+    }
 
     assert _extract_mitre(result) is None
+
+
+def test_mitre_json_reads_a_report_stored_before_the_list_from_the_bundle() -> None:
+    from app.worker.analysis_worker import _extract_mitre
+
+    result = {"malware_report": {"verdict": "Malware"}, "stix_output": _bundle()}
+
+    assert [row["technique_id"] for row in _extract_mitre(result) or []] == ["T1083"]
