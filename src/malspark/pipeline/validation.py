@@ -7121,10 +7121,22 @@ def _address_value(value: Any) -> int | None:
     return _hex_value(str(value))
 
 
+def _generic_address(text: str) -> int | None:
+    """The address a decompiler's generic name for a function carries, or ``None``."""
+    named = generic_function_name().fullmatch(str(text).strip())
+    return int(named.group(1), 16) if named is not None else None
+
+
 def _address_list(value: Any) -> list[int]:
-    """A batch's addresses: a list, or a string with commas between them."""
+    """A batch's addresses: a list, or a string with commas between them.
+
+    An item may be an address or a decompiler's generic name, which carries one.
+    """
     items = value if isinstance(value, list | tuple) else str(value or "").split(",")
-    found = [_address_value(item) for item in items]
+    found = [
+        _address_value(item) if _address_value(item) is not None else _generic_address(item)
+        for item in items
+    ]
     return [address for address in found if address is not None]
 
 
@@ -7180,9 +7192,12 @@ def listed_function(output: str) -> tuple[str, str | int] | None:
 
 
 def _address_key(key: str) -> int | None:
-    """A batch answer's key as an address: ``0x`` and hex digits, or four hex digits or more."""
+    """A batch answer's key as an address: ``0x`` and hex digits, four hex digits or
+    more, or a decompiler's generic name for the function, which carries its address."""
     match = _ADDRESS_KEY.fullmatch(str(key).strip())
-    return int(match.group(1) or match.group(2), 16) if match else None
+    if match is None:
+        return _generic_address(key)
+    return int(match.group(1) or match.group(2), 16)
 
 
 def _cut_batch_items(output: str) -> list[tuple[str, str]]:
@@ -7216,13 +7231,24 @@ def _cut_batch_items(output: str) -> list[tuple[str, str]]:
     return items
 
 
-def _batch_listings(output: str) -> tuple[bool, dict[int, str]]:
-    """``(shown, listings)`` of an answer keyed by address, one function per key.
+def _is_error(text: str) -> bool:
+    return text.lstrip().lower().startswith("error")
 
-    ``shown`` is whether the answer is an object every key of which reads as
-    an address (``_address_key``). A key whose listing begins with ``Error``
-    was not decompiled. An answer cut short keeps the functions its text still
-    shows (``_cut_batch_items``). Any other answer is no batch.
+
+def _batch_members(
+    output: str, *, with_errors: bool = False
+) -> list[tuple[int | None, str, str]] | None:
+    """``(address, key, listing)`` of each function a batch answer lists, or ``None``
+    when the answer is no batch.
+
+    A batch is an object one function per key: a key that reads as an address
+    (``_address_key``), or a plain name whose listing's signature prints that
+    name, which carries no address. A key whose listing begins with ``Error``
+    was not decompiled: it is left out, and an answer of such keys alone is a
+    batch only when one of them reads as an address.
+    An answer cut short keeps the functions its text still shows
+    (``_cut_batch_items``). Any other answer is no batch. ``with_errors`` keeps
+    the keys reported as errors among the members.
     """
     try:
         parsed = json.loads(output)
@@ -7234,24 +7260,97 @@ def _batch_listings(output: str) -> tuple[bool, dict[int, str]]:
         items = _cut_batch_items(output)
     else:
         items = []
-    addresses = [_address_key(key) for key, _text in items]
-    if not items or any(address is None for address in addresses):
+    members: list[tuple[int | None, str, str]] = []
+    for key, text in items:
+        address = _address_key(key)
+        if address is not None or (key.strip() and _signature_name(text) == key.strip()):
+            members.append((address, key, text))
+        elif not _is_error(text):
+            return None
+    if not members:
+        return None
+    if with_errors:
+        return members
+    return [member for member in members if not _is_error(member[2])]
+
+
+def _batch_listings(output: str) -> tuple[bool, dict[int, str]]:
+    """``(shown, listings)`` of a batch answer (:func:`_batch_members`), one function
+    per address; a function named by a plain name has no address and no listing here."""
+    members = _batch_members(output)
+    if members is None:
         return False, {}
-    listings: dict[int, str] = {}
-    for address, (_key, text) in zip(addresses, items, strict=True):
-        if address is None or text.lstrip().lower().startswith("error"):
-            continue
-        listings[address] = text
-    return True, listings
+    return True, {address: text for address, _key, text in members if address is not None}
 
 
 def _entry_functions(entry: Any) -> list[tuple[int | None, list[str]]]:
-    """The ``(address, names)`` of each function one decompile entry holds."""
+    """The ``(address, names)`` of each function one decompile entry holds.
+
+    A batch whose members carry addresses is one function per address, a key
+    written again adding its listing's name; beside a member that carries
+    none, every address of the call no key took (a key reported as an error
+    takes its address too) is a function too, and one such address beside one
+    such member is that member's. A batch
+    keyed by plain names alone takes the addresses the call was given; a
+    member's name joins its address only when the call gave one address and
+    the answer lists one member. Given no address, its members keep their
+    names.
+    """
     args = getattr(entry, "args", None) or {}
     output = str(getattr(entry, "output", "") or "")
-    shown, listings = _batch_listings(output)
-    if shown:
-        return [(address, _named(None, text, args={})) for address, text in listings.items()]
+    members = _batch_members(output)
+    if members is not None and (
+        not members or any(address is not None for address, _key, _text in members)
+    ):
+        # One function per address: a key written again adds its name.
+        functions: list[tuple[int | None, list[str]]] = []
+        at: dict[int, list[str]] = {}
+        for address, _key, text in members:
+            names = _named(None, text, args={})
+            if address is None:
+                functions.append((None, names))
+            elif address in at:
+                at[address].extend(n for n in names if n not in at[address])
+            else:
+                at[address] = list(names)
+                functions.append((address, at[address]))
+        # A member with no address beside addressed ones: the call's addresses
+        # no key took, a key reported as an error included, are routines too,
+        # and one such address beside one such member is that member's.
+        unnamed = [i for i, (address, _names) in enumerate(functions) if address is None]
+        if unnamed:
+            taken = {
+                address
+                for address, _key, _text in _batch_members(output, with_errors=True) or ()
+                if address is not None
+            }
+            asked = _argument_functions(entry, args, output)
+            untaken = [
+                address
+                for address in dict.fromkeys(a for a, _names in asked if a is not None)
+                if address not in taken
+            ]
+            if len(untaken) == 1 and len(unnamed) == 1:
+                functions[unnamed[0]] = (untaken[0], functions[unnamed[0]][1])
+            else:
+                functions.extend((address, []) for address in untaken)
+        return functions
+    asked = _argument_functions(entry, args, output)
+    if members is None:
+        return asked
+    given = [address for address, _names in asked if address is not None]
+    if not given:
+        return [(None, _named(None, text, args={})) for _address, _key, text in members]
+    if len(given) == 1 and len(members) == 1:
+        named = _named(None, members[0][2], args={})
+        return [(given[0], list(dict.fromkeys([*asked[0][1], *named])))]
+    return asked
+
+
+def _argument_functions(
+    entry: Any, args: Mapping[str, Any], output: str
+) -> list[tuple[int | None, list[str]]]:
+    """The ``(address, names)`` of the functions a decompile call was given."""
     for argument in _ADDRESS_LIST_ARGUMENTS:
         if argument in args:
             addresses = _address_list(args[argument])
@@ -15004,6 +15103,62 @@ def discarded_retry_row(agent: str, revision_round: int, answer: str, why: str) 
     }
 
 
+# What a run-record row of the validation answers is for an answer whose claims
+# were not all read and that left force: a retry or a later round replaced it.
+CLAIMS_UNREAD_REPLACED_RECORD = "claims_unread_replaced"
+
+
+def claims_unread_replaced_row(
+    agent: str, replaced: Any, in_force: Any, replaced_by: str
+) -> dict[str, str] | None:
+    """An answer whose claims were not all read, replaced, as the run record keeps it; or ``None``.
+
+    A row when ``replaced`` carries an unread-claims reason
+    (``AgentISR.claims_unread_reason``) that the answer now in force does not
+    carry: the analyst, the replaced answer's round, the claims its read began,
+    read and left unread (``""`` where the reader gave no count), why in the
+    platform's words (``revision_merge.claims_unread_why_of``) and what replaced
+    it (``retry``, ``round N``, ``further turn``). Only the answer in force
+    degrades the run (``nodes.claims_unread_in_force``); this is the record's
+    alone. Read into ``run_summary.validation.claims_unread_replaced``. It
+    never raises: a count or a round it cannot read is ``""``.
+    """
+    from malspark.pipeline.revision_merge import claims_unread_why_of
+
+    reason = getattr(replaced, "claims_unread_reason", "")
+    if not isinstance(reason, str) or not reason.strip() or in_force is replaced:
+        return None
+    if reason in str(getattr(in_force, "claims_unread_reason", "") or ""):
+        return None
+    counts = getattr(replaced, "claims_unread_counts", None)
+    begun, read, unread = (
+        (_count_text(n) for n in counts)
+        if isinstance(counts, tuple) and len(counts) == 3
+        else ("", "", "")
+    )
+    try:
+        why = claims_unread_why_of(replaced)
+    except Exception:  # noqa: BLE001 — a fact of the record, never a failed answer
+        why = ""
+    return {
+        "record": CLAIMS_UNREAD_REPLACED_RECORD,
+        "agent": str(agent),
+        "round": _count_text(getattr(replaced, "revision_round", 0) or 0),
+        "begun": begun,
+        "read": read,
+        "unread": unread,
+        "why": why,
+        "replaced_by": str(replaced_by),
+    }
+
+
+def _count_text(value: Any) -> str:
+    """A whole number as the record writes it, or ``""`` where it is none."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return ""
+    return str(value)
+
+
 # ---------------------------------------------------------------------------
 # What a kept retry left out of the first answer
 # ---------------------------------------------------------------------------
@@ -15741,6 +15896,16 @@ def validation_metrics(
     # each when the analyst was asked (``retry_drop_row``).
     if drops:
         out["retry_drops"] = drops
+    # The answers whose claims were not all read that a retry or a later round
+    # replaced (``claims_unread_replaced_row``): a fact of the record, no
+    # degradation reason.
+    replaced = [
+        {k: v for k, v in row.items() if k != "record"}
+        for row in rows_kept
+        if row.get("record") == CLAIMS_UNREAD_REPLACED_RECORD
+    ]
+    if replaced:
+        out["claims_unread_replaced"] = replaced
     # The items a retry withdrew with a WITHDRAW line, with its reason
     # (``retry_withdrawn_row``).
     withdrawn = [
@@ -15809,6 +15974,7 @@ def corroboration(
     backed = tool_backed_answers(isrs, ledger)
     roots = technique_roots(backed, ledger, read)
     traced = technique_sources(backed, ledger, read)
+    absent = technique_absence_sources(backed, ledger, read)
     sayers = _independent_sayers(backed)
     out: dict[str, dict[str, list[str]]] = {}
     collected = collect(isrs, ledger)
@@ -15855,6 +16021,10 @@ def corroboration(
             # technique whose statements cite none, and is judged on them.
             summary = summary_of_sources(traced.get(tid) or {})
             row["sources"] = list(summary.sources)
+            # The sources every statement naming it cites to state an absence
+            # (``technique_absence_sources``): sources, shown apart.
+            if absent.get(tid):
+                row["absence_sources"] = list(absent[tid])
             row["independent_sources"] = summary.independent
             if summary.kinds:
                 row["source_kinds"] = dict(sorted(summary.kinds.items()))
@@ -15997,6 +16167,66 @@ _HOLDS_NO_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Forms of denial read only in the clause that writes a citation
+# (:func:`_denies`): "(no match)", "do not appear", "never occurs". The words
+# alone decide nothing: a clause in one of these forms denies only for an entry
+# whose own stored answer found nothing (:func:`answer_found_nothing`).
+_DENIAL_FORM_RE = re.compile(
+    r"\bno\s+match(?:es)?\b|\b(?:do|does|did)\s+not\s+(?:appear|occur)\b"
+    r"|\bnever\s+(?:appears?|occurs?)\b",
+    re.IGNORECASE,
+)
+
+
+def _denies(clause: str) -> bool:
+    """Whether ``clause`` is in one of the clause reader's own forms of denial."""
+    return _DENIAL_FORM_RE.search(clause) is not None
+
+
+def answer_found_nothing(entry: Any) -> bool:
+    """Whether a ledger entry's own stored answer states that it found nothing.
+
+    Read through the declaration the entry stored (``facts``), never a tool's
+    name: its tool declares where the answer's rows sit (``ToolFacts.rows``),
+    the stored answer holds that place, and no row stands there. An answer
+    that failed, was cut, was not shown or repeats another states nothing.
+    """
+    from malspark.core.declared_reading import facts_of
+    from malspark.core.tool_declarations import parse_path, select
+
+    if not isinstance(getattr(entry, "facts", None), Mapping):
+        return False
+    if (
+        not getattr(entry, "ok", True)
+        or getattr(entry, "truncated", False)
+        or getattr(entry, "repeated_of", None)
+        or answer_not_shown(entry)
+    ):
+        return False
+    answer = getattr(entry, "structured", None)
+    facts = facts_of(entry)
+    if answer is None or facts is None or not facts.rows:
+        return False
+    try:
+        segments = parse_path(facts.rows)
+    except ValueError:
+        return False
+    if not segments:
+        return False
+    places = select(answer, segments[:-1]) if len(segments) > 1 else [answer]
+    if not places or not all(isinstance(place, list | dict) for place in places):
+        return False
+    return not select(answer, segments)
+
+
+def _entries_that_found_nothing(entries: Sequence[Any]) -> set[str]:
+    """The ids of the entries whose own answer found nothing (:func:`answer_found_nothing`)."""
+    return {
+        str(getattr(entry, "id", "") or "").lower()
+        for entry in entries
+        if answer_found_nothing(entry)
+    }
+
 
 # Where a statement's sentences and its evidence line's items break.
 _CITING_PIECE_BREAK = re.compile(r"(?<=[.!?;])\s+|\n+")
@@ -16025,6 +16255,124 @@ def _cites_to_negate(said: str, citation: str, claim: str | None = None) -> bool
     return any(_negates(p) for p in mine)
 
 
+# Where a piece of a statement breaks into clauses: a comma, a colon or a dash
+# between words. A citation is read for an absence by its own clause only.
+_CITING_CLAUSE_BREAK = re.compile(r"[,:]\s+|\s+-\s+")
+
+
+def _citing_clauses(said: str, citation: str) -> list[str]:
+    """The clauses of ``said`` that write ``citation``, their quoted text left out.
+
+    A clause is a part of a sentence or an evidence-line item
+    (``_CITING_PIECE_BREAK``) between commas, colons and dashes; what it
+    quotes (``_QUOTED_SPAN_RE``) is a quotation, not its own statement.
+    """
+    text = _read_dashes(said)
+    written = re.compile(r"(?<![\w:])" + re.escape(citation) + r"(?![\w])", re.IGNORECASE)
+    return [
+        _QUOTED_SPAN_RE.sub(" ", clause)
+        for piece in _CITING_PIECE_BREAK.split(text)
+        if written.search(piece)
+        for clause in _CITING_CLAUSE_BREAK.split(piece)
+        if written.search(clause)
+    ]
+
+
+def _cited_for_an_absence(said: str, citation: str, found_nothing: bool = False) -> bool:
+    """Whether ``said`` cites ``citation`` to state an absence.
+
+    Read in the clauses that write the citation (:func:`_citing_clauses`): one
+    of them negates what was recorded, matched or found (:func:`_negates`), or,
+    for an entry whose own answer found nothing (``found_nothing``,
+    :func:`answer_found_nothing`), is in one of the clause reader's forms of
+    denial (:func:`_denies`), as "[ev_0203] DNS names (no match)" is. A
+    negation in another clause, in quoted text, or a citation the statement
+    does not write, is no absence.
+    """
+    return any(
+        _negates(clause) or (found_nothing and _denies(clause))
+        for clause in _citing_clauses(said, citation)
+    )
+
+
+def _negated_for_its_technique(
+    said: str, citation: str, claim: str | None = None, *, found_nothing: bool = False
+) -> bool:
+    """Whether a statement cites ``citation`` for an absence, as a technique's sources read it.
+
+    The pieces that cite it negate (:func:`_cites_to_negate`), or, for an entry
+    whose own answer found nothing (``found_nothing``), a clause that writes it
+    is in one of the clause reader's forms of denial (:func:`_denies`).
+    """
+    return _cites_to_negate(said, citation, claim) or (
+        found_nothing and any(_denies(clause) for clause in _citing_clauses(said, citation))
+    )
+
+
+def technique_absence_sources(
+    isrs: dict[str, Any] | None, ledger: Sequence[Any] | None, found: Any = None
+) -> dict[str, list[str]]:
+    """Per technique id, its sources every statement naming it cites for an absence.
+
+    Read over the statements :func:`technique_sources` reads, valid claims and
+    findings: a source cited by each of them in a clause that negates
+    (:func:`_cited_for_an_absence`). A source one statement cites for the
+    behaviour, or an asserting tool's own row names, is evidence. Sorted; a
+    technique with none is left out. Empty without a ledger.
+    """
+    from malspark.analysis.evidence_roots import run_roots
+    from malspark.pipeline.evidence_summary import (
+        asserted_techniques,
+        asserting_source,
+        invalid_technique_ids,
+    )
+
+    entries = list(ledger or ())
+    if not entries:
+        return {}
+    roots = found if found is not None else run_roots(entries)
+    empty = _entries_that_found_nothing(entries)
+    absent: dict[str, set[str]] = {}
+    present: dict[str, set[str]] = {}
+
+    def read(tid: str, said: str, cited: list[str]) -> None:
+        for source in roots.sources_of_statement(said, cited):
+            denied = _cited_for_an_absence(said, source, source.lower() in empty)
+            into = absent if denied else present
+            into.setdefault(tid, set()).add(source)
+
+    for isr in (isrs or {}).values():
+        for claim in getattr(isr, "claims", None) or []:
+            if not getattr(claim, "technique_id_valid", True):
+                continue
+            tid = str(getattr(claim, "technique_id", "") or "").strip().upper()
+            if not tid:
+                continue
+            ref = str(getattr(claim, "evidence_ref", "") or "")
+            said = f"{getattr(claim, 'claim', '') or ''} {ref}"
+            read(tid, said, [*entry_ids_in(said), *item_ids_in(ref)])
+        for finding in getattr(isr, "findings", None) or []:
+            said = f"{getattr(finding, 'title', '') or ''} {getattr(finding, 'detail', '') or ''}"
+            cited = [str(i) for i in getattr(finding, "evidence_ids", None) or [] if i]
+            for raw in getattr(finding, "technique_ids", None) or []:
+                tid = str(raw or "").strip().upper()
+                if tid:
+                    read(tid, said, cited)
+    invalid = invalid_technique_ids(entries)
+    for entry in entries:
+        if asserting_source(entry) is None or getattr(entry, "repeated_of", None):
+            continue
+        for tid in asserted_techniques(entry):
+            if tid not in invalid:
+                present.setdefault(tid, set()).add(str(getattr(entry, "id", "") or "").lower())
+    out: dict[str, list[str]] = {}
+    for tid, sources in absent.items():
+        kept = sorted(sources - present.get(tid, set()))
+        if kept:
+            out[tid] = kept
+    return out
+
+
 def technique_sources(
     isrs: dict[str, Any] | None,
     ledger: Sequence[Any] | None,
@@ -16041,8 +16389,9 @@ def technique_sources(
     asserting tool's entry a statement cites is a rule match for the technique
     only when its own rows name the technique or the statement places one of
     its rows; otherwise it is placed nowhere. A run observation or a rule cited
-    by a piece of the statement that negates (``_cites_to_negate``) is cited
-    for its absence: a source, placed nowhere. Empty
+    by a piece of the statement that negates, or by a clause that denies it
+    where its own answer found nothing (``_negated_for_its_technique``), is
+    cited for its absence: a source, placed nowhere. Empty
     without a ledger. ``found`` is the run's ``RunRoots`` where the caller
     already read it.
     """
@@ -16063,6 +16412,7 @@ def technique_sources(
     if not entries:
         return {}
     roots = found if found is not None else run_roots(entries)
+    empty = _entries_that_found_nothing(entries)
     out: dict[str, dict[str, tuple[str, tuple[str, ...]]]] = {}
 
     def add(tid: str, held: Mapping[str, tuple[str, tuple[str, ...]]]) -> None:
@@ -16092,7 +16442,9 @@ def technique_sources(
         held = roots.sources_of_statement(said, cited)
         found_here: dict[str, tuple[str, tuple[str, ...]]] = {}
         for source, (reading, placed) in held.items():
-            negates = _cites_to_negate(said, source, claim)
+            negates = _negated_for_its_technique(
+                said, source, claim, found_nothing=source.lower() in empty
+            )
             rows = [root for root in placed if not root.startswith(_WHOLE_ANSWER_OPENING)]
             if source in asserts:
                 # An asserting entry is a rule match for this technique when

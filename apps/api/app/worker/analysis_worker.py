@@ -4238,7 +4238,7 @@ def judge_bundle_json(bundle: dict) -> dict:
         as_json = Bundle.model_validate(bundle).model_dump(mode="json")
     except Exception:  # noqa: BLE001 — a record kept in a weaker form, never a failed save
         as_json = json.loads(json.dumps(bundle, default=str))
-    return {"spec_version": "2.1", **as_json}
+    return as_json
 
 
 def _extract_mitre(result: dict) -> list | None:
@@ -4262,6 +4262,7 @@ def _extract_mitre(result: dict) -> list | None:
     mappings = mr.get("ttp_mappings") or []
     if mappings:
         from malspark.reporting.technique_evidence import (
+            technique_absence_ids,
             technique_evidence_ids,
             technique_sandbox_items,
         )
@@ -4271,7 +4272,9 @@ def _extract_mitre(result: dict) -> list | None:
         # name it; ``[]`` where they cite no ledger entry. A mapping stored
         # before the set was recorded, naming no entry, carries no such key.
         # ``sandbox_items`` names the sandbox items among its sources, apart
-        # from the entries; absent where it has none.
+        # from the entries; absent where it has none. ``absence_sources``
+        # names the sources its statements cite only to state an absence, in
+        # neither list; absent where it has none.
         rows: list[dict[str, Any]] = []
         for m in mappings:
             if not m.get("technique_id"):
@@ -4286,7 +4289,10 @@ def _extract_mitre(result: dict) -> list | None:
                 row["evidence_ids"] = evidence
             items = technique_sandbox_items(m)
             if items:
-                row["sandbox_items"] = items
+                row["sandbox_items"] = list(items)
+            absent = technique_absence_ids(m)
+            if absent:
+                row["absence_sources"] = absent
             rows.append(row)
         return rows or None
 
@@ -5045,13 +5051,8 @@ def _report_inputs(
                 UNPUBLISHED_PROPERTY: False,
                 "x_malspark_notice": UNPUBLISHED_NOTICE,
             }
-    # Ensure STIX 2.1 ``spec_version`` is present on every bundle —
-    # the OASIS spec requires it on top-level bundle objects, and
-    # downstream tooling (OpenCTI / MISP / TAXII clients) silently
-    # rejects bundles that omit the field. Defensive: covers the
-    # case where the producer dropped it during serialization.
-    if isinstance(stix_bundle_for_persist, dict):
-        stix_bundle_for_persist.setdefault("spec_version", "2.1")
+    # The envelope is stored as built: a STIX 2.1 bundle holds ``type``, ``id``
+    # and ``objects`` (and ``x_`` properties); ``spec_version`` is each object's.
 
     # A masked, non-secret record of the Settings this job actually
     # ran with, plus which core keys came from a stored UI override
