@@ -202,6 +202,77 @@ class TestRegistryOps:
                 }
             ]
 
+    @staticmethod
+    def _argued_calls(*calls: tuple[str, list[dict[str, str]]]) -> dict[str, Any]:
+        return {
+            "behavior": {
+                "processes": [
+                    {"calls": [{"api": api, "arguments": arguments} for api, arguments in calls]}
+                ]
+            }
+        }
+
+    @staticmethod
+    def _set(name: str, data: str) -> tuple[str, list[dict[str, str]]]:
+        return (
+            "RegSetValueExW",
+            [
+                {"name": "FullName", "value": "HKEY_CURRENT_USER\\Software\\Example"},
+                {"name": "ValueName", "value": name},
+                {"name": "Buffer", "value": data},
+            ],
+        )
+
+    def test_two_values_written_to_one_key_are_a_row_each(self) -> None:
+        report = self._argued_calls(self._set("alpha", "C:\\a.exe"), self._set("beta", "C:\\b.exe"))
+
+        result = sandbox_tools.sandbox_registry_ops(report)
+
+        assert result["registry"] == [
+            {
+                "key": "HKEY_CURRENT_USER\\Software\\Example",
+                "operation": "modify",
+                "value": value,
+                "value_name": name,
+            }
+            for name, value in (("alpha", "C:\\a.exe"), ("beta", "C:\\b.exe"))
+        ]
+        assert result["total"] == 2
+
+    def test_one_value_written_twice_or_read_after_is_one_row_with_the_last_write(self) -> None:
+        read = (
+            "RegQueryValueExW",
+            [
+                {"name": "FullName", "value": "HKEY_CURRENT_USER\\Software\\Example"},
+                {"name": "Data", "value": "C:\\read.exe"},
+            ],
+        )
+        report = self._argued_calls(
+            read, self._set("alpha", "C:\\a.exe"), self._set("alpha", "C:\\b.exe"), read
+        )
+
+        assert sandbox_tools.sandbox_registry_ops(report)["registry"] == [
+            {
+                "key": "HKEY_CURRENT_USER\\Software\\Example",
+                "operation": "modify",
+                "value": "C:\\b.exe",
+                "value_name": "alpha",
+            }
+        ]
+
+    def test_a_key_deleted_after_its_values_were_written_is_one_row(self) -> None:
+        delete = (
+            "RegDeleteKeyW",
+            [{"name": "FullName", "value": "HKEY_CURRENT_USER\\Software\\Example"}],
+        )
+        report = self._argued_calls(
+            self._set("alpha", "C:\\a.exe"), self._set("beta", "C:\\b.exe"), delete
+        )
+
+        assert sandbox_tools.sandbox_registry_ops(report)["registry"] == [
+            {"key": "HKEY_CURRENT_USER\\Software\\Example", "operation": "delete", "value": None}
+        ]
+
     def test_without_a_full_path_the_subkey_is_the_key_not_the_handle(self) -> None:
         report = self._one_call(
             "RegCreateKeyExW",
