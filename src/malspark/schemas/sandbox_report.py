@@ -1062,6 +1062,12 @@ class _Placed:
     # The processes that record a lineage of their own: a parent pid, or a
     # place under another listed process.
     linked: set[int]
+    # The processes that run the submitted file, the processes whose parent
+    # chain reaches one of them, and each process's parent (its index, ``None``
+    # for none): what the facts above are read from.
+    runs: frozenset[int] = frozenset()
+    by_file: frozenset[int] = frozenset()
+    parents: tuple[int | None, ...] = ()
 
 
 def _placed(roots: list[Any], file_name: str, sha256: str) -> _Placed:
@@ -1139,6 +1145,9 @@ def _placed(roots: list[Any], file_name: str, sha256: str) -> _Placed:
         marked=by_mark,
         stated=bool(by_file or by_mark),
         linked={i for i, row in enumerate(nodes) if row[2] or row[3] is not None},
+        runs=frozenset(i for i, row in enumerate(nodes) if row[5]),
+        by_file=frozenset(by_file),
+        parents=tuple(_parent_of(i) for i in range(len(nodes))),
     )
 
 
@@ -1316,6 +1325,77 @@ def process_placement(
             where = PLACED_OUTSIDE
         out.append((node, where))
     return out
+
+
+# The field a process row is marked by where its image is the submitted file
+# as the sandbox started it (:func:`started_by_the_sandbox`), left out where
+# not; the words every surface that renders the row writes beside it
+# (:func:`staged_words`); and the sentence an answer holding such a row carries
+# once, under :data:`STAGED_NOTE_KEY`.
+STAGED_KEY = "staged_by_sandbox"
+STAGED_WORDS = "the sandbox started the submitted file from this path"
+STAGED_NOTE_KEY = "staged_by_sandbox_note"
+STAGED_NOTE = (
+    f"The sandbox started the submitted file from the path of the row marked {STAGED_KEY}: "
+    "where the file was placed is the sandbox's doing, not the sample's."
+)
+
+
+def started_by_the_sandbox(roots: list[Any], file_name: str = "", sha256: str = "") -> list[Any]:
+    """The listed processes whose image is the submitted file as the sandbox started it.
+
+    A process that runs the submitted file (its name or its digest,
+    :func:`runs_the_submitted_file`), whose image is that file, and that
+    starts the sample's tree by that fact: no process its parent chain
+    reaches runs the file (:func:`_placed`'s links). Its image path is where
+    the sandbox placed the file, the sandbox's doing and never the sample's. A
+    copy the sample makes of itself and runs is under a process that runs the
+    file: behaviour, never this. A process that names the file only on its
+    command line (``rundll32.exe <file>,#1``) has another image and is not
+    it, and a listing that runs the file under a name the reading does not
+    know names none. Each task's processes are read on their own, a process
+    being its task and its id (``schemas.process_identity``), each listed
+    process by its own place in the listing; in listing order.
+    """
+    from malspark.schemas.process_identity import TASK_KEY
+
+    if not (file_name or sha256):
+        return []
+    grouped: dict[str, list[Any]] = {}
+    for node in roots:
+        grouped.setdefault(str(_node_field(node, TASK_KEY) or ""), []).append(node)
+    found: set[int] = set()
+    for held in grouped.values():
+        placed = _placed(held, file_name, sha256)
+        for index in placed.runs:
+            parent = placed.parents[index]
+            node, _pid, name = placed.nodes[index]
+            if (parent is None or parent not in placed.by_file) and runs_the_submitted_file(
+                name, "", file_name, sha256
+            ):
+                found.add(id(node))
+    return [node for node in _listed(roots) if id(node) in found]
+
+
+def _listed(roots: list[Any]) -> list[Any]:
+    """Every listed process, each root followed by what is listed under it, in order."""
+    out: list[Any] = []
+    stack = list(reversed(roots))
+    while stack:
+        node = stack.pop()
+        out.append(node)
+        stack.extend(reversed(list(_node_field(node, "children") or [])))
+    return out
+
+
+def staged_words(row: Any) -> str:
+    """The words a rendered process row carries beside it where it is marked :data:`STAGED_KEY`.
+
+    ``""`` for any other row. The one reading of the mark: the pack's line,
+    the ledger's table, the report's process tree and its figure each write
+    these words beside the row.
+    """
+    return STAGED_WORDS if _node_field(row, STAGED_KEY) is True else ""
 
 
 # Which of the two facts alone names a flow's process as the sample's, on a
