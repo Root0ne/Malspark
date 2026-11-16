@@ -259,6 +259,12 @@ class TestTheSourcesOfATechnique:
         held = technique_sources({"b": _isr("b", _claim(wrote, "[ev_0003]"))}, _ledger())
         assert _readings(held["T1547.001"]) == {"ev_0003": READING_RUN}
 
+    def test_a_denial_form_leaves_a_run_whose_answer_holds_rows_a_run(self) -> None:
+        # "No match" denies only for an entry whose own answer found nothing.
+        said = '"rundll32.exe x.dll,#1" wrote the Run value [ev_0003] (no match).'
+        held = technique_sources({"a": _isr("a", _claim(said, "[ev_0003]"))}, _ledger())
+        assert _readings(held["T1547.001"]) == {"ev_0003": READING_RUN}
+
     def test_a_technique_on_an_external_assessment_alone_is_unobserved(self) -> None:
         held = technique_sources(_restating(3, "[ev_0007]"), _ledger())["T1547.001"]
 

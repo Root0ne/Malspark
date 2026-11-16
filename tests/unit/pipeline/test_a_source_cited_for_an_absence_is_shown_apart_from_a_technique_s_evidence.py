@@ -93,6 +93,15 @@ def test_an_answer_whose_declared_rows_are_empty_found_nothing() -> None:
     assert not answer_found_nothing(
         LedgerEntry(id="ev_0207", tool="list_dns", args={}, output="", facts=LEDGER[2].facts)
     )
+    # An entry that stored no declaration is never read by its tool's name.
+    unrecorded = LedgerEntry(
+        id="ev_0208",
+        tool="resolve_api_hashes",
+        args={},
+        output=json.dumps({"hits": []}),
+        structured={"hits": []},
+    )
+    assert not answer_found_nothing(unrecorded)
     # The declared place itself missing from the answer states nothing either.
     missing = LEDGER[2].model_copy(update={"structured": {"other": []}})
     assert not answer_found_nothing(missing)
@@ -416,3 +425,22 @@ def test_the_judge_s_summary_shows_one_total_beside_the_support_sentence() -> No
     assert _source_facts(plain) == (
         f" [traced to 3 cited source(s), each counted once: ev_0006, ev_0007, ev_0203; {sentence}]"
     )
+
+
+def test_a_rule_that_matched_stays_a_rule_match_when_a_clause_writes_no_match() -> None:
+    from malspark.analysis.evidence_roots import READING_RULE
+    from malspark.core.declared_reading import shipped_by_name, stored_record
+    from malspark.pipeline.validation import technique_sources
+
+    answer = {"matches": [{"rule": "example_rule", "meta": {"technique_id": "T1486"}}]}
+    rules = LedgerEntry(
+        id="ev_0300",
+        tool="yara_scan",
+        args={},
+        output=json.dumps(answer),
+        structured=answer,
+        facts=stored_record(shipped_by_name()["yara_scan"]),
+    )
+    claim = _claim("The files are encrypted.", "[ev_0300] rules (no match)")
+    isrs = {"static": AgentISR(agent_id="static", domain="static", claims=[claim])}
+    assert technique_sources(isrs, [*LEDGER, rules])["T1486"]["ev_0300"][0] == READING_RULE
