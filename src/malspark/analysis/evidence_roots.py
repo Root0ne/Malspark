@@ -176,6 +176,10 @@ NO_ITEM = "no: {item} is not an item of this run's sandbox report"
 ITEM_ROW_UNREAD = "no: no answer in this run's ledger holds the row of {item}"
 ITEM_UNPLACED = "no: a sandbox `{section}` item names no process, flow or query to place"
 ITEM_NO_PID = "no: the report states no pid for this process"
+# A process item whose id the report's process list holds, but not as one
+# process at the item's place: an id a task lists twice, or a place the
+# listing does not hold (``proc:87.0``).
+ITEM_UNSETTLED = "no: {item} names no one process of the report's process list"
 BLOB_UNMATCHED = (
     "no: the call site holds blobs the blob decoder read, and none of them decodes to this text"
 )
@@ -928,17 +932,23 @@ def _joins(entries: Iterable[Any], files: _Files) -> _Joins:
                     found.blob_calls.add((file, call))
                     found.blob_of.setdefault((file, call, _fold(row.get("text"))), blob)
         elif kind == "sandbox_processes":
-            for row in _rows(data, "processes"):
+            rows = _rows(data, "processes")
+            for row in rows:
                 command = str(row.get("command_line") or "").strip()
                 if command and isinstance(row.get("pid"), int):
                     found.processes_of_command.setdefault(command, {})[int(row["pid"])] = None
-                listed = found.identities.add(
-                    row.get("pid"), task=row.get("task"), guest_pid=row.get("guest_pid")
-                )
+            # One listing's processes of each id in its order, a pair it holds
+            # twice at both places; a process an earlier answer listed is kept
+            # where it was.
+            here: dict[str, list[ProcessKey]] = {}
+            for listed in found.identities.add_listing(
+                (row.get("pid"), row.get("task"), row.get("guest_pid")) for row in rows
+            ):
                 if listed is not None:
-                    order = found.listed.setdefault(listed.id, [])
-                    if listed not in order:
-                        order.append(listed)
+                    here.setdefault(listed.id, []).append(listed)
+            for held_id, keys in here.items():
+                order = found.listed.setdefault(held_id, [])
+                order.extend([key for key in keys if key not in order] if order else keys)
         found.identities.read_answer(data, _indicator_paths(entry))
         if (
             _reader(entry) == "report_items"
@@ -984,11 +994,20 @@ def _indicator_paths(entry: Any) -> tuple[str, ...]:
 
 
 def _process_root(joins: _Joins, pid: Any, task: Any = "") -> str:
-    """The root of the process ``pid`` names in ``task``, as the run's identities write it."""
+    """The root of the process ``pid`` names in ``task``, as the run's identities write it.
+
+    A row that states no task names the process of its id in the one task
+    that lists it; ``""`` where several tasks do.
+    """
     number = pid_of(pid)
     if not number:
         return _process(pid)
-    return _process(joins.identities.written(ProcessKey(str(task or ""), number)))
+    if task:
+        return _process(joins.identities.written(ProcessKey(str(task), number)))
+    held = joins.identities.keys(number, alias=False)
+    if len(set(held)) > 1:
+        return ""
+    return _process(joins.identities.written(held[0] if held else ProcessKey("", number)))
 
 
 def _indicator_roots(
@@ -1004,13 +1023,14 @@ def _indicator_roots(
         if not isinstance(row, Mapping):
             continue
         said = [row.get("description"), row.get("signature"), *shared]
-        processes = indicator_processes(row)
-        for process, task in processes:
-            found.add(
-                _process_root(joins, process.get("id"), task),
-                values=[*said, process.get("image")],
-            )
-        if processes:
+        roots = [
+            (root, process)
+            for process, task in indicator_processes(row)
+            if (root := _process_root(joins, process.get("id"), task))
+        ]
+        for root, process in roots:
+            found.add(root, values=[*said, process.get("image")])
+        if roots:
             continue
         named = any(isinstance(row.get(key), Mapping) for key in ("process", "target"))
         found.unplace(INDICATOR_UNSETTLED if named else SIGNATURE_UNPLACED, values=said)
@@ -1030,14 +1050,20 @@ def _item_root(item: str, joins: _Joins) -> tuple[str, str]:
     prefix, _, rest = item.partition(":")
     section = SECTION_OF_PREFIX.get(prefix, "")
     if section == "processes":
-        pid, _, repeat = rest.partition(".")
+        pid, dot, repeat = rest.partition(".")
         if not pid.isdigit():
             return "", ITEM_NO_PID
+        if dot and not (repeat.isdigit() and int(repeat) >= 1):
+            # A repeat is counted from 2 (``proc:87.2``); ``.0`` is no place.
+            return "", ITEM_UNSETTLED.format(item=item)
         order = joins.listed.get(pid_of(pid)) or []
-        at = int(repeat) - 1 if repeat.isdigit() else 0
-        if 0 <= at < len(order):
+        if not order:
+            # No listing in the ledger holds the id: the item's own number.
+            return _process(pid), ""
+        at = int(repeat) - 1 if dot else 0
+        if at < len(order) and not joins.identities.twice(order[at]):
             return _process(joins.identities.written(order[at])), ""
-        return _process(pid), ""
+        return "", ITEM_UNSETTLED.format(item=item)
     if section == "signatures":
         roots = _signature_item_roots(item, joins)
         if roots is not None and len(roots.roots) > 1:

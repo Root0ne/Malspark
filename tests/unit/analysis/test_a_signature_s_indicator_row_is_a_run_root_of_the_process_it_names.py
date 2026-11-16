@@ -18,10 +18,12 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from tests.linear_cost import assert_ratio
 
 from malspark.analysis.evidence_roots import (
     INDICATOR_UNSETTLED,
+    ITEM_UNSETTLED,
     NAMES_NO_ROW,
     READING_RULE,
     READING_RUN,
@@ -285,6 +287,170 @@ class TestASignatureItemIsPlacedByItsIndicators:
 
         assert found.of_item("proc:87") == (P87_T1, "")
         assert found.of_item("proc:87.2") == (P87_T2, "")
+
+
+class TestAnIdATaskListsTwiceNamesNoProcess:
+    @staticmethod
+    def _ledger() -> list[LedgerEntry]:
+        listing = _entry(
+            "ev_0011",
+            "sandbox_processes",
+            {
+                "processes": [
+                    {"pid": 85, "ppid": 56, "name": SAMPLE, "task": "t1"},
+                    {"pid": 900, "ppid": 4, "name": "x.exe", "task": "t1", "guest_pid": "1500"},
+                    {"pid": 900, "ppid": 5, "name": "y.exe", "task": "t1", "guest_pid": "1504"},
+                ]
+            },
+        )
+        page = _entry(
+            "ev_0082",
+            "sandbox_signatures",
+            {
+                "indicators": [
+                    {"signature": WROTE, "task": "t1", "process": _proc("85", "1496", SAMPLE)},
+                    {"signature": WROTE, "task": "t1", "process": _proc("900", "1500", "x.exe")},
+                ]
+            },
+        )
+        index = _entry(
+            "ev_0024",
+            "sandbox_sections",
+            {
+                "sections": {
+                    "processes": {
+                        "items": 3,
+                        "prefix": "proc",
+                        "pids": [[85, 85], [900, 900]],
+                        "repeats": [[900, 2]],
+                    }
+                }
+            },
+        )
+        return [listing, index, page]
+
+    def test_a_statement_naming_it_by_any_number_picks_none(self) -> None:
+        found = run_roots(self._ledger())
+
+        for said in ("pid 900", "pid 1500", "pid 1504"):
+            roots, _reasons = found.of_statement(f"{said} wrote a file [ev_0082].", ["ev_0082"])
+            assert roots == [], said
+
+    def test_its_process_items_pick_none(self) -> None:
+        found = run_roots(self._ledger())
+
+        assert found.of_item("proc:900") == ("", ITEM_UNSETTLED.format(item="proc:900"))
+        assert found.of_item("proc:900.2") == ("", ITEM_UNSETTLED.format(item="proc:900.2"))
+        assert found.of_item("proc:85") == (P85, "")
+
+
+class TestARowThatStatesNoTaskIsReadAgainstTheListedTasks:
+    @staticmethod
+    def _untasked(*indicators: dict[str, Any]) -> LedgerEntry:
+        return _entry("ev_0093", "sandbox_signatures", {"indicators": list(indicators)})
+
+    def test_an_id_one_task_holds_is_that_task_s_process(self) -> None:
+        page = self._untasked({"signature": WROTE, "process": _proc("85", "1496", SAMPLE)})
+        found = run_roots(_ledger(page))
+
+        assert found.of_entry("ev_0093").roots == [P85]
+        assert found.of_entry("ev_0011").roots == [P85, P87_T1, P87_T2, P89]
+
+    def test_an_id_several_tasks_hold_picks_none(self) -> None:
+        page = self._untasked({"signature": WROTE, "process": _proc("87", "1924", "defrag.exe")})
+        found = run_roots(_ledger(page)).of_entry("ev_0093")
+
+        assert found.roots == []
+        assert found.reason == INDICATOR_UNSETTLED
+
+    def test_no_root_carries_an_empty_task(self) -> None:
+        listing = _entry("ev_0011", "sandbox_processes", {"processes": [{"pid": 85, "task": "t1"}]})
+        page = self._untasked({"signature": WROTE, "process": _proc("85", "1496", SAMPLE)})
+        found = run_roots([listing, page])
+
+        assert found.of_entry("ev_0011").roots == [P85]
+        assert found.of_entry("ev_0093").roots == [P85]
+
+
+class TestTheWordsBeforeAProcessNumberAreDeclared:
+    @pytest.fixture
+    def declared(self) -> Any:
+        from malspark.providers.sandbox.readers import (
+            CapeReportReader,
+            register_report_reader,
+            unregister_report_reader,
+        )
+
+        class _Declaring(CapeReportReader):
+            id = "declaring-box"
+            traffic_process_fields = ("box_ref",)
+
+        register_report_reader(_Declaring)
+        yield
+        unregister_report_reader(_Declaring.id)
+
+    def test_a_word_a_reader_declares_picks_its_process(self, declared: Any) -> None:
+        held = _sources("box_ref 85 wrote into another process [ev_0082].", "ev_0082")
+
+        assert held["ev_0082"] == (READING_RUN, (P85,))
+
+    def test_a_word_no_reader_declares_picks_none(self) -> None:
+        held = _sources("box_ref 85 wrote into another process [ev_0082].", "ev_0082")
+
+        assert held["ev_0082"] == (READING_UNPLACED, ())
+
+
+class TestTheMutantGapsAreClosed:
+    def test_a_quoted_image_picks_the_process_of_that_image(self) -> None:
+        held = _sources("`defrag.exe` was written into [sig:3].", "sig:3")
+
+        assert held == {"sig:3": (READING_RUN, (P87_T1,))}
+
+    def test_a_position_zero_or_past_the_listing_picks_none(self) -> None:
+        rows = [
+            {"id": item, "kind": "processes", "fields": {"pid": 87}}
+            for item in ("proc:87.0", "proc:87.3")
+        ]
+        items = _entry(
+            "ev_0095",
+            "sandbox_items",
+            {"section": "processes", "items": rows},
+            args={"section": "processes"},
+        )
+        found = run_roots(_ledger(items)).of_entry("ev_0095")
+
+        assert found.roots == []
+        assert found.reason == ITEM_UNSETTLED.format(item="proc:87.0")
+
+    def test_an_item_whose_rows_settle_no_process_says_so(self) -> None:
+        items = _entry(
+            "ev_0094",
+            "sandbox_items",
+            {
+                "section": "signatures",
+                "items": [
+                    {
+                        "id": "sig:4",
+                        "kind": "signatures",
+                        "fields": {"name": "Writes"},
+                        "indicators": [
+                            {"process": {"id": "91", "not_listed": True}, "description": "a"},
+                            {"process": {"id": "92", "not_listed": True}, "description": "b"},
+                        ],
+                    }
+                ],
+            },
+            args={"section": "signatures"},
+        )
+        index = _entry(
+            "ev_0024",
+            "sandbox_sections",
+            {"sections": {"signatures": {"items": 4, "prefix": "sig"}}},
+        )
+        found = run_roots([_processes(), index, items])
+
+        roots, reasons = found.of_statement("Code is written [sig:4].", ["sig:4"])
+        assert (roots, reasons) == ([], [f"sig:4: {INDICATOR_UNSETTLED}"])
 
 
 class TestATechniqueOnIndicatorRowsIsObserved:

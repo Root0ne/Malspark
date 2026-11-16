@@ -10,12 +10,16 @@ the sample's process tree and the export's host rows.
 A number names the one process whose id, or whose guest's pid, it is, in the
 task where one is stated (:meth:`ProcessIdentities.resolve`); a number more
 than one process answers to names none, and neither does one no process
-answers to. Nothing is guessed: an id a task lists twice, or an indicator's
-process the report does not settle, adds no identity.
+answers to. Nothing is guessed: an id one listing holds twice in a task names
+no process by any number (:meth:`ProcessIdentities.add_listing`), an
+indicator's process the report does not settle adds no identity, and a row
+that states no task is read against the tasks the record lists: the one task
+that holds its id, or none where several do.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -56,6 +60,11 @@ class ProcessIdentities:
     _by_id: dict[str, dict[ProcessKey, None]] = field(default_factory=dict)
     _by_guest: dict[str, dict[ProcessKey, None]] = field(default_factory=dict)
     _guest_of: dict[ProcessKey, str] = field(default_factory=dict)
+    # A process two answers state two guest pids for: neither is its guest's
+    # pid, though each still names it.
+    _guest_disputed: set[ProcessKey] = field(default_factory=set)
+    # The (task, id) pairs one listing holds more than once: two processes.
+    _twice: set[ProcessKey] = field(default_factory=set)
 
     def add(self, pid: Any, *, task: Any = "", guest_pid: Any = "") -> ProcessKey | None:
         """The process ``pid`` names in ``task``, with its guest's pid where one is stated."""
@@ -67,30 +76,84 @@ class ProcessIdentities:
         guest = pid_of(guest_pid)
         if guest:
             self._by_guest.setdefault(guest, {})[key] = None
-            self._guest_of.setdefault(key, guest)
+            if self._guest_of.setdefault(key, guest) != guest:
+                self._guest_disputed.add(key)
         return key
 
-    def keys(self, number: Any, task: str | None = None) -> list[ProcessKey]:
-        """Every process ``number`` is the id or the guest's pid of, in ``task`` where given."""
+    def add_listing(self, rows: Iterable[tuple[Any, Any, Any]]) -> list[ProcessKey | None]:
+        """The processes one listing's rows name, each ``(id, task, guest's pid)``, in order.
+
+        An id the listing holds twice in one task is two processes, and the
+        number names neither; the same process listed by two answers (two
+        pages, a call repeated) is one.
+        """
+        keys = [self.add(pid, task=task, guest_pid=guest) for pid, task, guest in rows]
+        held = Counter(key for key in keys if key is not None)
+        self._twice.update(key for key, count in held.items() if count > 1)
+        return keys
+
+    def twice(self, key: ProcessKey) -> bool:
+        """Whether a listing holds ``key``'s id twice in its task: no one process."""
+        return key in self._twice
+
+    def _tasked(self, number: str) -> list[ProcessKey]:
+        return [key for key in self._by_id.get(number, {}) if key.task]
+
+    def _as_listed(self, key: ProcessKey) -> list[ProcessKey]:
+        """``key`` read against the tasks the record lists: a task-less row is its id's tasks'."""
+        if key.task:
+            return [key]
+        return self._tasked(key.id) or [key]
+
+    def keys(self, number: Any, task: str | None = None, *, alias: bool = True) -> list[ProcessKey]:
+        """Every process ``number`` is the id (or, with ``alias``, the guest's pid) of.
+
+        In ``task`` where given. A row that states no task names the process
+        of its id in each task that lists the id; a pair one listing holds
+        twice is listed twice, two processes.
+        """
         text = pid_of(number)
         if not text:
             return []
-        held = {**self._by_id.get(text, {}), **self._by_guest.get(text, {})}
-        return sorted(key for key in held if task is None or key.task == task)
+        held = dict(self._by_id.get(text, {}))
+        if alias:
+            held.update(self._by_guest.get(text, {}))
+        found = {one for key in held for one in self._as_listed(key)}
+        out = sorted(key for key in found if task is None or key.task == task)
+        return sorted(out + [key for key in out if key in self._twice])
 
-    def resolve(self, number: Any, task: str | None = None) -> ProcessKey | None:
+    def resolve(
+        self, number: Any, task: str | None = None, *, alias: bool = True
+    ) -> ProcessKey | None:
         """The one process ``number`` names (in ``task`` if given); ``None`` for none or several."""
-        found = self.keys(number, task)
+        found = self.keys(number, task, alias=alias)
         return found[0] if len(found) == 1 else None
 
+    def states_guest_pids(self) -> bool:
+        """Whether any answer states a guest's pid for any process."""
+        return bool(self._by_guest)
+
+    def aliased(self, guest_pid: Any) -> list[str]:
+        """The report's ids of the processes whose guest's pid is ``guest_pid``, other than it."""
+        text = pid_of(guest_pid)
+        ids = (key.id for key in self._by_guest.get(text, {}) if key.id != text)
+        return list(dict.fromkeys(ids))
+
     def guest_of(self, key: ProcessKey) -> str:
-        """The guest's pid an answer states for ``key``, ``""`` where none does."""
-        return self._guest_of.get(key, "")
+        """The guest's pid an answer states for ``key``, ``""`` where none does or two differ."""
+        held = [key, ProcessKey("", key.id)] if key.task else [key]
+        for one in held:
+            if one in self._guest_of and self._as_listed(one) == [key]:
+                return "" if one in self._guest_disputed else self._guest_of[one]
+        return ""
 
     def written(self, key: ProcessKey) -> str:
-        """``key`` as a root names it: its id, with its task where another task lists the id too."""
-        tasks = {held.task for held in self._by_id.get(key.id, {})}
-        return IN_TASK.format(id=key.id, task=key.task) if len(tasks) > 1 else key.id
+        """``key`` as a root names it: its id, with its task where another task lists the id too.
+
+        A process of no task is its id alone: a task is never written empty.
+        """
+        tasks = {held.task for held in self._tasked(key.id)}
+        return IN_TASK.format(id=key.id, task=key.task) if key.task and len(tasks) > 1 else key.id
 
     def read_answer(
         self, data: Any, indicator_paths: Iterable[str], *, listing: bool = False
@@ -102,9 +165,12 @@ class ProcessIdentities:
         """
         if not isinstance(data, Mapping):
             return
-        for row in data.get("processes") or [] if listing else ():
-            if isinstance(row, Mapping):
-                self.add(_id_of(row), task=row.get(TASK_KEY), guest_pid=row.get(GUEST_PID_KEY))
+        if listing:
+            self.add_listing(
+                (_id_of(row), row.get(TASK_KEY), row.get(GUEST_PID_KEY))
+                for row in data.get("processes") or []
+                if isinstance(row, Mapping)
+            )
         for path in indicator_paths:
             for indicator in held_at_path(data, path):
                 for process, task in indicator_processes(indicator):

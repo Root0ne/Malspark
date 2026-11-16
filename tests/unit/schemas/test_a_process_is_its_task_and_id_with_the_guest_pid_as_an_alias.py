@@ -63,6 +63,69 @@ class TestANumberNamesOneProcess:
         assert found.resolve("84") == ProcessKey("", "84")
 
 
+class TestAnIdATaskListsTwiceNamesNoProcess:
+    @staticmethod
+    def _twice() -> ProcessIdentities:
+        found = ProcessIdentities()
+        found.add_listing(
+            [("85", "t1", "1496"), ("900", "t1", "1500"), ("900", "t1", "1504"), ("900", "t2", "")]
+        )
+        return found
+
+    def test_the_id_names_none_with_or_without_its_task(self) -> None:
+        found = self._twice()
+
+        assert found.resolve("900") is None
+        assert found.resolve("900", task="t1") is None
+        assert found.resolve("900", task="t2") == ProcessKey("t2", "900")
+        assert found.resolve("85") == ProcessKey("t1", "85")
+
+    def test_neither_guest_pid_names_it(self) -> None:
+        found = self._twice()
+
+        assert found.resolve("1500") is None
+        assert found.resolve("1504") is None
+
+    def test_one_process_two_answers_list_is_one_process(self) -> None:
+        found = ProcessIdentities()
+        found.add_listing([("85", "t1", "1496")])
+        found.add_listing([("85", "t1", "1496")])
+
+        assert found.resolve("85") == ProcessKey("t1", "85")
+
+
+class TestARowThatStatesNoTaskIsReadAgainstTheListedTasks:
+    def test_an_id_one_task_holds_is_that_task_s_process(self) -> None:
+        found = _two_tasks()
+        found.add("85", guest_pid="1496")
+
+        assert found.resolve("85") == ProcessKey("t1", "85")
+        assert found.written(ProcessKey("t1", "85")) == "85"
+
+    def test_an_id_several_tasks_hold_names_none(self) -> None:
+        found = _two_tasks()
+        found.add("87")
+
+        assert found.resolve("87") is None
+        assert found.keys("87") == [ProcessKey("t1", "87"), ProcessKey("t2", "87")]
+
+    def test_it_never_rewrites_another_row_s_root(self) -> None:
+        found = ProcessIdentities()
+        found.add("85", task="t1")
+        found.add("85", guest_pid="1496")
+
+        assert found.written(ProcessKey("t1", "85")) == "85"
+        assert found.written(ProcessKey("", "85")) == "85"
+
+    def test_its_guest_pid_is_the_listed_process_s(self) -> None:
+        found = ProcessIdentities()
+        found.add("85", task="t1")
+        found.add("85", guest_pid="1496")
+
+        assert found.resolve("1496") == ProcessKey("t1", "85")
+        assert found.guest_of(ProcessKey("t1", "85")) == "1496"
+
+
 class TestAProcessIsWrittenByItsIdAndItsTaskWhereTheIdIsShared:
     def test_an_id_one_task_lists_is_written_alone(self) -> None:
         assert _two_tasks().written(ProcessKey("t1", "85")) == "85"
@@ -72,6 +135,14 @@ class TestAProcessIsWrittenByItsIdAndItsTaskWhereTheIdIsShared:
 
     def test_the_guest_pid_of_a_process_is_kept(self) -> None:
         assert _two_tasks().guest_of(ProcessKey("t2", "87")) == "3756"
+
+    def test_two_answers_stating_two_guest_pids_keep_neither_as_its_guest_pid(self) -> None:
+        found = _two_tasks()
+        found.add("87", task="t2", guest_pid="4000")
+
+        assert found.guest_of(ProcessKey("t2", "87")) == ""
+        assert found.resolve("4000") == ProcessKey("t2", "87")
+        assert found.resolve("3756") == ProcessKey("t2", "87")
 
 
 class TestEveryAnswerThatNamesAProcessIsRead:
