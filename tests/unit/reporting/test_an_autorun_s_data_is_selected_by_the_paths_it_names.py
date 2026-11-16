@@ -147,6 +147,11 @@ class TestTheReaderOfACommandLine:
                 "C:\\Vendor7731\\up \\\\srv7731\\s\\x7731.dll",
                 ["C:\\Vendor7731\\up", "\\\\srv7731\\s\\x7731.dll"],
             ),
+            # A leading space changes nothing.
+            (
+                "  C:\\Program Files\\Vendor7731\\svc host.exe /s",
+                ["C:\\Program Files\\Vendor7731\\svc host.exe", "/s"],
+            ),
             # A quote before a file name: the quoted span is a word of its own.
             ('C:\\a "b c" d7731.exe', ["C:\\a", "b c", "d7731.exe"]),
         ],

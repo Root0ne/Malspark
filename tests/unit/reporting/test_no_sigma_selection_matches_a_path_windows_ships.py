@@ -16,12 +16,14 @@ module's own check.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any
 
 import pytest
 import yaml
 
+from malspark.core.paths import resolve_data
 from malspark.reporting.builder import MalwareReportBuilder, build_consolidated_iocs
 from malspark.reporting.models import (
     DynamicBehavior,
@@ -33,6 +35,7 @@ from malspark.reporting.models import (
 )
 from malspark.reporting.stated_host_values import (
     CONTAINS,
+    DEFAULT_CATALOGUE,
     ENDSWITH,
     WHOLE,
     benign_catalogue,
@@ -49,18 +52,26 @@ NAMES = sorted(CATALOGUE.system_binaries)
 _CHUNK = 60
 
 
+def _dotnet_folders() -> list[str]:
+    """The folders the catalogue declares for the .NET Framework, as its data file lists them."""
+    document = json.loads(resolve_data(DEFAULT_CATALOGUE).read_text(encoding="utf-8"))
+    return [str(name).lower() for name in document["dotnet_framework_folders"]["entries"]]
+
+
 def _shipped() -> str:
     """Every path the oracle holds Windows ships, one per line, lower case: each catalogue
-    name directly under the system root and under every system folder, under the system
-    folders the catalogue nests (``System32\\WindowsPowerShell\\v1.0``) and under the .NET
-    Framework's, written with a drive and with each environment name of the system root."""
+    name directly under the system root, under every system folder, under every system
+    folder below ``System32`` or ``SysWOW64`` (``System32\\wbem``), and under two of the
+    .NET Framework's declared folders below its own (``Microsoft.NET\\Framework64\\
+    v4.0.30319``), written with a drive and with each environment name of the system root:
+    as deep as a value the forms below print, which names at most two folders."""
     folders = sorted(CATALOGUE.system_folders)
+    top, *dotnet = _dotnet_folders()
     chains = [
         "",
         *(f"{folder}\\" for folder in folders),
-        *(f"{top}\\{folder}\\" for top in ("system32", "syswow64") for folder in folders),
-        *(f"{top}\\windowspowershell\\v1.0\\" for top in ("system32", "syswow64")),
-        *(f"microsoft.net\\{fw}\\{v}\\" for fw in ("framework", "framework64") for v in folders),
+        *(f"{first}\\{folder}\\" for first in ("system32", "syswow64") for folder in folders),
+        *(f"{top}\\{first}\\{second}\\" for first in dotnet for second in dotnet),
     ]
     roots = ["c:\\windows\\", "%systemroot%\\", "%windir%\\", "%systemdrive%\\windows\\"]
     paths = [root + chain + name for root in roots for chain in chains for name in NAMES]
