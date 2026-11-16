@@ -2864,15 +2864,18 @@ turn, each once, and what the analyst answers stands.
     answered. A call whose answer the conversation had no room for is recorded
     as cut (`truncated`, its output a statement of the cut) and counts as no
     function read, here, in the function map and in "Functions examined".
-  - *Reading a batch.* A batch answer is a JSON object every key of which is
-    an address: `0x…`, or at least four hex digits with a decimal digit among
-    them (a hex word such as `cafe` is no address). It gives one function per
-    key. A key whose listing begins with `Error` is left out. A cut answer is
-    read member by member from its opening brace, and keeps the functions its
-    text still shows. Any other answer is no batch, so a plain listing is one
-    function at the address the call was given, whatever quoted strings it
-    holds. A batch whose answer is not keyed takes the addresses in its
-    `functions` argument.
+  - *Reading a batch.* A batch answer is a JSON object one function per key.
+    A key is an address (`0x…`, or at least four hex digits with a decimal
+    digit among them; a hex word such as `cafe` is no address), a decompiler's
+    generic name, which carries the function's address, or a plain name whose
+    listing's signature prints that name, which carries none: that function
+    keeps its name and is given no address. A key whose listing begins with
+    `Error` is left out. A cut answer is read member by member from its opening
+    brace, and keeps the functions its text still shows. Any other answer is no
+    batch, so a plain listing is one function at the address the call was
+    given, whatever quoted strings it holds. A batch whose answer is not keyed
+    takes the addresses in its `functions` argument, each item an address or a
+    generic name.
   - *Reading a single call.* The address is the one the call was given, as hex
     or as an integer, or the one a decompiler's generic name carries (`FUN_`,
     `fcn.`, `sub_`). The names are the one the call was given and the one the

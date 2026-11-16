@@ -1,0 +1,3 @@
+### Fixed
+
+- **A batch decompile keyed by the decompiler's own routine names lists its routines (T-707).** A batch answer's key, and an item of a batch call's function list, that is a decompiler's generic name (from the declared auto-name prefixes) reads as the address it carries, so the routines the batch lists count as read: their callees are known, the limitations count them as listed code, and no routine the batch lists is said to have no listed code. A key that is a plain name whose listing prints that name keeps its name and is given no address, and the rest of its batch is still read. An answer keyed by addresses reads as before.

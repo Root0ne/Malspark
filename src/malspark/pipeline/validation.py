@@ -7115,10 +7115,22 @@ def _address_value(value: Any) -> int | None:
     return _hex_value(str(value))
 
 
+def _generic_address(text: str) -> int | None:
+    """The address a decompiler's generic name for a function carries, or ``None``."""
+    named = generic_function_name().fullmatch(str(text).strip())
+    return int(named.group(1), 16) if named is not None else None
+
+
 def _address_list(value: Any) -> list[int]:
-    """A batch's addresses: a list, or a string with commas between them."""
+    """A batch's addresses: a list, or a string with commas between them.
+
+    An item may be an address or a decompiler's generic name, which carries one.
+    """
     items = value if isinstance(value, list | tuple) else str(value or "").split(",")
-    found = [_address_value(item) for item in items]
+    found = [
+        _address_value(item) if _address_value(item) is not None else _generic_address(item)
+        for item in items
+    ]
     return [address for address in found if address is not None]
 
 
@@ -7174,9 +7186,12 @@ def listed_function(output: str) -> tuple[str, str | int] | None:
 
 
 def _address_key(key: str) -> int | None:
-    """A batch answer's key as an address: ``0x`` and hex digits, or four hex digits or more."""
+    """A batch answer's key as an address: ``0x`` and hex digits, four hex digits or
+    more, or a decompiler's generic name for the function, which carries its address."""
     match = _ADDRESS_KEY.fullmatch(str(key).strip())
-    return int(match.group(1) or match.group(2), 16) if match else None
+    if match is None:
+        return _generic_address(key)
+    return int(match.group(1) or match.group(2), 16)
 
 
 def _cut_batch_items(output: str) -> list[tuple[str, str]]:
@@ -7210,13 +7225,21 @@ def _cut_batch_items(output: str) -> list[tuple[str, str]]:
     return items
 
 
-def _batch_listings(output: str) -> tuple[bool, dict[int, str]]:
-    """``(shown, listings)`` of an answer keyed by address, one function per key.
+def _is_error(text: str) -> bool:
+    return text.lstrip().lower().startswith("error")
 
-    ``shown`` is whether the answer is an object every key of which reads as
-    an address (``_address_key``). A key whose listing begins with ``Error``
-    was not decompiled. An answer cut short keeps the functions its text still
-    shows (``_cut_batch_items``). Any other answer is no batch.
+
+def _batch_members(output: str) -> list[tuple[int | None, str, str]] | None:
+    """``(address, key, listing)`` of each function a batch answer lists, or ``None``
+    when the answer is no batch.
+
+    A batch is an object one function per key: a key that reads as an address
+    (``_address_key``), or a plain name whose listing's signature prints that
+    name, which carries no address. A key whose listing begins with ``Error``
+    was not decompiled: it is left out, and an answer of such keys alone is a
+    batch only when one of them reads as an address.
+    An answer cut short keeps the functions its text still shows
+    (``_cut_batch_items``). Any other answer is no batch.
     """
     try:
         parsed = json.loads(output)
@@ -7228,24 +7251,34 @@ def _batch_listings(output: str) -> tuple[bool, dict[int, str]]:
         items = _cut_batch_items(output)
     else:
         items = []
-    addresses = [_address_key(key) for key, _text in items]
-    if not items or any(address is None for address in addresses):
+    members: list[tuple[int | None, str, str]] = []
+    for key, text in items:
+        address = _address_key(key)
+        if address is not None or (key.strip() and _signature_name(text) == key.strip()):
+            members.append((address, key, text))
+        elif not _is_error(text):
+            return None
+    if not members:
+        return None
+    return [member for member in members if not _is_error(member[2])]
+
+
+def _batch_listings(output: str) -> tuple[bool, dict[int, str]]:
+    """``(shown, listings)`` of a batch answer (:func:`_batch_members`), one function
+    per address; a function named by a plain name has no address and no listing here."""
+    members = _batch_members(output)
+    if members is None:
         return False, {}
-    listings: dict[int, str] = {}
-    for address, (_key, text) in zip(addresses, items, strict=True):
-        if address is None or text.lstrip().lower().startswith("error"):
-            continue
-        listings[address] = text
-    return True, listings
+    return True, {address: text for address, _key, text in members if address is not None}
 
 
 def _entry_functions(entry: Any) -> list[tuple[int | None, list[str]]]:
     """The ``(address, names)`` of each function one decompile entry holds."""
     args = getattr(entry, "args", None) or {}
     output = str(getattr(entry, "output", "") or "")
-    shown, listings = _batch_listings(output)
-    if shown:
-        return [(address, _named(None, text, args={})) for address, text in listings.items()]
+    members = _batch_members(output)
+    if members is not None:
+        return [(address, _named(None, text, args={})) for address, _key, text in members]
     for argument in _ADDRESS_LIST_ARGUMENTS:
         if argument in args:
             addresses = _address_list(args[argument])
