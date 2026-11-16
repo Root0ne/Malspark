@@ -539,7 +539,10 @@ class TestTheReport:
         # nothing else moved, and the Markdown did not. The Markdown re-pinned
         # when a technique's Evidence cell came to name the rules' entries it
         # does not list as rule matches (T-597): the T1055 row's cell is the
-        # only change, and the dump did not move.
+        # only change, and the dump did not move. The dump re-pinned when the
+        # build came to record how each entry stands to a value taken from the
+        # file's text (``second_source_reads``) and the run summary to count
+        # what only an undeclared tool confirmed (T-704); the Markdown did not.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the
