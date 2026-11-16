@@ -1603,19 +1603,64 @@ _IMAGE_RE = re.compile(r"([^\\/]+\.(?:exe|dll|bat|ps1|vbs|js))", re.IGNORECASE)
 def _named_paths(data: str) -> list[str]:
     """Each program and file path a persistence payload or a value's data names, in order.
 
-    Read by the reader of a command line's paths
-    (``sandbox_report.command_line_paths``): each word that names a file,
-    never a URL nor a switch.
+    Read by :func:`data_words`: each word that names a file, never a URL nor
+    a switch.
     """
-    from malspark.schemas.sandbox_report import FILE_NAME_END_RE, command_line_paths
+    from malspark.schemas.sandbox_report import FILE_NAME_END_RE
 
     return [
         word
-        for word in command_line_paths(data)
+        for word in data_words(data)
         if "://" not in word
         and not word.startswith(("-", "/"))
         and FILE_NAME_END_RE.search(word) is not None
     ]
+
+
+# What a rooted path begins with: a drive, an environment name, a share.
+_ROOTED_RE = re.compile(r"[A-Za-z]:[\\/]|%[^%\s]+%|\\\\")
+# A run of characters between white space.
+_SPACED_RE = re.compile(r"\S+")
+
+
+def data_words(data: str) -> list[str]:
+    """The words of a payload or a written value's data, each path whole, without its quotes.
+
+    The rule drafter's own reading: the words the reader of a command line
+    gives (``sandbox_report.command_line_paths``, a quoted path whole), with
+    an unquoted program whose path holds a space read as one word
+    (:func:`_unquoted_program`). The sandbox's check of which process runs
+    the submitted file reads a command line its own way.
+    """
+    from malspark.schemas.sandbox_report import command_line_paths
+
+    text = str(data or "").lstrip()
+    program = _unquoted_program(text)
+    return ([program] if program else []) + command_line_paths(text[len(program) :])
+
+
+def _unquoted_program(text: str) -> str:
+    """The program an unquoted command line names where a space is in its path, or ``""``.
+
+    Where the first word begins a rooted path (a drive, an environment name,
+    ``\\\\``) and names no file, the words are joined by the spaces between
+    them until one ends in a file name (before a comma, which ends a
+    rundll32-style entry): that run is the program. A first word that names
+    a file, a quote before the end, or no word ending in a file name leave
+    the line to be read word by word.
+    """
+    from malspark.schemas.sandbox_report import FILE_NAME_END_RE
+
+    if not _ROOTED_RE.match(text):
+        return ""
+    for match in _SPACED_RE.finditer(text):
+        word = match.group(0)
+        if '"' in word:
+            return ""
+        head = word.partition(",")[0]
+        if FILE_NAME_END_RE.search(head):
+            return text[: match.start() + len(head)] if match.start() else ""
+    return ""
 
 
 def _file_value(word: str, *, rooted: bool) -> str:
@@ -1720,8 +1765,6 @@ def _collect_persistence_images(
     data (:func:`_sigma_drafts`). Data naming no file selects nothing. A
     target that is a file is its file name.
     """
-    from malspark.schemas.sandbox_report import command_line_paths
-
     out = _Registered()
     texts: list[tuple[str, bool]] = []
     for mech in persistence:
@@ -1742,7 +1785,7 @@ def _collect_persistence_images(
             )
             out.image(image, "", text)
             continue
-        words = command_line_paths(text)
+        words = data_words(text)
         files = _named_paths(text)
         if files and words[0] == files[0] and _IMAGE_RE.fullmatch(re.split(r"[\\/]", files[0])[-1]):
             image = _file_value(files[0], rooted=True)

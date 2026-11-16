@@ -106,12 +106,10 @@ class TestTheReaderOfACommandLine:
             ),
         ],
     )
-    def test_reads_an_unquoted_rooted_program_as_the_loader_does(
+    def test_reads_an_unquoted_rooted_program_with_a_space_whole(
         self, line: str, read: list[str]
     ) -> None:
-        from malspark.schemas.sandbox_report import command_line_paths
-
-        assert command_line_paths(line) == read
+        assert ds.data_words(line) == read
 
     @pytest.mark.parametrize(
         ("line", "read"),
@@ -127,9 +125,7 @@ class TestTheReaderOfACommandLine:
         ],
     )
     def test_reads_word_by_word_otherwise(self, line: str, read: list[str]) -> None:
-        from malspark.schemas.sandbox_report import command_line_paths
-
-        assert command_line_paths(line) == read
+        assert ds.data_words(line) == read
 
 
 class TestAWrittenValue:
