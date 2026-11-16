@@ -139,6 +139,8 @@ class TestOnlyAnIdentifierShapeIsCode:
             ("domain", "login.Live.com"),
             # A first label that opens with a capital is no lower-case label.
             ("domain", "Update.Online"),
+            # A label with a hyphen is no member.
+            ("domain", "cdn.Evil-C2"),
             ("url", "https://api.Telegram.org/bot/x"),
         ],
     )

@@ -834,6 +834,10 @@ class TestThePlatformsOwnToolsAreReadByTheirShippedKind:
         assert own_server_kind("network", "network__pcap_summary") == "pcap"
         assert own_server_kind("analysis", "network__pcap_summary") == ""
         assert own_server_kind("network", "analysis__release_job") == ""
+        assert own_server_kind("analysis", "analysis__strings") == "strings"
+        # A server is named by its key as written.
+        assert own_server_kind("Analysis", "strings") == ""
+        assert own_server_kind(" analysis", "strings") == ""
 
     def test_a_tool_offered_renamed_is_read_by_the_name_it_recorded_as_declared(self) -> None:
         from malspark.reporting.tool_kinds import stored_platform_kind
@@ -845,6 +849,13 @@ class TestThePlatformsOwnToolsAreReadByTheirShippedKind:
         }
         assert stored_platform_kind(entry) == "dns"
         assert stored_platform_kind({**entry, "source": "provider:network"}) == ""
+        # Another server's prefix is not taken off: that is a tool of another server.
+        other = {
+            "source": "mcp:network",
+            "tool": "analysis__pcap_summary",
+            "facts": {"v": 1, "kind": ""},
+        }
+        assert stored_platform_kind(other) == ""
 
 
 class TestABuiltRecordIsTheOnlyRecord:
