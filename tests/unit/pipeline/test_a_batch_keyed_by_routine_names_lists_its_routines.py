@@ -184,3 +184,15 @@ def test_one_address_written_twice_is_one_routine_with_both_names() -> None:
     assert _entry_functions(entry) == [(FIRST, [f"FUN_{FIRST:08x}", "start"])]
     (only,) = decompiled_functions([entry])
     assert (only.address, only.names) == (FIRST, (f"FUN_{FIRST:08x}", "start"))
+
+
+def test_a_name_keyed_answer_of_two_routines_to_one_address_names_none() -> None:
+    answer = {"main": "int main(void)\n{ }", "helper": "void helper(void)\n{}"}
+    entry = _asked({"address": hex(FIRST)}, answer)
+    assert _entry_functions(entry) == [(FIRST, [])]
+
+
+def test_an_address_keyed_batch_of_errors_lists_no_routine() -> None:
+    answer = {hex(FIRST): "Error: no function", hex(SECOND): "Error: no function"}
+    entry = _asked({"functions": f"{hex(FIRST)},{hex(SECOND)}"}, answer)
+    assert _entry_functions(entry) == []
