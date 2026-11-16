@@ -48,6 +48,8 @@ def corroboration_row(row: Mapping[str, Any] | Sequence[str] | None) -> dict[str
             out["independent_sources"] = int(
                 row.get("independent_sources", len(out["sources"])) or 0
             )
+        if row.get("absence_sources"):
+            out["absence_sources"] = [str(x) for x in row["absence_sources"]]
         if isinstance(row.get("source_kinds"), Mapping):
             out["source_kinds"] = {str(k): int(v) for k, v in row["source_kinds"].items()}
         if row.get("support"):
@@ -240,13 +242,19 @@ def support_label(support: str) -> str:
     return ""
 
 
-def sources_phrase(kinds: Mapping[str, int] | None, total: int) -> str:
+def sources_phrase(kinds: Mapping[str, int] | None, total: int, absent: int = 0) -> str:
     """``3 sources: 2 artefacts of the file (…), 1 citation that gives no root``.
 
     The kinds a technique with no behaviour source has, each counted, in one
-    order; the total alone where the kinds were not recorded.
+    order; the total alone where the kinds were not recorded. ``absent``
+    sources of the total cited only to state an absence are named right after
+    it: ``3 sources (1 of them cited for an absence): …``.
     """
+    from malspark.reporting.technique_evidence import ABSENCE_LABEL
+
     said = f"{total} source{'' if total == 1 else 's'}"
+    if absent > 0:
+        said += f" ({absent} of them {ABSENCE_LABEL})"
     parts = [
         f"{int(n)} {_KIND_WORDS[kind][0 if int(n) == 1 else 1]}"
         for kind in _KIND_ORDER
@@ -255,14 +263,18 @@ def sources_phrase(kinds: Mapping[str, int] | None, total: int) -> str:
     return f"{said}: {', '.join(parts)}" if parts else said
 
 
-def support_sentence(support: str, kinds: Mapping[str, int] | None, total: int) -> str:
+def support_sentence(
+    support: str, kinds: Mapping[str, int] | None, total: int, absent: int = 0
+) -> str:
     """One sentence on a technique no source of which is behaviour, or ``""``.
 
     It names the label, counts its sources by kind and says that no sandbox
     observation, code listing or rule match stands behind it: the facts the
     judge, the report models, the ATT&CK table and the export are told alike.
+    ``absent``: how many of the total are cited only to state an absence
+    (:func:`sources_phrase`).
     """
     label = support_label(support)
     if not label:
         return ""
-    return f"{label}: {sources_phrase(kinds, total)}; {NO_BEHAVIOUR_SOURCE}"
+    return f"{label}: {sources_phrase(kinds, total, absent)}; {NO_BEHAVIOUR_SOURCE}"

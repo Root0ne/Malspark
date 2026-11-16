@@ -2561,8 +2561,13 @@ it, it is that claim's text) — against the claims it read and the blocks that
 stated no confidence; what is left is claims begun and not read, which is logged and
 kept on the answer it was read from (`AgentISR.claims_unread_reason`),
 naming the analyst, the round and both numbers. The judge node carries it as a
-degradation reason only from the answers in force, so an answer a retry or a
-later round replaced leaves it in the log. Every heading opens a block, so no
+degradation reason only from the answers in force. An answer a retry, a
+later round or a further turn replaced is a row of
+`run_summary.validation.claims_unread_replaced`
+(`validation.claims_unread_replaced_row`): the analyst, its round, the claims
+begun, read and unread, why in the platform's words, and what replaced it
+(`retry`, `round N`, `further turn`); the row is a fact of the record, no degradation reason
+and no sentence of the report. Every heading opens a block, so no
 claim is read with another's CONFIDENCE, TECHNIQUE or EVIDENCE, and a heading
 behind a list marker (`- CLAIM:`, `1. CLAIM:`) counts. A block's fields are
 read in its tail, which begins at the first EVIDENCE, CONFIDENCE or TECHNIQUE
@@ -2864,15 +2869,25 @@ turn, each once, and what the analyst answers stands.
     answered. A call whose answer the conversation had no room for is recorded
     as cut (`truncated`, its output a statement of the cut) and counts as no
     function read, here, in the function map and in "Functions examined".
-  - *Reading a batch.* A batch answer is a JSON object every key of which is
-    an address: `0x…`, or at least four hex digits with a decimal digit among
-    them (a hex word such as `cafe` is no address). It gives one function per
-    key. A key whose listing begins with `Error` is left out. A cut answer is
-    read member by member from its opening brace, and keeps the functions its
-    text still shows. Any other answer is no batch, so a plain listing is one
-    function at the address the call was given, whatever quoted strings it
-    holds. A batch whose answer is not keyed takes the addresses in its
-    `functions` argument.
+  - *Reading a batch.* A batch answer is a JSON object one function per key.
+    A key is an address (`0x…`, or at least four hex digits with a decimal
+    digit among them; a hex word such as `cafe` is no address), a decompiler's
+    generic name, which carries the function's address, or a plain name whose
+    listing's signature prints that name, which carries none. Keys that carry
+    one address are one function, each adding its listing's name. A batch
+    keyed by plain names alone takes the addresses the call was given; a
+    name joins its address only when the call gave one address and the
+    answer lists one function, and given no address, each function keeps its
+    name and is given none. Beside a key that carries an address, a key that
+    carries none takes the one address of the call no key took when there is
+    one such of each; otherwise each address of the call no key took is a
+    function with no name. A key reported as an error takes its address too. A key whose listing begins with
+    `Error` is left out. A cut answer is read member by member from its opening
+    brace, and keeps the functions its text still shows. Any other answer is no
+    batch, so a plain listing is one function at the address the call was
+    given, whatever quoted strings it holds. A batch whose answer is not keyed
+    takes the addresses in its `functions` argument, each item an address or a
+    generic name.
   - *Reading a single call.* The address is the one the call was given, as hex
     or as an integer, or the one a decompiler's generic name carries (`FUN_`,
     `fcn.`, `sub_`). The names are the one the call was given and the one the
@@ -5092,7 +5107,18 @@ is assembled from what the run gathered rather than recomputed beside it:
   "capa has no injection rule", "no write is recorded"; a negating word that
   says nothing of the source, "resolved, not imported", is not one) is cited
   for its absence and placed nowhere; a citation written only in the evidence
-  line is read against the claim's sentences too. `independent_sources` counts the sources that stand behind a
+  line is read against the claim's sentences too. The clause that writes a
+  citation — the part of the sentence or evidence item between commas, colons
+  and dashes, its quoted text left out — also denies for that citation alone
+  with "no match", "do not appear" or "never occurs", and only where the cited
+  entry's own stored answer found nothing: its tool declares where the
+  answer's rows sit (`ToolFacts.rows`), the answer holds that place, and no row
+  stands there (`validation.answer_found_nothing`). Elsewhere those words deny
+  nothing. A source every statement naming the technique cites in a clause
+  that negates or denies so is cited to state an absence and listed in `absence_sources`
+  (`validation.technique_absence_sources`); a source one statement cites for
+  the behaviour, or an asserting tool's own row names, is evidence.
+  `independent_sources` counts the sources that stand behind a
   fact about the technique, joining citations of one reading kind whose roots
   overlap (two tools reading one string are one source; a rule match and an
   index row on one function are two methods, never joined); a citation placed
@@ -5250,7 +5276,14 @@ is assembled from what the run gathered rather than recomputed beside it:
   `/reports/{id}/mitre` row. Every one of them prints the sandbox items among
   the technique's sources beside the set, named apart: "sandbox items: …" in a
   text cell or comment and in `x_malspark_evidence_note` on the STIX edge,
-  `sandbox_items` in the API. A technique whose statements cite no ledger
+  `sandbox_items` in the API. A source in the technique's `absence_sources` is
+  neither in the set nor among the items, and every surface names it after
+  them, worded once (`technique_evidence.absence_words`): "cited for an
+  absence: …" in the ATT&CK table's Evidence cell, the analyst report's note,
+  the defence rows, the MISP and Navigator comments and
+  `x_malspark_evidence_note` on the STIX edge, `absence_sources` in the API.
+  The judge's evidence summary traces the technique to its other sources and
+  names these apart in the same words; the row keeps every source. A technique whose statements cite no ledger
   entry and that has no item — one the judge alone names, for one — says so on
   each: "no ledger entry" in a text cell or comment, `x_malspark_evidence_note`
   on the STIX edge, `[]` in the API. The entries of the rules that matched the
@@ -5944,8 +5977,30 @@ is assembled from what the run gathered rather than recomputed beside it:
   stated values in `file_event`, `create_stream_hash`, Security 4698, System
   7045 and `pipe_created` (`detection_signatures._stated_drafts`, at most 64
   values a selection), each value written with Sigma's wildcards escaped
-  (`sigma_literal`). A sandbox signature selects nothing; with no value left
-  the report records why (`drafts_not_built`).
+  (`sigma_literal`). A sandbox signature selects nothing. Every selection
+  holds only values that stand alone (`detection_signatures.selection_specific`):
+  a value `benign_reason` calls every host's is taken out whatever its
+  source, asked of the value as printed (a path whose cut form is a name
+  Windows ships keeps its folders past the drive and the user's own name,
+  `_printed_path`; a long-path prefix is read off), with a reason true of the
+  value as stated (`NAME_ALONE_REASON` for a path that is only printed as a
+  name Windows ships alone; a path the catalogue calls Windows' own as stated,
+  under an environment name of the system root too, is not cut). The last
+  check asks the printed value the way the rule matches it
+  (`stated_host_values.shipped_match`): the paths Windows ships are derived
+  once from the catalogue's program names, system roots (with a drive or an
+  environment name) and system folders, as a language read one character at a
+  time, and the keys from its keys and values; a value a shipped path ends
+  with (`endswith`), holds (`contains`) or is, is taken out. A path matched by
+  `contains` that names no folder is taken out (`NO_FOLDER_REASON`); a `contains` value another
+  selected value lies under, or a longer spelling of a selected `contains`
+  value, is taken out for the narrower one, case and separators folded
+  (`_contained`). Each value taken out of a built draft is kept on the rule's
+  record (`DetectionRule.values_left_out`, not printed). A draft is tagged
+  only with the techniques whose evidence quotes or roots name a selected
+  value (`delimited_in`, a code mark read as a quote), and the tactics of
+  their published cells. With no value left the report records why
+  (`drafts_not_built`, reading the same decision as the builder).
 * **The IOC table is the one publish rule's answer, row by row.**
   `build_consolidated_iocs` stores every indicator live with its kind, who
   recorded it and `published`: `yes:` and the reason
@@ -6075,7 +6130,30 @@ is assembled from what the run gathered rather than recomputed beside it:
   YARA strings, since an import is not an indicator. A Sigma selection names a
   registry key or an image path only when the table publishes it or a sandbox
   recorded it, and the sandbox's own signature names (`sigma_admits`); an
-  analyst's persistence target the table does not publish selects nothing.
+  analyst's persistence target the table does not publish selects nothing,
+  and a key or image the benign-location catalogue calls every Windows host's
+  selects nothing either, a sandbox's included. A write the sandbox recorded
+  under such a key selects the key with the value's name (`RegistryMod.value_name`,
+  read from the call's value-name argument, `sandbox_tools._REGISTRY_VALUE_NAME_ARGS`;
+  each value written to one key is a row of its own) and what its data names,
+  as does the payload of a persistence record on such a key: every path the
+  data names, read by `sandbox_report.command_line_paths`, a program of the
+  sample's own as the image, and after a program Windows ships each further
+  path in the field that records the data (`Details` in a registry event,
+  `CommandLine` in a process creation, `_PAYLOAD_FIELDS`). `Image` is printed
+  only in a process-creation draft: a registry event's draft selects a
+  program in its data, and leaves one no data holds out (`NO_FIELD_REASON`,
+  `_Registered.selections`). The rule drafter reads the data's words
+  itself (`data_words`): an unquoted program whose first word begins a
+  rooted path and names no file is joined by its spaces up to the first
+  word that ends in a file name, and stands alone at a switch, at another
+  rooted path, and where the words so far with `.exe` added end in a
+  program Windows ships (`_unquoted_program`, asked of `shipped_match`).
+  The sandbox's check of which process runs the submitted file reads a
+  command line word by word, split at spaces and commas. Only a
+  write names a program. A registry row (`sandbox_registry_ops`) is a key and
+  the value an operation names, each with its own operation and pids; an
+  operation naming no value is the key's own row.
   A registry key is compared in one form on both sides — without its hive
   (`HKCU`, `HKEY_CURRENT_USER`, `HKU\<SID>`, `\REGISTRY\USER\<SID>`,
   stripped until the text stops changing) and without the table's trailing

@@ -99,3 +99,30 @@ def test_a_container_with_no_registry_answers_unsized() -> None:
     answer = _tool(_Bare(), "sandbox_network").invoke({})  # type: ignore[arg-type]
 
     assert isinstance(answer, dict)
+
+
+def test_a_key_of_two_thousand_values_answers_within_the_room_and_says_how_to_page() -> None:
+    key = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+    calls = [
+        {
+            "api": "RegSetValueExW",
+            "pid": 1234,
+            "arguments": [{"FullName": key, "ValueName": f"v{at}", "Buffer": "x.exe"}],
+        }
+        for at in range(2000)
+    ]
+    container = _Container({"behavior": {"processes": [{"pid": 1234, "calls": calls}]}})
+    assert sandbox_tools.sandbox_registry_ops(container.sandbox_report)["total"] == 2000
+
+    answer = _tool(container, "sandbox_registry_ops").invoke({})
+
+    assert len(answer) <= ROOM
+    parsed = json.loads(answer)
+    assert BOOKKEEPING_KEY in parsed
+    assert parsed["total"] == 2000
+    notice = shortened_notice(answer, narrowing=("offset", "limit"))
+    assert "`offset`" in notice and "`limit`" in notice
+    page = json.loads(
+        _tool(container, "sandbox_registry_ops").invoke({"offset": 1990, "limit": 50})
+    )
+    assert [row["value_name"] for row in page["registry"]] == [f"v{at}" for at in range(1990, 2000)]

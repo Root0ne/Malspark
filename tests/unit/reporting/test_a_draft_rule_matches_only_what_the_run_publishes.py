@@ -348,7 +348,12 @@ class TestSigma:
 
         assert row.published == "yes: a persistence mechanism this run recorded"
         rule = self._sigma(persistence=[mech])
-        assert rule is not None and "CurrentVersion" in rule.body
+        # The Run key alone is every installation's; the payload it runs is the sample's.
+        assert rule is not None
+        assert yaml.safe_load(rule.body)["detection"] == {
+            "selection_persistence": {"Image|endswith": ["\\example.exe"]},
+            "condition": "selection_persistence",
+        }
 
     def test_an_analyst_listed_key_the_table_does_not_publish_makes_no_draft(self) -> None:
         from malspark.reporting.models import ConsolidatedIOC
@@ -401,8 +406,9 @@ class TestSigma:
         rule = self._sigma(dynamic=dynamic)
 
         assert rule is not None
+        # The value the sample wrote under the Run key, which only the value's name makes its own.
         assert (
-            "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+            "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\example"
             in yaml.safe_load(rule.body)["detection"]["selection_registry"]["TargetObject|contains"]
         )
 
