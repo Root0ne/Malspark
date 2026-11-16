@@ -13,6 +13,7 @@ stored with the old keys is printed with the peer's share as the peer's.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import struct
@@ -210,11 +211,17 @@ def _no_address_credited_with_traffic_it_did_not_send(
 ) -> None:
     """Each "<addresses> sent K pkts, B bytes" of the line is what those addresses sent in it."""
     peer, port = bytes(int(x) for x in row["dst"].split(".")), row["dport"]
+    # A packet is the conversation's when it goes to the peer's port, or comes
+    # from it to an address that is not public (to a public one it is that one's).
     ours = [
         f
         for _, f in records
         if (f[16:20] == peer and int.from_bytes(f[22:24], "big") == port)
-        or (f[12:16] == peer and int.from_bytes(f[20:22], "big") == port)
+        or (
+            f[12:16] == peer
+            and int.from_bytes(f[20:22], "big") == port
+            and not ipaddress.ip_address(f[16:20]).is_global
+        )
     ]
     said = _SENT.findall(conversation_line(row))
     assert said, conversation_line(row)
@@ -265,6 +272,23 @@ def test_an_end_that_sent_nothing_beside_a_public_sender_is_said_to_send_nothing
     assert conversation_line(row) == (
         "8.8.8.8:53/udp — 2 pkts, 61 bytes: 8.8.8.8 sent 1 pkts, 32 bytes to 10.0.0.2 "
         "(none back); 1.2.3.4 sent 1 pkts, 29 bytes"
+    )
+    _no_address_credited_with_traffic_it_did_not_send(row, records)
+
+
+def test_the_peer_s_receiver_is_named_beside_a_public_sender(tmp_path: Path) -> None:
+    # The peer answered the guest and the public sender both: its answer to the
+    # public one is that one's own conversation, so this line says whom it answered.
+    records = [
+        (0.0, _udp(GUEST, PEER, 1000, 53, b"q")),
+        (0.1, _udp(PUBLIC, PEER, 1000, 53, b"q")),
+        (0.2, _udp(PEER, GUEST, 53, 1000, b"r")),
+        (0.3, _udp(PEER, PUBLIC, 53, 1000, b"r")),
+    ]
+    row = _facts(tmp_path, records)["conversations"][0]
+    assert conversation_line(row) == (
+        "8.8.8.8:53/udp — 3 pkts, 87 bytes: 10.0.0.2 sent 1 pkts, 29 bytes; "
+        "8.8.8.8 sent 1 pkts, 29 bytes to 10.0.0.2; 1.2.3.4 sent 1 pkts, 29 bytes"
     )
     _no_address_credited_with_traffic_it_did_not_send(row, records)
 
