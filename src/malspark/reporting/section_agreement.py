@@ -4320,7 +4320,7 @@ class _Sentences:
                 return [(start, end, self.text[start:end], reading) for start, end in found]
         return []
 
-    def span(self, sentence: str) -> tuple[int, int, str, int] | None:
+    def span(self, sentence: str, *, whole: bool = False) -> tuple[int, int, str, int] | None:
         """Where the one sentence copied stands, once, or ``None``; for a text cut
         ``by_words``, the first place :meth:`every` gives.
 
@@ -4330,19 +4330,21 @@ class _Sentences:
         ``pack_reads``, so a rewrite is read back the same way. It has to be
         exactly one sentence of the passage; cut otherwise than ``by_words``, one
         standing there exactly once: a fragment, a word, a run of sentences short of
-        the whole text or a sentence the passage writes twice is not one. A copy of
-        the whole text, by its words, is found as one span however many sentences it
-        holds (:meth:`whole`, T-719).
+        the whole text or a sentence the passage writes twice is not one. With
+        ``whole``, a copy of the whole text, by its words, is found as one span however
+        many sentences it holds (:meth:`whole`, T-719).
         """
         if self.by_words:
             places = self.every(sentence)
-            return places[0] if places else self.whole(sentence)
+            if places:
+                return places[0]
+            return self.whole(sentence) if whole else None
         for reading, form in enumerate((sentence, *pack_reads(sentence)), -1):
             copied = form.strip()
             found = self.starts.get(copied, []) if copied else []
             if len(found) == 1:
                 return found[0], found[0] + len(copied), copied, reading
-        return self.whole(sentence)
+        return self.whole(sentence) if whole else None
 
     def whole(self, sentence: str) -> tuple[int, int, str, int] | None:
         """The whole text as one span, where the sentence copied is all of it by its words
@@ -4369,6 +4371,18 @@ class _Sentences:
             if span[0] <= start < span[1]
         )
         return inside if len(inside) > 1 else [span]
+
+
+def _answered_span(
+    sentences: _Sentences, sentence: str, decision: Any
+) -> tuple[int, int, str, int] | None:
+    """Where the sentence a row copied stands (:meth:`_Sentences.span`): a copy of the whole
+    field is found for a keep or a drop, which answer each of its sentences; a rewrite of more
+    than one sentence would put one text in place of several, and is not one (T-719)."""
+    found = sentences.span(sentence, whole=decision != "rewrite")
+    if found is not None and decision == "rewrite" and len(sentences.units(found)) > 1:
+        return None
+    return found
 
 
 def _cut(passage: Passage) -> _Sentences:
@@ -4445,7 +4459,11 @@ def _row_violations(
     it is refused for what a row answering any one of them the same way is refused for, so no
     sentence escapes a check by standing in a longer copy (T-719)."""
     passage = by_id.get(_form(row.passage))
-    span = sentences_of(passage).span(row.sentence) if passage is not None else None
+    span = (
+        _answered_span(sentences_of(passage), row.sentence, row.decision)
+        if passage is not None
+        else None
+    )
     units = sentences_of(passage).units(span) if passage is not None and span else []
     if len(units) < 2:
         return _one_row_violations(row, index, by_id, sentences_of)
@@ -4521,7 +4539,7 @@ def _one_row_violations(
                 path=f"{path}.decision",
             )
         )
-    span = sentences_of(passage).span(row.sentence)
+    span = _answered_span(sentences_of(passage), row.sentence, row.decision)
     if span is None:
         out.append(
             Violation(
@@ -7725,7 +7743,11 @@ def _checked_rows(
             if row.decision == "rewrite"
             else []
         )
-        span = sentences_of(passage).span(row.sentence) if passage is not None else None
+        span = (
+            _answered_span(sentences_of(passage), row.sentence, row.decision)
+            if passage is not None
+            else None
+        )
         if passage is not None and span is not None and not own and not rewritten:
             passed.update((passage.id, unit[0]) for unit in sentences_of(passage).units(span))
         checked.append((index, row, passage, own, rewritten, span, told))
@@ -8757,7 +8779,9 @@ async def _ask(
             return None
         if passage.id not in located_in:
             located_in[passage.id] = _cut(passage)
-        span = located_in[passage.id].span(str(_field(row, "sentence") or ""))
+        span = _answered_span(
+            located_in[passage.id], str(_field(row, "sentence") or ""), _field(row, "decision")
+        )
         return (passage, span) if span is not None else None
 
     def _where(row: Any) -> tuple[str, str]:

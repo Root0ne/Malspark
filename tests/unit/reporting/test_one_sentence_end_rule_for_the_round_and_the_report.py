@@ -144,6 +144,20 @@ def test_a_whole_field_drop_leaves_the_whole_field_out() -> None:
     assert report.c2_channels[0].encryption == ""
 
 
+def test_a_rewrite_copying_a_whole_field_of_two_sentences_is_still_not_found() -> None:
+    # One text would stand in place of two sentences: the rewrite is asked again, and the
+    # field stands as written.
+    report = _cell(TWO)
+    rewrite = {
+        **_row(TWO, "rewrite", ["string_resolution"], rewrite="RC4 keys [ev_0107]."),
+        "passage": CELL_ID,
+    }
+    _counts, found = _answered(report, [rewrite, _beside()])
+    assert SENTENCE_NOT_FOUND_CODE in {v.code for v in found}
+    assert report.c2_channels[0].encryption in (TWO, "")
+    assert "RC4 keys" not in report.c2_channels[0].encryption
+
+
 def test_a_run_of_sentences_short_of_the_whole_field_is_still_not_found() -> None:
     three = f"{TWO} It is reused."
     report = _cell(three)
