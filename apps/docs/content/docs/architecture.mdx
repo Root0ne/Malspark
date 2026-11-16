@@ -2873,8 +2873,12 @@ turn, each once, and what the analyst answers stands.
     A key is an address (`0x…`, or at least four hex digits with a decimal
     digit among them; a hex word such as `cafe` is no address), a decompiler's
     generic name, which carries the function's address, or a plain name whose
-    listing's signature prints that name, which carries none: that function
-    keeps its name and is given no address. A key whose listing begins with
+    listing's signature prints that name, which carries none. Keys that carry
+    one address are one function, each adding its listing's name. A batch
+    keyed by plain names alone takes the addresses the call was given; a
+    name joins its address only when the call gave one address and the
+    answer lists one function, and given no address, each function keeps its
+    name and is given none. A key whose listing begins with
     `Error` is left out. A cut answer is read member by member from its opening
     brace, and keeps the functions its text still shows. Any other answer is no
     batch, so a plain listing is one function at the address the call was
