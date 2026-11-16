@@ -294,10 +294,10 @@ BENCHMARK = Path(".superpowers") / "sdd" / "mandate-2026-09-17" / "benchmark" / 
 # peer alone, so each line says the peer was sent them and that what it sent and the other
 # end are not recorded. Every other line of the capture summary is the one dev drew.
 STORED_REBUILDS = {
-    "run7": (89, "43df925356382099"),
-    "run5": (102, "637b6622598721bd"),
-    "run4": (92, "64fc5234eef07ecf"),
-    "local8": (40, "9230b129c8b94635"),
+    "run7": (89, "f5f95c2eece28f65"),
+    "run5": (102, "68747843c60c739d"),
+    "run4": (92, "4d22957ad99361a5"),
+    "local8": (40, "8d89c8149fb17c4f"),
 }
 # Each run's table of the rules its undeclared tool's answers name as matched: each row's
 # rule and tool (the Tool cell also names the entry's own server), and the entries it cites.

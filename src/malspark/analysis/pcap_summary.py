@@ -609,8 +609,8 @@ def conversation_line(row: dict[str, Any]) -> str:
             # Counted toward the peer alone, or both ways with nothing from
             # the peer: the totals are what was sent to it either way.
             return line + (
-                f"{peer} was sent {_sent(row.get('packets'), row.get('bytes'))}; what "
-                f"{peer} sent and the other end are not recorded"
+                f"{peer} was sent {_sent(row.get('packets'), row.get('bytes'))}; what it "
+                "sent and the other end are not recorded"
             )
         got_p = int(row.get("packets_from_host") or 0)
         got_b = int(row.get("bytes_from_host") or 0)

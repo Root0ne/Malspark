@@ -312,8 +312,8 @@ _OLD_LINES = [
     "and sent 65 pkts, 84775 bytes; the other end is not recorded",
     "8.8.4.4:6000/udp — 3 pkts, 96 bytes: 8.8.4.4 was sent none and sent 3 pkts, 96 bytes "
     "(inbound only); the other end is not recorded",
-    "8.8.8.8:9/udp — 2 pkts, 62 bytes: 8.8.8.8 was sent 2 pkts, 62 bytes; what 8.8.8.8 sent "
-    "and the other end are not recorded",
+    "8.8.8.8:9/udp — 2 pkts, 62 bytes: 8.8.8.8 was sent 2 pkts, 62 bytes; what it sent and "
+    "the other end are not recorded",
 ]
 # The text the summary's writer stored with those rows, its protocols and TLS names in the
 # writer's order; the record holds them in the order a JSON store keeps keys, not that one.
@@ -403,7 +403,9 @@ def test_a_record_that_counted_only_toward_the_peer_says_nothing_of_what_it_sent
     line = conversation_line(_OLD_ROWS[2])
     assert re.search(r"8\.8\.8\.8 sent (\d|none)", line) is None
     assert "none" not in line
-    assert "what 8.8.8.8 sent and the other end are not recorded" in line
+    assert line.endswith(
+        "8.8.8.8 was sent 2 pkts, 62 bytes; what it sent and the other end are not recorded"
+    )
 
 
 def test_a_rebuilt_record_differs_from_its_stored_text_only_in_its_flow_lines() -> None:
