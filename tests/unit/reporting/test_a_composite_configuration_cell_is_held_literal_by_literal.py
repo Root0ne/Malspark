@@ -236,6 +236,32 @@ class TestACompositeCell:
         texts = EntryTexts.from_ledger([_strings("ev_0051", "WSAStartup", "99")])
         assert _one(_items("WSAStartup, 99", "ev_0051"), texts).code == STATED_VALUE_UNHELD_CODE
 
+    def test_a_number_is_never_paired_across_list_punctuation(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [_strings("ev_0052", "8.8.8.8", "172.217.76.94", "DNS", "HTTP")]
+        )
+        cell = "8.8.8.8 (DNS); 172.217.76.94 (HTTP)"
+        assert stated_value_violations(_items(cell, "ev_0052"), texts) == []
+        # One address no cited entry holds is named alone, paired with nothing.
+        found = _one(_items("8.8.8.8 (DNS); 172.217.76.95 (HTTP)", "ev_0052"), texts)
+        assert "holds '172.217.76.95'." in found.message
+
+    def test_a_number_first_in_its_part_is_read_alone(self) -> None:
+        # 0x202 pairs with WSAStartup in its part; 0x101 opens the next part and
+        # is read as a number standing alone, in decimal or hex.
+        found = _one(_items("WSAStartup 0x202; 0x101", "ev_0010"))
+        assert "holds 'WSAStartup 0x202', '0x101'." in found.message
+        texts = EntryTexts.from_ledger([_code("ev_0053", "WSAStartup(0x202);\nver = 257;\n")])
+        found = _one(_items("WSAStartup 0x202; 0x101", "ev_0053"), texts)
+        assert "holds 'WSAStartup 0x202'." in found.message
+
+    def test_a_short_number_alone_in_its_part_holds_nothing(self) -> None:
+        texts = EntryTexts.from_ledger([_strings("ev_0054", "LoadLibraryA", "2")])
+
+        found = _one(_items("LoadLibraryA; 2", "ev_0054"), texts)
+
+        assert "holds '2'." in found.message
+
     def test_a_cell_of_one_span_is_read_whole(self) -> None:
         assert stated_value_violations(_items("0x80000001", "ev_0010"), _texts()) == []
         found = _one(_items("primary", "ev_0010"))

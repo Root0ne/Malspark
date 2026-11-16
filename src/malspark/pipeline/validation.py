@@ -11017,10 +11017,13 @@ def _cell_spans(cell: str) -> list[str]:
     case or its length, and no word is read for its meaning. A span holding a
     backslash or a slash runs to the end of its part, as one span: a path is
     never cut at a space. A number is never a span apart from the span before
-    it (``first_key 0x2b``, :func:`field_value_spellings`).
+    it in its part (``first_key 0x2b``, :func:`field_value_spellings`); the
+    pair never crosses list punctuation, and a number first in its part is a
+    span of its own.
     """
     spans: list[str] = []
     for part in _CELL_LIST_RE.split(cell):
+        opened = len(spans)
         for match in _CELL_SPAN_RE.finditer(part):
             token = match.group(0)
             if len(token) >= 2 and token[0] == token[-1] == '"':
@@ -11030,7 +11033,7 @@ def _cell_spans(cell: str) -> list[str]:
             if "\\" in token or "/" in token:
                 spans.append(part[match.start() :].strip())
                 break
-            if spans and _ONLY_A_NUMBER_RE.fullmatch(token):
+            if len(spans) > opened and _ONLY_A_NUMBER_RE.fullmatch(token):
                 spans[-1] = f"{spans[-1]} {token}"
                 continue
             spans.append(token)
@@ -11292,7 +11295,15 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                 spans = _cell_spans(value) if numbers else []
                 if len(spans) < 2:
                     spans = [value]
-                missing = [span for span in spans if not _literal_held(span, among, numbers)]
+                # A number standing alone in its part is read as a value of
+                # its own, in decimal or hex; one shorter than a listed item's
+                # floor holds nothing (T-555).
+                missing = [
+                    span
+                    for span in spans
+                    if (len(span) < _LISTED_PART_FLOOR and _ONLY_A_NUMBER_RE.fullmatch(span))
+                    or not _literal_held(span, among, numbers)
+                ]
                 if not missing:
                     continue
                 if value not in held_elsewhere:

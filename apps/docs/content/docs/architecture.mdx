@@ -6242,7 +6242,9 @@ is assembled from what the run gathered rather than recomputed beside it:
   a comma before a space, brackets, the quotes around a span) is no span, no
   span is skipped for its shape, case or length and no word is read for its
   meaning, a span holding `\` or `/` runs to the end of its part, and a number
-  is held only with the span before it; a cell of one span and an identifier
+  is held only with the span before it in its part — a number first in its
+  part is read alone, in decimal or hex, and one shorter than three characters
+  holds nothing; a cell of one span and an identifier
   row are read whole; rows citing the same entries are one question, which
   names the spans no cited entry holds and, for a path, the whole leading part
   of at least two components a cited entry holds, where every string of that
