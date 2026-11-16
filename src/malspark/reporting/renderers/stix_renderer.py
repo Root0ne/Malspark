@@ -5014,6 +5014,15 @@ def judge_value_answer(
     )
 
 
+def _named_by_an_accepted_pattern(item: Any) -> bool:
+    """Whether a judge value is named by an indicator whose pattern the export accepts.
+
+    A value recorded before the patterns were is read as it was exported.
+    """
+    patterns = list(_field(item, "indicator_patterns") or [])
+    return not patterns or any(pattern_problem(p) is None for p in patterns)
+
+
 def judge_indicator_rows(report: Any, corpus: Any = None) -> list[tuple[Any, str]]:
     """Each value the judge's indicators name, with the one rule's answer for it.
 
@@ -5021,7 +5030,13 @@ def judge_indicator_rows(report: Any, corpus: Any = None) -> list[tuple[Any, str
     export asks before it carries a judge indicator, so the three surfaces
     read one decision.
     """
-    rows = list(getattr(report, "judge_indicators", None) or [])
+    # A value only a declined indicator names is the judge's naming, not a row:
+    # only an indicator whose pattern the export accepts gives one.
+    rows = [
+        row
+        for row in getattr(report, "judge_indicators", None) or []
+        if _named_by_an_accepted_pattern(row)
+    ]
     if not rows:
         return []
     corroborating = _corroborating_values(report, corpus)
@@ -5160,7 +5175,7 @@ def _carried_judge_record(
         if not patterns:
             return True, (types[0] if types else None)
         for pattern, claimed in zip(patterns, types, strict=False):
-            if all(
+            if pattern_problem(pattern) is None and all(
                 (v.kind, _value_key(v.kind, v.value)) in published for v in rule_values(pattern)
             ):
                 return True, (claimed or None)
@@ -5348,17 +5363,18 @@ def exported_indicator_values(bundle: Any) -> list[ExportedValue]:
     """Every value of every indicator of a bundle the export would carry, once each.
 
     The one reader of the judge's values: the report builder stores what it
-    reads of the judge's own bundle (``MalwareReport.judge_indicators``), and
-    the IOC table's judge rows (:func:`judge_indicator_rows`), the lifting of
-    the shape question (``judge_s_value``), the keep of a sandbox row, the
-    type a row takes from the judge and the export's lookup of a judge
-    indicator all read that record. Each value the pattern reader reads
-    (:func:`pattern_values`), whatever the pattern's shape: one comparison,
-    several joined, a value beside a digest. An indicator whose pattern the
-    export declines (:func:`pattern_problem`) is not read at all: its values
-    take no place, whichever order it comes in. Each value carries the pattern
-    of every indicator naming it and the first type each claims. It decides
-    nothing.
+    reads of the judge's own bundle (``MalwareReport.judge_indicators``). Each
+    value the pattern reader reads (:func:`pattern_values`), whatever the
+    pattern's shape (one comparison, several joined, a value beside a digest)
+    and whether or not the export accepts the pattern, with the pattern of
+    every indicator naming it and the first type each claims. Two facts are
+    read off it. The judge NAMES every value it holds: naming keeps a sandbox
+    row and lifts the shape question of a row of the string sweep. The export
+    CARRIES an indicator with no pattern problem (:func:`pattern_problem`)
+    whose every value has a published row: only such an indicator gives a row
+    for a value nobody else holds (:func:`judge_indicator_rows`), is exported,
+    and lends its type (:func:`carried_judge_type`); a declined one lends
+    nothing, whichever order it comes in. It decides nothing.
     """
     objects = (bundle or {}).get("objects") if isinstance(bundle, dict) else None
     found: dict[tuple[str, str], ExportedValue] = {}
@@ -5366,8 +5382,6 @@ def exported_indicator_values(bundle: Any) -> list[ExportedValue]:
         if not isinstance(obj, dict) or obj.get("type") != "indicator":
             continue
         pattern = str(obj.get("pattern") or "")
-        if pattern_problem(pattern) is not None:
-            continue
         claimed = next((str(t) for t in obj.get("indicator_types") or [] if t), "")
         for value in pattern_values(pattern):
             key = (value.kind, value.value.lower())
