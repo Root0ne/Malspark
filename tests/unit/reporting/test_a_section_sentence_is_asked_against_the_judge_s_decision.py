@@ -172,8 +172,10 @@ def test_the_judge_s_decision_is_shown_as_passages_of_its_own() -> None:
     assert dropped.kind == "judge" and dropped.write is None
     # A dropped technique rests on what the judge's reason cites, which its words show.
     assert dropped.cites == frozenset({"ev_0301"})
-    assert dropped.text.startswith("T1027.007 Dynamic API Resolution: not published, ")
-    assert _REASON in dropped.text
+    assert dropped.label == "a technique the judge did not publish"
+    assert dropped.text == f'T1027.007 Dynamic API Resolution: "the judge dropped it ({_REASON})"'
+    # Said dropped once, by the record's own words.
+    assert f"{dropped.label}: {dropped.text}".count("dropped") == 1
     published = shown["judge.technique.T1082"]
     assert published.text == "T1082 System Information Discovery: published"
     assert published.cites == frozenset()
@@ -197,7 +199,11 @@ def test_the_block_names_published_techniques_by_id_and_name_and_lists_no_cites(
         "- [judge.technique.T1082] a technique the judge published: T1082 System Information "
         "Discovery: published\n"
     ) in block
-    assert f"- [{DROPPED}] a technique the judge dropped: T1027.007 Dynamic API" in block
+    assert (
+        f"- [{DROPPED}] a technique the judge did not publish: T1027.007 Dynamic API "
+        f'Resolution: "the judge dropped it ({_REASON})"\n'
+    ) in block
+    assert block.count("dropped") == 2
     assert "(cites" not in block
     assert "- [judge.verdict] the judge's verdict: Benign, moderate confidence\n" in block
 

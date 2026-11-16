@@ -896,7 +896,8 @@ JUDGE_TECHNIQUE_ID = "judge.technique."
 def judge_passages(decision: JudgeDecision) -> list[Passage]:
     """The judge's decision as the round is shown it, one passage each: the verdict with its
     confidence band, the family or none, then each technique published, by id and name, and
-    each the judge dropped with the record's words, the judge's reason among them (T-717).
+    each the judge dropped with the record's words, which say so, the judge's reason among
+    them (T-717).
     None for a decision the run did not record. A dropped technique rests on the entries its
     reason cites, which its words show; no other passage of the judge's cites any."""
     out: list[Passage] = []
@@ -921,17 +922,14 @@ def judge_passages(decision: JudgeDecision) -> list[Passage]:
         out.append(
             Passage(
                 id=f"{JUDGE_TECHNIQUE_ID}{technique.technique_id}",
+                # A dropped one is said so once, by the record's own words.
                 label=(
                     "a technique the judge published"
                     if technique.published
-                    else "a technique the judge dropped"
+                    else "a technique the judge did not publish"
                 ),
                 text=f"{technique.technique_id} {_sample_text(technique.name)}: "
-                + (
-                    "published"
-                    if technique.published
-                    else f"not published, {quoted_value(technique.said)}"
-                ),
+                + ("published" if technique.published else quoted_value(technique.said)),
                 kind=JUDGE,
                 # A dropped one rests on what its reason cites; a published one says nothing.
                 cites=_ids(technique.said),

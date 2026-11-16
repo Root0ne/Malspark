@@ -138,7 +138,7 @@ def test_only_the_judge_s_own_words_are_the_judge_s_passage() -> None:
     # The matrix's record of the drop is the judge's decision, under its own heading (T-717).
     text = prompt_text(passages_of(report))
     assert text.count("the judge dropped it") == 1
-    assert "- [judge.technique.T1055] a technique the judge dropped" in text
+    assert "- [judge.technique.T1055] a technique the judge did not publish" in text
 
 
 def test_a_reason_left_out_keeps_the_platform_s_words_without_the_bracket() -> None:
