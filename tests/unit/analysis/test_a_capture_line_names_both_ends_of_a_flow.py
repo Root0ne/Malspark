@@ -507,9 +507,8 @@ def _flows(text: str) -> list[str]:
 
 
 def _left_out(kind: str, rest: int) -> str:
-    return (
-        f"{rest} more {kind} not shown here; the evidence endpoint carries every one under ev_0001."
-    )
+    said = f"{rest:,} more {kind} not shown here"
+    return f"{said}; the evidence endpoint carries every one under ev_0001."
 
 
 def test_a_section_over_its_cap_leaves_out_flows_and_says_how_many() -> None:
@@ -660,13 +659,125 @@ def test_past_the_cap_the_flows_go_first_then_the_names_never_the_beacons() -> N
     assert len(more) > _capture_cap()
 
 
-def test_beacons_past_the_cap_on_their_own_are_printed_whole() -> None:
-    facts = _reviewer_facts(5, 3, 200)
+def _most() -> int:
+    from malspark.reporting import ledger_report
+
+    return int(ledger_report.CAPTURE_TEXT_MOST)
+
+
+def _short_facts(rows: list[dict[str, Any]], beacons: int = 0) -> dict[str, Any]:
+    return {
+        "packets_read": 10, "packets_in_capture": 10, "packet_limit": None, "bytes": 10,
+        "duration_s": 1.0, "protocols": {"tcp": 1}, "conversations": rows, "sni": {},
+        "beacons": [
+            {"dst": row["dst"], "dport": row["dport"], "proto": row["proto"], "callbacks": 9,
+             "interval_s": 60.0}
+            for row in rows[:beacons]
+        ],
+        "summary": "x",
+    }  # fmt: skip
+
+
+def _outbound_only(flows: int, ends: int) -> dict[str, Any]:
+    """``flows`` peers each sent one datagram by ``ends`` internal ends, never answered."""
+    internal = [f"192.168.{100 + j}.{200 + j}" for j in range(ends)]
+    return _short_facts(
+        [
+            {"dst": f"1.1.{i // 250}.{i % 250 + 1}", "dport": 1, "proto": "udp", "packets": 1,
+             "bytes": 9, "internal": internal, "packets_to_peer": 1, "bytes_to_peer": 9,
+             "packets_from_peer": 0, "bytes_from_peer": 0}
+            for i in range(flows)
+        ]
+    )  # fmt: skip
+
+
+def test_the_old_form_is_measured_as_dev_wrote_it() -> None:
+    from malspark.reporting.ledger_report import _old_form_chars
+
+    for facts in (
+        _reviewer_facts(32, 5, 2),
+        _reviewer_facts(45, 2, 1, 900, 2),
+        _outbound_only(9, 3),
+    ):
+        assert _old_form_chars(facts, summary_text(facts)) == len(_dev_text(facts))
+    record = _old_record()
+    assert _old_form_chars(record, summary_text(record)) == len(_OLD_SUMMARY)
+
+
+def test_a_capture_the_old_line_fitted_is_printed_whole_past_the_room() -> None:
+    from malspark.reporting.ledger_report import MAX_TEXT_CHARS
+
+    facts = _outbound_only(107, 3)
+    assert len(_dev_text(facts)) <= MAX_TEXT_CHARS  # dev printed it whole
+    assert len(summary_text(facts)) > _capture_cap()  # the new line does not fit the room
+    _every_block(facts, _section(facts))
+
+
+def test_a_capture_the_old_line_did_not_fit_is_fitted_to_the_room() -> None:
+    from malspark.reporting.ledger_report import MAX_TEXT_CHARS
+
+    facts = _outbound_only(130, 3)
+    assert len(_dev_text(facts)) > MAX_TEXT_CHARS
     text = _section(facts)
-    assert len([line for line in text.split("\n") if "likely C2 beacon" in line]) == 200
-    assert "Cut here" not in text
+    assert len(text) <= _capture_cap()
+    assert 0 < len(_flows(text)) < 130
+
+
+def test_beacons_past_the_room_keep_those_of_the_heaviest_conversations() -> None:
+    rows = [
+        {"dst": f"1.{i // 62500}.{i // 250 % 250}.{i % 250 + 1}", "dport": 443, "proto": "tcp",
+         "packets": 10, "bytes": 10_000 - i, "internal": ["10.0.0.2"], "packets_to_peer": 5,
+         "bytes_to_peer": 500, "packets_from_peer": 5, "bytes_from_peer": 9_500 - i}
+        for i in range(3000)
+    ]  # fmt: skip
+    facts = _short_facts(rows, beacons=3000)
+    facts["beacons"].reverse()  # the writer's order is not the conversations' weight
+    text = _section(facts)
+    assert len(text) <= _capture_cap()
+    lines = text.split("\n")
+    assert lines[:2] == summary_text(facts).split("\n")[:2]  # the overview is never cut
     assert _flows(text) == []
-    assert _left_out("TLS names", 3) in text
+    assert _left_out("conversations", 3000) in text
+    shown = [line for line in lines if "likely C2 beacon" in line]
+    assert 0 < len(shown) < 3000
+    assert _left_out("beacons", 3000 - len(shown)) in text
+    # Those of the heaviest conversations, in the writer's order.
+    heaviest = {row["dst"] for row in rows[: len(shown)]}
+    assert {line[2:].split(":", 1)[0] for line in shown} == heaviest
+    assert [line[2:].split(":", 1)[0] for line in shown] == [
+        b["dst"] for b in facts["beacons"] if b["dst"] in heaviest
+    ]
+    # One more beacon would not have fitted.
+    from malspark.reporting.ledger_report import (
+        BEACONS_LEFT_OUT,
+        CONVERSATIONS_LEFT_OUT,
+        NAMES_LEFT_OUT,
+    )
+
+    more = {row["dst"] for row in rows[: len(shown) + 1]}
+    longer = summary_text(
+        {**facts, "beacons": [b for b in facts["beacons"] if b["dst"] in more]},
+        0,
+        CONVERSATIONS_LEFT_OUT.format(rest=3000, ids="ev_0001"),
+        0,
+        NAMES_LEFT_OUT.format(rest=0, ids="ev_0001"),
+        BEACONS_LEFT_OUT.format(rest=3000 - len(shown) - 1, ids="ev_0001"),
+    )
+    assert len(longer) > _capture_cap()
+
+
+def test_no_capture_summary_is_longer_than_its_bound() -> None:
+    assert _most() == 40_000
+    for facts in (
+        _outbound_only(100, 400),  # the old line fitted; the new one is longer than the bound
+        _reviewer_facts(30, 400, 2),
+        _reviewer_facts(5, 3, 200),
+        _outbound_only(107, 3),
+    ):
+        text = _section(facts)
+        assert len(text) <= _most()
+        assert text.split("\n")[:2] == summary_text(facts).split("\n")[:2]
+    assert len(_section(_outbound_only(100, 400))) <= _capture_cap()
 
 
 # ----------------------------------------------- one writer, every surface

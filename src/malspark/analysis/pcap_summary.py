@@ -655,6 +655,7 @@ def summary_text(
     left_out: str = "",
     names_shown: int | None = None,
     names_left_out: str = "",
+    beacons_left_out: str = "",
 ) -> str:
     """The facts as the markdown block the network analyst and the report read.
 
@@ -662,7 +663,8 @@ def summary_text(
     stored record keeps its keys in. ``shown`` lists the heaviest ``shown``
     conversations and ends the list with ``left_out``, the sentence saying how
     many are not and where they are; ``names_shown`` and ``names_left_out`` do
-    the same for the TLS names. ``None`` lists them all.
+    the same for the TLS names. ``beacons_left_out`` ends the beacon list, the
+    beacons the facts hold being those it shows. ``None`` lists them all.
     """
     read = CaptureRead.from_fields(facts)
     heading = "#### Packet Capture Analysis (deterministic, whole capture):"
@@ -711,7 +713,7 @@ def summary_text(
         if names_shown is not None and names_shown < len(sni):
             out.append(names_left_out)
     beacons = facts.get("beacons") or []
-    if beacons:
+    if beacons or beacons_left_out:
         out += [
             "",
             "Beaconing detected (periodic callbacks — strong C2 signal):",
@@ -722,6 +724,8 @@ def summary_text(
                 for b in beacons
             ],
         ]
+        if beacons_left_out:
+            out.append(beacons_left_out)
     else:
         out += ["", "No regular beaconing interval detected in the packets read."]
     return "\n".join(out)
