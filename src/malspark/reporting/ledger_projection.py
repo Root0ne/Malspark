@@ -1110,6 +1110,8 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
                     hive=_hive_of(key),  # type: ignore[arg-type]
                     key=key,
                     operation=_registry_operation(row.get("operation")),  # type: ignore[arg-type]
+                    # The value a write named, where the sandbox's call did.
+                    value_name=_opt(row.get("value_name")),
                     new_value=_opt(row.get("value")),
                     pids=_pids_of(row.get("pids")),
                 )

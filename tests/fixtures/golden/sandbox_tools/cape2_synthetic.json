@@ -304,7 +304,8 @@
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Updater",
         "operation": "modify",
-        "value": "C:\\Users\\guest\\AppData\\Roaming\\second.exe"
+        "value": "C:\\Users\\guest\\AppData\\Roaming\\second.exe",
+        "value_name": "Updater"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Synthetic\\Settings\\InstallPath",
@@ -369,7 +370,8 @@
       {
         "key": "HKEY_CURRENT_USER\\Software\\Synthetic\\Interval",
         "operation": "modify",
-        "value": "300"
+        "value": "300",
+        "value_name": "Interval"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Synthetic",

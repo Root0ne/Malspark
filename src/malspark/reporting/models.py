@@ -1000,6 +1000,19 @@ class SampleString(BaseModel):
 RuleClause = Literal["sha256", "imphash", "strings"]
 
 
+class ValueLeftOut(BaseModel):
+    """A value a built draft's selection left out, and why (``detection_signatures``).
+
+    Kept on the rule's record, never printed: ``why`` is the catalogue's reason
+    or the selected value it is taken out for (``selection_specific``).
+    """
+
+    model_config = _STRICT_CONFIG
+
+    value: str
+    why: str
+
+
 class DetectionRule(BaseModel):
     """Auto-generated detection content with the body kept as plain text."""
 
@@ -1032,6 +1045,12 @@ class DetectionRule(BaseModel):
     # the body is left out. Absent on a rule stored before the field existed.
     printed: bool | None = Field(default=None, exclude_if=lambda value: value is None)
     standing: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    # Each value narrowing took out of a built Sigma draft, with why
+    # (``detection_signatures.selection_specific``). Left out of the stored row
+    # when empty.
+    values_left_out: list[ValueLeftOut] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
 
 
 class DraftNotBuilt(BaseModel):

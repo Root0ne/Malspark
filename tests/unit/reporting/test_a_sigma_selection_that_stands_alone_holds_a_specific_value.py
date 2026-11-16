@@ -84,8 +84,7 @@ def _report(
         ttp_mappings=mappings or [],
         dynamic=DynamicBehavior(
             registry_mods=[
-                RegistryMod(hive="HKCU", key=key, value_name="x", operation="create")
-                for key in keys or []
+                RegistryMod(hive="HKCU", key=key, operation="create") for key in keys or []
             ]
         ),
         persistence=persistence or [],
@@ -320,7 +319,9 @@ class TestOneDecision:
     ) -> None:
         calls: list[dict[str, Any]] = []
 
-        def _nothing(selections: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+        def _nothing(
+            selections: dict[str, Any], asked: Any = None
+        ) -> tuple[dict[str, Any], list[tuple[str, str]]]:
             calls.append(selections)
             return {}, []
 

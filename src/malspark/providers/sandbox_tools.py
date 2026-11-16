@@ -1247,10 +1247,12 @@ _REGISTRY_OP_WEIGHT: dict[str, int] = {
 # a subkey and a subkey before the bare hive handle (``Registry``), which is
 # the key only for a call that names nothing else; a value is what was written
 # or, for a query, what was read (``Data``, or ``Information`` for the native
-# value query); a service is its name, under either spelling, before its
-# display name or the binary it runs.
+# value query); a value's name is what a write names the value it wrote under;
+# a service is its name, under either spelling, before its display name or the
+# binary it runs.
 _REGISTRY_KEY_ARGS = ("FullName", "KeyName", "ObjectAttributes", "SubKey", "Registry")
 _REGISTRY_VALUE_ARGS = ("Buffer", "Data", "ValueData", "Value", "Information")
+_REGISTRY_VALUE_NAME_ARGS = ("ValueName", "lpValueName")
 _MUTEX_APIS = frozenset({"ntcreatemutant", "ntopenmutant", "createmutexa", "createmutexw"})
 # The mutex APIs that create one: only a creation names the process that made
 # the mutex. An open, or a create that found the mutex already there, names a
@@ -1396,6 +1398,12 @@ def sandbox_registry_ops(
             if operation == before["operation"] == "query" and value is None:
                 continue
         rows[key] = {"key": key, "operation": operation, "value": value}
+        # A write names the value it wrote, where the call carries the name.
+        written = (
+            _argument(call, _REGISTRY_VALUE_NAME_ARGS) if operation in ("create", "modify") else ""
+        )
+        if written:
+            rows[key]["value_name"] = written
     ordered = []
     for key, row in rows.items():
         made_by = pids.get((key, row["operation"]))

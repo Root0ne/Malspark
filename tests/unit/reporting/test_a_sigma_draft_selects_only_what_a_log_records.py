@@ -68,6 +68,7 @@ def _report(
     signatures: list[tuple[str, str, int]],
     keys: list[str] | None = None,
     verdict: str = "Malware",
+    value_name: str | None = "x",
 ) -> MalwareReport:
     report = MalwareReport(
         identity=SampleIdentity(hashes=FileHashes(sha256="d" * 64)),
@@ -79,7 +80,7 @@ def _report(
                 for name, text, severity in signatures
             ],
             registry_mods=[
-                RegistryMod(hive="HKLM", key=key, value_name="x", operation="create")
+                RegistryMod(hive="HKLM", key=key, value_name=value_name, operation="create")
                 for key in keys or []
             ],
         ),
@@ -180,7 +181,8 @@ class TestNoValueALogRecords:
 
 class TestAKeyEveryInstallationHas:
     def test_a_watched_autorun_key_alone_makes_no_draft_and_says_why(self) -> None:
-        report = _report([], keys=[RUN_KEY])
+        # A record naming neither the value written nor its data.
+        report = _report([], keys=[RUN_KEY], value_name=None)
 
         assert _sigma(report) is None
         (item,) = report.drafts_not_built
@@ -192,7 +194,7 @@ class TestAKeyEveryInstallationHas:
         )
 
     def test_a_vendor_key_beside_it_is_selected_alone(self) -> None:
-        rule = _sigma(_report([], keys=[RUN_KEY, WATCHED_KEY]))
+        rule = _sigma(_report([], keys=[RUN_KEY, WATCHED_KEY], value_name=None))
 
         assert yaml.safe_load(rule.body)["detection"] == {
             "selection_registry": {"TargetObject|contains": ["\\" + WATCHED_KEY]},
