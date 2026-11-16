@@ -145,6 +145,11 @@ class TestTheWriterIsOneProcess:
 
         assert _fact(processes, pids=["40"], task="t1") == HOST_ROW_OUTSIDE_THE_TREE
 
+    def test_a_listed_writer_outside_the_tree_beside_an_unlisted_number_is_outside(self) -> None:
+        processes = [*_every_guest_pid_stated(), _node(40, "svchost.exe", 4, "t1", guest_pid="700")]
+
+        assert _fact(processes, pids=["40", "1928"], task="t1") == HOST_ROW_OUTSIDE_THE_TREE
+
     def test_a_disputed_writer_is_unattributed_as_it_was(self) -> None:
         # 85 runs the submitted file and carries no mark: the two facts disagree.
         assert _fact(_two_tasks(), pids=["85"], task="t1") == UNATTRIBUTED_HOST_ROW.format(

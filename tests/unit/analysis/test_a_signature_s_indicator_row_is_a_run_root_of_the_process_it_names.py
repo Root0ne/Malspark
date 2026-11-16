@@ -288,6 +288,17 @@ class TestASignatureItemIsPlacedByItsIndicators:
         assert found.of_item("proc:87") == (P87_T1, "")
         assert found.of_item("proc:87.2") == (P87_T2, "")
 
+    def test_a_listing_a_second_answer_repeats_adds_no_place(self) -> None:
+        again = _processes()
+        again.id = "ev_0012"
+        # An index that holds a third place of the id: the listing holds two.
+        index = _index()
+        index.structured["sections"]["processes"]["repeats"] = [[87, 3]]
+        found = run_roots([_processes(), index, again])
+
+        assert found.of_item("proc:87.2") == (P87_T2, "")
+        assert found.of_item("proc:87.3") == ("", ITEM_UNSETTLED.format(item="proc:87.3"))
+
 
 class TestAnIdATaskListsTwiceNamesNoProcess:
     @staticmethod

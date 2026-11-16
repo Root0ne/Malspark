@@ -125,6 +125,22 @@ class TestARowThatStatesNoTaskIsReadAgainstTheListedTasks:
         assert found.resolve("1496") == ProcessKey("t1", "85")
         assert found.guest_of(ProcessKey("t1", "85")) == "1496"
 
+    def test_its_guest_pid_is_no_process_s_where_two_tasks_list_its_id(self) -> None:
+        found = ProcessIdentities()
+        found.add("87", task="t1")
+        found.add("87", task="t2")
+        found.add("87", guest_pid="1924")
+
+        assert found.guest_of(ProcessKey("t1", "87")) == ""
+        assert found.guest_of(ProcessKey("t2", "87")) == ""
+
+    def test_the_process_s_own_task_s_statement_is_read_before_it(self) -> None:
+        found = ProcessIdentities()
+        found.add("85", task="t1", guest_pid="1496")
+        found.add("85", guest_pid="2000")
+
+        assert found.guest_of(ProcessKey("t1", "85")) == "1496"
+
 
 class TestAProcessIsWrittenByItsIdAndItsTaskWhereTheIdIsShared:
     def test_an_id_one_task_lists_is_written_alone(self) -> None:

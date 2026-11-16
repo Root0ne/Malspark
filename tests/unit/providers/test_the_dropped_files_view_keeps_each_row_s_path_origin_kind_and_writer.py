@@ -163,6 +163,22 @@ class TestTheWriterFieldsAreTheReadersDeclaration:
 
         assert answer["pids"] == ["5", "6"]
 
+    def test_a_field_joining_several_writers_with_commas_keeps_each(self) -> None:
+        row = {"name": "a.dat", "pids": "1536,908"}
+        (answer,) = sandbox_dropped_files({"dropped_files": [row]})["dropped"]
+
+        assert answer["pids"] == ["1536", "908"]
+
+    def test_a_reading_of_the_overview_reads_the_reader_s_declared_fields(self) -> None:
+        from malspark.schemas.sandbox_report import READ_FROM_OVERVIEW
+
+        reader = required_reader("triage")
+        reading = reader.reading(READ_FROM_OVERVIEW)
+
+        assert reading.dropped_writer_fields == reader.DROPPED_WRITER_FIELDS
+        assert reading.dropped_guest_pid_fields == reader.DROPPED_GUEST_PID_FIELDS
+        assert reading.dropped_writer_fields
+
 
 class TestThePackReadsTheViewWithTheJobsReader:
     def test_the_pack_s_entry_states_the_path_and_the_writer(self, tmp_path: Path) -> None:
