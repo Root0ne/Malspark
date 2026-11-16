@@ -266,6 +266,16 @@ def test_the_judge_s_summary_names_the_absence_cited_sources_apart() -> None:
     )
     only = {"sources": ["ev_0203"], "absence_sources": ["ev_0203"], "independent_sources": 0}
     assert _source_facts(only) == f" [{ABSENCE_LABEL}: ev_0203]"
+    # Independent as many as the traced sources: nothing more is said of them.
+    same = {
+        "sources": ["ev_0006", "ev_0007", "ev_0203"],
+        "absence_sources": ["ev_0203"],
+        "independent_sources": 2,
+    }
+    assert _source_facts(same) == (
+        f" [traced to 2 cited source(s), each counted once: ev_0006, ev_0007; {ABSENCE_LABEL}: "
+        "ev_0203]"
+    )
     # A row without the list reads as it did.
     plain = {"sources": ["ev_0006", "ev_0007"], "independent_sources": 2}
     assert _source_facts(plain) == (
