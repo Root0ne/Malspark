@@ -197,10 +197,11 @@ confidence band where the judge assessed one, its family or none, each technique
 id and name and each it dropped with its reason) is shown after the facts, one passage each
 (``judge.verdict``, ``judge.family``, ``judge.technique.<ID>``). It is the source of a drop
 and of nothing else, and only of a sentence of a section 5 passage the round may rewrite, the
-conclusion, the limitations, a value cell or a capability bullet (:func:`_judge_drops`): a row
-naming it is a drop whatever else it names, one of another form or for another passage is
-refused, its sentence ending as any whose answer is refused (:func:`_told_the_end` tells it),
-and no sentence is read for what it asserts (T-717). Which sentence states otherwise
+conclusion, the limitations, a value cell or a capability bullet (:func:`_judge_drops`): a drop
+naming it for another passage is refused, and a row of another form naming it is checked and
+ended as the same row without it (:func:`_without_the_judge`), naming it neither removing a
+sentence nor sparing it a check, its refusal only told; no sentence is read for what it
+asserts (T-717). Which sentence states otherwise
 than it is the model's to say: code picks none. A sentence left out on it is counted where it
 is left out and recorded with the row's sources, its reason and the sentence whole
 (``JUDGE_LEFT_OUT_CODE``). The decision starts no question of its own, and nothing changes it.
@@ -4480,42 +4481,9 @@ def _row_violations(
     judged = _judge_named(sources)
     if judged and not _judge_drops(passage):
         # The judge's decision leaves a sentence out of the passages :func:`_judge_drops` names
-        # and supports no answer for any other: a passage printed in its writer's own words
-        # takes none on it, not a drop, not a keep (T-717).
-        out.append(
-            Violation(
-                code=UNKNOWN_SOURCE_CODE,
-                message=(
-                    f"row {safe_finding_value(index + 1)} names "
-                    f"{safe_finding_value(', '.join(judged))}, of the judge's decision, which "
-                    + (
-                        "is no source of a passage marked (verbatim)"
-                        if passage.verbatim
-                        else "supports no answer for a sentence of "
-                        f"{safe_finding_value(passage.id)}: it leaves a sentence out only of "
-                        f"{_JUDGE_DROPS}"
-                    )
-                    + f". Name no judge passage for a sentence of {safe_finding_value(passage.id)}."
-                ),
-                path=f"{path}.sources",
-            )
-        )
-        return out
-    if judged and row.decision != "drop":
-        # A passage of the judge's decision is a source of a drop alone: a row naming one in
-        # any other form is refused, whatever else it names (T-717).
-        out.append(
-            Violation(
-                code=UNKNOWN_PASSAGE_CODE,
-                message=(
-                    f"row {safe_finding_value(index + 1)}: "
-                    f"{safe_finding_value(', '.join(judged))} "
-                    + ("is a passage" if len(judged) == 1 else "are passages")
-                    + f" of the judge's decision, {_ON_THE_JUDGE}."
-                ),
-                path=f"{path}.decision",
-            )
-        )
+        # and supports no answer for any other: a drop naming it there is refused; a row of
+        # another form reaches no check naming it (:func:`_without_the_judge`, T-717).
+        out.append(_judge_refusal(row, index, passage, judged))
         return out
     # A section 5 sentence calling something absent from the whole code read
     # names nothing a fact is about: it may rest on a fact or a section 5
@@ -4810,6 +4778,62 @@ def _judge_named(sources: Sequence[Passage | None]) -> list[str]:
     """The ids of the passages of the judge's decision among a row's ``sources``, each once:
     a row naming one is a drop or is refused (T-717)."""
     return list(dict.fromkeys(s.id for s in sources if s is not None and s.kind == JUDGE))
+
+
+def _judge_less(names: Sequence[Any], decision: Any, by_id: Mapping[str, Passage]) -> list[Any]:
+    """``names``, a row's sources, as every check and every end reads them: without the
+    passages of the judge's decision on a row that is no drop, which ends as the same row
+    without them would; a drop's as they stand (T-717)."""
+    if decision == "drop":
+        return list(names)
+    return [
+        name for name in names if (source := by_id.get(_form(name))) is None or source.kind != JUDGE
+    ]
+
+
+def _without_the_judge(row: AgreementRow, by_id: Mapping[str, Passage]) -> AgreementRow:
+    """``row`` as every check and every end reads it (:func:`_judge_less`): a row naming a
+    passage of the judge's decision that is no drop is read without it; naming it neither
+    removes a sentence nor spares it a check, and its refusal (:func:`_judge_refusal`) is
+    only told (T-717). Any other row as it is."""
+    kept = _judge_less(row.sources, row.decision, by_id)
+    return row if len(kept) == len(row.sources) else row.model_copy(update={"sources": kept})
+
+
+def _judge_refusal(
+    row: AgreementRow, index: int, passage: Passage, judged: Sequence[str]
+) -> Violation:
+    """The refusal of a row naming the passages ``judged`` of the judge's decision where it
+    supports no such answer: a drop for a passage :func:`_judge_drops` does not name, or any
+    row of another form; the latter is told only, its row ending as it would without them
+    (:func:`_without_the_judge`, T-717)."""
+    number = safe_finding_value(index + 1)
+    if not _judge_drops(passage):
+        return Violation(
+            code=UNKNOWN_SOURCE_CODE,
+            message=(
+                f"row {number} names {safe_finding_value(', '.join(judged))}, of the judge's "
+                "decision, which "
+                + (
+                    "is no source of a passage marked (verbatim)"
+                    if passage.verbatim
+                    else "supports no answer for a sentence of "
+                    f"{safe_finding_value(passage.id)}: it leaves a sentence out only of "
+                    f"{_JUDGE_DROPS}"
+                )
+                + f". Name no judge passage for a sentence of {safe_finding_value(passage.id)}."
+            ),
+            path=f"sentences.{index}.sources",
+        )
+    return Violation(
+        code=UNKNOWN_PASSAGE_CODE,
+        message=(
+            f"row {number}: {safe_finding_value(', '.join(judged))} "
+            + ("is a passage" if len(judged) == 1 else "are passages")
+            + f" of the judge's decision, {_ON_THE_JUDGE}."
+        ),
+        path=f"sentences.{index}.decision",
+    )
 
 
 def _judge_drops(passage: Passage) -> bool:
@@ -6807,8 +6831,8 @@ def _qualified(sentence: str, facts: Sequence[Passage]) -> str:
 def _platform_rewrites(payload: Any, by_id: dict[str, Passage]) -> Any:
     """The payload with each section 5 rewrite resting on a fact written by the platform:
     the sentence unchanged and the facts' clauses (``_qualified``). Every other row as the
-    model wrote it, a row naming a passage of the judge's decision among them, which is a
-    drop or is refused (T-717). One pass over the rows."""
+    model wrote it. A rewrite naming a passage of the judge's decision is read without it,
+    as every check and end reads it (:func:`_judge_less`, T-717). One pass over the rows."""
     rows = payload.get("sentences") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return payload
@@ -6816,13 +6840,19 @@ def _platform_rewrites(payload: Any, by_id: dict[str, Passage]) -> Any:
     for row in rows:
         passage = by_id.get(_form(row.get("passage"))) if isinstance(row, dict) else None
         named = row.get("sources") if isinstance(row, dict) else None
-        sources = [by_id.get(_form(n)) for n in (named if isinstance(named, list) else [])]
+        sources = [
+            by_id.get(_form(n))
+            for n in _judge_less(
+                named if isinstance(named, list) else [],
+                row.get("decision") if isinstance(row, dict) else None,
+                by_id,
+            )
+        ]
         if (
             passage is not None
             and passage.kind == SECTION_5
             and isinstance(row, dict)
             and row.get("decision") == "rewrite"
-            and not _judge_named(sources)
         ):
             standing = located(passage.text, str(row.get("sentence") or ""))
             if standing and _in_own_words(passage, standing, sources):
@@ -6955,17 +6985,24 @@ def agreement_violations(
     unread_told: set[tuple[str, int]] = set()
     rows = _rows(payload)
     checked, passed = _checked_rows(rows, by_id, _sentences, citable, items, entries)
-    for _index, row, passage, found, rewritten_found, span in checked:
+    for _index, row, passage, found, rewritten_found, span, told in checked:
         if passage is not None and span is not None and (passage.id, span[0]) not in passed:
             # The row's last refusal is its rewrite's, where one is refused
             # (:func:`rewrites_violations`, asked after this check).
             out.extend(
                 _told_the_end(
-                    passage, span[2], found, beside=rewritten_found, last=not rewritten_found
+                    passage,
+                    span[2],
+                    [*told, *found],
+                    beside=rewritten_found,
+                    last=not rewritten_found,
                 )
             )
         elif passage is None or span is None:
-            out.extend(found)
+            out.extend([*told, *found])
+        else:
+            # Its twin passed: the refusal of the judge passages it names is told alone.
+            out.extend(told)
         if passage is not None and span is not None:
             listed.add((passage.id, span[0]))
             answering[(passage.id, span[0])] = row
@@ -7172,7 +7209,7 @@ def rewrites_violations(
 
     out: list[Violation] = []
     checked, passed = _checked_rows(_rows(payload), by_id, _sentences, citable, items, entries)
-    for index, _row, passage, own, rewritten, span in checked:
+    for index, _row, passage, own, rewritten, span, _told in checked:
         if passage is not None and span is not None and (passage.id, span[0]) in passed:
             continue
         found = [
@@ -7563,8 +7600,9 @@ def _rests_on_a_source(row: AgreementRow, by_id: dict[str, Passage]) -> bool:
     )
 
 
-# A row as :func:`_checked_rows` reads it: its index, the row, its passage, its own
-# refusals, its rewrite's, and the span of its sentence.
+# A row as :func:`_checked_rows` reads it: its index, the row as it ends
+# (:func:`_without_the_judge`), its passage, its own refusals, its rewrite's, the span of its
+# sentence, and the refusal only told of the passages of the judge's decision it names.
 _CheckedRow = tuple[
     int,
     AgreementRow,
@@ -7572,6 +7610,7 @@ _CheckedRow = tuple[
     list[Violation],
     list[Violation],
     tuple[int, int, str, int] | None,
+    list[Violation],
 ]
 
 
@@ -7587,11 +7626,26 @@ def _checked_rows(
     (:func:`_row_violations`) and its rewrite's (:func:`_rewrite_violations`); and the
     sentences a row that passed every check answers, read over every row first: such an
     answer stands, and a refused row for the same sentence, before or after it, ends
-    nothing and asks nothing more, in a closing passage as in any other (T-600)."""
+    nothing and asks nothing more, in a closing passage as in any other (T-600). A row
+    naming a passage of the judge's decision that is no drop is checked and ended as the
+    same row without it (:func:`_without_the_judge`); its refusal is only told (T-717)."""
     passed: set[tuple[str, int]] = set()
     checked: list[_CheckedRow] = []
-    for index, row in rows:
-        passage = by_id.get(_form(row.passage))
+    for index, named in rows:
+        passage = by_id.get(_form(named.passage))
+        row = _without_the_judge(named, by_id)
+        told = (
+            [
+                _judge_refusal(
+                    named,
+                    index,
+                    passage,
+                    _judge_named([by_id.get(_form(n)) for n in named.sources]),
+                )
+            ]
+            if row is not named and passage is not None
+            else []
+        )
         own = _row_violations(row, index, by_id, sentences_of)
         rewritten = (
             _rewrite_violations(row.rewrite, citable, items, entries)
@@ -7601,7 +7655,7 @@ def _checked_rows(
         span = sentences_of(passage).span(row.sentence) if passage is not None else None
         if passage is not None and span is not None and not own and not rewritten:
             passed.add((passage.id, span[0]))
-        checked.append((index, row, passage, own, rewritten, span))
+        checked.append((index, row, passage, own, rewritten, span, told))
     return checked, passed
 
 
@@ -7694,7 +7748,7 @@ def apply_rows(
     answered: set[tuple[str, int]] = set()
     rows = _rows(payload) if asked else []
     checked, passed = _checked_rows(rows, by_id, _sentences, citable, items, entries)
-    for index, row, passage, own, rewritten, span in checked:
+    for index, row, passage, own, rewritten, span, _told in checked:
         found = [*own, *rewritten]
         if passage is not None and span is not None:
             answered.add((passage.id, span[0]))
@@ -8112,11 +8166,8 @@ def _fact_fallback(
 ) -> str | None:
     """The platform's qualification of a section 5 denial a bound value's fact grounds
     (``_qualified``), or ``None`` where the sentence is no such denial or no fact the row
-    names grounds it, or the row names a passage of the judge's decision, which is a drop or
-    is refused (T-717)."""
+    names grounds it."""
     if passage.kind != SECTION_5 or sentence not in passage.on_fact:
-        return None
-    if _judge_named([by_id.get(_form(name)) for name in row.sources]):
         return None
     reading = _Reading(sentence, passage.text)
     facts = [
@@ -8625,7 +8676,8 @@ async def _ask(
                 cut[passage.id] = _cut(passage)
             return cut[passage.id]
 
-        shown = AgreementRow.model_validate(payload["sentences"][0])
+        # As every check reads it: a row naming a judge passage that is no drop, without it.
+        shown = _without_the_judge(AgreementRow.model_validate(payload["sentences"][0]), by_id)
         if _row_violations(shown, 0, by_id, _sentences):
             return False
         return read.decision != "rewrite" or not _rewrite_violations(

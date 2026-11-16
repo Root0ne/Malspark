@@ -262,20 +262,19 @@ def test_a_section_5_sentence_dropped_on_a_judge_passage_is_left_out_and_recorde
         _row(NAMING, "keep", quote="Dynamic API Resolution: not published"),
     ],
 )
-def test_any_other_answer_on_a_judge_passage_leaves_a_section_5_sentence_standing(
+def test_any_other_answer_on_a_judge_passage_ends_a_section_5_sentence_as_its_twin(
     row: dict[str, Any],
 ) -> None:
-    report = report_of()
-
-    found = _refusals(report, row)
-    assert [v.code for v in found] == [UNKNOWN_PASSAGE_CODE]
+    found = _refusals(report_of(), row)
+    assert found[0].code == UNKNOWN_PASSAGE_CODE
     assert 'which supports a drop alone: answer the sentence "decision": "drop"' in (
         found[0].message
     )
-    counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
-    assert counts["rewritten"] == 0 and counts["dropped"] == 0
+    # Told only: the row ends as the same row without its judge sources, here standing.
+    assert _end_of(report_of, row) == _end_of(report_of, _twin(row))
+    report = report_of()
+    apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
     assert _body(report) == BODY
-    assert REWRITTEN_CODE not in [v.code for v in records]
 
 
 def test_a_section_5_drop_naming_no_judge_passage_is_refused_as_before() -> None:
@@ -360,12 +359,13 @@ def test_no_answer_on_a_judge_passage_is_taken_for_the_summary(
         if v.path.startswith("sentences.")
     ]
     # The summary is no passage a drop on a source leaves a sentence out of: the decision
-    # supports no answer for it.
-    assert [v.code for v in found] == [UNKNOWN_SOURCE_CODE]
+    # supports no answer for it, which the model is told.
+    assert found[0].code == UNKNOWN_SOURCE_CODE
     assert "which supports no answer for a sentence of executive_summary" in found[0].message
     counts, records = apply_rows(
         {"sentences": [row]}, passages_of(report, narrative_written=True), citable=CITABLE
     )
+    # Its twin names no source: refused, and the summary stands as written.
     assert counts["rewritten"] == 0 and counts["dropped"] == 0
     assert report.executive_summary == summary
     assert not [v for v in records if v.code in (REWRITTEN_CODE, *agreement.LEFT_OUT_CODES)]
@@ -379,21 +379,19 @@ def test_no_answer_on_a_judge_passage_is_taken_for_the_summary(
         {**_closing_row(""), "decision": "keep", "quote": "Benign, moderate confidence"},
     ],
 )
-def test_a_closing_rewrite_or_keep_on_a_judge_passage_is_refused_and_the_sentence_stands(
+def test_a_closing_rewrite_or_keep_on_a_judge_passage_ends_as_its_twin(
     row: dict[str, Any],
 ) -> None:
-    report = report_of(OTHER)
-    conclusion = _closing(report)
-    conclusion.body = _CONCLUSION_VERDICT
+    def make() -> MalwareReport:
+        report = report_of(OTHER)
+        _closing(report).body = _CONCLUSION_VERDICT
+        return report
+
     row = {**row, "sentence": _CONCLUSION_VERDICT}
 
-    found = _refusals(report, row)
-    assert [v.code for v in found] == [UNKNOWN_PASSAGE_CODE]
-    counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
-    # Refused, it is no source the closing sentence rests on: it stands as written.
-    assert counts["dropped"] == 0 and counts["rewritten"] == 0
-    assert conclusion.body == _CONCLUSION_VERDICT
-    assert not [v for v in records if v.code in (REWRITTEN_CODE, *agreement.LEFT_OUT_CODES)]
+    assert _refusals(make(), row)[0].code == UNKNOWN_PASSAGE_CODE
+    # Naming the judge's decision neither removes the sentence nor spares it a check.
+    assert _end_of(make, row) == _end_of(make, _twin(row))
 
 
 def test_a_verdict_the_judge_never_gave_is_no_passage() -> None:
@@ -523,7 +521,7 @@ def _fact_and_judge(row: dict[str, Any], *, held: bool) -> tuple[MalwareReport, 
 
 
 @pytest.mark.parametrize("held", [False, True])
-def test_a_section_5_rewrite_naming_a_fact_and_a_judge_passage_is_refused_and_not_put_in(
+def test_a_section_5_rewrite_naming_a_fact_and_a_judge_passage_ends_as_its_twin(
     held: bool,
 ) -> None:
     report, answer, (ledger, entries) = _fact_and_judge(
@@ -532,37 +530,26 @@ def test_a_section_5_rewrite_naming_a_fact_and_a_judge_passage_is_refused_and_no
     citable = [str(e.id) for e in ledger]
     passages = passages_of(report, entries=ledger)
     by_id = {p.id: p for p in passages}
-    body = report.technical_analysis.evasion_antiforensics.body  # type: ignore[union-attr]
-    sentence = answer["sentences"][0]["sentence"]
-    # The platform writes no rewrite of a row naming a judge passage: read as the model wrote
-    # it, before and after.
-    assert agreement._platform_rewrites(answer, by_id) == answer
+    (row,) = answer["sentences"]
+    twin = _twin(row)
+    # The platform's rewrite of it is its twin's, before and after.
+    (written,) = agreement._platform_rewrites(answer, by_id)["sentences"]
+    (twin_written,) = agreement._platform_rewrites({"sentences": [twin]}, by_id)["sentences"]
+    assert written["rewrite"] == twin_written["rewrite"]
 
     found = [
         v
         for v in agreement_violations(answer, passages, citable, entries=entries)
         if v.path.startswith("sentences.")
     ]
-    assert [v.code for v in found] == [UNKNOWN_PASSAGE_CODE]
+    assert found[0].code == UNKNOWN_PASSAGE_CODE
     assert "judge.verdict is a passage of the judge's decision" in found[0].message
-    counts, records = apply_rows(
-        answer, passages_of(report, entries=ledger), citable=citable, entries=entries
-    )
-    after = report.technical_analysis.evasion_antiforensics.body  # type: ignore[union-attr]
-    # No rewrite and no platform qualification is put in on it.
-    assert counts["rewritten"] == 0 and counts["qualified"] == 0
-    assert not [v for v in records if v.code in (REWRITTEN_CODE, agreement.QUALIFIED_CODE)]
-    assert agreement.JUDGE_LEFT_OUT_CODE not in [v.code for v in records]
-    if held:
-        # A sentence the ledger's lines hold ends as one no answer passes for: left out,
-        # recorded with what holds it, as it is whatever its refused row names.
-        assert sentence not in after and counts["dropped"] == 1
-        (left,) = [v for v in records if v.code == DROPPED_CODE]
-        assert "no rewrite of it passed the checks" in left.message
-        assert "its last answer" not in found[0].message
-        assert "If no answer for it passes the checks, it is left out" in found[0].message
-    else:
-        assert after == body and counts["dropped"] == 0
+
+    def make() -> MalwareReport:
+        return _fact_and_judge({}, held=held)[0]
+
+    assert _end_of(make, row, ledger) == _end_of(make, twin, ledger)
+    assert agreement.JUDGE_LEFT_OUT_CODE not in [r[0] for r in _end_of(make, row, ledger)[1]]
 
 
 def test_a_section_5_drop_naming_a_fact_and_a_judge_passage_is_the_judge_s_drop() -> None:
@@ -592,11 +579,14 @@ def test_a_section_5_drop_naming_a_fact_and_a_judge_passage_is_the_judge_s_drop(
     ("decision", "more"),
     [("rewrite", {"rewrite": "The routine formats a host name [ev_0302]."}), ("drop", {})],
 )
-def test_a_closing_row_naming_a_fact_and_a_judge_passage_is_a_judge_row(
+def test_a_closing_row_naming_a_fact_and_a_judge_passage(
     decision: str, more: dict[str, str]
 ) -> None:
-    report = report_of(OTHER)
-    conclusion = _closing(report)
+    def make() -> MalwareReport:
+        report = report_of(OTHER)
+        _closing(report)
+        return report
+
     row = {
         **_closing_row(""),
         "decision": decision,
@@ -604,21 +594,19 @@ def test_a_closing_row_naming_a_fact_and_a_judge_passage_is_a_judge_row(
         "reason": "The judge decided otherwise.",
         **more,
     }
-    by_id = {p.id: p for p in passages_of(report)}
-    assert agreement._platform_rewrites({"sentences": [row]}, by_id) == {"sentences": [row]}
-
-    found = _refusals(report, row)
-    counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
+    found = _refusals(make(), row)
     if decision == "drop":
         # Left out on the judge's decision, recorded as such whatever else the row names.
-        assert found == [] and counts["dropped"] == 1 and conclusion.body == ""
+        report = make()
+        counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
+        conclusion = report.technical_analysis.analyst_conclusion  # type: ignore[union-attr]
+        assert found == [] and counts["dropped"] == 1 and conclusion.body == ""  # type: ignore[union-attr]
         (left,) = [v for v in records if v.code in agreement.LEFT_OUT_CODES]
         assert left.code == agreement.JUDGE_LEFT_OUT_CODE and left.stood == CLOSING
     else:
-        # Refused, and no source a refused closing rewrite rests on: it stands as written.
-        assert [v.code for v in found] == [UNKNOWN_PASSAGE_CODE]
-        assert counts["dropped"] == 0 and counts["rewritten"] == 0
-        assert conclusion.body == CLOSING
+        # The refusal is told; the row ends as its twin on the section 5 passage.
+        assert found[0].code == UNKNOWN_PASSAGE_CODE
+        assert _end_of(make, row) == _end_of(make, _twin(row))
 
 
 def _config_row(report: MalwareReport) -> str:
@@ -679,7 +667,7 @@ def test_a_drop_on_the_judge_s_decision_passes_only_where_a_drop_leaves_a_senten
 def test_every_judge_refusal_offers_the_drop_only_where_it_passes() -> None:
     report = report_of()
     keep = _row(ASSESS, "keep", quote="Benign")
-    (refused,) = _refusals(report, keep)
+    refused = _refusals(report, keep)[0]
     assert 'answer the sentence "decision": "drop", naming the judge passage' in refused.message
     # Given back as the refusal says, the drop passes.
     drop = {**keep, "decision": "drop", "quote": "", "reason": "The judge decided otherwise."}
@@ -743,14 +731,19 @@ def test_the_refusal_on_a_judge_passage_tells_the_end_the_round_gives(decision: 
         next(p for p in passages if p.id == "string_resolution"), held
     )
 
-    (refused,) = [
+    found = [
         v
         for v in agreement_violations({"sentences": [row]}, passages, citable)
         if v.path.startswith("sentences.")
     ]
-    # No fixed clause says the sentence stands: the end the round gives it is told, once.
-    assert "stands as written" not in refused.message
-    assert refused.message.count("If no answer for it passes the checks, it is left out") == 1
+    said = " ".join(v.message for v in found)
+    # No fixed clause says the sentence stands: the end the round gives its twin is told, by
+    # every refusal of it once, as for any held sentence.
+    assert "of the judge's decision" in found[0].message
+    assert "stands as written" not in said
+    assert all(
+        v.message.count("If no answer for it passes the checks, it is left out") == 1 for v in found
+    )
     counts, records = apply_rows(
         {"sentences": [row]}, passages_of(report, entries=ledger), citable=citable
     )
@@ -759,10 +752,10 @@ def test_the_refusal_on_a_judge_passage_tells_the_end_the_round_gives(decision: 
 
     # A sentence nothing holds is told no end, and stands as written.
     plain = report_of()
-    (refused,) = _refusals(plain, _row(ASSESS, decision, quote="Benign", rewrite=ASSESS))
-    assert "stands as written" not in refused.message and "left out of the report" not in (
-        refused.message
+    said = " ".join(
+        v.message for v in _refusals(plain, _row(ASSESS, decision, quote="Benign", rewrite=ASSESS))
     )
+    assert "stands as written" not in said and "left out of the report" not in said
     apply_rows(
         {"sentences": [_row(ASSESS, decision, quote="Benign", rewrite=ASSESS)]},
         passages_of(plain),
@@ -854,3 +847,143 @@ def test_a_closing_source_refusal_names_the_judge_s_drop_where_the_decision_is_s
         "the section 5 passages and the debate rounds listed are sources, and the judge's "
         "decision of a drop alone."
     )
+
+
+# A row naming a judge passage that is no drop ends as its twin: the same row without its
+# judge sources. The refusal is only told; every check and every end is the twin's (T-717).
+def _twin(row: dict[str, Any]) -> dict[str, Any]:
+    return {**row, "sources": [s for s in row["sources"] if not str(s).startswith("judge.")]}
+
+
+def _end_of(make: Any, row: dict[str, Any], ledger: Any = None) -> tuple[Any, ...]:
+    """What the round does with ``row`` on a fresh report: its counts, its records and the
+    report it leaves."""
+    from malspark.pipeline.validation import EntryTexts
+
+    report = make()
+    kw: dict[str, Any] = {"entries": ledger} if ledger else {}
+    counts, records = apply_rows(
+        {"sentences": [row]},
+        passages_of(report, **kw),
+        citable=[str(e.id) for e in ledger] if ledger else CITABLE,
+        entries=EntryTexts.from_ledger(ledger) if ledger else None,
+    )
+    return (
+        counts,
+        [(v.code, v.subject, v.stood, v.message) for v in records],
+        report.model_dump(mode="json", exclude={"generated_at"}),
+    )
+
+
+def _told(make: Any, row: dict[str, Any], ledger: Any = None) -> list[Violation]:
+    kw: dict[str, Any] = {"entries": ledger} if ledger else {}
+    cited = [str(e.id) for e in ledger] if ledger else CITABLE
+    return [
+        v
+        for v in agreement_violations({"sentences": [row]}, passages_of(make(), **kw), cited)
+        if v.path.startswith("sentences.")
+    ]
+
+
+def _held_section_5() -> tuple[Any, dict[str, Any], Any]:
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        CALLED,
+        _ledger,
+        _report,
+    )
+
+    held = f"The runtime result of `{CALLED}` is not known."
+
+    def make() -> MalwareReport:
+        report = _report("The run ends.")
+        assert report.technical_analysis is not None
+        report.technical_analysis.string_resolution.body = (  # type: ignore[union-attr]
+            f"Routine 0x5a10 reads a host mode through a slot [ev_0107]. {held}"
+        )
+        report.overall_confidence = 0.8
+        report.ttp_mappings = [
+            TTPMapping(technique_id="T1082", technique_name="System Information Discovery")
+        ]
+        return report
+
+    ledger = _ledger()
+    fact = next(p.id for p in passages_of(make(), entries=ledger) if p.id.startswith("ledger."))
+    row = {
+        **_row(held, "keep", quote="QueryHostMode"),
+        "sources": [fact, "judge.technique.T1082"],
+    }
+    return make, row, ledger
+
+
+def _verbatim_keep() -> tuple[Any, dict[str, Any], Any]:
+    from tests.unit.reporting.test_one_verbatim_text_is_one_passage_wherever_it_prints import (
+        _CLAIM_SENTENCE,
+        _twice,
+    )
+
+    def make() -> MalwareReport:
+        report = _twice()
+        report.overall_confidence = 0.8
+        return report
+
+    row = {
+        **_row(_CLAIM_SENTENCE, "keep", quote="0x5b20"),
+        "passage": "attack_claim.T1497.001",
+        "sources": ["string_resolution", "judge.verdict"],
+    }
+    return make, row, None
+
+
+def _value_cell() -> tuple[Any, dict[str, Any], Any]:
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        _ledger,
+    )
+    from tests.unit.reporting.test_a_value_cell_and_a_capability_bullet_are_answered_whole import (  # noqa: E501
+        CELL,
+        _cells_and_bullet,
+    )
+
+    def make() -> MalwareReport:
+        report = _cells_and_bullet()
+        report.overall_confidence = 0.8
+        return report
+
+    row = {
+        **_row(CELL, "rewrite", rewrite="RC4 over each report [ev_0107]."),
+        "passage": "communications.1.encryption",
+        "sources": ["string_resolution", "judge.verdict"],
+    }
+    return make, row, _ledger()
+
+
+def _unbacked_closing_keep() -> tuple[Any, dict[str, Any], Any]:
+    said = "The routine at 0x4b20 formats a host name."
+
+    def make() -> MalwareReport:
+        report = report_of(OTHER)
+        _closing(report).body = said
+        return report
+
+    row = {
+        **_row(said, "keep", quote="formats a host name"),
+        "passage": "conclusion",
+        "sources": [SECTION, "judge.verdict"],
+    }
+    return make, row, None
+
+
+@pytest.mark.parametrize(
+    "case", [_held_section_5, _verbatim_keep, _value_cell, _unbacked_closing_keep]
+)
+def test_a_row_naming_a_judge_passage_that_is_no_drop_ends_as_its_twin(case: Any) -> None:
+    make, row, ledger = case()
+    twin = _twin(row)
+    assert twin["sources"] and twin != row
+
+    assert _end_of(make, row, ledger) == _end_of(make, twin, ledger)
+    # The judge refusal is told on the retry, beside every refusal of the twin.
+    told = _told(make, row, ledger)
+    assert any("of the judge's decision" in v.message for v in told)
+    assert [v.code for v in told if "of the judge's decision" not in v.message] == [
+        v.code for v in _told(make, twin, ledger)
+    ]
