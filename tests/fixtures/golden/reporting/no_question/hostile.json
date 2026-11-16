@@ -892,6 +892,7 @@
      "ran": true
     }
    ],
+   "undeclared_confirmations": 0,
    "validation": {
     "by_code": {
      "narrative.ungrounded_capability": 1
@@ -907,6 +908,19 @@
    }
   },
   "schema_version": "1.0",
+  "second_source_reads": [
+   {
+    "cited": false,
+    "entry": "ev_0009",
+    "holds": [
+     "185.220.101.5",
+     "c2.evil.tld",
+     "http://c2.evil.tld/gate.php"
+    ],
+    "standing": "observes",
+    "tool": "sandbox_network"
+   }
+  ],
   "sections": [
    {
     "columns": [

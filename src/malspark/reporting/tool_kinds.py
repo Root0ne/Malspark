@@ -29,7 +29,12 @@ from typing import Any
 
 from malspark.analysis.technique_ids import TECHNIQUE_WORD_RE
 from malspark.core import declared_reading
-from malspark.core.builtin_declarations import BUILDER_OF_KIND, CONSUMER_KINDS
+from malspark.core.builtin_declarations import (
+    BUILDER_OF_KIND,
+    CONSUMER_KINDS,
+    OBSERVING_KINDS,
+    STEPPED_KINDS,
+)
 from malspark.core.tool_declarations import SourceRef, ToolDeclarations, ToolFacts
 from malspark.reporting import legacy_tool_names as legacy
 
@@ -492,6 +497,62 @@ def sweeps_the_strings(row: Any, named: str) -> bool:
     if row is not None and not read_by_name(row):
         return is_of(row, "stix_renderer._STRING_SWEEP_TOOLS")
     return is_of({"tool": named}, "stix_renderer._STRING_SWEEP_TOOLS")
+
+
+# How an entry stands to a value taken from the file's text
+# (:func:`second_source_standing`).
+OBSERVES = "observes"
+REREADS = "rereads"
+UNDECLARED = "undeclared"
+
+
+def second_source_standing(row: Any, named: str, steps: int | None = None) -> str:
+    """How an entry stands to a value taken from the file's text: the one place it is decided.
+
+    :data:`OBSERVES` for an entry whose declaration says its kind watched the
+    sample or recovered the value — ``observes`` in its stored facts, or one of
+    the platform's own such kinds (``core.builtin_declarations.OBSERVING_KINDS``)
+    — and for an entry of a kind that recovers by steps
+    (``STEPPED_KINDS``: a transform) whose answer records at least one step
+    run (``steps``; ``None``: not known, read as none): its answer is an
+    observation independent of the file's text. :data:`REREADS` for every
+    other kind, the string sweep's among them, and for a tool its source
+    declares nothing for whose name says it lists code
+    (:func:`undeclared_code_kind`): a listing, a string search, a decompile, a
+    byte read without a step or an extractor reads the same bytes again.
+    :data:`UNDECLARED` for a tool that declares no kind, which is used at full
+    strength: its cited entry confirms as an observing one does, and is named
+    as a tool that declares no kind (``renderers.stix_renderer.second_source``).
+    By the index row's declared kind when the entry recorded a source; else by
+    its tool's name (``named``: a section's or the corpus's tool), as before.
+    """
+    entry = row if row is not None and not read_by_name(row) else {"tool": named}
+    kind = kind_of(entry) or undeclared_code_kind(entry) or stored_platform_kind(entry)
+    if not kind:
+        return UNDECLARED
+    facts = facts_of(entry)
+    if (facts is not None and facts.observes) or kind in OBSERVING_KINDS:
+        return OBSERVES
+    if kind in STEPPED_KINDS and steps:
+        return OBSERVES
+    return REREADS
+
+
+def stored_platform_kind(entry: Any) -> str:
+    """The kind the platform ships for a tool of its own server, for a stored entry of it with none.
+
+    An entry of one of the platform's own servers that was written without
+    the server's declaration in force stored no kind; the platform declares
+    its own tools, and the entry is read by the kind that server's shipped
+    declaration gives its tool (``declared_reading.own_server_kind``), read
+    per server as data. A tool that declaration does not know, and any other
+    server's tool that declares nothing whatever it is called, stays
+    undeclared, and is used at full strength.
+    """
+    source = source_of(entry)
+    if source is None or source.kind != "mcp":
+        return ""
+    return declared_reading.own_server_kind(source.key, declared_reading.declared_name(entry))
 
 
 def display_name(entry: Any, tool: str | None = None) -> str:

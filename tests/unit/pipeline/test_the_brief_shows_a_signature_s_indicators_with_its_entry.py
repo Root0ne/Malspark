@@ -80,8 +80,8 @@ class TestThePackLine:
         assert line.startswith("[ev_0002] sandbox signatures: 5 signatures (")
         assert (
             f"{WPM}: powershell.exe (process 84, pid 1756, marked as the sample's) -> cmd.exe "
-            "(process 86, pid 3444, marked as the sample's): PID 1756 wrote to memory of 3444; "
-            "pid=1756 [behavioral1]"
+            "(process 86, pid 3444, marked as the sample's): PID 1756 wrote to memory of 3444 "
+            "[behavioral1]"
         ) in line
         assert "(x2)" in line
 

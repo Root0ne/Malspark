@@ -49,6 +49,7 @@ _GOOD: dict[str, Any] = {
     "asserts_techniques": True,
     "source": "sigma",
     "holds_strings": True,
+    "observes": True,
     "reads_delay_imports": True,
     "rows": "/m/*",
     "function_starts": "/f",

@@ -86,7 +86,11 @@ class IndicatorFields:
     neutral form under :data:`SIGNATURE_INDICATORS_KEY` (a mapped format).
     ``guest_pid`` names the dotted paths of a process row (as the document
     holds it) that hold the guest's pid, where the report's own process id is
-    another number: a resolved process then states both.
+    another number: a resolved process then states both. ``process_guest_pid``
+    and ``target_guest_pid`` name the fields of an indicator that state the
+    guest's pid of the process that acted and of the one acted on: a value
+    of one equal to the guest's pid its resolved process states is printed
+    once, with that process.
     """
 
     lists: tuple[str, ...] = ()
@@ -99,6 +103,8 @@ class IndicatorFields:
     task_lists: tuple[str, ...] = ()
     neutral: bool = False
     guest_pid: tuple[str, ...] = ()
+    process_guest_pid: tuple[str, ...] = ()
+    target_guest_pid: tuple[str, ...] = ()
 
 
 # A mapped format's rows: the neutral form, under the platform's own key.

@@ -1456,7 +1456,13 @@ class _Pack:
     def _sandbox_view(self, step: PackStep) -> None:
         report = observed_report(self.inputs.sandbox_report)
         if report:
-            self.record(step.called, {}, partial(_SANDBOX_VIEWS[step.called], report))
+            # Read with the job's reader, as an agent's call of the view is.
+            view = partial(
+                _SANDBOX_VIEWS[step.called],
+                report,
+                normalised_by=self.inputs.sandbox_normalised_by,
+            )
+            self.record(step.called, {}, view)
 
     def _pcap_summary(self, step: PackStep) -> None:
         report = observed_report(self.inputs.sandbox_report)
@@ -4892,7 +4898,8 @@ def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
                 "in the entry)"
             )
         )
-        rows = ", ".join(conversation_line(row) for row in conversations[:shown])
+        # Each line holds commas and semicolons of its own: the rows are parted by a bar.
+        rows = " | ".join(conversation_line(row) for row in conversations[:shown])
         return f"{head}; {said}" + (f": {rows}" if shown else "") + tail
 
     whole = _line(len(conversations))
