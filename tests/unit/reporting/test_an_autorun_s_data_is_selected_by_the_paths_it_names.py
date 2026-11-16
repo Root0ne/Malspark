@@ -130,6 +130,14 @@ class TestTheReaderOfACommandLine:
                 "C:\\Windows\\System32\\rundll32 C:\\Users\\a\\evil7731.dll,Start",
                 ["C:\\Windows\\System32\\rundll32", "C:\\Users\\a\\evil7731.dll", "Start"],
             ),
+            (
+                "C:\\Windows\\System32\\rundll32 evil7731.dll,Start",
+                ["C:\\Windows\\System32\\rundll32", "evil7731.dll", "Start"],
+            ),
+            (
+                "%windir%\\system32\\wscript x7731.vbs",
+                ["%windir%\\system32\\wscript", "x7731.vbs"],
+            ),
             # A switch, or a word that begins another rooted path, ends the program.
             (
                 "C:\\Vendor7731\\up /s C:\\Users\\a\\x7731.dll",

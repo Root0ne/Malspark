@@ -37,3 +37,9 @@ def test_an_unquoted_path_with_a_space_is_read_word_by_word() -> None:
 
     assert runs_the_submitted_file("", command_line, "host.exe", "") is True
     assert runs_the_submitted_file("", command_line, "svc host.exe", "") is False
+
+
+def test_a_quoted_path_with_a_space_is_read_word_by_word_too() -> None:
+    command_line = '"C:\\Program Files\\x\\svc host.exe" /s'
+
+    assert runs_the_submitted_file("", command_line, "host.exe", "") is True
