@@ -30,6 +30,7 @@ from malspark.agents.run_evidence_corpus import RunEvidenceCorpus
 from malspark.reporting.builder import build_consolidated_iocs
 from malspark.reporting.models import (
     DynamicBehavior,
+    EmulatedStrings,
     EvidenceIndexRow,
     EvidenceSection,
     FileHashes,
@@ -205,6 +206,23 @@ class TestTheDecisionIsPerEntry:
 
         assert not publishes(answer(uncited))
         assert publishes(answer(cited))
+
+    def test_the_recovery_record_names_the_entry_value_by_value(self) -> None:
+        """A section prints both entries as one; the recovery record says which recovered it."""
+
+        def answer(entry: str) -> str:
+            report = self._shared().model_copy(
+                update={"emulated_strings": EmulatedStrings(values={"global\\relaylock7": entry})}
+            )
+            return publish_answer(
+                "mutex",
+                "Global\\RelayLock7",
+                "strings",
+                corroborating=corroborating_values(report),
+            )
+
+        assert publishes(answer("ev_0050"))
+        assert not publishes(answer("ev_0051"))
 
 
 class TestAToolThatDeclaresNoKind:

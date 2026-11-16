@@ -198,7 +198,7 @@ class MalwareReportBuilder:
         # is a candidate row of its own, whether or not a model named it: a
         # C2 URL FLOSS and the static decoder both recovered once had no row
         # anywhere, not even a refused one, while the record gave it standing.
-        emulated = emulation_from_ledger(ledger)
+        emulated = emulation_from_ledger(ledger, self.sample_path)
         # Each decoded text the code passes whole to an API argument of a known
         # role, with the chain that binds it: such a value is an indicator row
         # of its own, published with that chain on every surface.
