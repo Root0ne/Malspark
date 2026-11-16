@@ -649,13 +649,20 @@ def conversation_line(row: dict[str, Any]) -> str:
     return line + "; ".join(parts)
 
 
-def summary_text(facts: dict[str, Any], shown: int | None = None, left_out: str = "") -> str:
+def summary_text(
+    facts: dict[str, Any],
+    shown: int | None = None,
+    left_out: str = "",
+    names_shown: int | None = None,
+    names_left_out: str = "",
+) -> str:
     """The facts as the markdown block the network analyst and the report read.
 
     The protocols and the TLS names in the writer's order, whatever order a
     stored record keeps its keys in. ``shown`` lists the heaviest ``shown``
     conversations and ends the list with ``left_out``, the sentence saying how
-    many are not and where they are; ``None`` lists them all.
+    many are not and where they are; ``names_shown`` and ``names_left_out`` do
+    the same for the TLS names. ``None`` lists them all.
     """
     read = CaptureRead.from_fields(facts)
     heading = "#### Packet Capture Analysis (deterministic, whole capture):"
@@ -694,8 +701,15 @@ def summary_text(facts: dict[str, Any], shown: int | None = None, left_out: str 
         out += [
             "",
             "TLS SNI (encrypted destinations):",
-            *[f"- {name} ({n} ClientHello)" for name, n in sorted(sni.items())],
+            *[
+                f"- {name} ({n} ClientHello)"
+                for name, n in sorted(sni.items())[
+                    : names_shown if names_shown is not None else None
+                ]
+            ],
         ]
+        if names_shown is not None and names_shown < len(sni):
+            out.append(names_left_out)
     beacons = facts.get("beacons") or []
     if beacons:
         out += [

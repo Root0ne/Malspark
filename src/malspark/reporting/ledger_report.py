@@ -92,11 +92,24 @@ TEXT_CUT = (
     "Cut here at {shown:,} of {total:,} characters; the evidence endpoint carries it "
     "whole under {ids}."
 )
-# A capture summary over ``MAX_TEXT_CHARS`` lists its heaviest conversations
-# and says how many it left out: its overview, TLS names and beacons stay whole.
+# The capture summary's room. Each conversation line names both ends and what
+# each sent, so it is longer than the line that gave the peer's share alone:
+# measured over the 562 conversations of the capture corpus and the 574 of the
+# stored runs, a line is at most 3.29 times the old one (2.42 on average). The
+# room is ``MAX_TEXT_CHARS`` times 3.3, so every capture the old line fitted
+# whole still fits whole. The section is printed (the report and the console);
+# no model is sent its text.
+CAPTURE_TEXT_RATIO = 3.3
+CAPTURE_TEXT_CHARS = round(MAX_TEXT_CHARS * CAPTURE_TEXT_RATIO)
+# A capture summary over its room lists its heaviest conversations and says how
+# many it left out; with none of them listed it lists the first TLS names and
+# says the same of them. Its overview and beacons are never left out.
 CONVERSATIONS_LEFT_OUT = (
     "{rest:,} more conversations not shown here; the evidence endpoint carries every one "
     "under {ids}."
+)
+NAMES_LEFT_OUT = (
+    "{rest:,} more TLS names not shown here; the evidence endpoint carries every one under {ids}."
 )
 
 
@@ -1243,29 +1256,44 @@ def _behaviour_code(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) ->
     acc.credit(table, entry)
 
 
-def _capture_text(data: dict[str, Any], ids: str) -> str:
-    """The capture's facts by the summary's own writer, its conversations cut to the cap."""
-    whole = summary_text(data)
-    if len(whole) <= MAX_TEXT_CHARS:
-        return whole
-    total = len(data["conversations"])
-
-    def _listing(shown: int) -> str:
-        left_out = CONVERSATIONS_LEFT_OUT.format(rest=total - shown, ids=ids)
-        return summary_text(data, shown, left_out)
-
-    # The most conversations that fit, found by halving: a capture can hold
-    # thousands of them.
-    low, high = 0, total - 1
+def _most_that_fit(total: int, text: Callable[[int], str]) -> int:
+    """The most of ``total`` items whose ``text`` fits the capture's room, found by halving."""
+    low, high = 0, total
     while low < high:
         middle = (low + high + 1) // 2
-        if len(_listing(middle)) <= MAX_TEXT_CHARS:
+        if len(text(middle)) <= CAPTURE_TEXT_CHARS:
             low = middle
         else:
             high = middle - 1
-    text = _listing(low)
-    # Only TLS names past the cap on their own leave the text to be cut.
-    return text if len(text) <= MAX_TEXT_CHARS else _cut_text(whole, ids)
+    return low
+
+
+def _capture_text(data: dict[str, Any], ids: str) -> str:
+    """The capture's facts by the summary's own writer, fitted to its room.
+
+    The conversations are left out first, the heaviest kept; then the TLS
+    names. The overview and the beacons are printed whole, past the room if
+    they are longer than it on their own.
+    """
+    whole = summary_text(data)
+    if len(whole) <= CAPTURE_TEXT_CHARS:
+        return whole
+    total = len(data["conversations"])
+    names = len(data.get("sni") or {})
+
+    def _listing(shown: int, names_shown: int | None = None) -> str:
+        return summary_text(
+            data,
+            shown,
+            CONVERSATIONS_LEFT_OUT.format(rest=total - shown, ids=ids),
+            names_shown,
+            NAMES_LEFT_OUT.format(rest=names - (names_shown or 0), ids=ids),
+        )
+
+    shown = _most_that_fit(total, _listing)
+    if shown or len(_listing(0)) <= CAPTURE_TEXT_CHARS:
+        return _listing(shown)
+    return _listing(0, _most_that_fit(names, lambda kept: _listing(0, kept)))
 
 
 def _pcap(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -> None:

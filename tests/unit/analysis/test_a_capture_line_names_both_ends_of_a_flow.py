@@ -15,10 +15,13 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import random
 import re
 import struct
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from malspark.analysis.pcap_summary import capture_facts, conversation_line, summary_text
 
@@ -493,23 +496,39 @@ def _busy_record(conversations: int) -> dict[str, Any]:
     return record
 
 
-def test_a_section_over_its_cap_leaves_out_flows_and_says_how_many() -> None:
-    from malspark.reporting.ledger_report import MAX_TEXT_CHARS
+def _capture_cap() -> int:
+    from malspark.reporting import ledger_report
 
-    record = _busy_record(120)
-    assert len(summary_text(record)) > MAX_TEXT_CHARS
+    return int(ledger_report.CAPTURE_TEXT_CHARS)
+
+
+def _flows(text: str) -> list[str]:
+    return [line for line in text.split("\n") if line.startswith("- ") and " pkts, " in line]
+
+
+def _left_out(kind: str, rest: int) -> str:
+    return (
+        f"{rest} more {kind} not shown here; the evidence endpoint carries every one under ev_0001."
+    )
+
+
+def test_a_section_over_its_cap_leaves_out_flows_and_says_how_many() -> None:
+    record = _busy_record(400)
+    assert len(summary_text(record)) > _capture_cap()
     text = _section(record)
-    assert len(text) <= MAX_TEXT_CHARS
+    assert len(text) <= _capture_cap()
     assert "Cut here" not in text
     shown = [line for line in text.split("\n") if line.startswith("- 198.51.")]
     lines = [f"- {conversation_line(row)}" for row in record["conversations"]]
     assert shown == lines[: len(shown)]
-    assert 0 < len(shown) < 120
-    assert f"External conversations ({len(shown)} of 120, by volume;" in text
-    assert (
-        f"{120 - len(shown)} more conversations not shown here; the evidence endpoint "
-        "carries every one under ev_0001."
-    ) in text
+    assert 0 < len(shown) < 400
+    assert f"External conversations ({len(shown)} of 400, by volume;" in text
+    assert _left_out("conversations", 400 - len(shown)) in text
+    # One more conversation would not have fitted.
+    rest = 400 - len(shown) - 1
+    assert len(summary_text(record, len(shown) + 1, _left_out("conversations", rest))) > (
+        _capture_cap()
+    )
     # The overview, the TLS names and the beacons are never what is cut.
     kept = [line for line in beside_the_flows(text) if "more conversations not shown" not in line]
     assert kept == beside_the_flows(_OLD_SUMMARY)
@@ -520,6 +539,134 @@ def test_a_section_within_its_cap_lists_every_flow() -> None:
     text = _section(record)
     assert text == summary_text(record)
     assert "External conversations (all 10, by volume;" in text
+
+
+# --------------------------- what dev printed whole is printed whole, and the cut order
+
+
+def _reviewer_facts(
+    flows: int, names: int, beacons: int, most: int = 900, unanswered: int = 0
+) -> dict[str, Any]:
+    """A capture of ``flows`` conversations of up to ``most`` packets each way (every
+    ``unanswered``-th one never answered), ``names`` TLS names and ``beacons`` beacons."""
+    rng = random.Random(1)
+    rows = []
+    for at in range(flows):
+        to_p, from_p = rng.randint(5, most), rng.randint(5, most)
+        from_p = 0 if unanswered and at % unanswered == 0 else from_p
+        to_b, from_b = to_p * rng.randint(60, 200), from_p * rng.randint(60, 1400)
+        peer = ".".join(
+            str(n)
+            for n in (
+                rng.randint(11, 223),
+                rng.randint(0, 255),
+                rng.randint(0, 255),
+                rng.randint(1, 254),
+            )
+        )
+        rows.append(
+            {"dst": peer, "dport": 443, "proto": "tcp", "packets": to_p + from_p,
+             "bytes": to_b + from_b, "internal": ["192.168.122.10"], "packets_to_peer": to_p,
+             "bytes_to_peer": to_b, "packets_from_peer": from_p, "bytes_from_peer": from_b}
+        )  # fmt: skip
+    rows.sort(key=lambda row: -row["bytes"])
+    facts: dict[str, Any] = {
+        "packets_read": 1000, "packets_in_capture": 1000, "packet_limit": None,
+        "bytes": 10**6, "duration_s": 600.0, "protocols": {"tcp": 900, "udp": 90, "other": 10},
+        "conversations": rows,
+        "sni": {f"host{i}.some-long-cdn-name.example.net": i + 1 for i in range(names)},
+        "beacons": [
+            {"dst": rows[0]["dst"], "dport": 443, "proto": "tcp", "callbacks": 30 + i,
+             "interval_s": 60.0}
+            for i in range(beacons)
+        ],
+    }  # fmt: skip
+    facts["summary"] = summary_text(facts)
+    return facts
+
+
+def _dev_line(row: dict[str, Any]) -> str:
+    line = f"- {row['dst']}:{row['dport']}/{row['proto']} — {row['packets']} pkts, "
+    line += f"{row['bytes']} bytes"
+    if row["packets_from_peer"]:
+        line += f" ({row['packets_from_peer']} pkts, {row['bytes_from_peer']} bytes from the host)"
+    return line
+
+
+def _dev_text(facts: dict[str, Any]) -> str:
+    """The summary as dev wrote it: the peer's share "from the host" after the totals."""
+    dev = {f"- {conversation_line(row)}": _dev_line(row) for row in facts["conversations"]}
+    lines = []
+    for line in summary_text(facts).split("\n"):
+        if line.startswith("External conversations ("):
+            line = line.split(";", 1)[0] + "):"
+        lines.append(dev.get(line, line))
+    return "\n".join(lines)
+
+
+def _every_block(facts: dict[str, Any], text: str) -> None:
+    assert _flows(text) == [f"- {conversation_line(row)}" for row in facts["conversations"]]
+    assert f"External conversations (all {len(facts['conversations'])}, by volume;" in text
+    assert beside_the_flows(text) == beside_the_flows(summary_text(facts))
+    assert "not shown" not in text
+    assert "Cut here" not in text
+
+
+@pytest.mark.parametrize(
+    ("flows", "names", "beacons", "most", "unanswered"), [(32, 5, 2, 900, 0), (45, 2, 1, 900, 2)]
+)
+def test_a_capture_dev_printed_whole_is_printed_whole(
+    flows: int, names: int, beacons: int, most: int, unanswered: int
+) -> None:
+    from malspark.reporting.ledger_report import MAX_TEXT_CHARS
+
+    facts = _reviewer_facts(flows, names, beacons, most, unanswered)
+    assert len(_dev_text(facts)) <= MAX_TEXT_CHARS  # dev printed this capture whole
+    _every_block(facts, _section(facts))
+
+
+def test_thirty_flows_and_ninety_names_are_printed_whole() -> None:
+    facts = _reviewer_facts(30, 90, 2)
+    _every_block(facts, _section(facts))
+
+
+def test_past_the_cap_the_flows_go_first_then_the_names_never_the_beacons() -> None:
+    facts = _reviewer_facts(30, 400, 2)
+    text = _section(facts)
+    assert len(text) <= _capture_cap()
+    assert _flows(text) == []
+    assert "External conversations (0 of 30, by volume;" in text
+    assert _left_out("conversations", 30) in text
+    names = [line for line in text.split("\n") if line.endswith(" ClientHello)")]
+    assert 0 < len(names) < 400
+    assert (
+        names == [f"- {n} ({c} ClientHello)" for n, c in sorted(facts["sni"].items())][: len(names)]
+    )
+    assert _left_out("TLS names", 400 - len(names)) in text
+    beacons = [line for line in text.split("\n") if "likely C2 beacon" in line]
+    assert len(beacons) == 2
+    overview = summary_text(facts).split("\n")[:2]
+    assert text.split("\n")[:2] == overview
+    # One more name would not have fitted.
+    from malspark.reporting.ledger_report import CONVERSATIONS_LEFT_OUT, NAMES_LEFT_OUT
+
+    more = summary_text(
+        facts,
+        0,
+        CONVERSATIONS_LEFT_OUT.format(rest=30, ids="ev_0001"),
+        len(names) + 1,
+        NAMES_LEFT_OUT.format(rest=400 - len(names) - 1, ids="ev_0001"),
+    )
+    assert len(more) > _capture_cap()
+
+
+def test_beacons_past_the_cap_on_their_own_are_printed_whole() -> None:
+    facts = _reviewer_facts(5, 3, 200)
+    text = _section(facts)
+    assert len([line for line in text.split("\n") if "likely C2 beacon" in line]) == 200
+    assert "Cut here" not in text
+    assert _flows(text) == []
+    assert _left_out("TLS names", 3) in text
 
 
 # ----------------------------------------------- one writer, every surface
