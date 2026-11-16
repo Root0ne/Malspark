@@ -324,14 +324,14 @@ def test_the_server_name_comes_out_and_nothing_else_moves(
         assert old["sni"] == {}
         # The protocols also count the IPv6 datagrams now: each count only grows.
         assert all(facts["protocols"].get(k, 0) >= n for k, n in old["protocols"].items())
-        # A conversation also counts the packets from its host now: each old
-        # conversation is still there, and the packets toward the host are its
+        # A conversation also counts the packets from its peer now: each old
+        # conversation is still there, and the packets toward the peer are its
         # old count.
         rows = {(c["dst"], c["dport"], c["proto"]): c for c in facts["conversations"]}
         for row in old["conversations"]:
             new = rows[(row["dst"], row["dport"], row["proto"])]
-            assert new["packets"] - new.get("packets_from_host", 0) == row["packets"]
-            assert new["bytes"] - new.get("bytes_from_host", 0) == row["bytes"]
+            assert new["packets"] - new["packets_from_peer"] == row["packets"]
+            assert new["bytes"] - new["bytes_from_peer"] == row["bytes"]
         assert {**facts, "sni": {}, "protocols": {}, "conversations": []} == {
             **old,
             "protocols": {},
