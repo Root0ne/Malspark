@@ -47,6 +47,7 @@ from malspark.schemas.sandbox_report import (
     LINEAGE_REASON_KEY,
     LINEAGE_SAMPLE,
     PROCESS_TASK_KEY,
+    dropped_size,
 )
 from malspark.schemas.signature_indicators import (
     CHARS_LEFT_OUT,
@@ -1154,7 +1155,7 @@ def sandbox_dropped_files(
             row = {
                 "name": entry.get("name") or entry.get("filepath") or "",
                 "path": _path(entry),
-                "size": entry.get("size"),
+                "size": dropped_size(entry, reading),
                 "sha256": entry.get("sha256"),
                 "type": entry.get("type"),
             }

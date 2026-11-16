@@ -653,11 +653,13 @@ class TriageReportReader(ReportReader):
                 signature_indicators=self.signature_indicators,
                 dropped_writer_fields=self.DROPPED_WRITER_FIELDS,
                 dropped_guest_pid_fields=self.DROPPED_GUEST_PID_FIELDS,
+                dropped_size_fields=self.DROPPED_SIZE_FIELDS,
             )
         # A task report's dumped file names its guest path under ``path``.
         return Reading(
             TRIAGE_NORMALISER_FILLS,
             guest_path_fields=("path",),
+            dropped_size_fields=self.DROPPED_SIZE_FIELDS,
             dropped_writer_fields=self.DROPPED_WRITER_FIELDS,
             dropped_guest_pid_fields=self.DROPPED_GUEST_PID_FIELDS,
             signature_indicators=self.signature_indicators,
@@ -667,6 +669,9 @@ class TriageReportReader(ReportReader):
     # ``procid``, and the guest's pid of that process under ``pid``.
     DROPPED_WRITER_FIELDS = ("procid",)
     DROPPED_GUEST_PID_FIELDS = ("pid",)
+    # A written file's row states its size under ``size``, a dumped region's
+    # its length under ``length``.
+    DROPPED_SIZE_FIELDS = ("size", "length")
 
     # What a behavioural task's row in the overview, and its task report's
     # ``task`` block, say of the machine the task ran in: ``resource`` is the

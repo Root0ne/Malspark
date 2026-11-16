@@ -583,6 +583,11 @@ class Reading:
     # names no such field (a field of the same name may hold a path on the
     # sandbox's own host, which is never shown).
     guest_path_fields: tuple[str, ...] = ()
+    # The fields of a dropped file's row that state its size in bytes, as the
+    # reader's source declares them, the first one a row states read; empty
+    # where the source names no field of its own, and ``size`` is read
+    # (:data:`DROPPED_SIZE_FIELDS`).
+    dropped_size_fields: tuple[str, ...] = ()
     # The fields of a dropped file's row that hold the guest's pid of the
     # process that wrote it, where the source names the writer by an id of its
     # process list beside it; empty where the source names no such field.
@@ -1645,6 +1650,27 @@ def _signature_nodes(
 # The fields a written file names the processes that wrote it under where its
 # reader declares none of its own (``Reading.dropped_writer_fields``).
 DROPPED_WRITER_FIELDS: tuple[str, ...] = ("pids", "pid", "process_id")
+
+
+# The field a written file states its size under where its reader declares
+# none of its own, or the row states none it declares
+# (``Reading.dropped_size_fields``).
+DROPPED_SIZE_FIELDS: tuple[str, ...] = ("size",)
+
+
+def dropped_size(row: Mapping[str, Any], reading: Reading | None) -> Any:
+    """The size a written file's row states, ``None`` where it states none.
+
+    Every field the row's reader declares states a size is read, in its
+    order, then :data:`DROPPED_SIZE_FIELDS`; the first one the row states (any
+    value but ``None`` or an empty text) is the size, as the row states it.
+    """
+    declared = reading.dropped_size_fields if reading is not None else ()
+    for key in (*declared, *DROPPED_SIZE_FIELDS):
+        value = row.get(key)
+        if value not in (None, ""):
+            return value
+    return None
 
 
 def dropped_writer(row: Mapping[str, Any], reading: Reading | None) -> tuple[list[str], str]:
