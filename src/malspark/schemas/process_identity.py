@@ -65,6 +65,9 @@ class ProcessIdentities:
     _guest_disputed: set[ProcessKey] = field(default_factory=set)
     # The (task, id) pairs one listing holds more than once: two processes.
     _twice: set[ProcessKey] = field(default_factory=set)
+    # Whether every process of a task (``None``: of every task) states its
+    # guest's pid, asked once per task until a process is added.
+    _every_guest: dict[str | None, bool] = field(default_factory=dict)
 
     def add(self, pid: Any, *, task: Any = "", guest_pid: Any = "") -> ProcessKey | None:
         """The process ``pid`` names in ``task``, with its guest's pid where one is stated."""
@@ -73,6 +76,7 @@ class ProcessIdentities:
             return None
         key = ProcessKey(str(task or ""), number)
         self._by_id.setdefault(number, {})[key] = None
+        self._every_guest.clear()
         guest = pid_of(guest_pid)
         if guest:
             self._by_guest.setdefault(guest, {})[key] = None
@@ -129,9 +133,31 @@ class ProcessIdentities:
         found = self.keys(number, task, alias=alias)
         return found[0] if len(found) == 1 else None
 
-    def states_guest_pids(self) -> bool:
-        """Whether any answer states a guest's pid for any process."""
-        return bool(self._by_guest)
+    def states_every_guest_pid(self, task: str | None = None) -> bool:
+        """Whether every listed process a record could name states its guest's pid.
+
+        Those of ``task`` where the record states one, else every listed
+        process; a row that states no task is read as its listed process
+        (:meth:`guest_of`'s rule). A task no process is listed in states none.
+        Read once per task.
+        """
+        held = self._every_guest.get(task)
+        if held is None:
+            named = {
+                one
+                for keys in self._by_id.values()
+                for key in keys
+                for one in self._as_listed(key)
+                if task is None or one.task == task
+            }
+            held = bool(named) and all(self._states_guest(key) for key in named)
+            self._every_guest[task] = held
+        return held
+
+    def _states_guest(self, key: ProcessKey) -> bool:
+        """Whether an answer states a guest's pid for ``key``, two differing ones included."""
+        held = [key, ProcessKey("", key.id)] if key.task else [key]
+        return any(one in self._guest_of and self._as_listed(one) == [key] for one in held)
 
     def aliased(self, guest_pid: Any) -> list[str]:
         """The report's ids of the processes whose guest's pid is ``guest_pid``, other than it."""

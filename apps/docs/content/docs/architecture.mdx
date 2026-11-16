@@ -5699,9 +5699,10 @@ is assembled from what the run gathered rather than recomputed beside it:
   tree is read per task (`sample_process_trees`). A writer outside its task's
   tree is outside it, one the listing does not settle (a disputed lineage, or
   a number two listed processes answer to) is unattributed, and one named by
-  a number no listed process answers to is refused as so named where the
-  listing states its processes' guest pids, never as outside a tree, and is
-  unattributed where the listing states no guest pid. A signature's ledger entry carries its indicators,
+  a number no listed process answers to is refused as so named where every
+  listed process it could name (those of its task, where it states one) states
+  its guest pid, never as outside a tree, and is unattributed where one of them
+  states none. A signature's ledger entry carries its indicators,
   read where each reader declares its format states them
   (`ReportReader.signature_indicators`; a mapped format through
   `field_names`, written on the row in the neutral form,

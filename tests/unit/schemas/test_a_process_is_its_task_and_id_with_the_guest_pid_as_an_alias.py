@@ -145,6 +145,52 @@ class TestAProcessIsWrittenByItsIdAndItsTaskWhereTheIdIsShared:
         assert found.resolve("3756") == ProcessKey("t2", "87")
 
 
+class TestWhetherEveryProcessARecordCouldNameStatesItsGuestPid:
+    def test_a_listing_stating_every_guest_pid_states_them_in_each_task(self) -> None:
+        found = _two_tasks()
+
+        assert found.states_every_guest_pid() is True
+        assert found.states_every_guest_pid("t1") is True
+        assert found.states_every_guest_pid("t2") is True
+
+    def test_one_process_stating_none_is_read_in_its_task_and_the_listing(self) -> None:
+        found = _two_tasks()
+        found.add("86", task="t1")
+
+        assert found.states_every_guest_pid() is False
+        assert found.states_every_guest_pid("t1") is False
+        assert found.states_every_guest_pid("t2") is True
+
+    def test_a_task_less_row_s_guest_pid_is_its_listed_process_s(self) -> None:
+        found = ProcessIdentities()
+        found.add("85", task="t1")
+        found.add("85", guest_pid="1496")
+
+        assert found.states_every_guest_pid("t1") is True
+
+    def test_a_task_less_row_s_guest_pid_is_no_one_process_s_where_two_tasks_list_its_id(
+        self,
+    ) -> None:
+        found = ProcessIdentities()
+        found.add("87", task="t1")
+        found.add("87", task="t2")
+        found.add("87", guest_pid="1924")
+
+        assert found.states_every_guest_pid() is False
+
+    def test_a_task_the_listing_does_not_hold_and_an_empty_listing_state_none(self) -> None:
+        assert _two_tasks().states_every_guest_pid("t9") is False
+        assert ProcessIdentities().states_every_guest_pid() is False
+
+    def test_a_process_added_after_the_question_is_counted(self) -> None:
+        found = _two_tasks()
+        assert found.states_every_guest_pid("t1") is True
+
+        found.add("86", task="t1")
+
+        assert found.states_every_guest_pid("t1") is False
+
+
 class TestEveryAnswerThatNamesAProcessIsRead:
     def test_a_process_listing_and_a_signature_s_indicators_are_read(self) -> None:
         found = ProcessIdentities()
