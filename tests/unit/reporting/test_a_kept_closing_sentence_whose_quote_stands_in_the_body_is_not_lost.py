@@ -315,3 +315,25 @@ def test_the_whole_record_is_masked_but_never_cut(
     assert len(text) > 200 and whole.endswith("too.")
     assert len(events.safe_finding_value(text)) < len(whole)
     assert (value not in whole) is registered
+
+
+def test_a_quote_also_refused_on_an_item_a_source_speaks_of_leaves_the_sentence_out() -> None:
+    # A made-up shape: the quote speaks of who owns the launches, and another section 5
+    # passage says who started them, which the sentence also denies.
+    owned = "Which process owns the two launches, and who started them, was not established."
+    attributes = "Nothing in the entries attributes the launches to a parent [ev_0012]."
+    report = _report(limitations=owned)
+    ta = report.technical_analysis
+    assert ta is not None
+    ta.command_and_control = TechnicalSubsection(
+        title="C2", body=f"The sandbox recorded two launches of the sample [ev_0012]. {attributes}"
+    )
+    ta.discovery = TechnicalSubsection(
+        title="Discovery",
+        body="The service host started the launches at boot, by the parent process list [ev_0013].",
+    )
+    row = _keep("limitations", owned, "command_and_control", attributes.split(" [")[0])
+    assert "shares too few of the words" in _refusal(report, row)
+    found = _applied(report, row)
+    assert [v.code for v in found] == [DROPPED_CODE]
+    assert _limitations(report) == ""

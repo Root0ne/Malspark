@@ -982,6 +982,22 @@ def test_a_closing_keep_on_a_refused_quote_is_left_out_with_its_quote() -> None:
     assert record["stood"] == STILL_OPEN
 
 
+def test_a_closing_keep_another_check_refuses_too_is_left_out_with_its_quote() -> None:
+    # Refused on its words and on the ledger's count of failed calls: no source's sentence
+    # stands in its place (T-705).
+    counted = "Two tool calls failed, and what the hashing routine hashes is still not established."
+    report = _report(limitations=f"{counted} {SCOPE}")
+    gamed = _row("limitations", counted, "keep", ["persistence_detail"], quote="is not established")
+    scope = _row("limitations", SCOPE, "keep", [], reason="no passage speaks of an operator")
+    answer = {"sentences": _settled(report, [gamed, scope])}
+    done, _reporter = _ask(report, answer, answer)
+    assert _limitations(report) == SCOPE
+    assert not [r for r in done.tally.unresolved if r["code"] == KEPT_IN_SOURCE_WORDS_CODE]
+    (record,) = [r for r in done.tally.unresolved if r["code"] == DROPPED_CODE]
+    assert "persistence_detail, quoting 'is not established'" in record["message"]
+    assert FAILURE_COUNT_CODE in [r["code"] for r in done.tally.unresolved]
+
+
 def test_a_closing_keep_on_a_quote_no_one_sentence_holds_is_left_out_with_its_quote() -> None:
     report = _report(limitations=f"{STILL_OPEN} {SCOPE}")
     ta = report.technical_analysis
