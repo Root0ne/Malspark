@@ -4843,7 +4843,7 @@ def _attck_detection_block(report: MalwareReport) -> str:
                 _technique_cell(row),
                 _links_cell(row.detection_strategies),
                 _links_cell(row.data_components),
-                evidence_words(row.evidence_ids, row.sandbox_items),
+                evidence_words(row.evidence_ids, row.sandbox_items, row.absence_sources),
             )
         )
     return "\n".join(lines)
@@ -4870,7 +4870,7 @@ def _attck_mitigation_block(report: MalwareReport) -> str:
                     _technique_cell(row),
                     _link_label(link),
                     link.text or "-",
-                    evidence_words(row.evidence_ids, row.sandbox_items),
+                    evidence_words(row.evidence_ids, row.sandbox_items, row.absence_sources),
                 )
             )
     return "\n".join(lines)

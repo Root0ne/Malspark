@@ -1,0 +1,3 @@
+### Fixed
+
+- **The dropped-files view keeps each row's guest path, origin, kind and writer (T-709).** The pack reads every sandbox view with the job's reader, as an agent's call does, so the pack's ledger entry of the view holds a Triage task report's guest path too. Each row keeps the `kind` and `origin` it states, and names its writer by the process list's own id, read from every field the reader declares holds it (`Reading.dropped_writer_fields`; a reader that declares none is read by `pids`, `pid` and `process_id`), with its `task` and, where the reader declares the field, the writer's `guest_pid`. A long answer is sized by the job's answer guardrail as every other view's is, the rows not shown counted and paged by `offset` and `limit`.

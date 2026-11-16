@@ -153,6 +153,19 @@ def _iocs_from_file(environ: Environ, path: str) -> Any:
     return strings.iocs_from_file(path)
 
 
+def _file_text(
+    environ: Environ,
+    path: str,
+    plain: list[str] | None = None,
+    cut: list[str] | None = None,
+    max_bytes: int | None = None,
+) -> Any:
+    from malspark.tools import strings
+
+    bound = strings.FILE_TEXT_MAX_BYTES if max_bytes is None else int(max_bytes)
+    return strings.file_text_reading(path, plain or (), cut or (), bound)
+
+
 def _yara_scan(environ: Environ, path: str, timeout_s: int | None = None) -> Any:
     from malspark.tools import rules
 
@@ -376,6 +389,10 @@ READERS: dict[str, Reader] = {
     },
     "strings": Reader(_strings, "strings"),
     "iocs_from_file": Reader(_iocs_from_file, "iocs_from_file"),
+    # What the file's own text says of the values the report asks: which a
+    # plain-string run holds whole, and which the sweep cuts out of a longer
+    # token (``strings.file_text_reading``), bounded in what it reads.
+    "file_text": Reader(_file_text, "strings"),
     "yara_scan": Reader(_yara_scan, "yara_scan"),
     "capa": Reader(
         _capa,

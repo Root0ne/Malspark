@@ -207,6 +207,7 @@ from malspark.pipeline.validation import (
     VALIDITY_CODE,
     ValidationTally,
     Violation,
+    claims_unread_replaced_row,
     corroboration,
     count_claim_blocks,
     not_run_sentence,
@@ -6097,11 +6098,23 @@ def make_revision_node(container: ServiceContainer, *, stage: Any = None) -> Any
             mock_isrs: dict[str, AgentISR] = {
                 name: _empty_isr(name, revision_round=iteration) for name in agent_names
             }
+            # The answers in force it replaced with claims unread, as a round does.
+            mock_replaced = [
+                row
+                for name in agent_names
+                if (
+                    row := claims_unread_replaced_row(
+                        name, kept_isrs.get(name), mock_isrs[name], f"round {int(iteration)}"
+                    )
+                )
+                is not None
+            ]
             return {
                 "revised_reports": {
                     name: f"MOCK REVISED: {name} analysis updated." for name in agent_names
                 },
                 "isr_reports": mock_isrs,
+                **({"validation_unparsed_answers": mock_replaced} if mock_replaced else {}),
                 **_debate_record(stage, started),
             }
 
@@ -6534,6 +6547,16 @@ def make_revision_node(container: ServiceContainer, *, stage: Any = None) -> Any
                     )
                 revised[name] = report_now
                 revised_isrs[name] = isr
+                # The answer this round replaced, when claims it began were not
+                # all read: the run record says so (only the answer in force
+                # degrades the run).
+                replaced_unread = claims_unread_replaced_row(
+                    name, kept_isrs.get(name), isr, f"round {int(iteration)}"
+                )
+                if replaced_unread is not None:
+                    revision_validation.setdefault("validation_unparsed_answers", []).append(
+                        replaced_unread
+                    )
                 if name in not_asked:
                     # Its answer from before the round, handed back unasked:
                     # not a revision, and not counted as one.
@@ -8327,6 +8350,10 @@ def make_report_node(
                 sample_platform=state.get("platform"),
                 sample_file_type=state.get("file_type"),
                 evidence_ledger=_ledger,
+                # What the run saw of each answer, for the entries the byte
+                # budget blanked: the record every surface reads a string
+                # row's second source from is read entry by entry from it.
+                evidence_corpus=container.get_evidence_corpus(),
             )
             # Deterministic and self-contained — every input is already in the
             # builder — so a thread changes when it runs, never what it

@@ -710,6 +710,9 @@ class AgentISR(BaseModel):
     # answer in force: a retry or a later round that replaced this answer
     # carries its own.
     _claims_unread_reason: str = PrivateAttr(default="")
+    # The claims that read began, read and left unread, beside the reason, or
+    # ``None`` where the reason is not the reader's own count.
+    _claims_unread_counts: tuple[int, int, int] | None = PrivateAttr(default=None)
     # The claim headings this answer wrote under its DISPUTES section beside
     # its own claims read: a peer's claims quoted, or its own written in the
     # wrong place. The validation turn asks once which.
@@ -800,9 +803,17 @@ class AgentISR(BaseModel):
         """Why claims this answer began are not in its findings, or ``""``."""
         return self._claims_unread_reason
 
-    def note_claims_unread(self, reason: str) -> None:
-        """Record why claims this answer began are not in its findings."""
+    @property
+    def claims_unread_counts(self) -> tuple[int, int, int] | None:
+        """The claims begun, read and unread of the read the reason states, or ``None``."""
+        return self._claims_unread_counts
+
+    def note_claims_unread(self, reason: str, counts: tuple[int, int, int] | None = None) -> None:
+        """Record why claims this answer began are not in its findings, and, from the
+        reader, how many it began, read and left unread (kept as they were when not given)."""
         self._claims_unread_reason = str(reason or "")
+        if counts is not None:
+            self._claims_unread_counts = (int(counts[0]), int(counts[1]), int(counts[2]))
 
     @property
     def claims_under_disputes(self) -> int:

@@ -63,7 +63,11 @@ from malspark.reporting.models import (
     VersionHistoryEntry,
 )
 from malspark.reporting.section_servers import index_of, source_server
-from malspark.reporting.technique_evidence import technique_evidence_ids, technique_sandbox_items
+from malspark.reporting.technique_evidence import (
+    technique_absence_ids,
+    technique_evidence_ids,
+    technique_sandbox_items,
+)
 from malspark.schemas.judgement import SEVERITY_RATINGS
 
 if TYPE_CHECKING:
@@ -126,6 +130,7 @@ class MalwareReportBuilder:
         sample_file_type: str | None = None,
         evidence_ledger: list[LedgerEntry] | None = None,
         job_id: str | None = None,
+        evidence_corpus: Any = None,
     ) -> None:
         self.file_hash = file_hash
         self.file_name = file_name
@@ -162,6 +167,11 @@ class MalwareReportBuilder:
         # derived from. A build with none (the command line, a test) uses the
         # report's own number.
         self.job_id = job_id
+        # What the run saw of each answer (``agents.run_evidence_corpus``),
+        # which the evidence byte budget never blanks: the record of how each
+        # entry stands to a value taken from the file's text reads it where
+        # the stored answer is gone. ``None``: the stored answers alone.
+        self.evidence_corpus = evidence_corpus
 
     # ------------------------------------------------------------------
     # Deterministic build
@@ -171,9 +181,12 @@ class MalwareReportBuilder:
         """Build a deterministic ``MalwareReport`` out of the evidence ledger."""
         from malspark.pipeline.evidence_summary import yara_rule_strings
         from malspark.reporting.renderers.stix_renderer import (
+            confirmed_only_by_undeclared,
             emulation_from_ledger,
             exported_indicator_values,
             recovered_network_values,
+            second_source_reads,
+            with_cuts_from_the_file,
         )
 
         # What the calls answered. A repeat the guard answered from an earlier
@@ -192,13 +205,17 @@ class MalwareReportBuilder:
         # empty otherwise. The network block also reads which values the
         # analysts listed, which it states and never publishes on alone.
         static = static_from_ledger(ledger)
+        if static is not None:
+            # A path or a registry key the sweep cut out of a longer token of
+            # the sample, recorded as such from the sample's own text.
+            with_cuts_from_the_file(static.interesting_strings, self.sample_path)
         directed = directed_text_from_ledger(ledger)
         dynamic = dynamic_from_ledger(ledger)
         # What only a recovering tool read. Each domain, address and URL in it
         # is a candidate row of its own, whether or not a model named it: a
         # C2 URL FLOSS and the static decoder both recovered once had no row
         # anywhere, not even a refused one, while the record gave it standing.
-        emulated = emulation_from_ledger(ledger)
+        emulated = emulation_from_ledger(ledger, self.sample_path)
         # Each decoded text the code passes whole to an API argument of a known
         # role, with the chain that binds it: such a value is an indicator row
         # of its own, published with that chain on every surface.
@@ -332,6 +349,12 @@ class MalwareReportBuilder:
         for section in report.sections:
             section.source_server = source_server(section, index)
         report.reputation = _reputation_answers(self.evidence_ledger)
+        # How each entry stands to the values asked as the file's text, read
+        # entry by entry: the one record the IOC table, the feed and the
+        # export decide a string row's second source from.
+        report.second_source_reads = second_source_reads(
+            report, self.evidence_ledger, self.evidence_corpus
+        )
 
         # Deterministic front-matter, version history,
         # and consolidated IOC table (the professional-report scaffolding the
@@ -340,6 +363,12 @@ class MalwareReportBuilder:
         report.tlp = report.front_matter.tlp
         report.version_history = _build_version_history(report.front_matter)
         report.consolidated_iocs = build_consolidated_iocs(report)
+        # How many values only a cited entry of a tool that declares no kind
+        # confirmed: such a tool is used at full strength, and the count says
+        # what it alone put in the table, so an operator can declare it.
+        report.run_summary["undeclared_confirmations"] = sum(
+            1 for row in report.consolidated_iocs if confirmed_only_by_undeclared(row.published)
+        )
         # The MISP attributes of the table's published rows and the published
         # techniques, so the console's MISP export and the job package carry them.
         from malspark.reporting.misp import build_misp_attributes, misp_owner
@@ -1475,6 +1504,7 @@ def attck_defense_rows(mappings: list[Any]) -> list[AttckDefenseRow]:
                 data_components=[AttckLink(**vars(o)) for o in defense.data_components],
                 evidence_ids=technique_evidence_ids(mapping) or [],
                 sandbox_items=technique_sandbox_items(mapping),
+                absence_sources=technique_absence_ids(mapping),
             )
         )
     return rows

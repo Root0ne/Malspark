@@ -212,6 +212,14 @@ class StringIOC(BaseModel):
         "other",
     ]
     notes: str | None = None
+    # The longer token the string sweep cut this value out of, as much of it
+    # as a refusal quotes (``tools.strings.token_cuts``): the value is no whole
+    # value of the file, and only an observation that holds it as a whole
+    # token confirms it. Recorded by the build from the sample's own text (no
+    # tool answer carries it); ``None`` for a value that stands whole or a
+    # build without the sample, and then left out of the dump, so a stored
+    # report reads and dumps as it did.
+    cut_from: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ExportRow(BaseModel):
@@ -372,6 +380,12 @@ class ProcessNode(BaseModel):
     marked: bool = Field(default=False, exclude_if=lambda value: not value)
     children: list[ProcessNode] = Field(default_factory=list)
     injected_into: list[int] = Field(default_factory=list)
+    # The task the report lists the process in, where it holds several whose
+    # ids are each the task's own, and the guest's pid an answer of the run
+    # states for it (``schemas.process_identity``). Left out of the dump when
+    # not stated, as on a report stored before the fields existed.
+    task: str = Field(default="", exclude_if=lambda value: not value)
+    guest_pid: str = Field(default="", exclude_if=lambda value: not value)
 
 
 class RegistryMod(BaseModel):
@@ -796,6 +810,10 @@ class CapabilityCell(BaseModel):
     # is one source however many agents cite it. Empty on rows built without
     # the ledger.
     sources: list[str] = Field(default_factory=list)
+    # The sources every statement naming it cites to state an absence
+    # (``validation.technique_absence_sources``), kept among ``sources`` and
+    # printed apart from its evidence (``reporting.technique_evidence``).
+    absence_sources: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
     # The technique's evidence, the one set every surface that shows the
     # technique prints (``reporting.technique_evidence``): the entries cited by
     # the statements that name it (its claims and findings, a map the judge
@@ -845,9 +863,10 @@ class TTPMapping(BaseModel):
     # See ``CapabilityCell.evidence_roots`` and ``roots_not_read``.
     evidence_roots: list[str] = Field(default_factory=list)
     roots_not_read: list[str] = Field(default_factory=list)
-    # See ``CapabilityCell.sources``, ``independent_sources``, ``source_kinds``
-    # and ``support``.
+    # See ``CapabilityCell.sources``, ``absence_sources``, ``independent_sources``,
+    # ``source_kinds`` and ``support``.
     sources: list[str] = Field(default_factory=list)
+    absence_sources: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
     # See ``CapabilityCell.evidence_ids``.
     evidence_ids: list[str] | None = Field(default=None, exclude_if=lambda value: value is None)
     independent_sources: int = 0
@@ -881,7 +900,9 @@ class AttckDefenseRow(BaseModel):
     Read from the cached ATT&CK bundles with no model call
     (``memory.attck_defense``); ``evidence_ids`` are the technique's evidence
     (``reporting.technique_evidence``), so the row cites what the technique
-    rests on, and ``sandbox_items`` the sandbox items among its sources.
+    rests on, ``sandbox_items`` the sandbox items among its sources, and
+    ``absence_sources`` the sources its statements cite only to state an
+    absence, printed apart.
     """
 
     model_config = _STRICT_CONFIG
@@ -893,6 +914,7 @@ class AttckDefenseRow(BaseModel):
     data_components: list[AttckLink] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     sandbox_items: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    absence_sources: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
 # ---------------------------------------------------------------------------
@@ -1539,6 +1561,27 @@ class EmulatedStrings(BaseModel):
     spelled: dict[str, str] = Field(default_factory=dict)
 
 
+class SecondSourceRead(BaseModel):
+    """One entry of the run, and the values the publish rule asks as the file's text it holds.
+
+    ``entry`` and ``tool`` (the name published text gives it) say which call;
+    ``standing`` how it stands to a value taken from the file's text
+    (``tool_kinds.second_source_standing``: ``observes``, ``rereads`` or
+    ``undeclared``); ``cited`` whether an analyst's artefact or finding cites
+    it. ``holds`` lists, lower case, each asked value its answer holds whole —
+    a value the string sweep cut out of a longer token only where the answer
+    holds it as a whole token of its own.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    entry: str
+    tool: str
+    standing: str
+    cited: bool = False
+    holds: list[str] = Field(default_factory=list)
+
+
 class CodeConstant(BaseModel):
     """A 32-bit value the sample stores in its own bytes that a tool read and named.
 
@@ -2130,6 +2173,14 @@ class MalwareReport(BaseModel):
     # entries at build time; ``None`` on a report stored before it existed,
     # which is then read from its kept section rows and said to be partial.
     emulated_strings: EmulatedStrings | None = None
+    # How each entry of the run stands to the values the publish rule asks as
+    # the file's text, built from the ledger at build time
+    # (``stix_renderer.second_source_reads``), so the IOC table, the feed and
+    # the export decide from one record. ``None``, and left out of the dump,
+    # on a report stored before it existed, which is read from its sections.
+    second_source_reads: list[SecondSourceRead] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     # Each decoded text the code passes whole to an API argument of a known
     # role, with the chain that binds it, built from the ledger at build time
     # (``reporting.call_bindings``). Empty, and left out of the dump, on a
