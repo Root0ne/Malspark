@@ -8,8 +8,10 @@ and the sample's tree per task (``sample_process_trees``). A writer the tree of
 its task holds is the sample's, so its file is withheld only because the
 judge named no such indicator; one the listing places outside the tree is
 outside; one whose number the listing does not settle is unattributed; and one
-whose number no listed process answers to is said to be named so, never
-placed outside a tree it was not tested against. The process tree the report
+whose number no listed process answers to, where the listing states its
+processes' guest pids, is said to be named so, never placed outside a tree it
+was not tested against; where the listing states no guest pid, such a number
+may be one, and the writer is unattributed. The process tree the report
 is built from keeps each process's task and the guest's pid any answer of the
 run states for it.
 
@@ -86,8 +88,25 @@ class TestTheWriterIsOneProcess:
         assert _fact(_two_tasks(), pids=["87"]) == UNATTRIBUTED_HOST_ROW.format(did="wrote")
 
     def test_a_number_no_listed_process_answers_to_is_said_to_be_so(self) -> None:
-        assert _fact(_two_tasks(), pids=["1924"]) == HOST_ROW_UNLISTED.format(did="wrote")
+        processes = _two_tasks()
+        processes[0].children[0].guest_pid = "1924"
+
+        assert _fact(processes, pids=["1928"]) == HOST_ROW_UNLISTED.format(did="wrote")
         assert HOST_ROW_UNLISTED.format(did="wrote") == NOT_HELD
+
+    def test_where_the_listing_states_no_guest_pid_the_writer_is_unattributed(self) -> None:
+        assert _fact(_two_tasks(), pids=["1924"]) == UNATTRIBUTED_HOST_ROW.format(did="wrote")
+
+    def test_an_id_a_task_lists_twice_names_no_writer_by_any_number(self) -> None:
+        processes = _two_tasks()
+        processes[0].children[0].children = [
+            _node(900, "x.exe", 87, "t1", guest_pid="1500"),
+            _node(900, "y.exe", 87, "t1", guest_pid="1504"),
+        ]
+        unattributed = UNATTRIBUTED_HOST_ROW.format(did="wrote")
+
+        assert _fact(processes, pids=["900"], task="t1") == unattributed
+        assert _fact(processes, pids=["1500"]) == unattributed
 
     def test_a_listed_process_outside_the_tree_is_outside(self) -> None:
         processes = [*_two_tasks(), _node(40, "svchost.exe", 4, "t1")]

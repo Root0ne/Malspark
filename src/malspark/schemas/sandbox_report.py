@@ -1203,7 +1203,7 @@ def sample_process_trees(roots: list[Any], file_name: str = "", sha256: str = ""
     from malspark.schemas.process_identity import ProcessIdentities
 
     grouped: dict[str, list[Any]] = {}
-    identities = ProcessIdentities()
+    listed: list[tuple[Any, str, Any]] = []
     # (a node, the task of the root it is listed under, ``None`` for a root)
     stack: list[tuple[Any, str | None]] = [(node, None) for node in reversed(roots)]
     while stack:
@@ -1211,10 +1211,11 @@ def sample_process_trees(roots: list[Any], file_name: str = "", sha256: str = ""
         task = above if above is not None else str(_node_field(node, "task") or "")
         if above is None:
             grouped.setdefault(task, []).append(node)
-        identities.add(
-            _node_field(node, "pid"), task=task, guest_pid=_node_field(node, "guest_pid")
-        )
+        listed.append((_node_field(node, "pid"), task, _node_field(node, "guest_pid")))
         stack.extend((child, task) for child in reversed(list(_node_field(node, "children") or [])))
+    # One listing: an id it holds twice in a task names neither process.
+    identities = ProcessIdentities()
+    identities.add_listing(listed)
     by_task = {task: sample_process_tree(held, file_name, sha256) for task, held in grouped.items()}
     names = frozenset(name for tree in by_task.values() for name in tree.names)
     return ProcessTrees(by_task=by_task, identities=identities, names=names)

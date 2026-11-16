@@ -3513,7 +3513,8 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
     read only when it names no pid, because a common image the tree also runs
     (``explorer.exe``) would otherwise attribute every record of that name. A
     record naming a pid the listing does not settle is unattributed, and one
-    naming a number no listed process answers to says so.
+    naming a number no listed process answers to says so where the listing
+    states its processes' guest pids, and is unattributed where it states none.
     """
     from malspark.schemas.sandbox_report import (
         WRITER_IN_TREE,
@@ -3538,7 +3539,11 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
         if WRITER_IN_TREE in places:
             return ""
         if places == {WRITER_UNLISTED}:
-            return HOST_ROW_UNLISTED.format(did=did)
+            # A number no listed process answers to is one of none only where
+            # the listing states its processes' guest pids; else it may be one.
+            if trees.identities.states_guest_pids():
+                return HOST_ROW_UNLISTED.format(did=did)
+            return UNATTRIBUTED_HOST_ROW.format(did=did)
         return HOST_ROW_OUTSIDE_THE_TREE
     by_name: list[str] = []
     for key in _PROCESS_KEYS:
