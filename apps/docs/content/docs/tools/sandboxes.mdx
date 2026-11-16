@@ -109,12 +109,17 @@ source writes it under (`Reading.guest_path_fields`: a Triage task report's
 `path`); a field of that name a reader does not declare, such as CAPE's host
 storage path, is not shown. Each row keeps the `kind` and `origin` it states
 (a written file or a dumped region, and where it came from), and names its
-writer by the process list's own id first (`procid`, then `pids`, `pid`,
+writer by the process list's own id, read from every field the reader
+declares holds it (`Reading.dropped_writer_fields`: a Triage task report's
+`procid`; a reader that declares none is read by `pids`, `pid` and
 `process_id`), with the `task` the reader listed it in and, where the reader
 declares the field its source writes the writer's guest pid under
 (`Reading.dropped_guest_pid_fields`: a Triage task report's `pid`) and it is
-another number, that pid as `guest_pid`. The pack reads every sandbox view
-with the job's reader, as an agent's call of it does. The document holds each such block once per
+another number, that pid as `guest_pid`; a row naming its writer by the guest
+pid alone is named by it. The pack reads every sandbox view with the job's
+reader, as an agent's call of it does. A long answer is sized by the job's
+answer guardrail as every other view's is: the rows it does not show are
+counted, and `offset` and `limit` page them. The document holds each such block once per
 task, by reference (`{"task_report": ..., "block_rows": <block>}`), and every
 reader reads it as the block's items: each signature, flow or other item is its
 own row naming its task, built when it is read, so `offset` and `limit` page
