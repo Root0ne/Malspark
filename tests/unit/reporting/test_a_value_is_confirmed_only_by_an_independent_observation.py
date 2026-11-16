@@ -337,6 +337,45 @@ class TestAToolThatDeclaresNoKind:
 
         assert report.run_summary["undeclared_confirmations"] == 0
 
+    def test_the_count_is_the_table_s_rows_only_an_undeclared_tool_confirmed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.reporting import builder
+        from malspark.reporting.models import ConsolidatedIOC
+
+        alone = "watcher records it and declares no kind"
+        rows = [
+            ConsolidatedIOC(
+                type="Mutex",
+                kind="mutex",
+                value="Global\\RelayLock7",
+                published=f"yes: a second source in this run records it; {alone}",
+            ),
+            ConsolidatedIOC(
+                type="Mutex",
+                kind="mutex",
+                value="Global\\Other",
+                published="yes: a second source in this run records it",
+            ),
+        ]
+        monkeypatch.setattr(builder, "build_consolidated_iocs", lambda _report: rows)
+        report = MalwareReportBuilder(
+            file_hash="e" * 64,
+            file_name="sample.bin",
+            sample_path=None,
+            sandbox_report={},
+            reports={},
+            isr_reports={},
+            stix_output={"objects": []},
+            run_summary={},
+            discussion_history=[],
+            final_decision="Malware",
+            overall_confidence=0.8,
+            evidence_ledger=[],
+        ).build_deterministic()
+
+        assert report.run_summary["undeclared_confirmations"] == 1
+
     def test_it_confirms_a_value_the_file_s_text_does_not_hold(self) -> None:
         """Full strength: what an undeclared sandbox or decoder reports still confirms."""
         report = _report(
@@ -537,7 +576,9 @@ class TestAnObservationOutranksACut:
             ],
         )
         inside = [
-            LedgerEntry(id="ev_0110", agent="dynamic", tool="sbx", output="C:\\Relay\\run_old")
+            LedgerEntry(
+                id="ev_0110", agent="dynamic", tool="sbx", output="InstallPath=C:\\Relay\\run"
+            )
         ]
         whole = [LedgerEntry(id="ev_0111", agent="dynamic", tool="sbx2", output=f"wrote {value}")]
 
@@ -655,6 +696,22 @@ class TestEachReasonStatesItselfFirst:
         assert answer.split(";", 1)[0] == "yes: a second source in this run records it"
 
 
+# The platform's own kinds that watch the sample or recover a value, named
+# here so a kind dropped from the shipped declaration is missed by a test.
+PLATFORM_OBSERVING = frozenset(
+    {
+        "sandbox_registry",
+        "sandbox_mutexes",
+        "pcap",
+        "event_rules",
+        "behaviour_code_links",
+        "emulated_strings",
+        "decoded_strings",
+        "api_hash_resolution",
+    }
+)
+
+
 class TestTheRecordIsAskedForWholeValues:
     def test_an_observation_holding_only_a_longer_value_confirms_nothing(self) -> None:
         report = _report(
@@ -668,7 +725,7 @@ class TestTheRecordIsAskedForWholeValues:
 
         assert not publishes(_answer(report, "Global\\RelayLock7"))
 
-    @pytest.mark.parametrize("kind", sorted(OBSERVING_KINDS))
+    @pytest.mark.parametrize("kind", sorted(OBSERVING_KINDS | PLATFORM_OBSERVING))
     def test_every_observing_kind_of_the_platform_confirms(self, kind: str) -> None:
         report = _held_by(kind, REGISTRY_KEY, "registry")
 
