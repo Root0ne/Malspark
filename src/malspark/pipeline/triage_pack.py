@@ -1430,8 +1430,12 @@ class _Pack:
         report = observed_report(self.inputs.sandbox_report)
         # A report that holds no process tree has no command lines to look up:
         # a lookup over none would be recorded as a fact about nothing.
-        if report and not sandbox_tools.sandbox_processes(report).get("absent"):
-            commands = _command_lines(report)
+        if not report:
+            return
+        normalised_by = self.inputs.sandbox_normalised_by
+        processes = sandbox_tools.sandbox_view("sandbox_processes", report, normalised_by)
+        if not processes.get("absent"):
+            commands = _command_lines(processes)
             self.record(
                 "lolbin_lookup",
                 {"command_lines": commands},
@@ -1458,9 +1462,10 @@ class _Pack:
         if report:
             # Read with the job's reader, as an agent's call of the view is.
             view = partial(
-                _SANDBOX_VIEWS[step.called],
+                sandbox_tools.sandbox_view,
+                step.called,
                 report,
-                normalised_by=self.inputs.sandbox_normalised_by,
+                self.inputs.sandbox_normalised_by,
             )
             self.record(step.called, {}, view)
 
@@ -1790,7 +1795,12 @@ class _Pack:
         platform = _BEHAVIOUR_PLATFORM_BY_FORMAT.get(self.routed)
         if not report or platform is None:
             return
-        rows = sandbox_tools.sandbox_api_calls(report).get("apis") or []
+        rows = (
+            sandbox_tools.sandbox_view(
+                "sandbox_api_calls", report, self.inputs.sandbox_normalised_by
+            ).get("apis")
+            or []
+        )
         names = list(
             dict.fromkeys(
                 str(row.get("api")) for row in rows if isinstance(row, dict) and row.get("api")
@@ -2063,14 +2073,15 @@ _FORMAT_CALLS: dict[str, str] = {
     for name in ("pe_info", "elf_info", "macho_info", "apk_info", "document_info", "archive_list")
 }
 
-# The platform's own sandbox views, by the tool each step calls.
-_SANDBOX_VIEWS: dict[str, Callable[..., dict[str, Any]]] = {
-    "sandbox_processes": sandbox_tools.sandbox_processes,
-    "sandbox_network": sandbox_tools.sandbox_network,
-    "sandbox_signatures": sandbox_tools.sandbox_signatures,
-    "sandbox_dropped_files": sandbox_tools.sandbox_dropped_files,
-    "sandbox_channels": sandbox_tools.sandbox_channels,
-}
+# The platform's own sandbox views, by the tool each step calls; each is read
+# through ``sandbox_tools.sandbox_view`` with the job's reader.
+_SANDBOX_VIEWS: tuple[str, ...] = (
+    "sandbox_processes",
+    "sandbox_network",
+    "sandbox_signatures",
+    "sandbox_dropped_files",
+    "sandbox_channels",
+)
 
 # Each of the platform's own steps, by its shipped id (``core.pack_steps``).
 _BUILTIN_STEPS: dict[str, Callable[[_Pack, PackStep], None]] = {
@@ -3069,9 +3080,9 @@ def _imported_names(format_facts: dict[str, Any] | None) -> list[str]:
     return names
 
 
-def _command_lines(report: dict[str, Any]) -> list[str]:
-    """Every distinct command line the sandbox's process tree recorded."""
-    rows = sandbox_tools.sandbox_processes(report).get("processes") or []
+def _command_lines(processes: dict[str, Any]) -> list[str]:
+    """Every distinct command line of the sandbox's process view (``sandbox_processes``)."""
+    rows = processes.get("processes") or []
     out: list[str] = []
     seen: set[str] = set()
     for row in rows:

@@ -346,6 +346,7 @@ def platform_reads(container: Any, record: DetonationRecord, step: str) -> list[
     from malspark.agents.evidence_recorder import EvidenceRecorder, result_text
     from malspark.analysis.sandbox_sections import SECTIONS_TOOL, section_index
     from malspark.pipeline.triage_pack import _SANDBOX_VIEWS, PACK_SOURCE, PIPELINE
+    from malspark.providers.sandbox_tools import sandbox_view
 
     report = record.report
     if not isinstance(report, dict):
@@ -366,7 +367,11 @@ def platform_reads(container: Any, record: DetonationRecord, step: str) -> list[
         spill=_held("get_evidence_spill"),
     )
     reads: list[tuple[str, Any]] = [
-        *((tool, partial(view, report)) for tool, view in _SANDBOX_VIEWS.items()),
+        # Each read with the detonation's own reader, as an agent's call of it is.
+        *(
+            (tool, partial(sandbox_view, tool, report, record.normalised_by))
+            for tool in _SANDBOX_VIEWS
+        ),
         (SECTIONS_TOOL, partial(section_index, report, record.normalised_by, record.name)),
     ]
     stated = record.stated()

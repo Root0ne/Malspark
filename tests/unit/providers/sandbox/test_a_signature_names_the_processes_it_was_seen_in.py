@@ -14,7 +14,11 @@ from typing import Any
 from malspark.core.report_mapping import RestMappingConfig
 from malspark.pipeline.triage_pack import _SANDBOX_VIEWS
 from malspark.providers.sandbox.rest_mapping import apply_mapping, compile_mapping
-from malspark.providers.sandbox_tools import SIGNATURE_PIDS_SHOWN, sandbox_signatures
+from malspark.providers.sandbox_tools import (
+    SIGNATURE_PIDS_SHOWN,
+    sandbox_signatures,
+    sandbox_view,
+)
 from malspark.reporting.dedupe import distinct_signatures
 from malspark.reporting.ledger_projection import dynamic_from_ledger
 from malspark.reporting.ledger_report import SIGNATURE_PROCESSES_COLUMN, build_sections
@@ -194,8 +198,8 @@ class TestTheCap:
         assert "pids_total" not in row
 
     def test_the_pack_answers_as_the_analysts_do(self) -> None:
-        view = _SANDBOX_VIEWS["sandbox_signatures"]
-        row = view(_many(14))["signatures"][0]
+        assert "sandbox_signatures" in _SANDBOX_VIEWS
+        row = sandbox_view("sandbox_signatures", _many(14), None)["signatures"][0]
         assert len(row["pids"]) == SIGNATURE_PIDS_SHOWN
         assert row["pids_total"] == 14
 

@@ -30,8 +30,8 @@ return nothing.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, cast
+from collections.abc import Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 from malspark.analysis.sandbox_sections import ITEMS_TOOL
 from malspark.core.logger import logger
@@ -1780,20 +1780,49 @@ ITEMS_SIGNATURE_SECTION = "the signature filter reads the signatures section onl
 _ITEM_FILTERS = ("pid", "contains", "signature", "ids")
 
 
-# The readers of a detonation's report the source offers beside the item
-# reader, by name, in the order :func:`sandbox_tools` builds them.
-_VIEW_READERS: tuple[str, ...] = (
-    "sandbox_report_section",
-    "sandbox_processes",
-    "sandbox_network",
-    "sandbox_signatures",
-    "sandbox_dropped_files",
-    "sandbox_registry_ops",
-    "sandbox_api_calls",
-    "sandbox_mutexes",
-    "sandbox_services_and_tasks",
-    "sandbox_channels",
-)
+# The views of a detonation's report the source offers beside the item reader,
+# by the tool each is offered as, in the order :func:`sandbox_tools` builds
+# them. Every one is read through :func:`sandbox_view`.
+_VIEWS: dict[str, Callable[..., dict[str, Any]]] = {
+    "sandbox_report_section": sandbox_report_section,
+    "sandbox_processes": sandbox_processes,
+    "sandbox_network": sandbox_network,
+    "sandbox_signatures": sandbox_signatures,
+    "sandbox_dropped_files": sandbox_dropped_files,
+    "sandbox_registry_ops": sandbox_registry_ops,
+    "sandbox_api_calls": sandbox_api_calls,
+    "sandbox_mutexes": sandbox_mutexes,
+    "sandbox_services_and_tasks": sandbox_services_and_tasks,
+    "sandbox_channels": sandbox_channels,
+}
+# The views whose answer no reader's declaration shapes: they take none.
+_UNDECLARED_VIEWS = frozenset({"sandbox_report_section", "sandbox_channels"})
+
+_VIEW_READERS: tuple[str, ...] = tuple(_VIEWS)
+
+
+def sandbox_view(
+    tool: str,
+    report: dict[str, Any] | None,
+    normalised_by: Sequence[str] | None,
+    /,
+    *args: Any,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """``tool``'s view of ``report``, read with the reader that built the report.
+
+    The one way a view is read: the pack, the read of a later detonation and
+    an analyst's call each come here. ``normalised_by`` is that reader
+    (``normalised_by_of``, ``DetonationRecord.normalised_by``), ``None`` where
+    the run states none, and it is required: the reader's declaration says
+    what a row's fields mean (``Reading``), and a read without it states
+    another row for the same record.
+    """
+    view = _VIEWS[tool]
+    if tool in _UNDECLARED_VIEWS:
+        return view(report, *args, **kwargs)
+    return view(report, *args, normalised_by=normalised_by, **kwargs)
+
 
 # Every tool of this source that reads a detonation, each taking the
 # ``detonation`` selector; ``request_detonation`` asks for one and reads none.
@@ -1825,24 +1854,15 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
     report = _report_of(container)
     normalised_by = normalised_by_of(container)
 
-    def _views(view: Any, detonation: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        """``view`` over the report ``detonation`` selects, the later one's answer naming it."""
+    def _views(tool: str, detonation: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        """``tool``'s view of the report ``detonation`` selects; a later one's answer names it."""
         later, problem = selected(container, detonation)
         if problem:
             return {"error": problem, "tool": "sandbox"}
         if later is None:
-            found = view(report, *args, normalised_by=normalised_by, **kwargs)
-            return cast("dict[str, Any]", found)
-        answer = view(later.report, *args, normalised_by=later.normalised_by, **kwargs)
+            return sandbox_view(tool, report, normalised_by, *args, **kwargs)
+        answer = sandbox_view(tool, later.report, later.normalised_by, *args, **kwargs)
         return {**later.stated(), **answer} if isinstance(answer, dict) else answer
-
-    def _unread(view: Any) -> Any:
-        """``view`` for one that takes no ``normalised_by``."""
-
-        def _call(rep: Any, *args: Any, normalised_by: Any = None, **kwargs: Any) -> Any:
-            return view(rep, *args, **kwargs)
-
-        return _call
 
     def _report_section(
         section: str, offset: int = 0, limit: int = 0, detonation: str = ""
@@ -1852,7 +1872,7 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return _views(_unread(sandbox_report_section), detonation, section, offset, limit)
+        return _views("sandbox_report_section", detonation, section, offset, limit)
 
     def _processes(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
         """List the processes the sandbox observed, with their command lines.
@@ -1860,7 +1880,7 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return _views(sandbox_processes, detonation, offset, limit)
+        return _views("sandbox_processes", detonation, offset, limit)
 
     def _network(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
         """List the DNS lookups, hosts, HTTP requests and endpoints observed.
@@ -1868,7 +1888,7 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return _views(sandbox_network, detonation, offset, limit)
+        return _views("sandbox_network", detonation, offset, limit)
 
     def _signatures(
         offset: int = 0,
@@ -1892,7 +1912,7 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         per call from ``offset``, ``next_offset`` naming the next page.
         """
         return _views(
-            sandbox_signatures,
+            "sandbox_signatures",
             detonation,
             offset,
             limit,
@@ -1908,7 +1928,7 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return _views(sandbox_dropped_files, detonation, offset, limit)
+        return _views("sandbox_dropped_files", detonation, offset, limit)
 
     def _channels(
         name: str = "", offset: int = 0, limit: int = 0, detonation: str = ""
@@ -1918,7 +1938,7 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return _views(_unread(sandbox_channels), detonation, name, offset, limit)
+        return _views("sandbox_channels", detonation, name, offset, limit)
 
     def _registry_ops(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
         """List the registry keys the sample touched, with what it did to each.
@@ -1926,7 +1946,7 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return _views(sandbox_registry_ops, detonation, limit, offset)
+        return _views("sandbox_registry_ops", detonation, limit, offset)
 
     def _api_calls(
         process: str = "", name: str = "", offset: int = 0, limit: int = 0, detonation: str = ""
@@ -1940,7 +1960,7 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return _views(sandbox_api_calls, detonation, process or None, name or None, limit, offset)
+        return _views("sandbox_api_calls", detonation, process or None, name or None, limit, offset)
 
     def _mutexes(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
         """List the named mutexes the sample created or opened.
@@ -1948,7 +1968,7 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return _views(sandbox_mutexes, detonation, offset, limit)
+        return _views("sandbox_mutexes", detonation, offset, limit)
 
     def _services_and_tasks(
         offset: int = 0, limit: int = 0, detonation: str = ""
@@ -1958,7 +1978,7 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return _views(sandbox_services_and_tasks, detonation, offset, limit)
+        return _views("sandbox_services_and_tasks", detonation, offset, limit)
 
     sizer = _answer_sizer(container)
     return [

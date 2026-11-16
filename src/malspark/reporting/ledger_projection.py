@@ -2630,9 +2630,12 @@ def _sandbox_views(
     own answers.
     """
     if isinstance(sandbox_report, dict) and sandbox_report:
-        from malspark.providers.sandbox_tools import sandbox_network
+        from malspark.providers.sandbox_tools import sandbox_view
 
-        view = sandbox_network(sandbox_report)
+        # The report's build holds no reader of the report: its rows are the
+        # view's rows either way, as a reader's declaration decides only
+        # whether a kind laid out empty is named absent.
+        view = sandbox_view("sandbox_network", sandbox_report, None)
         if isinstance(view, dict) and not view.get("error"):
             return [(view, True)]
     return _ledger_views(_payloads(ledger, "sandbox_network"))
@@ -2678,11 +2681,11 @@ def network_from_sandbox_report(report: dict[str, Any] | None) -> NetworkIOCs | 
     block back, so what a probe sees and what the report prints cannot
     disagree.
     """
-    from malspark.providers.sandbox_tools import sandbox_network
+    from malspark.providers.sandbox_tools import sandbox_view
 
     if not report:
         return None
-    answer = sandbox_network(report)
+    answer = sandbox_view("sandbox_network", report, None)
     entry = build_entry(
         entry_id=format_entry_id(1),
         seq=1,
