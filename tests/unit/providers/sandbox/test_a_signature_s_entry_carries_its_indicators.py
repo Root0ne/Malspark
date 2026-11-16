@@ -188,6 +188,11 @@ class TestAGuestPidTheProcessStatesIsNotEchoed:
         assert indicator["target"] == {"id": "999", "not_listed": True}
         assert indicator["values"] == {"pid_target": "5555"}
 
+    def test_a_value_that_is_no_pid_beside_a_process_stating_none_stays(self) -> None:
+        task = _with_signature([{"procid": 84, "procid_target": 999, "pid_target": "n/a"}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["values"] == {"pid_target": "n/a"}
+
     def test_a_reader_declaring_no_such_field_keeps_every_value(self) -> None:
         from dataclasses import replace
 
