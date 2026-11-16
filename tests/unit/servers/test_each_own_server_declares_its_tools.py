@@ -8,13 +8,14 @@ under the tool's ``_meta``, its declaration (``malspark.tools.declared_facts``,
 The parity gate: for every tool of these servers, the facts the client reads
 from the server's own listing equal, field by field, the facts captured from
 the platform's shipped tables before any of them is taken out
-(``tests/fixtures/own_server_tool_facts.json``). The capture is frozen: it is
+(``data/own_server_tool_facts_v1.json``). The capture is frozen: it is
 never regenerated, so it keeps holding the servers to what the platform read
 before. A fact a server comes to declare is added to it by hand, with the
 change that declares it, and nothing else in it moves (T-418 PR6: Detect It
 Easy's ``runtime`` value, ILSpy's and GoReSym's ``runtimes``, unblob's
 extraction's ``outputs``). The tables are gone: what the platform reads of these servers is what
-each serves, and nothing else ships it.
+each serves. The capture ships as data, and is read only for an entry of one of these servers
+stored with no kind (``core.declared_reading.own_server_kind``).
 
 Each server is imported in-process and listed as a client's handshake lists
 it; no image is built and no program runs.
@@ -49,7 +50,7 @@ from malspark.tools.declared_facts import NO_EFFECT, tool_declaration
 
 ROOT = Path(__file__).resolve().parents[3]
 SERVICES = ROOT / "services"
-CAPTURED = ROOT / "tests" / "fixtures" / "own_server_tool_facts.json"
+CAPTURED = ROOT / "data" / "own_server_tool_facts_v1.json"
 SERVERS = (
     "analysis",
     "knowledge",
@@ -339,7 +340,7 @@ def test_a_changed_declaration_raises_the_generation_kept_declarations_hold_for(
 
     digest = hashlib.sha256(CAPTURED.read_bytes()).hexdigest()
     assert CAPTURE_AT_GENERATION.get(SERVED_DECLARATIONS_GENERATION) == digest, (
-        "a sidecar's declaration changed (tests/fixtures/own_server_tool_facts.json): raise "
+        "a sidecar's declaration changed (data/own_server_tool_facts_v1.json): raise "
         "tool_declarations.SERVED_DECLARATIONS_GENERATION and pin the capture's new sha256 "
         f"under it in CAPTURE_AT_GENERATION ({digest})"
     )
