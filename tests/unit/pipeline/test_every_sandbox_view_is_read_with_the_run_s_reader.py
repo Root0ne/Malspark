@@ -157,3 +157,30 @@ class TestThePackAndAnAnalystGiveOneRow:
 
         assert names.count(WRITTEN["name"]) == 1
         assert len(names) == len(set(names))
+
+
+class TestThePacksOwnReadsOfAViewAreTheRuns:
+    def _tools(self, tmp_path: Path, normalised_by: Any) -> dict[str, Any]:
+        from tests.unit.pipeline.test_triage_pack import SANDBOX_REPORT, _pack, _write
+        from tests.unit.tools.test_binary import _pe
+
+        path = _write(tmp_path, "s.exe", _pe())
+        result = _pack(
+            path, "pe", sandbox_report=SANDBOX_REPORT, sandbox_normalised_by=normalised_by
+        )
+        return {e.tool: e for e in result.entries}
+
+    def test_a_process_list_the_reader_never_fills_is_looked_up_for_no_command(
+        self, tmp_path: Path
+    ) -> None:
+        from malspark.core.report_formats import UNREAD_FORMAT
+
+        read = self._tools(tmp_path, ("box", UNREAD_FORMAT))
+
+        assert read["sandbox_processes"].structured.get("absent")
+        assert "lolbin_lookup" not in read
+
+    def test_a_process_list_the_reader_fills_is_looked_up(self, tmp_path: Path) -> None:
+        read = self._tools(tmp_path, None)
+
+        assert read["lolbin_lookup"].args == {"command_lines": ["rundll32.exe javascript:x"]}
