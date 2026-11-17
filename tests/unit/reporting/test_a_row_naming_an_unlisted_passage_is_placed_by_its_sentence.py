@@ -128,9 +128,8 @@ def test_the_round_places_a_row_of_either_answer_and_asks_nothing_of_its_form() 
 
 
 def test_a_model_s_own_key_of_the_same_name_places_nothing() -> None:
-    from malspark.reporting.section_agreement import _PLACED_FROM
-
-    row = {**_row(FIRST, "keep", ["ledger.1"]), "passage": "limitations", _PLACED_FROM: "x"}
+    # A key an answer writes is text, never the round's mark, whatever its spelling.
+    row = {**_row(FIRST, "keep", ["ledger.1"]), "passage": "limitations", "\x00placed_from": "x"}
     report = _background()
     done = _ask(report, _Reporter({"sentences": [row]}, {"sentences": [row]}))
     assert PLACED_BY_SENTENCE_CODE not in done.tally.by_code

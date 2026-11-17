@@ -6895,25 +6895,20 @@ def _qualified(sentence: str, facts: Sequence[Passage]) -> str:
     return f"{base}; {clauses} {cites}{end}"
 
 
+class _PlacedFrom:
+    """The key of a row placed by its sentence (:func:`_placed`) under which the passage it
+    named is kept: an object, not a text, so no key an answer writes is ever this one, and a
+    row is read the same wherever rows enter (T-736)."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<placed from>"
+
+
 # What a row placed by its sentence carries (:func:`_placed`): the passage it named. Set by
-# the round alone: the same key in a model's row is read past (:func:`_unplaced`).
-_PLACED_FROM = "\x00placed_from"
-
-
-def _unplaced(payload: Any) -> Any:
-    """``payload`` as the model wrote it, a key :data:`_PLACED_FROM` of its rows read past."""
-    rows = payload.get("sentences") if isinstance(payload, dict) else None
-    if not isinstance(rows, list) or not any(
-        isinstance(row, dict) and _PLACED_FROM in row for row in rows
-    ):
-        return payload
-    return {
-        **payload,
-        "sentences": [
-            {k: v for k, v in row.items() if k != _PLACED_FROM} if isinstance(row, dict) else row
-            for row in rows
-        ],
-    }
+# the round alone; an answer read from JSON holds text keys only, so it cannot carry it.
+_PLACED_FROM: Any = _PlacedFrom()
 
 
 def _fits_the_schema(row: Any) -> bool:
@@ -8854,7 +8849,7 @@ async def _ask(
         if not isinstance(parsed, dict):
             return None
         # A row naming a passage no list writes is placed by its sentence (T-736).
-        parsed = _placed(_unplaced(parsed), by_id, _located)
+        parsed = _placed(parsed, by_id, _located)
         # A retry answering only what it was asked keeps the first answer's rows
         # that passed every check; one that did not is the retry's to fix or leave,
         # but for a sentence the ledger's lines hold, whose refused row stays its last
