@@ -252,6 +252,13 @@ class TestAValueAtAnAddressTakesTheAddressRow:
         assert _link(answer, URL)["attribution"] == bc.NOT_ATTRIBUTED
         assert _link(answer, ADDRESS)["attribution"] == bc.NOT_ATTRIBUTED
 
+    def test_an_address_with_no_row_is_not_read_by_a_request_to_a_name(self) -> None:
+        report = _network(http=[{"host": HOST, "uri": PATH, "dst": ADDRESS, **UNLISTED_ROW}])
+        answer = bc.link_behaviour_to_code(report, None, _strings_of(ADDRESS))
+        network = ledger_projection.network_from_sandbox_report(report, None)
+        assert network is not None and all(ip.address != ADDRESS for ip in network.ips)
+        assert _link(answer, ADDRESS)["attribution"] == bc.NOT_ATTRIBUTED
+
     def test_a_value_only_listed_processes_made_stays_unlinked_whatever_its_address_says(
         self,
     ) -> None:
