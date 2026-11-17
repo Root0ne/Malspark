@@ -4459,39 +4459,8 @@ def _row_violations(
     by_id: dict[str, Passage],
     sentences_of: Callable[[Passage], _Sentences],
 ) -> list[Violation]:
-    """What is structurally wrong with one row, against the passages shown. A row copying the
-    whole of a passage of more than one sentence (``_Sentences.whole``) answers each of them:
-    it is refused for what a row answering any one of them the same way is refused for, so no
-    sentence escapes a check by standing in a longer copy (T-719)."""
-    passage = by_id.get(_form(row.passage))
-    span = (
-        _answered_span(sentences_of(passage), row.sentence, row.decision)
-        if passage is not None
-        else None
-    )
-    units = sentences_of(passage).units(span) if passage is not None and span else []
-    if len(units) < 2:
-        return _one_row_violations(row, index, by_id, sentences_of)
-    out: list[Violation] = []
-    for unit in units:
-        for violation in _one_row_violations(
-            _with_sentence(row, unit[2]),
-            index,
-            by_id,
-            sentences_of,
-        ):
-            if violation not in out:
-                out.append(violation)
-    return out
-
-
-def _one_row_violations(
-    row: AgreementRow,
-    index: int,
-    by_id: dict[str, Passage],
-    sentences_of: Callable[[Passage], _Sentences],
-) -> list[Violation]:
-    """What is structurally wrong with one row answering one sentence (:func:`_row_violations`)."""
+    """What is structurally wrong with one row, against the passages shown; a whole-field row
+    is checked as its rows sentence by sentence (:func:`_checked_rows`, T-719)."""
     path = f"sentences.{index}"
     passage = by_id.get(_form(row.passage))
     if passage is None or passage.kind not in (CLAIM_LED, SECTION_5):
@@ -8827,9 +8796,7 @@ async def _ask(
         except Exception:  # noqa: BLE001 — a row that fits no schema answers nothing
             return False
         found = _span(row)
-        return found is not None and any(
-            _ends_on_answer(found[0], unit[2]) for unit in located_in[found[0].id].units(found[1])
-        )
+        return found is not None and bool(_ends_on_answer(found[0], found[1][2]))
 
     def _sound(row: Any) -> bool:
         try:
