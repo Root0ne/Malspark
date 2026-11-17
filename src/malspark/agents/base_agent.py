@@ -2013,14 +2013,17 @@ def _field(
 _ONE_TECHNIQUE_RE = re.compile(ID_BODY, re.IGNORECASE)
 # What a TECHNIQUE line says to claim none.
 _NO_TECHNIQUE = frozenset({"", "NONE", "—", "–", "-"})
-# A line that opens with "none", or with a dash before a bracketed note, and
-# words after it ("none asserted", "none (capability only)", "— (provenance)"):
-# it claims none
-# whatever the words say, when no technique id and no catalogue technique name
-# stands anywhere on it; with an id or a name on it ("None; Process Injection
-# is likely"), the words may name one and the line is asked about, unless the
-# id stands in a closing note that says it is not asserted (``_read_noted_line``).
-_NONE_WITH_WORDS_RE = re.compile(r"none\b|[—–-]\s*+(?=\()", re.IGNORECASE)
+# A line that opens with NONE, the word the format declares for no technique,
+# claims none whatever note follows it ("none asserted", "NONE (persistence
+# covered by T1053.005)"); the line as written is the claim's note
+# (``technique_note``).
+_OPENS_WITH_NONE_RE = re.compile(r"none\b", re.IGNORECASE)
+# A line that opens with a dash before a bracketed note ("— (provenance)"): it
+# claims none when no technique id and no catalogue technique name stands
+# anywhere on it; with an id or a name on it the line is asked about, unless
+# the id stands in a closing note that says it is not asserted
+# (``_read_noted_line``).
+_NONE_WITH_WORDS_RE = re.compile(r"[—–-]\s*+(?=\()")
 _ANY_TECHNIQUE_ID_RE = re.compile(rf"(?<![\w.]){ID_BODY}(?!\w)", re.IGNORECASE)
 # What separates the ids of a list on one TECHNIQUE line: a comma, "and", both
 # ("T1027, T1140, and T1106"), a slash ("T1027 / T1140") or a semicolon
@@ -2423,10 +2426,10 @@ def _note_reading(note: str, technique_id: str = "") -> str | None:
     return _NOTE_NEUTRAL
 
 
-# A line that opens with "none" or a dash and closes with one note naming the
-# ids it sets aside ("none (T1547.001 not supported)").
+# A line that opens with a dash and closes with one note naming the ids it
+# sets aside ("— (T1547.001 not supported)").
 _NONE_WITH_NOTE_RE = re.compile(
-    rf"(?:none\b|[—–-])(?P<before>[^()]*+)\(\s*+(?P<ids>{ID_BODY}(?:\s*+(?:,|/|and)\s*+{ID_BODY})*+)"
+    rf"[—–-](?P<before>[^()]*+)\(\s*+(?P<ids>{ID_BODY}(?:\s*+(?:,|/|and)\s*+{ID_BODY})*+)"
     r"(?P<note>[^()]*+)\)\s*+\.?",
     re.IGNORECASE,
 )
@@ -2441,7 +2444,7 @@ def _read_noted_line(bare: str) -> tuple[str, ...] | None:
     other note, or anything else on the line, leaves it asked about. A negating
     note on a list where another id has no note of its own may be said of every
     id: asked. ``()`` when every id is set aside, which claims none, as a line
-    that opens with "none" and closes with a note setting its ids aside does.
+    that opens with a dash and closes with a note setting its ids aside does.
     """
     opening = _NONE_WITH_NOTE_RE.fullmatch(bare)
     if opening is not None:
@@ -2480,6 +2483,25 @@ def _read_noted_line(bare: str) -> tuple[str, ...] | None:
     return tuple(dict.fromkeys(i for i, reading in readings if reading != _NOTE_NEGATED))
 
 
+def _bare_technique_line(text: str) -> str:
+    """A TECHNIQUE line as the reader reads it: its block separator, catalogue names and marks aside."""
+    return _bare_technique(_without_catalogue_names(_TRAILING_BLOCK_SEPARATOR_RE.sub("", text)))
+
+
+def technique_note(line: str) -> str | None:
+    """The note a TECHNIQUE line that opens with NONE writes, kept on the claim's record.
+
+    The line as written, when it opens with NONE and says more than NONE;
+    ``None`` for any other line. :func:`read_technique_line` reads such a line
+    as no technique and asks nothing about it, so the note is kept here.
+    """
+    text = str(line or "").strip()
+    bare = _bare_technique_line(text)
+    if bare.upper() in _NO_TECHNIQUE or not _OPENS_WITH_NONE_RE.match(bare):
+        return None
+    return text
+
+
 def read_technique_line(line: str) -> tuple[tuple[str, ...], str | None]:
     """``(technique ids, unread line)`` for one claim's TECHNIQUE line as written.
 
@@ -2495,19 +2517,23 @@ def read_technique_line(line: str) -> tuple[tuple[str, ...], str | None]:
     catalogue's own name for it, in brackets or not ("T1027 (Obfuscated Files
     or Information)", "T1106 Native API"), is that id: the name names the id
     and decides nothing. Ids separated by commas, "and", slashes or semicolons
-    are a list. A line that opens with "none", or with a dash before a
-    bracketed note, and holds no technique id ("none asserted", "— (provenance)")
-    claims none. An id with a closing note in brackets is read by what the note
-    says (``_read_noted_line``): a note whose every content word is the id's own
+    are a list. A line that opens with NONE claims none, whatever note follows
+    it ("none (T1055 covers the observed injection)", "None; Process Injection
+    is likely"): the note is the claim's own (:func:`technique_note`) and no
+    question is asked. A line that opens with a dash before a bracketed note
+    and holds no technique id ("— (provenance)") claims none. An id with a
+    closing note in brackets is read by what the note says
+    (``_read_noted_line``): a note whose every content word is the id's own
     vendored word or a reference or layout word ("T1071.001 (configured
     channel)", "(one per command, as listed)") leaves the id read; a note that
     says the id is not asserted, followed only by where or by what ("T1547.001
-    (not supported by the traced code)", "none (T1055 withdrawn)"), claims none
-    of it; any other note keeps the line whole and asked about.
+    (not supported by the traced code)"), claims none of it; any other note
+    keeps the line whole and asked about, an id first and a doubt after it
+    ("T1129 (lead only)") as much as any.
     """
     text = str(line or "").strip()
-    bare = _bare_technique(_without_catalogue_names(_TRAILING_BLOCK_SEPARATOR_RE.sub("", text)))
-    if bare.upper() in _NO_TECHNIQUE:
+    bare = _bare_technique_line(text)
+    if bare.upper() in _NO_TECHNIQUE or _OPENS_WITH_NONE_RE.match(bare):
         return (), None
     if (
         _NONE_WITH_WORDS_RE.match(bare)
@@ -2826,9 +2852,8 @@ def read_claim_blocks(text: str, *, require_evidence: bool = False) -> ClaimRead
         # what the analyst was asked to rewrite it as — so each id is checked
         # as a technique on its own claim.
         technique_match = _field(tail, _LINE_TECHNIQUE_RE, _BLOCK_TECHNIQUE_LINE_RE)
-        technique_ids, technique_line = read_technique_line(
-            technique_match.group(1) if technique_match else ""
-        )
+        technique_written = technique_match.group(1) if technique_match else ""
+        technique_ids, technique_line = read_technique_line(technique_written)
 
         for technique_id in technique_ids or (None,):
             read_claim = ClaimEvidence(
@@ -2839,6 +2864,7 @@ def read_claim_blocks(text: str, *, require_evidence: bool = False) -> ClaimRead
                 confidence=confidence,
                 technique_id=technique_id,
                 technique_line=technique_line,
+                technique_note=technique_note(technique_written),
                 heading_note=note,
             )
             # The block it was read from, so blocks are counted as written,

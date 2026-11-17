@@ -587,7 +587,8 @@ CLAIM_WITHOUT_CONFIDENCE_CODE = "isr.claim_without_confidence"
 # it, and the analyst is asked once for ids alone. A list of ids separated by
 # commas, "and", slashes or semicolons is read (``base_agent.read_technique_line``)
 # and not asked, and so is an id with a closing note in brackets that decides
-# nothing or says the id is not asserted.
+# nothing or says the id is not asserted, and a line that opens with NONE,
+# whatever note follows it.
 TECHNIQUE_LINE_UNREAD_CODE = "isr.technique_line_unread"
 # Claim headings under the DISPUTES section, beside the analyst's own claims.
 # Not read as its own: they may be a peer's claims it quotes, or its own

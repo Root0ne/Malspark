@@ -250,6 +250,16 @@ class ClaimEvidence(BaseModel):
         default=None,
         description="The claim's TECHNIQUE line as written, when no technique id could be read.",
     )
+    # The claim's TECHNIQUE line as written, when it opens with NONE and a note
+    # follows ("none (T1055 covers the observed injection)"): the line claims
+    # no technique and is asked nothing (``base_agent.technique_note``); the
+    # note is kept beside the claim, read by no check, and left out of the
+    # serialised claim when there is none.
+    technique_note: str | None = Field(
+        default=None,
+        description="The claim's TECHNIQUE line as written, when it opens with NONE and says more.",
+        exclude_if=lambda value: value is None,
+    )
     # The note the claim's heading wrote between its number and its delimiter
     # (``CLAIM 2 [REVISED — retracts claim 5]: …``), as written, brackets and
     # all: the model's own words on what the claim is to the debate. Kept
