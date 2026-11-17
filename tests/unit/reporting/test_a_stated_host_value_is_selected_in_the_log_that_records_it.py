@@ -8,7 +8,9 @@ file and a folder in ``file_event``, a stream in ``create_stream_hash``, a task
 in event 4698, a service in event 7045, a pipe in ``pipe_created``, a registry
 key in ``registry_event``. A generic name (a task called like an ordinary
 updater) never forms a selection alone, and the report says so when nothing
-else is left.
+else is left. A selection the rule can match on alone holds a value of its own:
+a value every Windows host holds is never selected, and a folder a selected
+file lies in is left out for the file.
 """
 
 from __future__ import annotations
@@ -83,6 +85,90 @@ class TestTheRunsValues:
         assert drafts["create_stream_hash"]["detection"] == {
             "selection_stream": {"TargetFilename|endswith": [":wtfbbq"]},
             "condition": "selection_stream",
+        }
+
+    def test_a_folder_a_selected_file_lies_in_is_left_out_for_the_file(self) -> None:
+        drafts = _by_source(
+            _report(
+                [
+                    ("file path", "%APPDATA%\\Microsoft\\Word\\STARTUP\\ReadMe7731.txt"),
+                    ("folder", "C:\\Users\\Admin\\AppData\\Roaming\\Microsoft\\Word\\STARTUP"),
+                ]
+            )
+        )
+
+        assert drafts["file_event"]["detection"] == {
+            "selection_file": {"TargetFilename|endswith": ["\\Word\\STARTUP\\ReadMe7731.txt"]},
+            "condition": "selection_file",
+        }
+
+    def test_an_own_folder_no_other_value_narrows_stands_alone(self) -> None:
+        drafts = _by_source(_report([("folder", "Custom_update")]))
+
+        assert drafts["file_event"]["detection"] == {
+            "selection_folder": {"TargetFilename|contains": ["\\Custom_update\\"]},
+            "condition": "selection_folder",
+        }
+
+    def test_a_published_file_named_as_windows_names_one_keeps_its_folder(self) -> None:
+        # The table publishes the path; its file name alone is a program Windows
+        # ships, so the selection keeps the path past the drive and the profile.
+        report = _report([("file path", "C:\\Users\\Admin\\Desktop\\cmd.exe")])
+
+        drafts = _by_source(report)
+        assert drafts["file_event"]["detection"] == {
+            "selection_file": {"TargetFilename|endswith": ["\\Desktop\\cmd.exe"]},
+            "condition": "selection_file",
+        }
+        assert report.drafts_not_built == []
+
+    def test_a_key_a_selected_subkey_lies_under_is_left_out_for_the_subkey(self) -> None:
+        drafts = _by_source(
+            _report(
+                [
+                    ("registry key", "HKCU\\Software\\ExampleVendor7731"),
+                    ("registry key", "HKCU\\Software\\ExampleVendor7731\\Settings"),
+                ]
+            )
+        )
+
+        assert drafts["registry_event"]["detection"] == {
+            "selection_registry": {
+                "TargetObject|contains": ["\\Software\\ExampleVendor7731\\Settings"]
+            },
+            "condition": "selection_registry",
+        }
+
+    def test_a_folder_and_its_file_in_another_case_select_on_the_file(self) -> None:
+        drafts = _by_source(
+            _report(
+                [
+                    ("folder", "C:\\ProgramData\\Custom_Update"),
+                    ("file path", "C:\\ProgramData\\custom_update\\a7731.dat"),
+                ]
+            )
+        )
+
+        assert drafts["file_event"]["detection"] == {
+            "selection_file": {"TargetFilename|endswith": ["\\custom_update\\a7731.dat"]},
+            "condition": "selection_file",
+        }
+
+    def test_sibling_keys_are_each_selected(self) -> None:
+        drafts = _by_source(
+            _report(
+                [
+                    ("registry key", "HKCU\\Software\\ExampleVendor7731\\Setting1"),
+                    ("registry key", "HKCU\\Software\\ExampleVendor7731\\Setting10"),
+                ]
+            )
+        )
+
+        assert drafts["registry_event"]["detection"]["selection_registry"] == {
+            "TargetObject|contains": [
+                "\\Software\\ExampleVendor7731\\Setting1",
+                "\\Software\\ExampleVendor7731\\Setting10",
+            ]
         }
 
     def test_a_generic_task_name_alone_makes_no_selection_and_says_why(self) -> None:

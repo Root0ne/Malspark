@@ -1265,18 +1265,18 @@ class _Analyst:
         the line linking the bundle; the count starts over for the next section.
 
         It also counts the sentences the agreement question left out of the passages the
-        section prints (``section_agreement.DROPPED_CODE``, :meth:`_prints`): the conclusion's
+        section prints (``section_agreement.LEFT_OUT_CODES``, :meth:`_prints`): the conclusion's
         and the limitations', a capability bullet's, a value cell's, a section 5 passage's, a
         step's or a procedure's, wherever the section prints them, a bullet left with no
         sentence among them; nothing else (T-706).
         """
-        from malspark.reporting.section_agreement import DROPPED_CODE
+        from malspark.reporting.section_agreement import LEFT_OUT_CODES
 
         printing = {key, *self.printing}
         left = self.left + sum(
             1
             for row in self.ctx.unresolved
-            if row.get("code") == DROPPED_CODE
+            if row.get("code") in LEFT_OUT_CODES
             and any(
                 (subject := str(row.get("subject") or "")) == p or subject.startswith(f"{p}.")
                 for p in printing

@@ -81,10 +81,11 @@ def _digest(text: str) -> str:
 
 class TestOneDetonation:
     # The drafts as 8fe0ba5db writes them for this report: a run with one
-    # detonation drafts the same bytes.
+    # detonation drafts the same bytes. The Sigma draft has no ``tags`` key
+    # since no technique names a value it selects (T-714).
     PINNED = {
         "yara": "096459f5f57d2b9299a8fcc16f56d485e47a43d751194b83509d897ca5c10873",
-        "sigma": "6d015935953fcdf5787f7ddc94b69307149eef35798e410bb2c4e37978f0208c",
+        "sigma": "e7d6d0681c9e435315aac28986751e9a1e8bcd8dff9fa2db55067d0b02a41df1",
         "suricata": "77aaea61719764d944e57ddd15162679f9f41ba58e17b13c4f2035c981bfd840",
     }
 

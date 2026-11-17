@@ -380,6 +380,12 @@ class ProcessNode(BaseModel):
     marked: bool = Field(default=False, exclude_if=lambda value: not value)
     children: list[ProcessNode] = Field(default_factory=list)
     injected_into: list[int] = Field(default_factory=list)
+    # The task the report lists the process in, where it holds several whose
+    # ids are each the task's own, and the guest's pid an answer of the run
+    # states for it (``schemas.process_identity``). Left out of the dump when
+    # not stated, as on a report stored before the fields existed.
+    task: str = Field(default="", exclude_if=lambda value: not value)
+    guest_pid: str = Field(default="", exclude_if=lambda value: not value)
 
 
 class RegistryMod(BaseModel):
@@ -804,6 +810,10 @@ class CapabilityCell(BaseModel):
     # is one source however many agents cite it. Empty on rows built without
     # the ledger.
     sources: list[str] = Field(default_factory=list)
+    # The sources every statement naming it cites to state an absence
+    # (``validation.technique_absence_sources``), kept among ``sources`` and
+    # printed apart from its evidence (``reporting.technique_evidence``).
+    absence_sources: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
     # The technique's evidence, the one set every surface that shows the
     # technique prints (``reporting.technique_evidence``): the entries cited by
     # the statements that name it (its claims and findings, a map the judge
@@ -853,9 +863,10 @@ class TTPMapping(BaseModel):
     # See ``CapabilityCell.evidence_roots`` and ``roots_not_read``.
     evidence_roots: list[str] = Field(default_factory=list)
     roots_not_read: list[str] = Field(default_factory=list)
-    # See ``CapabilityCell.sources``, ``independent_sources``, ``source_kinds``
-    # and ``support``.
+    # See ``CapabilityCell.sources``, ``absence_sources``, ``independent_sources``,
+    # ``source_kinds`` and ``support``.
     sources: list[str] = Field(default_factory=list)
+    absence_sources: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
     # See ``CapabilityCell.evidence_ids``.
     evidence_ids: list[str] | None = Field(default=None, exclude_if=lambda value: value is None)
     independent_sources: int = 0
@@ -889,7 +900,9 @@ class AttckDefenseRow(BaseModel):
     Read from the cached ATT&CK bundles with no model call
     (``memory.attck_defense``); ``evidence_ids`` are the technique's evidence
     (``reporting.technique_evidence``), so the row cites what the technique
-    rests on, and ``sandbox_items`` the sandbox items among its sources.
+    rests on, ``sandbox_items`` the sandbox items among its sources, and
+    ``absence_sources`` the sources its statements cite only to state an
+    absence, printed apart.
     """
 
     model_config = _STRICT_CONFIG
@@ -901,6 +914,7 @@ class AttckDefenseRow(BaseModel):
     data_components: list[AttckLink] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     sandbox_items: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    absence_sources: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
 # ---------------------------------------------------------------------------
@@ -1008,6 +1022,19 @@ class SampleString(BaseModel):
 RuleClause = Literal["sha256", "imphash", "strings"]
 
 
+class ValueLeftOut(BaseModel):
+    """A value a built draft's selection left out, and why (``detection_signatures``).
+
+    Kept on the rule's record, never printed: ``why`` is the catalogue's reason
+    or the selected value it is taken out for (``selection_specific``).
+    """
+
+    model_config = _STRICT_CONFIG
+
+    value: str
+    why: str
+
+
 class DetectionRule(BaseModel):
     """Auto-generated detection content with the body kept as plain text."""
 
@@ -1040,6 +1067,12 @@ class DetectionRule(BaseModel):
     # the body is left out. Absent on a rule stored before the field existed.
     printed: bool | None = Field(default=None, exclude_if=lambda value: value is None)
     standing: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    # Each value narrowing took out of a built Sigma draft, with why
+    # (``detection_signatures.selection_specific``). Left out of the stored row
+    # when empty.
+    values_left_out: list[ValueLeftOut] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
 
 
 class DraftNotBuilt(BaseModel):

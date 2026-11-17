@@ -206,6 +206,8 @@ def build_capability_matrix(
         row = corroboration_row(rows.get(tid.upper())) if rows else {}
         # A technique the judge mapped rests on the entries it mapped it to.
         held = list(row.get("sources") or []) or list(info.get("mapped_entries") or [])
+        # The sources cited only to state an absence: shown apart from its evidence.
+        absent = [s for s in row.get("absence_sources") or [] if s in held]
         evidence_ids = _technique_evidence(info, held, entry_order)
         support = str(row.get("support") or "")
         # Corroboration is two sayers (analyst layers in statements of their
@@ -353,6 +355,7 @@ def build_capability_matrix(
                 evidence_roots=list(counted.roots),
                 roots_not_read=list(counted.not_read),
                 sources=held,
+                absence_sources=absent,
                 evidence_ids=evidence_ids,
                 independent_sources=int(row.get("independent_sources", 0) or 0),
                 is_corroborated=corroborated,
@@ -384,6 +387,7 @@ def build_capability_matrix(
                 evidence_roots=list(counted.roots),
                 roots_not_read=list(counted.not_read),
                 sources=held,
+                absence_sources=absent,
                 evidence_ids=evidence_ids,
                 independent_sources=int(row.get("independent_sources", 0) or 0),
                 source_kinds=dict(row.get("source_kinds") or {}),

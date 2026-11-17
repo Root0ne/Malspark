@@ -65,7 +65,8 @@ class TestTheRecord:
         assert record is not None
         (malware,) = record["bundle"]["objects"]
         assert malware["created"].startswith("2026-09-22T23:30:00")
-        assert record["bundle"]["spec_version"] == "2.1"
+        assert "spec_version" not in record["bundle"]
+        assert malware["spec_version"] == "2.1"
         assert record["labels"] == {"malware--1": malware["id"]}
 
     def test_no_judge_bundle_is_no_record(self) -> None:

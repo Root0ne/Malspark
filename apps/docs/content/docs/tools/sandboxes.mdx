@@ -107,7 +107,19 @@ flows to those addresses the same way. A flow to an address several names
 resolved to counts for each of them, which errs toward hiding nothing. A dropped file's guest path is shown where the reader declares the field its
 source writes it under (`Reading.guest_path_fields`: a Triage task report's
 `path`); a field of that name a reader does not declare, such as CAPE's host
-storage path, is not shown. The document holds each such block once per
+storage path, is not shown. Each row keeps the `kind` and `origin` it states
+(a written file or a dumped region, and where it came from), and names its
+writer by the process list's own id, read from every field the reader
+declares holds it (`Reading.dropped_writer_fields`: a Triage task report's
+`procid`; a reader that declares none is read by `pids`, `pid` and
+`process_id`), with the `task` the reader listed it in and, where the reader
+declares the field its source writes the writer's guest pid under
+(`Reading.dropped_guest_pid_fields`: a Triage task report's `pid`) and it is
+another number, that pid as `guest_pid`; a row naming its writer by the guest
+pid alone is named by it. The pack reads every sandbox view with the job's
+reader, as an agent's call of it does. A long answer is sized by the job's
+answer guardrail as every other view's is: the rows it does not show are
+counted, and `offset` and `limit` page them. The document holds each such block once per
 task, by reference (`{"task_report": ..., "block_rows": <block>}`), and every
 reader reads it as the block's items: each signature, flow or other item is its
 own row naming its task, built when it is read, so `offset` and `limit` page
@@ -153,8 +165,11 @@ API under `call.api` and an indicator's `category`; a Triage overview
 signature's marks and the indicators of every task report's signature of the
 same name, each read in its task, naming the process that acted by `procid`
 and the one acted on by `procid_target`. A Triage indicator's `pid` and
-`pid_target` are the guest's pids, never the report's process id: they stay
-among its values and name no process. A mapped format declares its own
+`pid_target` are the guest's pids, never the report's process id: they name
+no process, and stay among its values except where one is the guest pid of the
+process the indicator resolves to, which that process states once
+(`IndicatorFields.process_guest_pid` and `.target_guest_pid`, the reader's
+declaration). A mapped format declares its own
 through `field_names`: `signatures.platform_indicators` names the field of a
 signature holding its indicators, and
 `signatures.platform_indicators.process`, `.target`, `.event` and

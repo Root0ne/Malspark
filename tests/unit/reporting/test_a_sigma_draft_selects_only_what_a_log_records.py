@@ -8,7 +8,9 @@ description is the sandbox's reading of what it saw, not a field of any process
 or registry event. A selection is now built only from the registry keys and
 images a sandbox watched or the run publishes, each whole; the signatures move
 to the rule's description; and with no such value left there is no Sigma draft,
-and the report and the bundle say why.
+and the report and the bundle say why. A key a sandbox watched is held to the
+catalogue as a stated one is: a key every Windows installation has (an autorun
+key) would match every host's own writes, and is never selected on.
 """
 
 from __future__ import annotations
@@ -53,6 +55,8 @@ LONG_SIGNATURES = [
 ]
 # The three a later run's sandbox recorded.
 SHORT_SIGNATURES = LONG_SIGNATURES[:2] + LONG_SIGNATURES[3:4]
+# The autorun key every Windows installation has.
+RUN_KEY = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 # A key the sandbox watched, longer than 80 characters.
 WATCHED_KEY = (
     "Software\\ExampleVendor\\ExampleProduct\\Components\\{0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0}"
@@ -64,6 +68,7 @@ def _report(
     signatures: list[tuple[str, str, int]],
     keys: list[str] | None = None,
     verdict: str = "Malware",
+    value_name: str | None = "x",
 ) -> MalwareReport:
     report = MalwareReport(
         identity=SampleIdentity(hashes=FileHashes(sha256="d" * 64)),
@@ -75,7 +80,7 @@ def _report(
                 for name, text, severity in signatures
             ],
             registry_mods=[
-                RegistryMod(hive="HKLM", key=key, value_name="x", operation="create")
+                RegistryMod(hive="HKLM", key=key, value_name=value_name, operation="create")
                 for key in keys or []
             ],
         ),
@@ -172,3 +177,26 @@ class TestNoValueALogRecords:
         report = _report([], keys=[WATCHED_KEY])
 
         assert "drafts_not_built" not in report.model_dump()
+
+
+class TestAKeyEveryInstallationHas:
+    def test_a_watched_autorun_key_alone_makes_no_draft_and_says_why(self) -> None:
+        # A record naming neither the value written nor its data.
+        report = _report([], keys=[RUN_KEY], value_name=None)
+
+        assert _sigma(report) is None
+        (item,) = report.drafts_not_built
+        assert item.why == (
+            "no registry key, image path, file, folder, stream, scheduled task, service or named "
+            "pipe that this run publishes or a sandbox watched is left to select on; the value a "
+            "sandbox watched or the run publishes is never selected on: a registry key or value "
+            "every Windows installation has"
+        )
+
+    def test_a_vendor_key_beside_it_is_selected_alone(self) -> None:
+        rule = _sigma(_report([], keys=[RUN_KEY, WATCHED_KEY], value_name=None))
+
+        assert yaml.safe_load(rule.body)["detection"] == {
+            "selection_registry": {"TargetObject|contains": ["\\" + WATCHED_KEY]},
+            "condition": "selection_registry",
+        }

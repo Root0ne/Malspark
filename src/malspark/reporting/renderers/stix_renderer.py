@@ -87,8 +87,7 @@ from malspark.reporting.models import (
 from malspark.reporting.stated_host_values import ANALYSIS_SOURCE as ANALYSIS_STATED_SOURCE
 from malspark.reporting.stated_host_values import listed_only
 from malspark.reporting.technique_evidence import (
-    NO_LEDGER_ENTRY,
-    evidence_words,
+    evidence_note,
     technique_evidence_ids,
     technique_sandbox_items,
 )
@@ -101,9 +100,9 @@ from malspark.schemas.sandbox_report import (
     PLACED_OUTSIDE,
     PLACED_UNSETTLED,
     PLACED_UNSTATED,
-    SampleTree,
+    ProcessTrees,
     process_placement,
-    sample_process_tree,
+    sample_process_trees,
 )
 from malspark.schemas.stix_models import (
     ATTACK_PATTERN_NAMESPACE,
@@ -2002,7 +2001,9 @@ def _with_record_evidence(
     The sample's ``uses`` edge to a published technique gets that technique's
     evidence (``technique_evidence``) as the ledger holds it, with a note
     naming the sandbox items among its sources, or, where its statements cite
-    no ledger entry and it has no item, the note saying so. The malware
+    no ledger entry and it has no item, the note saying so, and the sources
+    its statements cite only to state an absence after them
+    (``technique_evidence.evidence_note``). The malware
     object this export minted keeps the family ids it was minted with (already
     checked against the ledger). An indicator gets the ids the
     report's IOC table ties to the values its pattern compares
@@ -2012,7 +2013,8 @@ def _with_record_evidence(
     """
     by_pattern: dict[str, list[str]] = {}
     # The note on an edge: the sandbox items beside the set, named apart, or,
-    # with neither entry nor item, that no ledger entry is cited.
+    # with neither entry nor item, that no ledger entry is cited; then the
+    # sources cited only to state an absence.
     notes: dict[str, str] = {}
     for mapping in getattr(report, "ttp_mappings", None) or []:
         tid = str(getattr(mapping, "technique_id", "") or "").strip().upper()
@@ -2027,10 +2029,9 @@ def _with_record_evidence(
         items = technique_sandbox_items(mapping)
         if refs:
             by_pattern[_pattern_id_for(tid)] = refs
-        if items:
-            notes[_pattern_id_for(tid)] = evidence_words((), items)
-        elif not ids:
-            notes[_pattern_id_for(tid)] = NO_LEDGER_ENTRY
+        noted = evidence_note(ids, items)
+        if noted:
+            notes[_pattern_id_for(tid)] = noted
     out: list[Any] = []
     for obj in objects:
         if EVIDENCE_REFS_PROPERTY not in type(obj).model_fields:
@@ -3434,6 +3435,11 @@ UNATTRIBUTED_HOST_ROW = "the sandbox report does not say which process {did} it"
 HOST_ROW_OUTSIDE_THE_TREE = (
     "the sandbox report attributes it to a process outside the sample's process tree"
 )
+# A record naming its process by a number no listed process answers to, as
+# the report's own id or as the guest's pid: no tree was tested against it.
+HOST_ROW_UNLISTED = (
+    "the sandbox report names the process that {did} it by a number its process list does not hold"
+)
 # The host kinds that answer for the process that made them.
 HOST_KINDS = frozenset({"hash", "path", "registry", "mutex"})
 # Why a host row the sandbox recorded is not published on its own: the guest
@@ -3469,16 +3475,26 @@ _PID_KEYS = ("pid", "process_id", "pids")
 _PROCESS_KEYS = ("process", "process_name", "processes")
 
 
-def _not_the_sample_s(record: Any, tree: SampleTree, did: str) -> str:
+def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
     """Why a sandbox record is not the sample's, or ``""`` when a process of its tree made it.
 
-    Decided by the record's pid when it names one; its image name is read only
-    when it names no pid, because a common image the tree also runs
+    Decided by the record's pid when it names one, read as one process (its
+    task where the record states one, the report's id or the guest's pid,
+    :meth:`ProcessTrees.place`) against its task's tree; its image name is
+    read only when it names no pid, because a common image the tree also runs
     (``explorer.exe``) would otherwise attribute every record of that name. A
-    record naming a pid the listing does not settle (:class:`SampleTree`) is
-    unattributed.
+    record naming a pid the listing does not settle is unattributed, and one
+    naming a number no listed process answers to says so where every listed
+    process it could name (its task's, where it states one) states its guest
+    pid, and is unattributed where one of them states none.
     """
-    pids, names = tree.pids, tree.names
+    from malspark.schemas.sandbox_report import (
+        WRITER_IN_TREE,
+        WRITER_UNLISTED,
+        WRITER_UNSETTLED,
+    )
+
+    names = trees.names
     if not isinstance(record, dict):
         return UNATTRIBUTED_HOST_ROW.format(did=did)
     by_pid: list[str] = []
@@ -3488,9 +3504,20 @@ def _not_the_sample_s(record: Any, tree: SampleTree, did: str) -> str:
             if one not in (None, ""):
                 by_pid.append(str(one).strip())
     if by_pid:
-        if any(pid in tree.unsettled for pid in by_pid):
+        task = str(record.get("task") or "") or None
+        places = {trees.place(pid, task) for pid in by_pid}
+        if WRITER_UNSETTLED in places:
             return UNATTRIBUTED_HOST_ROW.format(did=did)
-        return "" if any(pid in pids for pid in by_pid) else HOST_ROW_OUTSIDE_THE_TREE
+        if WRITER_IN_TREE in places:
+            return ""
+        if places == {WRITER_UNLISTED}:
+            # A number no listed process answers to is one of none only where
+            # every process the record could name states its guest pid; else
+            # it may be the guest pid of one that states none.
+            if trees.identities.states_every_guest_pid(task):
+                return HOST_ROW_UNLISTED.format(did=did)
+            return UNATTRIBUTED_HOST_ROW.format(did=did)
+        return HOST_ROW_OUTSIDE_THE_TREE
     by_name: list[str] = []
     for key in _PROCESS_KEYS:
         value = record.get(key)
@@ -3516,7 +3543,7 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
         if dynamic is None:
             return {}
         identity = _field(report, "identity")
-        tree = sample_process_tree(
+        tree = sample_process_trees(
             list(_field(dynamic, "process_tree") or []),
             str(_field(identity, "file_name") or ""),
             str(_field(_field(identity, "hashes"), "sha256") or ""),

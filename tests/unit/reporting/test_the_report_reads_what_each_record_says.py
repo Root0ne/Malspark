@@ -160,11 +160,15 @@ def _sigma(payload_published: bool) -> str:
     return rules[0].body
 
 
-def test_the_sigma_image_is_the_payload_that_runs() -> None:
+def test_the_sigma_selects_the_payload_that_runs_where_the_event_records_it() -> None:
     import yaml
 
-    detection = yaml.safe_load(_sigma(payload_published=True))["detection"]
-    assert detection["selection_persistence"] == {"Image|endswith": ["\\evil.exe"]}
+    body = yaml.safe_load(_sigma(payload_published=True))
+    # A registry event records the data written, and its Image is the
+    # process that wrote it: the payload is selected in the data.
+    assert body["logsource"]["category"] == "registry_event"
+    assert body["detection"]["selection_payload"] == {"Details|contains": ["\\evil.exe"]}
+    assert "selection_persistence" not in body["detection"]
 
 
 def test_a_registry_target_is_never_an_image() -> None:

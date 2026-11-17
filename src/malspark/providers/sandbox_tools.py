@@ -188,12 +188,7 @@ def _fills(normalised_by: Sequence[str] | None) -> frozenset[str] | None:
 
 def _guest_path_fields(normalised_by: Sequence[str] | None) -> tuple[str, ...]:
     """The dropped-file fields the job's reader declares hold a guest path (``Reading``)."""
-    if not normalised_by or len(normalised_by) not in (2, 3):
-        return ()
-    from malspark.schemas.sandbox_report import normaliser_reading
-
-    provider, source_format, *rest = (str(part or "").strip() for part in normalised_by)
-    reading = normaliser_reading(source_format, provider, rest[0] if rest else "")
+    reading = _reading(normalised_by)
     return reading.guest_path_fields if reading is not None else ()
 
 
@@ -584,15 +579,17 @@ class SignatureIndicators:
     def __init__(self, report: dict[str, Any] | None, normalised_by: Sequence[str] | None) -> None:
         reading = _reading(normalised_by)
         self.fields = getattr(reading, "signature_indicators", None)
-        self._rows: dict[tuple[str, str], list[dict[str, Any]]] = {}
-        self._tasks_of: dict[str, set[str]] = {}
+        from malspark.schemas.process_identity import ProcessIdentities, ProcessKey
+
+        # Every listed process by its task and the report's id, the guest's
+        # pid an alias (``schemas.process_identity``), and the rows of each.
+        self._identities = ProcessIdentities()
+        self._rows: dict[ProcessKey, list[dict[str, Any]]] = {}
         self._own: dict[str, list[list[Any]]] = {}
         self._task_rows: dict[str, list[tuple[str, list[Any]]]] = {}
         self._names: list[str] = []
         self._task_only: list[str] = []
         self._resolved: dict[str, tuple[list[dict[str, Any]], list[int]]] = {}
-        # The report's process ids of each guest's pid a process row states.
-        self._ids_of_guest: dict[str, dict[str, None]] = {}
         self._launched = False
         if self.fields is None or not isinstance(report, dict):
             self.fields = None
@@ -601,18 +598,19 @@ class SignatureIndicators:
         from malspark.schemas.signature_indicators import indicators_of
 
         processes = _list_at(report, "processes") or []
-        for proc in processes:
-            if not isinstance(proc, dict):
-                continue
-            procid = next((p for key in PROCESS_ID_KEYS if (p := pid_of(proc.get(key)))), "")
-            if procid:
-                task = _task_of(proc)
-                self._rows.setdefault((task, procid), []).append(proc)
-                guest = self._guest_pid(proc)
-                if guest and guest != procid:
-                    self._ids_of_guest.setdefault(guest, {})[procid] = None
-                self._tasks_of.setdefault(procid, set()).add(task)
-        self._listing = {task for task, _procid in self._rows}
+        listed = [proc for proc in processes if isinstance(proc, dict)]
+        keys = self._identities.add_listing(
+            (
+                next((p for key in PROCESS_ID_KEYS if (p := pid_of(proc.get(key)))), ""),
+                _task_of(proc),
+                self._guest_pid(proc),
+            )
+            for proc in listed
+        )
+        for key, proc in zip(keys, listed, strict=True):
+            if key is not None:
+                self._rows.setdefault(key, []).append(proc)
+        self._listing = {key.task for key in self._rows}
         self._launched = _launcher_attributed(report, processes)
         fields = self.fields
         named: dict[str, None] = {}
@@ -646,14 +644,19 @@ class SignatureIndicators:
 
     def _process(self, procid: str, task: str) -> dict[str, Any]:
         """The process ``procid`` names in ``task`` (any task where none is stated), as listed."""
+        from malspark.schemas.process_identity import ProcessKey
+
         out: dict[str, Any] = {"id": procid}
+        # The report's own id, never a guest's pid: an indicator names its
+        # processes by the process list's ids.
+        held = self._identities.keys(procid, task or None, alias=False)
         if not task:
-            tasks = self._tasks_of.get(procid) or set()
+            tasks = {key.task for key in held}
             if len(tasks) > 1:
                 out["not_settled"] = INDICATOR_PROCESS_IN_TASKS.format(count=len(tasks))
                 return out
             task = next(iter(tasks), "")
-        listed = self._rows.get((task, procid)) or []
+        listed = self._rows.get(ProcessKey(task, procid)) or []
         if not listed:
             # Said only where the task lists processes at all.
             if (task in self._listing) if task else bool(self._rows):
@@ -705,7 +708,7 @@ class SignatureIndicators:
 
     def process_ids_of_guest(self, pid: str) -> list[str]:
         """The report's process ids of the processes whose guest's pid is ``pid``."""
-        return list(self._ids_of_guest.get(pid, {}))
+        return self._identities.aliased(pid)
 
     def _stated(self, task: str, indicator: dict[str, Any], times: int) -> dict[str, Any]:
         """One indicator as the entry states it (:data:`INDICATOR_KEYS`): its processes resolved."""
@@ -722,7 +725,26 @@ class SignatureIndicators:
                 out[key] = sample_written_out(indicator[key])
         values = indicator.get(VALUES)
         if isinstance(values, dict) and values:
-            out[VALUES] = {sample_written_out(k): sample_written_out(v) for k, v in values.items()}
+            # A field the reader declares states a process's guest pid is
+            # printed with the process it resolved to where it is that
+            # process's; any other number stays as stated.
+            fields = self.fields
+            printed = {
+                name: str(out[key].get("guest_pid") or "")
+                for key, names in (
+                    (PROCESS, fields.process_guest_pid if fields is not None else ()),
+                    (TARGET, fields.target_guest_pid if fields is not None else ()),
+                )
+                if isinstance(out.get(key), dict)
+                for name in names
+            }
+            kept = {
+                k: sample_written_out(v)
+                for k, v in values.items()
+                if not (printed.get(k) and pid_of(v) == printed[k])
+            }
+            if kept:
+                out[VALUES] = {sample_written_out(k): v for k, v in kept.items()}
         if indicator.get(VALUES_LEFT_OUT):
             out[VALUES_LEFT_OUT] = indicator[VALUES_LEFT_OUT]
         cut = indicator.get(CHARS_LEFT_OUT)
@@ -1117,6 +1139,7 @@ def sandbox_dropped_files(
     dropped = written
     rows: list[dict[str, Any]] = []
     guest = _guest_path_fields(normalised_by)
+    reading = _reading(normalised_by)
 
     def _path(entry: dict[str, Any]) -> Any:
         # A path field the reader declares the guest's; never one it does not.
@@ -1135,11 +1158,13 @@ def sandbox_dropped_files(
                 "sha256": entry.get("sha256"),
                 "type": entry.get("type"),
             }
+            # What the row says the file is and where it came from, where it says.
+            for key in _DROPPED_FACT_KEYS:
+                if entry.get(key) not in (None, ""):
+                    row[key] = entry[key]
             # The processes the sandbox says wrote the file, where it says:
             # which tree wrote it is what makes the file the sample's.
-            pids = _writer_pids(entry)
-            if pids:
-                row["pids"] = pids
+            row.update(_writer(entry, reading))
             if entry.get(LINEAGE_KEY):
                 row[LINEAGE_KEY] = entry[LINEAGE_KEY]
                 if entry.get(LINEAGE_REASON_KEY):
@@ -1160,32 +1185,40 @@ def sandbox_dropped_files(
                 LINEAGE_REASON_KEY: entry.get(LINEAGE_REASON_KEY) or "",
                 # The process that wrote it, where the sandbox names one: a
                 # file the launcher's process wrote is listed with its writer.
-                **({"pids": pids} if (pids := _writer_pids(entry)) else {}),
+                **_writer(entry, reading),
             }
             for entry in platform
         ]
     return answer
 
 
-# The fields a dropped file names the processes that wrote it under.
-_WRITER_PID_KEYS = ("pids", "pid", "process_id")
+# What a dropped file's row states it is (a written file, a dumped region) and
+# where it came from, kept as the row states it.
+_DROPPED_FACT_KEYS = ("kind", "origin")
 
 
-def _writer_pids(entry: dict[str, Any]) -> list[str]:
-    """The pids a dropped-file record names, as text, in its order, once each.
+def _writer(entry: dict[str, Any], reading: Any) -> dict[str, Any]:
+    """The process a dropped-file record names as its writer: ``pids``, ``task``, ``guest_pid``.
 
-    A sandbox may write several in one field joined by commas (``"1536,908"``).
+    The writer's ids are read from every field the job's reader declares
+    holds one, else the generic fields
+    (``schemas.sandbox_report.dropped_writer``); the task the reader listed
+    the row in, and the guest's pid of the writer where the reader declares
+    the field that holds it and it is another number, stand beside them: one
+    process identity (``schemas.process_identity``). ``{}`` for a row naming
+    no writer.
     """
-    out: list[str] = []
-    for key in _WRITER_PID_KEYS:
-        value = entry.get(key)
-        for one in value if isinstance(value, list) else [value]:
-            if one in (None, "") or isinstance(one, bool):
-                continue
-            for text in str(one).split(","):
-                text = text.strip()
-                if text and text not in out:
-                    out.append(text)
+    from malspark.schemas.sandbox_report import dropped_writer
+
+    pids, guest = dropped_writer(entry, reading)
+    if not pids:
+        return {}
+    out: dict[str, Any] = {"pids": pids}
+    task = entry.get(PROCESS_TASK_KEY)
+    if task:
+        out["task"] = str(task)
+    if guest:
+        out["guest_pid"] = guest
     return out
 
 
@@ -1247,10 +1280,14 @@ _REGISTRY_OP_WEIGHT: dict[str, int] = {
 # a subkey and a subkey before the bare hive handle (``Registry``), which is
 # the key only for a call that names nothing else; a value is what was written
 # or, for a query, what was read (``Data``, or ``Information`` for the native
-# value query); a service is its name, under either spelling, before its
-# display name or the binary it runs.
+# value query); a value's name is what a write names the value it wrote under;
+# a service is its name, under either spelling, before its display name or the
+# binary it runs.
 _REGISTRY_KEY_ARGS = ("FullName", "KeyName", "ObjectAttributes", "SubKey", "Registry")
 _REGISTRY_VALUE_ARGS = ("Buffer", "Data", "ValueData", "Value", "Information")
+_REGISTRY_VALUE_NAME_ARGS = ("ValueName", "lpValueName")
+# The operations that change one value, whose row is the value's own.
+_VALUE_OPERATIONS = frozenset({"create", "modify", "delete"})
 _MUTEX_APIS = frozenset({"ntcreatemutant", "ntopenmutant", "createmutexa", "createmutexw"})
 # The mutex APIs that create one: only a creation names the process that made
 # the mutex. An open, or a create that found the mutex already there, names a
@@ -1354,7 +1391,12 @@ def sandbox_registry_ops(
     write: a key created, modified or deleted and then read stays the write,
     with what was written, and a read that saw no value leaves an earlier
     read's value standing. Between writes the later one in the report's order
-    stands; that order is the report's process by process, not time.
+    stands; that order is the report's process by process, not time. A row
+    is a key and the value an operation names: two values written to one
+    key are a row each, with the value's name, what was done to it and the
+    pids of the calls that did it; a delete of one value is that value's
+    row; an operation that names no value is the key's own row, which a read
+    leaves out beside a value's write.
 
     A call's own outcome refines what its API may do (``_REGISTRY_OUTCOMES``):
     a create that opened an existing key is a read. A write the call reports as
@@ -1365,12 +1407,17 @@ def sandbox_registry_ops(
     missing = _absent_of(report, "registry", "calls", normalised_by=normalised_by)
     if missing is not None:
         return missing
-    rows: dict[str, dict[str, Any]] = {}
-    # The pids of the calls behind each key's operation: a row names the
+    # Each key's rows, by the name of the value an operation names (``""``
+    # for one that names none), in the order first met.
+    rows: dict[str, dict[str, dict[str, Any]]] = {}
+    # The pids of the calls behind each row's operation: a row names the
     # processes that did what it says, where the report kept the pid.
-    pids: dict[tuple[str, str], set[str]] = {}
+    pids: dict[tuple[str, str, str], set[str]] = {}
+    summary_only: set[str] = set()
     for key in _summary_list(report, "registry"):
-        rows.setdefault(key, {"key": key, "operation": "access", "value": None})
+        if key not in rows:
+            rows[key] = {"": {"key": key, "operation": "access", "value": None}}
+            summary_only.add(key)
     for pid, call in _calls_by_process(report):
         api = str(call.get("api") or "")
         # Zw* and Nt* are the same native call; the table lists the Nt name.
@@ -1387,19 +1434,34 @@ def sandbox_registry_ops(
         value = _argument(call, _REGISTRY_VALUE_ARGS) or None
         if operation == _FAILED_WRITE:
             value = None
+        # A write or a delete names the value it changed, where the call
+        # carries the name: that value's own row.
+        named = _argument(call, _REGISTRY_VALUE_NAME_ARGS) if operation in _VALUE_OPERATIONS else ""
+        if key in summary_only:
+            # The call wins over the summary's bare fact of access.
+            summary_only.discard(key)
+            rows[key] = {}
+        own = rows.setdefault(key, {})
         if pid:
-            pids.setdefault((key, operation), set()).add(pid)
-        before = rows.get(key)
+            pids.setdefault((key, named, operation), set()).add(pid)
+        before = own.get(named)
         if before is not None:
             if _REGISTRY_OP_WEIGHT[operation] < _REGISTRY_OP_WEIGHT[before["operation"]]:
                 continue
             if operation == before["operation"] == "query" and value is None:
                 continue
-        rows[key] = {"key": key, "operation": operation, "value": value}
+        own[named] = {"key": key, "operation": operation, "value": value}
+        if named:
+            own[named]["value_name"] = named
     ordered = []
-    for key, row in rows.items():
-        made_by = pids.get((key, row["operation"]))
-        ordered.append({**row, "pids": sorted(made_by)} if made_by else row)
+    for key, own in rows.items():
+        # A read that names no value says nothing beside a value's write.
+        most = max(_REGISTRY_OP_WEIGHT[row["operation"]] for row in own.values())
+        for named, row in own.items():
+            if not named and len(own) > 1 and _REGISTRY_OP_WEIGHT[row["operation"]] < most:
+                continue
+            made_by = pids.get((key, named, row["operation"]))
+            ordered.append({**row, "pids": sorted(made_by)} if made_by else row)
     page, meta = _page(ordered, offset, limit)
     return {"registry": page, "total": len(ordered), **meta}
 

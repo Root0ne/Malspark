@@ -1061,6 +1061,7 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
                 name=str(row.get("name") or ""),
                 command_line=str(row.get("command_line") or ""),
                 marked=row.get("marked") is True,
+                task=str(row.get("task") or ""),
             )
             for row in data.get("processes") or []
             if isinstance(row, dict)
@@ -1068,7 +1069,10 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
         if nodes:
             seen = True
             processes.extend(nodes)
-    dynamic.process_tree = _as_tree(_once(processes, process_identity))
+    # A report of several tasks gives each task's processes ids of the task's own.
+    processes = _once(processes, lambda node: (process_identity(node), node.task))
+    _with_guest_pids(processes, ledger)
+    dynamic.process_tree = _as_tree(processes)
 
     for entry, data in _payloads(ledger, "sandbox_signatures", detonations=True):
         later = [observed_mark(entry)] if later_detonation(entry) else []
@@ -1110,6 +1114,8 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
                     hive=_hive_of(key),  # type: ignore[arg-type]
                     key=key,
                     operation=_registry_operation(row.get("operation")),  # type: ignore[arg-type]
+                    # The value a write named, where the sandbox's call did.
+                    value_name=_opt(row.get("value_name")),
                     new_value=_opt(row.get("value")),
                     pids=_pids_of(row.get("pids")),
                 )
@@ -1223,6 +1229,29 @@ def _registry_operation(value: Any) -> str:
     return operation if operation in _REGISTRY_OPERATIONS else "query"
 
 
+def _with_guest_pids(nodes: list[ProcessNode], ledger: list[LedgerEntry]) -> None:
+    """Each process's guest pid, where an answer of the run states one for it.
+
+    A process listing's row or a signature's indicator (the parts its kind
+    declares a record, ``RECORD_PARTS_OF_KIND``) states the guest's pid beside
+    the report's own id; one process identity reads them
+    (``schemas.process_identity``). A process no answer states one for keeps
+    none.
+    """
+    from malspark.schemas.process_identity import ProcessIdentities, ProcessKey
+
+    identities = ProcessIdentities()
+    for entry in ledger:
+        if entry.ok and isinstance(entry.structured, dict):
+            identities.read_answer(
+                entry.structured,
+                _record_parts(entry),
+                listing=tool_kinds.kind_of(entry) == "sandbox_processes",
+            )
+    for node in nodes:
+        node.guest_pid = identities.guest_of(ProcessKey(node.task, str(node.pid))) or ""
+
+
 def _as_tree(nodes: list[ProcessNode]) -> list[ProcessNode]:
     """The flat process list nested by parent, roots first.
 
@@ -1237,13 +1266,19 @@ def _as_tree(nodes: list[ProcessNode]) -> list[ProcessNode]:
     # the order they started), else the first one listed after it, never itself.
     # A row with no pid (read as 0) is never a parent, and a row whose parent
     # is its own pid is a root: neither names a process that spawned it.
-    positions: dict[int, list[int]] = {}
+    # A report of several tasks gives each task's processes ids of the task's
+    # own: a parent is of the child's own task.
+    positions: dict[tuple[str, int], list[int]] = {}
     for index, node in enumerate(nodes):
         if node.pid > 0:
-            positions.setdefault(node.pid, []).append(index)
+            positions.setdefault((node.task, node.pid), []).append(index)
     parent_of: list[int | None] = []
     for index, node in enumerate(nodes):
-        held = positions.get(node.ppid) if node.ppid > 0 and node.ppid != node.pid else None
+        held = (
+            positions.get((node.task, node.ppid))
+            if node.ppid > 0 and node.ppid != node.pid
+            else None
+        )
         if not held:
             parent_of.append(None)
             continue

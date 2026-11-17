@@ -453,6 +453,152 @@ def benign_reason(
     return ""
 
 
+# How a selection matches a value, by the operator its field is written with:
+# a field with no operator holds the value whole.
+ENDSWITH = "endswith"
+CONTAINS = "contains"
+WHOLE = ""
+
+
+@dataclass(frozen=True)
+class _ShippedPaths:
+    """The paths Windows ships, as the catalogue gives them: a program it ships, in the system
+    root or in any run of the system folders under it, the root written with a drive or by
+    an environment name; and every key and value every installation has. Lower case.
+
+    The files are a language, not a list (the system folders nest without a bound), held as
+    the words each of its four parts is written with, ``\\`` closing each word that names a
+    folder: an optional drive, a root, any run of system folders, a program's name.
+    """
+
+    drives: tuple[str, ...]
+    roots: tuple[str, ...]
+    folders: tuple[str, ...]
+    names: tuple[str, ...]
+    keys: tuple[str, ...]
+
+
+# The parts of a shipped file's path, in order, and which may follow which.
+_DRIVE, _ROOT, _FOLDER, _NAME = range(4)
+_FOLLOWING = {_DRIVE: (_ROOT,), _ROOT: (_FOLDER, _NAME), _FOLDER: (_FOLDER, _NAME), _NAME: ()}
+
+
+@lru_cache(maxsize=1)
+def _shipped_paths() -> _ShippedPaths:
+    """The shipped paths, derived once from the catalogue's names and folders."""
+    catalogue = benign_catalogue()
+    keys = [f"\\{key}\\" for key in catalogue.registry_keys]
+    keys += [f"\\{value}" for value in catalogue.registry_values]
+    keys += [
+        f"\\{services}\\{service}\\"
+        for services in sorted(_SERVICES_KEYS)
+        for service in sorted(catalogue.windows_services)
+    ]
+    return _ShippedPaths(
+        drives=tuple(f"{letter}:\\" for letter in "abcdefghijklmnopqrstuvwxyz"),
+        roots=tuple(
+            sorted(
+                ("\\".join(root) + "\\" for root in catalogue.system_roots),
+                key=lambda root: (root.startswith("%"), root),
+            )
+        ),
+        folders=tuple(sorted(f"{folder}\\" for folder in catalogue.system_folders)),
+        names=tuple(sorted(catalogue.system_binaries)),
+        keys=tuple(sorted(keys)),
+    )
+
+
+# A place in a shipped path: the part, the word and how much of it is read.
+_Place = tuple[int, str, int]
+
+
+def shipped_match(shape: str, operator: str, value: str) -> str:
+    """A path (or key) Windows ships that a selection of ``value`` matches, or ``""``.
+
+    Asked the way the rule matches: under ``endswith`` a shipped path ends
+    with the value, under ``contains`` it holds the value anywhere, even
+    inside a name (``host.exe`` of ``svchost.exe``), and with no operator it
+    is the value. A registry key (``shape`` ``key``) is asked of the keys and
+    values every installation has, each with the subkeys under it; a file
+    path or a folder of the files Windows ships (:class:`_ShippedPaths`).
+    Case-insensitive, ``/`` read as ``\\``. The answer is one such path,
+    written whole, which the reason a value is left out names.
+    """
+    text = value.strip().lower().replace("/", "\\")
+    if not text or shape not in ("key", "path", "folder"):
+        return ""
+    shipped = _shipped_paths()
+    if shape == "key":
+        for key in shipped.keys:
+            if (
+                (operator == CONTAINS and text in key)
+                or (operator == ENDSWITH and key.rstrip("\\").endswith(text))
+                or (operator == WHOLE and key.rstrip("\\") == text)
+            ):
+                return key.rstrip("\\")
+        return ""
+    return _shipped_file(shipped, operator, text)
+
+
+def _shipped_file(shipped: _ShippedPaths, operator: str, text: str) -> str:
+    """A shipped file's path a selection of ``text`` matches under ``operator``, or ``""``.
+
+    The value is read along the paths' language one character at a time,
+    from every place in it (``contains``, ``endswith``) or from a path's
+    start (no operator); each place read keeps the place it started at, so
+    the path the answer names is built around the value.
+    """
+    words = (shipped.drives, shipped.roots, shipped.folders, shipped.names)
+    if operator == WHOLE:
+        starts = [(part, word, 0) for part in (_DRIVE, _ROOT) for word in words[part]]
+    else:
+        starts = [
+            (part, word, at)
+            for part, listed in enumerate(words)
+            for word in listed
+            for at in range(len(word))
+        ]
+    places: dict[_Place, _Place] = {place: place for place in starts}
+    for char in text:
+        read: dict[_Place, _Place] = {}
+        for (part, word, at), start in places.items():
+            if at < len(word):
+                if word[at] == char:
+                    read.setdefault((part, word, at + 1), start)
+                continue
+            for following in _FOLLOWING[part]:
+                for other in words[following]:
+                    if other[0] == char:
+                        read.setdefault((following, other, 1), start)
+        places = read
+        if not places:
+            return ""
+    for (part, word, at), start in sorted(places.items()):
+        whole = part == _NAME and at == len(word)
+        if operator == CONTAINS or whole:
+            return _written_around(shipped, start, text, (part, word, at))
+    return ""
+
+
+def _written_around(shipped: _ShippedPaths, start: _Place, text: str, end: _Place) -> str:
+    """A shipped path holding ``text`` read from ``start`` to ``end``: the drive and the root
+    before it, and a system folder and a program's name after it, where it needs them."""
+    part, word, at = start
+    before = {
+        _DRIVE: "",
+        _ROOT: "" if word.startswith("%") else "c:\\",
+        _FOLDER: "c:\\windows\\",
+        _NAME: "c:\\windows\\system32\\",
+    }[part]
+    last, ended, read = end
+    after = ended[read:]
+    if last == _DRIVE:
+        after += "windows\\"
+    if last != _NAME:
+        after += shipped.names[0]
+    return before + word[:at] + text + after
+
+
 def _a_submission_place(folders: Sequence[str], catalogue: Catalogue) -> bool:
     """Whether a file's folders are where a submitted file is placed: none, a drive's root,
     a declared submission root (the temporary folder, the desktop, the downloads folder, the
