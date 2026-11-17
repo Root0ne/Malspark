@@ -197,13 +197,13 @@ def test_the_cape_reader_is_unaffected_by_its_declaration() -> None:
     """CAPE's reader fills every list field: naming it changes no answer.
 
     Beside what its declarations read, which only a named reader's answer
-    carries: a signature's indicators, the place the sandbox started the
-    submitted file from (read by the process ids it declares) and a request's
-    user agent (read from the field it declares).
+    carries: a signature's indicators. A process row and a request record are
+    read one way whichever reader is named: the place the sandbox started the
+    submitted file from and each request's row are the same answer.
     """
     from malspark.providers.sandbox.readers import required_reader
     from malspark.schemas.sandbox_document import sandbox_document
-    from malspark.schemas.sandbox_report import STAGED_KEY, STAGED_NOTE_KEY, reader_of
+    from malspark.schemas.sandbox_report import reader_of
     from tests.unit.providers._cape_fixture import first_cape_report
 
     report = required_reader("cape2").read(first_cape_report(), provider="cape2", task_id="1")
@@ -227,27 +227,4 @@ def test_the_cape_reader_is_unaffected_by_its_declaration() -> None:
                     for row in named["signatures"]
                 ],
             }
-        if view is sandbox_processes:
-            named = {
-                **{k: v for k, v in named.items() if k != STAGED_NOTE_KEY},
-                "processes": [
-                    {k: v for k, v in row.items() if k != STAGED_KEY} for row in named["processes"]
-                ],
-            }
-        if view is sandbox_network:
-            named = (
-                {
-                    **named,
-                    "http": [
-                        {k: v for k, v in row.items() if k != "user_agent" or "user_agent" in raw}
-                        for row, raw in zip(
-                            named.get("http") or [],
-                            view(document).get("http") or [],
-                            strict=True,
-                        )
-                    ],
-                }
-                if "http" in named
-                else named
-            )
         assert named == view(document)
