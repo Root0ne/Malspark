@@ -7,11 +7,11 @@ refused, and each fragment, unanswered, was left out, so the cell printed "-". T
 report read a period after "e.g." as no sentence's end, so the two disagreed.
 
 One module now holds the rule (``reporting.sentence_ends``), and both read it: a period
-ends no sentence where it closes a run of single letters with periods, sits inside a
-number, or a lower-case word follows it, or a digit after a word of one to five letters.
-Where the rule cannot tell, the sentence is the longer one. And an answer whose copied
-text is the whole field is found, however many sentences the field holds. Every value
-here is made up.
+ends no sentence where it closes a run of two or more single letters each followed by a
+period, or sits inside a number. Nothing else joins: where the rule cannot tell, the cut is
+the one it always was, so a sentence opening on a lower-case word or a number after a short
+word still follows a sentence's end. And a keep or a drop whose copied text is the whole
+field is found, however many sentences the field holds. Every value here is made up.
 """
 
 from __future__ import annotations
@@ -93,17 +93,31 @@ def test_a_whole_cell_answer_with_an_abbreviation_is_found() -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        "The block is one of approx. half the records.",
-        "Strings, files, keys, etc. were read.",
-        "The table is shown in Fig. 3 of the bundle.",
-        "The loader v. 7 reads it.",
         "It reads the key, i.e. the run key.",
+        "It reads the key, e.g. The run key.",
         "The size is 1.5 MB in all.",
         "It names U.S. Hosts in the list.",
     ],
 )
-def test_an_abbreviation_before_a_lower_case_word_ends_no_sentence(text: str) -> None:
+def test_a_run_of_single_letters_or_a_number_ends_no_sentence(text: str) -> None:
     assert _units(text) == [text]
+
+
+@pytest.mark.parametrize(
+    ("text", "units"),
+    [
+        # What the rule cannot tell from a sentence's end is cut as it always was.
+        ("The block is approx. half.", ["The block is approx.", "half."]),
+        ("Keys, etc. were read.", ["Keys, etc.", "were read."]),
+        ("It is in Fig. 3 here.", ["It is in Fig.", "3 here."]),
+        ("It names a host. capa reads it.", ["It names a host.", "capa reads it."]),
+        ("It is a loop. 4. It ends.", ["It is a loop.", "4.", "It ends."]),
+        # A single letter alone is no run.
+        ("It is plan A. Then B.", ["It is plan A.", "Then B."]),
+    ],
+)
+def test_what_the_rule_cannot_tell_is_cut_as_before(text: str, units: list[str]) -> None:
+    assert _units(text) == units
 
 
 @pytest.mark.parametrize(
@@ -111,7 +125,6 @@ def test_an_abbreviation_before_a_lower_case_word_ends_no_sentence(text: str) ->
     [
         ("It reads keys. Then it waits.", ["It reads keys.", "Then it waits."]),
         ("It runs Mon. Then it waits.", ["It runs Mon.", "Then it waits."]),
-        # A word of six letters or more before a digit: the period ends the sentence.
         ("It waited. 3 hosts answered.", ["It waited.", "3 hosts answered."]),
         ("It stops! then waits.", ["It stops!", "then waits."]),
         ("Is it read? 2 are.", ["Is it read?", "2 are."]),
@@ -176,6 +189,8 @@ _TOKENS = (
     "Fig.",
     "approx.",
     "etc.",
+    "4.",
+    "A.",
     "v.",
     "3",
     "1.5",
@@ -228,17 +243,17 @@ def test_renderer_and_round_split_alike() -> None:
 
 
 def test_both_callers_read_the_one_rule() -> None:
-    text = "It reads e.g. Keys. Then approx. 3 more. Done."
+    text = "It reads e.g. Keys. Then approx. 3 more. U.S. hosts. Done."
     assert [at for at in range(len(text)) if _ends_sentence(text, at)] == [
         at for at in range(len(text)) if ends_sentence(text, at)
     ]
 
 
 def test_a_joined_sentence_is_held_where_a_part_of_it_would_be() -> None:
-    # A sentence opening on a lower-case word is joined to the one before it; the absence
-    # the first states is still asked about, though the second names an address.
-    absent = "A further 96 decodings are not referenced by code and were not shown [ev_0021]."
-    named = "tooling matched an XOR loop at 0x401000 [ev_0008]."
+    # A run of single letters joins what follows it; the absence the first part states is
+    # still asked about, though the second names an address.
+    absent = "A further 96 decodings are not referenced by code and were not shown, i.e."
+    named = "XOR loops at 0x401000 [ev_0008]."
     text = f"It decodes texts. {absent} {named}"
     assert _units(text) == ["It decodes texts.", f"{absent} {named}"]
     assert pieces(f"{absent} {named}") == [absent, named]

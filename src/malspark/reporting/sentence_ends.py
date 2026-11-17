@@ -10,18 +10,14 @@ A sentence ends at a ``.``, ``!`` or ``?`` that white space or the end of the te
 follows, any closing quote, bracket or emphasis after it read past. A period ends no
 sentence when
 
-* it closes a run of single letters each followed by a period ("e.g.", "i.e."),
-* it sits inside a number ("1.2": no white space follows it),
-* the next word is a lower-case word, of letters alone ("approx. half", "etc. were"), or
-* the next word is a number and the word the period closes is one of one to five letters
-  ("Fig. 3", "v. 7").
+* it closes a run of two or more single letters each followed by a period ("e.g.",
+  "i.e.", "U.S."), or
+* it sits inside a number ("1.2": no white space follows it).
 
-A word holding a digit or an underscore ("ev_0060") is no lower-case word, and a hexadecimal
-value ("0x5030") is no number: a sentence opening on one still follows a sentence's end.
-
-The rule names no abbreviation: it reads only the shape of the words on either side.
-Where it cannot tell, the period ends nothing, and the sentence is the longer one. The end
-of the text, or a line break, after the mark ends the sentence whatever the word before it.
+Nothing else joins. The rule names no abbreviation and reads no word after the period:
+where it cannot tell ("approx. half", "Fig. 3", a sentence opening on a lower-case name),
+the period ends the sentence, as the cut always read it. The end of the text, or a line
+break, after the mark ends the sentence whatever the word before it.
 """
 
 from __future__ import annotations
@@ -35,13 +31,6 @@ _WORD_OPEN = "\"'\u2018\u201c([*_`"
 # A run of single letters each followed by a period ("e.g.", "U.S."): its last period ends
 # no sentence.
 _SINGLE_LETTERS = re.compile(r"(?:[^\W\d_]\.){2,}")
-# A word of one to five letters before a period: one a number follows ends no sentence.
-_SHORT_WORD = re.compile(r"[^\W\d_]{1,5}\.")
-# A word of letters alone, no digit or underscore in it ("half", "were"; never "ev_0060").
-_LOWER_WORD = re.compile(r"[^\W\d_]+(?![\w])")
-# A number: digits, any group or decimal marks between them, and no letter after it ("3",
-# "1,500", "2.5"; never "0x5030" or "3rd").
-_NUMBER = re.compile(r"\d+(?:[.,]\d+)*(?![\w])")
 
 
 def ends_sentence(text: str, at: int) -> bool:
@@ -66,12 +55,7 @@ def ends_sentence(text: str, at: int) -> bool:
         following += 1
     if following == len(text):
         return True
-    if _SINGLE_LETTERS.fullmatch(word):
-        return False
-    lower = _LOWER_WORD.match(text, following)
-    if lower is not None and lower.group().islower():
-        return False
-    return not (_NUMBER.match(text, following) and _SHORT_WORD.fullmatch(word))
+    return not _SINGLE_LETTERS.fullmatch(word)
 
 
 def pieces(sentence: str) -> list[str]:
