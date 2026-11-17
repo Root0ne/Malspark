@@ -22,7 +22,7 @@ that proves it.
 | 8. Detection | Indicators, detection rule drafts, hunting guidance. |
 | 9. Recommendations | What a defender should do. |
 | 10. MITRE ATT&CK mapping | Each published technique with its evidence, and the techniques the judge dropped, with why. |
-| 11. Limitations | What the run could not establish, and why; every kind of thing the run's record places outside the machine (model requests, lookups with what they were asked, sample uploads, tool calls, enrichment questions, tracing), each with its host and count, a kind whose destination is not recorded named as such, the full record being in the evidence bundle. |
+| 11. Limitations | What the run could not establish, and why; then one line on what left the machine: for each kind the run's record places outside it or cannot place (model requests, lookups with what they were asked, sample uploads, tool calls, enrichment questions, tracing), who received it and how many times, the hosts a kind may reach where the record names them, else that its destination is not recorded. The calls per role and the rest of the record are in the evidence bundle. |
 | Appendix | The detection rules in full, analyst statements that add detail, references. |
 
 Where no sandbox ran, the report says so in one sentence instead of printing
@@ -107,14 +107,18 @@ The reporter writes; the code checks. Before the report is stored:
 A failed check goes back to the reporter with a [validation
 code](/docs/concepts/validation/) and one turn to fix it. A finding first raised
 by the answer to that turn had no turn left, and the run summary records it as
-not asked. A problem the reporter does not fix stays visible in the run summary,
+not asked; in the agreement round a finding counts as asked where the sentence it
+is about was asked about, whatever rows carried it. A problem the reporter does not fix stays visible in the run summary,
 with each sentence left out or replaced recorded whole.
 
 One rule says where a sentence ends, for the agreement round and the analyst
 report alike: a period ends no sentence where it closes a run of two or more
 single letters each followed by a period (e.g.), or sits inside a number (1.2);
-every other period a space follows ends one. A keep or a
-drop that copies a whole field answers each of its sentences. The analyst report
+every other period a space follows ends one, a closing quote or bracket after it
+read past, and a closing mark of emphasis (`**`, `_`) only where it closes
+emphasis opened earlier on its line (a wildcard's `*.*` closes nothing). A keep
+or a drop that copies a whole field answers each of its sentences exactly as the
+same answer given sentence by sentence would. The analyst report
 leaves a sentence a check flagged out only
 where it stands whole (a sentence, a list item's or one in emphasis among them,
 or the whole of a table cell), never out of
