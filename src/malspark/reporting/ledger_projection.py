@@ -163,6 +163,22 @@ def records_made_by(rows: Iterable[Any]) -> NetworkURL:
     return held
 
 
+def request_address(row: Any) -> str:
+    """The address a request record's host is, as its URL row's host is read; ``""`` for a name.
+
+    The URL the block makes of the record (``_http_url``), else its host: a
+    request to an address takes that address's row in the publish rule
+    (``stix_renderer.url_address``).
+    """
+    from malspark.reporting.renderers.stix_renderer import url_address
+
+    host = _first_str(row, "host", "hostname")
+    url = _http_url(row, host)
+    if url:
+        return url_address(url)
+    return url_address(f"http://{host}/") if host else ""
+
+
 def traffic_makers(row: Any) -> list[bool | tuple[str, str] | None]:
     """Each answer a traffic record gives (:func:`traffic_maker`).
 

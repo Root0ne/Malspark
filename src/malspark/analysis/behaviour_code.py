@@ -394,8 +394,13 @@ def _publish_rule_unlisted(
     table and the capture line, whatever rows of the value name no process. A
     value the block keys no row for (a request's path, a user agent) takes
     the rule's reading of a request's records, over the rows that hold it
-    (``ledger_projection.records_made_by``). Read only where a network value
-    has no row of the sample's tree.
+    (``ledger_projection.records_made_by``). An address, a URL whose host is
+    an address and a record of a request to an address take that address's
+    row, as the rule's URL branch does: no request row's own process for
+    them, and no sentence where the block holds no row of the address. A
+    value whose records give more than one sentence, or none for one of
+    them, is put on no unlisted process. Read only where a network value has
+    no row of the sample's tree.
     """
     asked = [one for one in found if one.tree and True not in one.tree]
     if not asked:
@@ -403,9 +408,14 @@ def _publish_rule_unlisted(
     from malspark.reporting.ledger_projection import (
         network_from_sandbox_report,
         records_made_by,
+        request_address,
         value_key,
     )
-    from malspark.reporting.renderers.stix_renderer import unlisted_reason, unlisted_reasons
+    from malspark.reporting.renderers.stix_renderer import (
+        unlisted_reason,
+        unlisted_reasons,
+        url_address,
+    )
 
     network = network_from_sandbox_report(
         report if isinstance(report, dict) else dict(report), normalised_by
@@ -421,12 +431,27 @@ def _publish_rule_unlisted(
         for row in rows
         if row.source == "sandbox"
     }
+
+    def _of_address(address: str) -> str:
+        return said.get(("ip", value_key("ip", address)), "")
+
     for one in asked:
         key = (one.kind, value_key(one.kind, one.value))
-        if key in keyed:
+        host = url_address(one.value) if one.kind == "url" else ""
+        if one.kind == "ip":
+            one.unlisted = _of_address(one.value)
+        elif host:
+            one.unlisted = _of_address(host)
+        elif key in keyed:
             one.unlisted = said.get(key, "")
         else:
-            one.unlisted = unlisted_reason("url", records_made_by(one.records))
+            at = [request_address(record) for record in one.records]
+            sentences = [_of_address(address) for address in dict.fromkeys(a for a in at if a)]
+            named = [record for record, address in zip(one.records, at, strict=True) if not address]
+            if named:
+                sentences.append(unlisted_reason("url", records_made_by(named)))
+            agreed = len(set(sentences)) == 1
+            one.unlisted = sentences[0] if agreed else ""
 
 
 @dataclass

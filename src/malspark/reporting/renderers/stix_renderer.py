@@ -3720,8 +3720,8 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
         return _listing_kwargs(report, kind, key, row)
     if kind == "url":
         # A sandbox URL whose host is an address takes that address's facts.
-        host = url_host(value).strip("[]")
-        if _field(row, "source") == "sandbox" and _parses_as_an_address(host):
+        host = url_address(value)
+        if _field(row, "source") == "sandbox" and host:
             # Whose keep it is: the judge's URL itself, answered about its
             # host, or the judge's indicator on the address the URL stands on.
             own = ("url", _value_key("url", value)) in _judge_index(report)
@@ -3831,9 +3831,11 @@ def unlisted_reasons(network: Any) -> dict[tuple[str, str], str]:
     block (``ledger_projection.network_from_ledger``) whose traffic it puts on
     a process the report does not list: an address by its reason
     (:func:`address_flow_reason`), a name or a URL by the processes its
-    records name (``made_by``) where every one of them is such a process.
-    Keyed as the rule keys a value (``ledger_projection.value_key``); a row of
-    the sample's tree, or of any other reason, is not in it.
+    records name (``made_by``) where every one of them is such a process, and
+    a URL whose host is an address (:func:`url_address`) by that address's
+    row, as the rule's URL branch decides it: never by the URL row's own
+    records. Keyed as the rule keys a value (``ledger_projection.value_key``);
+    a row of the sample's tree, or of any other reason, is not in it.
     """
     out: dict[tuple[str, str], str] = {}
     if network is None:
@@ -3844,10 +3846,21 @@ def unlisted_reasons(network: Any) -> dict[tuple[str, str], str]:
         ("url", _field(network, "urls"), "url"),
     ):
         for row in rows or []:
-            why = unlisted_reason(kind, row)
+            key = _value_key(kind, _field(row, named))
+            host = url_address(key) if kind == "url" else ""
+            if host and _field(row, "source") == "sandbox":
+                why = out.get(("ip", _value_key("ip", host)), "")
+            else:
+                why = unlisted_reason(kind, row)
             if why:
-                out.setdefault((kind, _value_key(kind, _field(row, named))), why)
+                out.setdefault((kind, key), why)
     return out
+
+
+def url_address(value: Any) -> str:
+    """The address a URL's host is, as the publish rule's URL branch reads it; ``""`` for a name."""
+    host = url_host(value).strip("[]")
+    return host if _parses_as_an_address(host) else ""
 
 
 def unlisted_reason(kind: str, row: Any) -> str:
