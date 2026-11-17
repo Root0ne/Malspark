@@ -794,8 +794,8 @@ def _judge_indicator_unpublished(
             "this run may publish what the pattern matches. It is not in the exported bundle "
             "and is unchanged in the judge's own bundle.",
         )
-    # Only conditions (``!=``, ``<``, ``>``): what a thing is not, or a bound,
-    # names no value the sample has, and no indicator of it.
+    # No ``=`` and no ``IN``: conditions alone (``!=``, ``<``, ``>``, a negation)
+    # name no value the sample has, and no indicator of it.
     if not asserted_values(indicator.pattern or "") and rule_values(indicator.pattern or ""):
         return (UNPUBLISHED_VALUE_CODE, asserts_no_value_sentence(named))
     return None
@@ -804,9 +804,8 @@ def _judge_indicator_unpublished(
 def asserts_no_value_sentence(named: str) -> str:
     """Why a judge indicator of conditions alone is not exported, the reason first."""
     return (
-        f"the judge's indicator {named!r} asserts no value: each of its comparisons says what a "
-        "value is not or bounds it, and names no value of the sample. It is not in the exported "
-        "bundle and is unchanged in the judge's own bundle."
+        f"the judge's indicator {named!r} asserts no value: it names no value with = or IN. It is "
+        "not in the exported bundle and is unchanged in the judge's own bundle."
     )
 
 
