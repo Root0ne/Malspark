@@ -9651,7 +9651,8 @@ def start_path_value_violations(
                         f"{what} {safe_finding_value(index + 1)} "
                         f"({safe_finding_value(row.get(label))}) states "
                         f"{safe_finding_value(row.get('value'))}, which "
-                        f"{_named_ids(cited)} hold only as a process row: {fact} Keep the row "
+                        f"{safe_finding_value(_named_ids(cited))} hold only as a process row: "
+                        f"{safe_finding_value(fact, whole=True)} Keep the row "
                         "if what it says of this path is what the record shows of it, rewrite "
                         "it, or leave it out."
                     ),

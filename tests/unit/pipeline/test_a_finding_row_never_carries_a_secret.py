@@ -323,6 +323,8 @@ CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
     # The table's row numbers and its list's field name, around each row's id
     # and the entries named, each wrapped in the helper where written.
     ("pipeline/validation.py", "cited_id_violations"): frozenset({"said"}),
+    # The table's own noun for a row, from the check's constant pairs.
+    ("pipeline/validation.py", "start_path_value_violations"): frozenset({"what"}),
     # The command table's row numbers and counts, and the values the platform
     # read from the code as whole numbers, around the code's place, its
     # expression and each row's id, each wrapped in the helper where written.
