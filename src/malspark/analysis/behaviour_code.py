@@ -18,9 +18,12 @@ This module states those links and nothing else.
   carry is named with its ``no:`` sentence, and the items of a section that
   held no value under the fields read are counted. A network value is linked
   only where the sandbox attributes it to the sample's process tree
-  (``schemas.sandbox_report.SAMPLE_TREE_KEY``); where the row does not say,
-  the link is marked "process not attributed"; a value every row of which
-  the sandbox attributes to another process is not linked, and is counted.
+  (``schemas.sandbox_report.SAMPLE_TREE_KEY``); where a row names a process
+  the report does not list, the link says so with the process as the row
+  names it, in the publish rule's words (``ledger_projection.traffic_maker``,
+  ``stix_renderer.made_by_reason``); where no row says, the link is marked
+  "process not attributed"; a value every row of which the sandbox attributes
+  to another listed process is not linked, and is counted.
   An HTTP request's path is joined with the request's own host (and scheme,
   where the row states one); a path with no host is a path, never a URL.
 * **The match is exact**, after the platform's own normalisation for the
@@ -163,6 +166,9 @@ class Observed:
     # attributes to the sample's tree, any row that does not say, any row of
     # another process.
     tree: set[bool | None] = field(default_factory=set, repr=False, compare=False)
+    # The processes the report does not list that rows of the value name, each
+    # once, as the row names it (``procid N``).
+    unlisted: dict[str, None] = field(default_factory=dict, repr=False, compare=False)
 
     def observed_in(self, item_id: str) -> None:
         """Add ``item_id`` to ``items`` once, in the order first seen."""
@@ -172,11 +178,21 @@ class Observed:
 
     @property
     def attribution(self) -> str | None:
-        """``SAMPLE_TREE``, ``NOT_ATTRIBUTED``, ``""`` (others only) or ``None`` (no rows)."""
-        if not self.tree:
+        """``SAMPLE_TREE``, the unlisted processes, ``NOT_ATTRIBUTED``, ``""`` or ``None``.
+
+        A row of the sample's tree decides; else a row naming a process the
+        report does not list states whose the value is, which a row naming no
+        process does not unsay; ``""`` is other listed processes only, and
+        ``None`` no network rows.
+        """
+        if not self.tree and not self.unlisted:
             return None
         if True in self.tree:
             return SAMPLE_TREE
+        if self.unlisted:
+            from malspark.reporting.renderers.stix_renderer import made_by_reason
+
+            return made_by_reason({"unlisted": list(self.unlisted)})
         if None in self.tree:
             return NOT_ATTRIBUTED
         return ""
@@ -361,6 +377,24 @@ def _sample_tree(item: Mapping[str, Any]) -> bool | None:
     return stated if isinstance(stated, bool) else None
 
 
+def _unlisted(item: Mapping[str, Any]) -> list[str]:
+    """The processes the report does not list that a network row names, as the row names them.
+
+    Read by the one reading of a traffic record's process
+    (``ledger_projection.traffic_makers``): only where every answer the row
+    gives names such a process; ``[]`` for any other row.
+    """
+    from malspark.reporting.ledger_projection import traffic_makers
+
+    fields = item.get("fields")
+    if not isinstance(fields, dict):
+        return []
+    answers = traffic_makers(fields)
+    if not answers or not all(isinstance(a, tuple) and a[0] == "unlisted" for a in answers):
+        return []
+    return [a[1] for a in answers if isinstance(a, tuple)]
+
+
 @dataclass
 class ObservedValues:
     """Every distinct value the report observed, and what reading it could not use."""
@@ -403,7 +437,12 @@ def observed_values(
                     held = found[key] = Observed(kind, value)
                 held.observed_in(str(item.get("id") or ""))
                 if section_name == "network":
-                    held.tree.add(_sample_tree(item))
+                    stated = _sample_tree(item)
+                    unlisted = _unlisted(item) if stated is None else []
+                    if unlisted:
+                        held.unlisted.update(dict.fromkeys(unlisted))
+                    else:
+                        held.tree.add(stated)
             if not read:
                 no_value[section_name] = no_value.get(section_name, 0) + 1
     values = [one for one in found.values() if one.attribution != ""]
@@ -776,6 +815,17 @@ def _compared(inputs: StaticInputs) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def attribution_words(row: Mapping[str, Any]) -> str:
+    """What a link row says beside its items of the process behind its value; ``""`` for none.
+
+    Its attribution unless it is the sample's tree, which is the reading's
+    default and goes unsaid: "process not attributed", or the processes the
+    report does not list that its rows name.
+    """
+    said = row.get("attribution")
+    return said if isinstance(said, str) and said != SAMPLE_TREE else ""
 
 
 def compared_words(row: Mapping[str, Any]) -> str:

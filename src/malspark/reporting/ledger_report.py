@@ -1247,8 +1247,9 @@ def _behaviour_code(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) ->
     for row in links:
         kind, value = _text(row.get("kind")), _text(row.get("value"))
         items = ", ".join(str(item) for item in row.get("items") or [])
-        if row.get("attribution") == behaviour_code.NOT_ATTRIBUTED:
-            items += f" ({behaviour_code.NOT_ATTRIBUTED})"
+        attribution = behaviour_code.attribution_words(row)
+        if attribution:
+            items += f" ({attribution})"
         held = [h for h in row.get("held") or [] if isinstance(h, dict)]
         if not held:
             acc.add_row(table, [kind, value, items, only, "", ""])

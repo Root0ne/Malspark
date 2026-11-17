@@ -5379,9 +5379,9 @@ def _behaviour_item(row: Mapping[str, Any], functions: Any, only: str) -> str:
         f" +{len(items) - len(shown)} more" if len(shown) < len(items) else ""
     )
     said = f"{row.get('kind')} {_quoted(str(row.get('value') or ''))}"
-    attribution = row.get("attribution")
-    if attribution == behaviour_code.NOT_ATTRIBUTED:
-        cited = f"{cited}; {attribution}" if cited else str(attribution)
+    attribution = behaviour_code.attribution_words(row)
+    if attribution:
+        cited = f"{cited}; {attribution}" if cited else attribution
     if cited:
         said += f" ({cited})"
     held = [h for h in row.get("held") or [] if isinstance(h, Mapping)]
