@@ -103,14 +103,65 @@ def test_section_11_states_the_sample_upload_and_its_host() -> None:
     )
     # Hosts, kinds and counts only: no launch argument, and nothing whose place is unknown.
     assert "--quiet" not in row and "launch arguments" not in row
-    assert "cannot be told" not in row and "stdio" not in row
+    assert "cannot be told" not in row and "stdio" not in row and "mcp:local" not in row
     assert row.startswith("- Lookups:") and row.endswith(LEFT_THE_MACHINE_RECORD)
     assert section.index(LIST_LABEL) < section.index(LEFT_THE_MACHINE_RECORD)
 
 
 def test_no_disclosure_row_where_the_record_has_none() -> None:
-    for record in (None, _record([], []), _record([], [STAGED])):
+    local = {**LOOKUP, "where": "local", "host": "127.0.0.1"}
+    for record in (None, _record([], []), _record([local], [])):
         assert LEFT_THE_MACHINE_RECORD not in _section_11(_with(record))
+
+
+MODEL = {
+    "why": "",
+    "host": "",
+    "calls": 12,
+    "where": "remote",
+    "agents": {"judge": 5, "reporter": 7},
+    "global": True,
+    "runtime": "",
+    "service": "a model service",
+    "configured_for": [],
+}
+SERVER = {
+    "why": "",
+    "host": "tools.example",
+    "calls": 9,
+    "where": "remote",
+    "served": 0,
+    "source": "mcp:remote",
+    "transport": "http",
+}
+RUNNING = {"asked": [], "state": "running", "may_reach": []}
+
+
+def test_section_11_states_every_kind_the_record_places_outside() -> None:
+    record = {
+        **_record([LOOKUP], [SANDBOX, STAGED, {**STAGED, "calls": 2}]),
+        "models": [MODEL],
+        "servers": [SERVER],
+        "enrichment": RUNNING,
+        "tracing": True,
+    }
+    row = plain(_row(_section_11(_with(record))))
+    # The model requests and the remote tool server, in the block's own words.
+    assert "Model prompts: a model service (outside this machine) received 12 calls" in row
+    assert re.search(r"Tool calls: tool server remote over http at tools(\.|\[\.\])example", row)
+    # A kind whose destination the record cannot tell: named, with its count.
+    assert "Sample uploads: 5 calls, destination not recorded." in row
+    assert "Enrichment questions about the report's indicators: count not recorded, " in row
+    assert "Tracing of every prompt and answer: count not recorded, destination not recorded." in (
+        row
+    )
+    assert row.endswith(LEFT_THE_MACHINE_RECORD)
+
+
+def test_a_record_stated_as_partial_says_so_in_the_row() -> None:
+    record = {**_record([LOOKUP], []), "partial_reason": "the run was stopped part-way"}
+    row = plain(_row(_section_11(_with(record))))
+    assert row.startswith("- This record may be incomplete: the run was stopped part-way")
 
 
 def test_section_11_disclosure_words_match_the_bundle_block() -> None:
@@ -118,8 +169,9 @@ def test_section_11_disclosure_words_match_the_bundle_block() -> None:
     row = _row(_section_11(report))[2:].removesuffix(LEFT_THE_MACHINE_RECORD).strip()
     bundle = MarkdownRenderer(layout=BUNDLE).render(report)
     block = [line[2:] for line in bundle.splitlines() if line.startswith("- ")]
-    lookup, upload = re.split(r"(?<=\.) (?=Sample upload:)", row)
+    lookup, upload, untold = re.split(r"(?<=\.) (?=Sample uploads?:)", row)
     assert lookup in block
+    assert untold == "Sample uploads: 3 calls, destination not recorded."
     # The submission's sentence opens the bundle's line, its launch arguments after.
     assert any(line.startswith(upload) and line != upload for line in block)
 

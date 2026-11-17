@@ -2000,21 +2000,83 @@ def _nothing_sentence(record: Mapping[str, Any], code: Callable[[str], str]) -> 
 LEFT_THE_MACHINE_RECORD = "The full record of what left this machine is in the bundle."
 
 
+# Each part of the record whose rows say where a thing went: its writer, and what the row
+# names a thing of that part by where the record cannot tell its destination (T-719).
+_LEFT_PARTS: tuple[
+    tuple[str, Callable[[Mapping[str, Any], Callable[[str], str]], str], str], ...
+] = (
+    ("models", _model_line, "Model prompts"),
+    ("lookups", _lookup_line, "Lookups"),
+    ("uploads", _upload_sentence, "Sample uploads"),
+    ("servers", _server_line, "Tool calls"),
+    ("stores", _store_line, "Case memory"),
+    (
+        "undeclared",
+        lambda row, code: _undeclared_line([row], code),
+        "Tool calls to tools that declare no effects",
+    ),
+)
+
+
+def _not_recorded_line(what: str, count: int | None) -> str:
+    """A kind of thing that left this machine whose destination the record cannot tell: named,
+    with its count, or that the record holds none (T-719)."""
+    counted = count_label(count, "call") if count is not None else "count not recorded"
+    return f"{what}: {counted}, destination not recorded."
+
+
+def _partial_line(record: Mapping[str, Any]) -> str:
+    return (
+        f"This record may be incomplete: {record['partial_reason']}, and a call made in the "
+        "step it stopped in may not be recorded, so it cannot be said that nothing left "
+        "this machine."
+    )
+
+
+def _enrichment_left(held: Any, code: Callable[[str], str]) -> list[str]:
+    """What the enrichment job sent: what it asked, in the block's words, where the record
+    says; a job whose questions the record does not follow, named as such; nothing for a job
+    only queued, or one that ran and asked nothing."""
+    if not isinstance(held, Mapping):
+        return []
+    asked = [row for row in held.get("asked") or [] if isinstance(row, Mapping)]
+    state = held.get("state")
+    out: list[str] = []
+    if state == ENRICHMENT_RUNNING:
+        out.append(_not_recorded_line("Enrichment questions about the report's indicators", None))
+        if asked:
+            out.append("Enrichment: an earlier enrichment asked " + _asked_parts(asked, code) + ".")
+    elif state in (ENRICHMENT_DONE, ENRICHMENT_STOPPED) and asked:
+        out.extend(_enrichment_state_lines(held, code))
+    return out
+
+
 def left_the_machine(record: Any, code: Callable[[str], str] = _code) -> str:
     """One sentence run stating what left this machine, for the analyst report's limitations:
-    each lookup and each sample upload the record places outside it, in the words the block
-    of :func:`disclosure_lines` gives them (a submission without its launch arguments), and
-    that the full record is in the bundle; ``""`` where the record places none outside.
-    Hosts, kinds and counts only, as the record holds them (T-719)."""
-    if not isinstance(record, Mapping) or "models" not in record:
+    every kind of thing the record places outside it, each row in the words the block of
+    :func:`disclosure_lines` gives it (a submission without its launch arguments); a kind
+    whose destination the record cannot tell, named with its count as "destination not
+    recorded"; what the enrichment job asked and whether tracing sent the run's prompts out;
+    and that the full record is in the bundle. ``""`` where the record places nothing outside
+    this machine. Hosts, kinds and counts only, as the record holds them: never a credential,
+    a query, a prompt or a file's content (T-719)."""
+    if not isinstance(record, Mapping) or "models" not in record or record.get("nothing_left"):
         return ""
-    lines = [
-        write(row, code)
-        for part, write in (("lookups", _lookup_line), ("uploads", _upload_sentence))
-        for row in record.get(part) or []
-        if isinstance(row, Mapping) and row.get("where") == REMOTE and row.get("host")
-    ]
-    return " ".join([*lines, LEFT_THE_MACHINE_RECORD]) if lines else ""
+    lines: list[str] = []
+    for part, write, what in _LEFT_PARTS:
+        rows = [row for row in record.get(part) or [] if isinstance(row, Mapping)]
+        lines.extend(write(row, code) for row in rows if row.get("where") == REMOTE)
+        untold = [row for row in rows if row.get("where") not in (REMOTE, LOCAL)]
+        if untold:
+            calls = [int(row["calls"]) for row in untold if "calls" in row]
+            lines.append(_not_recorded_line(what, sum(calls) if calls else None))
+    lines.extend(_enrichment_left(record.get("enrichment"), code))
+    if record.get("tracing"):
+        lines.append(_not_recorded_line("Tracing of every prompt and answer", None))
+    if not lines:
+        return ""
+    head = [_partial_line(record)] if record.get("partial_reason") else []
+    return " ".join([*head, *lines, LEFT_THE_MACHINE_RECORD])
 
 
 def disclosure_lines(record: Any, code: Callable[[str], str] = _code) -> list[str]:
@@ -2029,11 +2091,7 @@ def disclosure_lines(record: Any, code: Callable[[str], str] = _code) -> list[st
     if record.get("nothing_left"):
         lines.append(_nothing_sentence(record, code))
     elif record.get("partial_reason"):
-        lines.append(
-            f"This record may be incomplete: {record['partial_reason']}, and a call made in the "
-            "step it stopped in may not be recorded, so it cannot be said that nothing left "
-            "this machine."
-        )
+        lines.append(_partial_line(record))
     writers: tuple[tuple[str, Callable[[Mapping[str, Any], Callable[[str], str]], str]], ...] = (
         ("models", _model_line),
         ("lookups", _lookup_line),
