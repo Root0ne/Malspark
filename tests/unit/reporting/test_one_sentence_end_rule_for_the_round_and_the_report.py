@@ -372,3 +372,12 @@ def test_a_mark_after_a_path_mark_opens_no_emphasis() -> None:
 def test_a_mark_closing_emphasis_inside_open_emphasis_ends_no_sentence() -> None:
     assert _units("**a _b._ c.** Next.") == ["**a _b._ c.**", "Next."]
     assert _units("_a **b.** c._ Next.") == ["_a **b.** c._", "Next."]
+
+
+def test_a_doubled_mark_is_one_mark_and_emphasis_opens_on_its_own_line() -> None:
+    assert _units("__Heading.__ The table holds five.") == [
+        "__Heading.__",
+        "The table holds five.",
+    ]
+    # Emphasis opened on an earlier line closes nothing on this one.
+    assert _units("**a\nb.** Next.") == ["**a", "b.** Next."]
