@@ -86,6 +86,7 @@ def test_a_list_of_ids_is_one_claim_per_id(line: str, ids: list[str]) -> None:
         "T1027 (candidate), T1140",
         "T1027, T1140 not observed",
         "T1027, not T1140",
+        "NONE, T1027",
         # A separator the reader does not read as a list.
         "T1027 or T1140",
         "T1027 and/or T1140",

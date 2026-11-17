@@ -2014,9 +2014,12 @@ _ONE_TECHNIQUE_RE = re.compile(ID_BODY, re.IGNORECASE)
 # What a TECHNIQUE line says to claim none.
 _NO_TECHNIQUE = frozenset({"", "NONE", "—", "–", "-"})
 # A line that opens with NONE, the word the format declares for no technique,
-# claims none whatever note follows it ("none asserted", "NONE (persistence
-# covered by T1053.005)"); the line as written is the claim's note
-# (``technique_note``).
+# and names no technique id anywhere on it, bracketed or not, claims none
+# whatever note follows it ("none asserted", "None; Process Injection is
+# likely"); the line as written is the claim's note (``technique_note``). With
+# an id on it the line may assert the id ("none asserted beyond T1140") or set
+# it aside, and is read as any other line: asked about, unless the id stands in
+# a closing note that says it is not asserted (``_read_noted_line``).
 _OPENS_WITH_NONE_RE = re.compile(r"none\b", re.IGNORECASE)
 # A line that opens with a dash before a bracketed note ("— (provenance)"): it
 # claims none when no technique id and no catalogue technique name stands
@@ -2426,10 +2429,10 @@ def _note_reading(note: str, technique_id: str = "") -> str | None:
     return _NOTE_NEUTRAL
 
 
-# A line that opens with a dash and closes with one note naming the ids it
-# sets aside ("— (T1547.001 not supported)").
+# A line that opens with "none" or a dash and closes with one note naming the
+# ids it sets aside ("none (T1547.001 not supported)").
 _NONE_WITH_NOTE_RE = re.compile(
-    rf"[—–-](?P<before>[^()]*+)\(\s*+(?P<ids>{ID_BODY}(?:\s*+(?:,|/|and)\s*+{ID_BODY})*+)"
+    rf"(?:none\b|[—–-])(?P<before>[^()]*+)\(\s*+(?P<ids>{ID_BODY}(?:\s*+(?:,|/|and)\s*+{ID_BODY})*+)"
     r"(?P<note>[^()]*+)\)\s*+\.?",
     re.IGNORECASE,
 )
@@ -2444,7 +2447,8 @@ def _read_noted_line(bare: str) -> tuple[str, ...] | None:
     other note, or anything else on the line, leaves it asked about. A negating
     note on a list where another id has no note of its own may be said of every
     id: asked. ``()`` when every id is set aside, which claims none, as a line
-    that opens with a dash and closes with a note setting its ids aside does.
+    that opens with "none" or a dash and closes with a note setting its ids
+    aside does.
     """
     opening = _NONE_WITH_NOTE_RE.fullmatch(bare)
     if opening is not None:
@@ -2491,15 +2495,15 @@ def _bare_technique_line(text: str) -> str:
 def technique_note(line: str) -> str | None:
     """The note a TECHNIQUE line that opens with NONE writes, kept on the claim's record.
 
-    The line as written, when it opens with NONE and says more than NONE;
-    ``None`` for any other line. :func:`read_technique_line` reads such a line
-    as no technique and asks nothing about it, so the note is kept here.
+    The line as written, when it opens with NONE, says more than NONE and is
+    read as no technique (:func:`read_technique_line`), so nothing is asked
+    about it; ``None`` for any other line.
     """
     text = str(line or "").strip()
     bare = _bare_technique_line(text)
     if bare.upper() in _NO_TECHNIQUE or not _OPENS_WITH_NONE_RE.match(bare):
         return None
-    return text
+    return text if read_technique_line(text) == ((), None) else None
 
 
 def read_technique_line(line: str) -> tuple[tuple[str, ...], str | None]:
@@ -2517,23 +2521,28 @@ def read_technique_line(line: str) -> tuple[tuple[str, ...], str | None]:
     catalogue's own name for it, in brackets or not ("T1027 (Obfuscated Files
     or Information)", "T1106 Native API"), is that id: the name names the id
     and decides nothing. Ids separated by commas, "and", slashes or semicolons
-    are a list. A line that opens with NONE claims none, whatever note follows
-    it ("none (T1055 covers the observed injection)", "None; Process Injection
-    is likely"): the note is the claim's own (:func:`technique_note`) and no
-    question is asked. A line that opens with a dash before a bracketed note
-    and holds no technique id ("— (provenance)") claims none. An id with a
+    are a list. A line that opens with NONE and names no technique id anywhere
+    claims none, whatever note follows it ("None; Process Injection is
+    likely"): the note is the claim's own (:func:`technique_note`) and no
+    question is asked. One that names an id ("none asserted beyond T1140") may
+    assert it and is read as any other line. A line that opens with a dash
+    before a bracketed note and holds no technique id and no catalogue
+    technique name ("— (provenance)") claims none. An id with a
     closing note in brackets is read by what the note says
     (``_read_noted_line``): a note whose every content word is the id's own
     vendored word or a reference or layout word ("T1071.001 (configured
     channel)", "(one per command, as listed)") leaves the id read; a note that
     says the id is not asserted, followed only by where or by what ("T1547.001
-    (not supported by the traced code)"), claims none of it; any other note
+    (not supported by the traced code)", "none (T1055 withdrawn)"), claims
+    none of it; any other note
     keeps the line whole and asked about, an id first and a doubt after it
     ("T1129 (lead only)") as much as any.
     """
     text = str(line or "").strip()
     bare = _bare_technique_line(text)
-    if bare.upper() in _NO_TECHNIQUE or _OPENS_WITH_NONE_RE.match(bare):
+    if bare.upper() in _NO_TECHNIQUE:
+        return (), None
+    if _OPENS_WITH_NONE_RE.match(bare) and not _ANY_TECHNIQUE_ID_RE.search(text):
         return (), None
     if (
         _NONE_WITH_WORDS_RE.match(bare)

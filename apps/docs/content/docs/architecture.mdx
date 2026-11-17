@@ -2832,11 +2832,13 @@ is no part of it. An id followed by the vendored catalogue's own name for it,
 in brackets or not (`T1027 (Obfuscated Files or Information)`, `T1106 Native
 API`, the name with no bracket running to the next comma, semicolon or the
 line's end; for a sub-technique its own name, or its parent's and its own
-joined by a colon) is that id. A line that opens with "none" claims none,
-whatever note follows it (`none asserted`, "None; Process Injection is
-likely"); the line as written is kept on the claim as `technique_note` and
-nothing is asked about it. A line that puts an id first and a doubt after it
-(`T1559 (lead only)`) is asked about. Any other
+joined by a colon) is that id. A line that opens with "none" and names no
+technique id anywhere claims none, whatever note follows it (`none asserted`,
+"None; Process Injection is likely"); the line as written is kept on the claim
+as `technique_note` and nothing is asked about it. A line that opens with
+"none" and names an id ("none asserted beyond T1140") is asked about, unless
+its ids stand in a closing note that says they are not asserted, and so is a
+line that puts an id first and a doubt after it (`T1559 (lead only)`). Any other
 line (bracketed words that are not that name, a qualifier, a negation, ids joined by
 another word) claims no id, is kept on the claim as `technique_line`, and the
 validation turn asks once for the ids alone, an id the claim does not assert
