@@ -18,6 +18,9 @@ DIGEST = "d" * 64
 STAGED = f"C:\\Users\\u\\AppData\\Local\\Temp\\{DIGEST}.exe"
 INSTALLED = "C:\\Users\\u\\AppData\\Roaming\\svc\\invoice.exe"
 SVCHOST = "C:\\Windows\\System32\\svchost.exe"
+# A file the run wrote that no process runs: read with no reader, a record
+# states that it records file writes only where it shows one.
+LOG = "C:\\Users\\u\\AppData\\Local\\Temp\\run.log"
 
 
 def _process(pid: int, ppid: int, name: str, seen: str = "") -> dict[str, Any]:
@@ -27,7 +30,7 @@ def _process(pid: int, ppid: int, name: str, seen: str = "") -> dict[str, Any]:
     return row
 
 
-def _report(processes: list[dict[str, Any]], written: tuple[str, ...] = ()) -> dict[str, Any]:
+def _report(processes: list[dict[str, Any]], written: tuple[str, ...] = (LOG,)) -> dict[str, Any]:
     return {
         "target": {"name": "invoice.exe", "sha256": DIGEST},
         "behavior": {"processes": processes},

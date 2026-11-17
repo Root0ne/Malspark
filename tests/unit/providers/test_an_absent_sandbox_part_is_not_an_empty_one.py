@@ -23,6 +23,7 @@ from malspark.providers.sandbox_tools import (
     sandbox_services_and_tasks,
     sandbox_signatures,
 )
+from malspark.schemas.sandbox_report import STAGED_KEY, STAGED_NOTE_KEY
 
 _OTHER = {"target": {"file": {"sha256": "a" * 64}}, "cti": {"x": 1}}
 
@@ -198,8 +199,11 @@ def test_the_cape_reader_is_unaffected_by_its_declaration() -> None:
 
     Beside what its declarations read, which only a named reader's answer
     carries: a signature's indicators. A process row and a request record are
-    read one way whichever reader is named: the place the sandbox started the
-    submitted file from and each request's row are the same answer.
+    read one way whichever reader is named: each process row and each
+    request's row are the same answer. The place the sandbox started the
+    submitted file from is marked only where the record states its file
+    writes: the report shows none, which its reader reads as nothing written
+    and a read that names no reader as no record of writes.
     """
     from malspark.providers.sandbox.readers import required_reader
     from malspark.schemas.sandbox_document import sandbox_document
@@ -227,4 +231,7 @@ def test_the_cape_reader_is_unaffected_by_its_declaration() -> None:
                     for row in named["signatures"]
                 ],
             }
+        if view is sandbox_processes:
+            assert named.pop(STAGED_NOTE_KEY)
+            assert [row.pop(STAGED_KEY, False) for row in named["processes"]].count(True) == 1
         assert named == view(document)

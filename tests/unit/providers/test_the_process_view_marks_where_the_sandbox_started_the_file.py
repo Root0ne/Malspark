@@ -35,7 +35,10 @@ def _triage(image: str = STAGED, copy: str = COPY) -> dict[str, Any]:
                 "image": "C:\\Windows\\explorer.exe",
                 "cmd": "explorer.exe",
             },
-        ]
+        ],
+        # A file the run wrote that no process runs: read with no reader, a
+        # record states that it records file writes only where it shows one.
+        "dumped": [{"name": "run.log", "path": f"{TEMP}\\run.log"}],
     }
     report = required_reader("triage").read(
         overview, provider="lab-box", task_id="s1", task_reports={"behavioral1": task}
