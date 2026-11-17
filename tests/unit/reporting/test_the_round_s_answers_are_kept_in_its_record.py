@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 from typing import Any
 
 import pytest
@@ -111,3 +112,48 @@ def test_the_answers_are_shown_to_no_model_and_printed_nowhere_a_person_reads() 
         bundle_json(report),
     ):
         assert _UNREAD not in printed
+
+
+@pytest.fixture
+def configured_key(monkeypatch: pytest.MonkeyPatch) -> str:
+    """A configured value registered as the worker registers a job's settings."""
+    from malspark.pipeline import events
+    from tests.credential_shapes import lowercase_body
+
+    key = lowercase_body(24)
+    monkeypatch.setattr(events, "_SECRET_SCOPES", {})
+    monkeypatch.setattr(events, "_SHORT_SECRETS", {})
+    monkeypatch.setattr(events, "_FAILED_SCOPES", set())
+    monkeypatch.setattr(events, "_CONFIGURED_PATTERN", None)
+    events.remember_secret_values([key], scope="job")
+    return key
+
+
+def test_the_stored_answers_are_masked_as_every_stored_model_answer_is(
+    configured_key: str,
+) -> None:
+    from malspark.pipeline.events import safe_answer_text
+
+    said = f"the lines shown say otherwise; {configured_key} is the note"
+    first = {
+        "sentences": [_in(_row(_UNKNOWN, "drop", [], reason=said))],
+        configured_key: [said],
+    }
+    unread = f"no rows, sorry: {configured_key}"
+    report = _background()
+    done = _asked(report, _Reporter(first, unread))
+    stored = done.summary[ANSWERS]
+    assert configured_key not in repr(stored)
+    # The one masking rule for a whole model answer, on each text the answer holds, its
+    # layout kept: a row's words, a key the model wrote, an answer read as its text.
+    masked = safe_answer_text(said)
+    assert masked != said
+    assert stored[0] == {
+        "sentences": [_in(_row(_UNKNOWN, "drop", [], reason=masked))],
+        safe_answer_text(configured_key): [masked],
+    }
+    assert stored[1] == safe_answer_text(unread)
+    # Re-applied, the record's answers are what the round is handed, as stored.
+    reporter = StoredAnswers(copy.deepcopy(stored))
+    handed = [asyncio.run(reporter.ask([], call="c", what="w")).content for _answer in range(3)]
+    assert handed == [json.dumps(stored[0]), stored[1], json.dumps({"sentences": []})]
