@@ -5917,6 +5917,10 @@ is assembled from what the run gathered rather than recomputed beside it:
   (`NetworkURL.user_agent`) is the user agent of the same record: the first record
   of the URL that states a method gives both, and no row joins two requests' facts;
   where no record states a method, the first that states a user agent gives it.
+  The user agent is read through `sandbox_report.request_user_agent` with the
+  job's reader, which the report's build takes from the job's record
+  (`network_from_ledger(..., normalised_by=...)`, the builder's
+  `sandbox_normalised_by`); a later detonation's request by `user_agent`.
   A name's DNS answers are its `resolved_ips`. Such a value, with no second source, reads `no: seen only in the text
   of <entry> (<tool>), and no second source in this run records it;
   <artifact> lists it`. A value no answer
