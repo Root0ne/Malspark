@@ -230,3 +230,26 @@ def test_a_sentence_one_passage_writes_twice_places_no_row(limitations: str) -> 
     assert PLACED_BY_SENTENCE_CODE not in done.tally.by_code
     assert report.intro_background == background
     assert report.technical_analysis.analyst_limitations.body == limitations
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"decision": "drop", "reason": ""},
+        {"decision": ["drop"], "reason": "the lines shown say otherwise"},
+        {"decision": "rewrite", "rewrite": "  "},
+    ],
+    ids=["a drop with no reason", "a decision the schema has not", "a rewrite with no words"],
+)
+def test_a_row_the_schema_refuses_is_neither_placed_nor_recorded(bad: dict[str, Any]) -> None:
+    row = {**_row(_UNKNOWN, "drop", []), **bad, "passage": "held.introduction"}
+    _report_, counts, records, _found = _applied({"sentences": [row]})
+    assert not [v for v in records if v.code == PLACED_BY_SENTENCE_CODE]
+    assert counts["sentences"] == 0
+    report = _background()
+    done = _ask(report, _Reporter({"sentences": [row]}, {"sentences": [row]}))
+    assert PLACED_BY_SENTENCE_CODE not in done.tally.by_code
+    # The sentence ends as one no row answered.
+    unanswered = _background()
+    _ask(unanswered, _Reporter({"sentences": []}, {"sentences": []}))
+    assert report.model_dump() == unanswered.model_dump()
