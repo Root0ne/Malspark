@@ -1145,7 +1145,10 @@ process as the row names it, in the publish rule's words (read through
 `ledger_projection.traffic_makers`), and is never marked `process not
 attributed`; a value no row attributes is marked `process not attributed`, and
 one every row of which belongs to another listed process is not linked and is
-counted. Items of a section with no value under
+counted. The command line of the process the sandbox started the submitted
+file from carries the mark's words beside its items, in the pack line and the
+report's table, read by the one reading the process view asks
+(`sandbox_tools.sandbox_started_positions`, `sandbox_report.staged_words`). Items of a section with no value under
 the fields read are counted. The step runs under the pack's time budget, like
 the other late steps, and stops with a `partial` answer. The function is
 the one the holding's own answer names (a blob's references, a recovered
@@ -6052,7 +6055,26 @@ is assembled from what the run gathered rather than recomputed beside it:
   process tree carries the mark (`ProcessNode.staged_by_sandbox`, left out
   when false), and the pack's process line, the evidence table, the report's
   process tree and its figure write the same words beside the row
-  (`sandbox_report.staged_words`).
+  (`sandbox_report.staged_words`). So do the behaviour links (the marked
+  process's command line), the composer's execution-flow tree and the note
+  naming the entries that hold a value a claim quotes, where the value is that
+  path or that command line (`evidence_bundles.sandbox_start_matcher`). The
+  item reader (`sandbox_items`) labels nothing by its design and answers the
+  rows as the report holds them. Where a row is marked, the path is one fact
+  where a writer decides, from one writer (`evidence_bundles.sandbox_start_facts`):
+  the facts of the execution-flow, configuration and host-identifier sections
+  (`sandbox_start_path`), the narrative's facts block, which the question
+  round shares, and the agreement round's facts each carry one line: the path,
+  the mark's words with the rows' pids, and the process view's sentence
+  unchanged. A configuration or host-identifier row whose value is that path
+  (or that process's command line) and whose every cited entry holds it only
+  as a process row (the process view, the item reader asked for processes, a
+  behaviour link observed in process items only) is asked about once with the
+  fact (`report.sandbox_start_path_as_value`, `start_path_value_violations`):
+  the writer keeps the row, rewrites it or leaves it out, and a row kept stands
+  with the finding beside it. The check reads the row's value and the declared
+  kinds of its cited entries, never a sentence; recommendation and hunting text
+  is not checked by code.
 * **The IOC table's row is the one record every surface reads.** The table's
   builder (`builder.ioc_table`) asks the rule once per value and records on the
   row its answer, its role (`sample_identity`, `similarity`, `indicator`,
@@ -6452,7 +6474,10 @@ is assembled from what the run gathered rather than recomputed beside it:
   technique id the report's ATT&CK table does not publish; one question per
   recommendation, naming the ids), `report.configuration_uncited` (a value said to be decrypted or
   observed cites no entry), `report.identifier_uncited` (a host identifier
-  cites no entry of the run), `report.id_not_in_cited_entry` (a table row's
+  cites no entry of the run), `report.sandbox_start_path_as_value` (a
+  configuration or host-identifier row states the path the sandbox started the
+  submitted file from, which its cited entries hold only as a process row;
+  asked with the fact), `report.id_not_in_cited_entry` (a table row's
   `id`, a command's, is held by none of the entries the row cites while another
   entry of the run holds it: a number, alone or as the id's last word after a
   label every numbered row of the table shares (any other id is text), is held
