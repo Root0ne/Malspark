@@ -550,12 +550,21 @@ def escape_starts_at(haystack: str, at: int) -> bool:
     return (at - before) % 2 == 0
 
 
+# The marks a notation writes its strings between: double, single and back quotes.
+_STRING_QUOTES = ('"', "'", "`")
+
+
 def string_opens_before(haystack: str, at: int) -> int:
-    """Where the JSON string ``at`` stands in opens: after the last quote no escape writes."""
-    quote = haystack.rfind('"', 0, at)
-    while quote != -1 and escape_starts_at(haystack, quote - 1):
-        quote = haystack.rfind('"', 0, quote)
-    return quote + 1
+    """Where the string ``at`` stands in opens: after the last quote mark of any notation
+    (:data:`_STRING_QUOTES`) no escape writes. An apostrophe of running text counts too:
+    it only moves the start later, never past the text it bounds."""
+    opened = -1
+    for mark in _STRING_QUOTES:
+        quote = haystack.rfind(mark, 0, at)
+        while quote != -1 and escape_starts_at(haystack, quote - 1):
+            quote = haystack.rfind(mark, 0, quote)
+        opened = max(opened, quote)
+    return opened + 1
 
 
 # What ends a run of text a value stands in: a space and a quote.

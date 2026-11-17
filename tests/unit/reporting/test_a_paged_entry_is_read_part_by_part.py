@@ -116,7 +116,8 @@ class TestTheRunIsShownFromItsPart:
         found = _one(_identifiers("ExampleNoteFile-READ.txt"), texts)
 
         assert found.code == STATED_VALUE_INSIDE_A_TOKEN_CODE
-        assert "only inside a longer run of text: 'poolexamplenotefile-read.txttail'." in (
+        # A page is kept lower-cased, and the stored output does not hold it.
+        assert "longer run of text, shown in lower case: 'poolexamplenotefile-read.txttail'." in (
             found.message
         )
 
@@ -236,3 +237,100 @@ class TestTheCitationIsASet:
         (row,) = comp.validation_tally.unresolved
         assert row["code"] == STATED_VALUE_INSIDE_A_TOKEN_CODE
         assert "asked" not in row
+
+
+def _raw(text: str) -> EntryTexts:
+    return EntryTexts.from_ledger([_entry("ev_0001", text)])
+
+
+class TestEveryQuoteMarkEndsAString:
+    @pytest.mark.parametrize("quote", ['"', "'", "`"])
+    @pytest.mark.parametrize(
+        ("strings", "key"),
+        [
+            (
+                ["HKLM\\\\Software\\\\Vendor", "HKCU", "Software\\\\Vendor"],
+                "HKCU\\Software\\Vendor",
+            ),
+            (
+                ["HKCU\\\\Software\\\\Other", "Software\\\\Vendor\\\\Run"],
+                "HKCU\\Software\\Vendor\\Run",
+            ),
+        ],
+    )
+    def test_a_hive_in_another_string_holds_nothing_in_any_notation(
+        self, quote: str, strings: list[str], key: str
+    ) -> None:
+        listed = "[" + ", ".join(f"{quote}{text}{quote}" for text in strings) + "]"
+
+        assert _one(_identifiers(key), _raw(listed)).code == STATED_VALUE_UNHELD_CODE
+
+    def test_an_apostrophe_in_running_text_only_ever_asks(self) -> None:
+        # The possessive's apostrophe is the last quote before the path: the
+        # line begins after it, the hive is not on it, and the row is asked.
+        texts = _raw("it's HKCU's key: Software\\Vendor")
+
+        assert _one(_identifiers("HKCU\\Software\\Vendor"), texts).code == STATED_VALUE_UNHELD_CODE
+
+    def test_a_char_literal_before_the_handle_leaves_the_call_s_line_whole(self) -> None:
+        source = "c = '\\\\'; RegOpenKeyExA(0x80000001, \"Software\\\\Vendor\");"
+        texts = EntryTexts.from_ledger([_entry("ev_0001", json.dumps({"code": source}))])
+
+        assert stated_value_violations(_identifiers("HKCU\\Software\\Vendor"), texts) == []
+
+    def test_a_char_literal_between_the_handle_and_the_path_asks(self) -> None:
+        source = "f(0x80000001, 'a', \"Software\\\\Vendor\");"
+        texts = EntryTexts.from_ledger([_entry("ev_0001", json.dumps({"code": source}))])
+
+        assert _one(_identifiers("HKCU\\Software\\Vendor"), texts).code == STATED_VALUE_UNHELD_CODE
+
+
+class TestARunIsShownInTheEntrysOwnCase:
+    def test_a_page_s_run_whose_case_is_lost_says_it_is_shown_in_lower_case(self) -> None:
+        texts = _read(json.dumps({"s": ["x"]}), json.dumps({"s": ["UpdaterServiceMainXYZ"]}))
+
+        found = _one(_identifiers("UpdaterServiceMain"), texts)
+
+        assert (
+            "only inside a longer run of text, shown in lower case: 'updaterservicemainxyz'."
+            in found.message
+        )
+
+    def test_a_page_s_run_the_stored_output_holds_is_shown_in_its_case(self) -> None:
+        corpus = RunEvidenceCorpus(10_000_000)
+        corpus.remember("ev_0001", "strings", json.dumps({"s": ["x"]}))
+        corpus.remember(
+            "ev_0001@100+100", "read_evidence", json.dumps({"s": ["UpdaterServiceMainXYZ"]})
+        )
+        stored = json.dumps({"s": ["x", "UpdaterServiceMainXYZ"]})
+        texts = EntryTexts.from_ledger([_entry("ev_0001", stored)], corpus)
+
+        found = _one(_identifiers("UpdaterServiceMain"), texts)
+
+        assert "only inside a longer run of text: 'UpdaterServiceMainXYZ'." in found.message
+
+    def test_a_repeat_s_run_is_read_in_its_holder_s_parts(self) -> None:
+        corpus = RunEvidenceCorpus(10_000_000)
+        corpus.remember("ev_0001", "strings", json.dumps({"s": ["x"]}))
+        corpus.remember(
+            "ev_0001@100+100", "read_evidence", "page poolExampleNoteFile-READ.txtTail end"
+        )
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", json.dumps({"s": ["x"]})),
+                LedgerEntry(
+                    id="ev_0002",
+                    agent="pipeline",
+                    server="pipeline",
+                    tool="strings",
+                    output="read again",
+                    repeated_of="ev_0001",
+                ),
+            ],
+            corpus,
+        )
+
+        found = _one(_identifiers("ExampleNoteFile-READ.txt", "ev_0002"), texts)
+
+        assert found.code == STATED_VALUE_INSIDE_A_TOKEN_CODE
+        assert "shown in lower case: 'poolexamplenotefile-read.txttail'." in found.message

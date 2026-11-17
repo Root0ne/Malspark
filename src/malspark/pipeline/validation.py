@@ -11226,7 +11226,7 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
             _held_with_its_hive(label, rest, ref) for ref in sorted(entries.may_hold(rest) & among)
         )
 
-    def _inside(literal: str, among: set[str]) -> list[tuple[str, str | None]]:
+    def _inside(literal: str, among: set[str]) -> list[tuple[str, tuple[str, bool] | None]]:
         # Each cited entry that holds the literal's text inside a longer run,
         # with the run as the entry holds it. A text holds the value's inner
         # runs whole (:meth:`EntryTexts.may_hold`).
@@ -11235,7 +11235,7 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
         runs = _TEXT_RUN_RE.findall(literal.lower())
         inner = " ".join(runs[1:-1])
         candidates = (entries.may_hold(inner) & among) if inner else set(among)
-        found: list[tuple[str, str | None]] = []
+        found: list[tuple[str, tuple[str, bool] | None]] = []
         for ref in sorted(candidates):
             text = entries.text_of(ref)
             for spelling in _stated_spellings(literal):
@@ -11249,7 +11249,7 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                 break
         return found
 
-    def _run_shown(ref: str, literal: str) -> str | None:
+    def _run_shown(ref: str, literal: str) -> tuple[str, bool] | None:
         # The run around the value in the part of the entry it stands in (the
         # answer, a page), read as a JSON document only where that part is one,
         # in the entry's own case where its stored text is the part read, and
@@ -11264,17 +11264,27 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                         return _run_of(ref, literal, part, start, start + len(form))
         return None
 
-    def _run_of(ref: str, literal: str, text: str, start: int, end: int) -> str | None:
+    def _run_of(ref: str, literal: str, text: str, start: int, end: int) -> tuple[str, bool] | None:
+        # The run, and whether it is shown in lower case: the corpus keeps the
+        # texts it was read in lower-cased, and the case is taken back from the
+        # entry's stored output where that holds the same text.
         json_notation = _a_json_document(text)
         first, last = run_around(text, start, end, json_notation=json_notation)
         stored = str(getattr(entries.entries.get(ref), "output", "") or "")
-        source = stored if len(stored) == len(text) and stored.lower() == text else text
         begin, finish = first, last
         if finish - begin > FINDING_VALUE_LIMIT:
             # Room on each side for the run and the mark of its cut.
             room = max(FINDING_VALUE_LIMIT - (end - start) - 2, 0) // 2
             begin, finish = max(begin, start - room), min(finish, end + room)
-        run = source[begin:finish]
+        if len(stored) == len(text) and stored.lower() == text:
+            run, lowered = stored[begin:finish], False
+        else:
+            run, lowered = text[begin:finish], True
+            folded = stored.lower()
+            at = folded.find(run) if len(folded) == len(stored) else -1
+            if at != -1:
+                run, lowered = stored[at : at + len(run)], False
+        lowered = lowered and run != run.upper()
         if json_notation:
             try:
                 # A run inside a JSON string reads as the string holds it.
@@ -11284,7 +11294,7 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
         if not any(spelling.lower() in run.lower() for spelling in _stated_spellings(literal)):
             return None
         run = f"{'…' if begin > first else ''}{run}{'…' if finish < last else ''}"
-        return run if safe_finding_value(run) == run else None
+        return (run, lowered) if safe_finding_value(run) == run else None
 
     def _what_is_held(literal: str, among: set[str]) -> str:
         # For a path no cited entry holds: the longest whole leading run of at
@@ -11332,7 +11342,8 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
         # By the entries cited: each row inside a longer run, with each text
         # read out of a run, its entry and the run.
         inside: dict[
-            tuple[str, ...], list[tuple[int, str, str, list[tuple[str, str, str | None]]]]
+            tuple[str, ...],
+            list[tuple[int, str, str, list[tuple[str, str, tuple[str, bool] | None]]]],
         ] = {}
         inside_at: dict[tuple[str, ...], list[int]] = {}
         for index, (at, row) in enumerate(_placed_rows(payload, list_key)):
@@ -11470,26 +11481,29 @@ def _inside_fact(
     number: int,
     label: str,
     value: str,
-    facts: Sequence[tuple[str, str, str | None]],
+    facts: Sequence[tuple[str, str, tuple[str, bool] | None]],
     entries: EntryTexts,
 ) -> str:
     """What a question says of one row inside a longer run: each text, its entry and the run.
 
     A run the printer would print as other text is said not to be shown
-    (:data:`RUN_NOT_SHOWN`): no sentence claims to show what it does not.
+    (:data:`RUN_NOT_SHOWN`), and one whose case the record lost is said to be
+    shown in lower case (:data:`RUN_IN_LOWER_CASE`): no sentence claims to show
+    what it does not.
     """
     head = f"{noun} {number} ({safe_finding_value(label)}: {safe_finding_value(value)!r})"
     said = []
-    for span, ref, run in facts:
+    for span, ref, shown in facts:
         what = head if span == value else f"{head}: {safe_finding_value(span)!r}"
         where = (
             f"{what} stands in {safe_finding_value(entries.named(ref))} only inside a longer run"
         )
-        said.append(
-            f"{where} of text, {RUN_NOT_SHOWN}."
-            if run is None
-            else f"{where} of text: {safe_finding_value(run)!r}."
-        )
+        if shown is None:
+            said.append(f"{where} of text, {RUN_NOT_SHOWN}.")
+            continue
+        run, lowered = shown
+        case = f", {RUN_IN_LOWER_CASE}" if lowered else ""
+        said.append(f"{where} of text{case}: {safe_finding_value(run)!r}.")
     return " ".join(said)
 
 
@@ -11502,6 +11516,8 @@ INSIDE_A_TOKEN_ENDS = (
 # What a finding says in place of a run the printer would print as other text,
 # and what a row kept after it is marked by (``markdown._row_mark``).
 RUN_NOT_SHOWN = "which is not shown here"
+# What it says of a run shown from a text whose case the record does not keep.
+RUN_IN_LOWER_CASE = "shown in lower case"
 
 
 def _named_literals(literals: Sequence[str]) -> str:
