@@ -140,3 +140,32 @@ def test_a_finding_on_a_sentence_asked_in_any_row_shape_stays_asked(order: str) 
     # The keep of the held sentence was refused in the first answer and again in the retry,
     # whichever shape each answer gave its rows: asked, both times.
     assert all("asked" not in r for r in records), records
+
+
+@pytest.fixture
+def record_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.unit.pipeline.test_record_only_findings_open_no_turn import settings_with
+
+    built = settings_with("record_only")
+    monkeypatch.setattr("malspark.core.config.get_settings", lambda: built)
+
+
+def test_in_record_only_the_agreement_round_leaves_the_loop_s_marks(record_only: None) -> None:
+    # The retry asks only about the answer that could not be read; the finding of the answer
+    # read after it is marked not asked by the loop, without the retry's own words.
+    reporter = _Reporter("not an answer", _rows(_elsewhere("nowhere", FIRST)))
+    result = _ask(_report(f"{FIRST} {SECOND}"), reporter)
+    (record,) = _records(result, UNKNOWN_PASSAGE_CODE)
+    assert record["asked"] == "false"
+    assert "first appeared in the answer" not in record["message"]
+
+
+@pytest.mark.asyncio
+async def test_in_record_only_the_question_round_leaves_the_loop_s_marks(
+    record_only: None,
+) -> None:
+    reporter = _QuestionReporter("not an answer", {"answers": [_reply(1, "limited_negative")]})
+    result = await answer_questions(reporter, _question_report(), QUESTIONS[:1], ledger=LEDGER)
+    (record,) = [r for r in result.tally.unresolved if r["code"] == NEGATIVE_WITHOUT_COVERAGE_CODE]
+    assert record["asked"] == "false"
+    assert "first appeared in the answer" not in record["message"]

@@ -354,3 +354,8 @@ def test_the_stored_wildcard_sentence_is_one_unit() -> None:
         "execution was not observed."
     )
     assert _units(said) == [said]
+
+
+def test_a_run_of_single_letters_opened_by_a_bracket_or_a_quote_ends_no_sentence() -> None:
+    for text in ("It reads keys (e.g. The run key) first.", 'It reads "i.e. The key" first.'):
+        assert _units(text) == [text]
