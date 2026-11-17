@@ -130,7 +130,7 @@ class TestUnread:
         assert case["dns"][0] in listed
         assert case["process_name"] in listed
         # No fact is drawn: no domain is projected from it.
-        projected = network_from_sandbox_report(document)
+        projected = network_from_sandbox_report(document, None)
         assert projected is None or projected.domains == []
         result = _pack(document, ("upload", "unread", ""), tmp_path)
         index = {e.tool: e for e in result.entries}["sandbox_sections"].structured["sections"]
@@ -161,7 +161,7 @@ class TestAccepted:
         assert case["process_name"] in processes[0]["process_name"]
         assert [(r["dst"], r["dport"]) for r in document["network"]["tcp"]] == [case["tcp"]]
         assert [(r["dst"], r["dport"]) for r in document["network"]["udp"]] == [case["udp"]]
-        domains = network_from_sandbox_report(document).domains
+        domains = network_from_sandbox_report(document, None).domains
         assert [(d.fqdn, d.resolved_ips) for d in domains] == [(case["dns"][0], [case["dns"][1]])]
         assert case["dropped"] in document["dropped"][0]["name"]
         # What no path reads is still kept for the analyst, raw.

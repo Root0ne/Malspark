@@ -84,7 +84,7 @@ _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 
 def _readings(document: dict[str, Any]) -> dict[str, Any]:
-    network = network_from_sandbox_report(document)
+    network = network_from_sandbox_report(document, None)
     assert network is not None
     report = MalwareReport(
         identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)), network=network
@@ -187,7 +187,7 @@ def test_an_alias_chain_leads_a_name_to_its_addresses() -> None:
         {"data": "relay-target-g7.net.", "type": "CNAME"},
         {"data": "45.33.32.9", "type": "A"},
     ]
-    network = network_from_sandbox_report(_document([_named_request(answers, names)]))
+    network = network_from_sandbox_report(_document([_named_request(answers, names)]), None)
     assert network is not None
     held = {d.fqdn: d.resolved_ips for d in network.domains}
     assert held["relay-alias-e5.net"] == ["45.33.32.9"]
@@ -226,7 +226,7 @@ class TestASourceReportCannotLinkItsOwnRows:
     """A source's own DNS link key is never read as the platform's: each row keeps its answers."""
 
     def _resolved(self, link_key: str) -> dict[str, list[str]]:
-        network = network_from_sandbox_report(_cape_upload(link_key))
+        network = network_from_sandbox_report(_cape_upload(link_key), None)
         assert network is not None
         return {d.fqdn: d.resolved_ips for d in network.domains}
 
@@ -267,7 +267,7 @@ def test_only_an_address_record_names_an_address() -> None:
         {"name": NAMES[0], "type": "A", "value": "45.33.32.7"},
         {"name": NAMES[1], "type": "AAAA", "value": "2001:db8::7"},
     ]
-    network = network_from_sandbox_report(_document([_named_request(answers, NAMES)]))
+    network = network_from_sandbox_report(_document([_named_request(answers, NAMES)]), None)
     assert network is not None
     held = {d.fqdn: d.resolved_ips for d in network.domains}
     assert held[NAMES[0]] == ["45.33.32.7"]
@@ -281,7 +281,7 @@ def test_a_cut_is_stated_on_the_names_it_withheld_from() -> None:
     questions = [{"name": f"q{i}.relay-n4.net", "type": "A"} for i in range(n)]
     answers = [{"value": f"45.33.{i // 250}.{i % 250 + 1}"} for i in range(n)]
     request = {"domain_req": {"questions": questions}, "domain_resp": {"answers": answers}}
-    network = network_from_sandbox_report(_document([request]))
+    network = network_from_sandbox_report(_document([request]), None)
     assert network is not None
     partial = [d for d in network.domains if d.resolved_ips_partial]
     assert partial, "a request this shared must reach the size bound"
@@ -455,7 +455,7 @@ class _StructuralReader(ReportReader):
 
 def _resolved_by(reader: ReportReader, payload: dict[str, Any]) -> dict[str, list[str]]:
     document = sandbox_document(reader.read(payload, provider="upload"))
-    network = network_from_sandbox_report(document)
+    network = network_from_sandbox_report(document, None)
     assert network is not None
     return {d.fqdn: d.resolved_ips for d in network.domains}
 
@@ -781,7 +781,7 @@ class TestEveryReaderReadsADnsRowSNameAlike:
         assert "N/A | N/A" not in text
         assert "own-z1.net" in DynamicParser().parse({"network": network})
         report = SandboxReport(provider="x", source_format="y", network=SandboxNetwork(dns=[row]))
-        domains = network_from_sandbox_report(sandbox_document(report)).domains
+        domains = network_from_sandbox_report(sandbox_document(report), None).domains
         assert [d.fqdn for d in domains] == ["own-z1.net"]
         assert domains[0].resolved_ips == ["45.33.32.81"]
         assert _dns_item_root(row).endswith("own-z1.net")

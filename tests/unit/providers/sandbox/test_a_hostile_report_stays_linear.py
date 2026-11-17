@@ -378,7 +378,7 @@ class TestManyQuestionsTimesManyAnswers:
                 {}, provider="triage", source_format="triage", task_reports={"t": parsed}
             )
         )
-        held, network = _held(lambda: network_from_sandbox_report(document))
+        held, network = _held(lambda: network_from_sandbox_report(document, None))
         assert network is not None
         assert len(network.domains) == self.N
         assert held <= 4 * parsed_bytes, (held, parsed_bytes)
