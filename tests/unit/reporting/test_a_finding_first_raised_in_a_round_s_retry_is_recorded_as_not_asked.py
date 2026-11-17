@@ -118,3 +118,25 @@ async def test_question_round_keeps_a_finding_its_retry_was_asked_about_as_asked
     (record,) = result.tally.unresolved
     assert record["code"] == NEGATIVE_WITHOUT_COVERAGE_CODE
     assert "asked" not in record
+
+
+@pytest.mark.parametrize("order", ["whole then apart", "apart then whole"])
+def test_a_finding_on_a_sentence_asked_in_any_row_shape_stays_asked(order: str) -> None:
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        _UNKNOWN,
+    )
+
+    first = "The analysis covers one file."
+    text = f"{first} {_UNKNOWN}"
+
+    def keep(sentence: str) -> dict[str, Any]:
+        return _row(sentence, "keep", [], reason="none")
+
+    whole, apart = _rows(keep(text)), _rows(keep(first), keep(_UNKNOWN))
+    answers = (whole, apart) if order == "whole then apart" else (apart, whole)
+    result = _ask(_report(text), _Reporter(*answers))
+    records = [r for r in result.tally.unresolved if r["code"] != "agreement.held_unlisted"]
+    assert records
+    # The keep of the held sentence was refused in the first answer and again in the retry,
+    # whichever shape each answer gave its rows: asked, both times.
+    assert all("asked" not in r for r in records), records

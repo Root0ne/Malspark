@@ -8773,6 +8773,15 @@ async def _ask(
             return (found[0].id, str(found[1][0]))
         return (_form(_field(row, "passage")), " ".join(str(_field(row, "sentence") or "").split()))
 
+    def _places(row: Any) -> list[tuple[str, str]]:
+        # The place of each sentence the row answers: its own, or each of a field it copied
+        # whole, so a finding is asked where its sentence was asked about (T-719).
+        found = _span(row)
+        if found is None:
+            return [_where(row)]
+        passage, span = found
+        return [(passage.id, str(unit[0])) for unit in located_in[passage.id].units(span)]
+
     def _held(row: Any) -> bool:
         # A row fitting the schema that answers a sentence the ledger's own lines hold, or
         # one of a field answered whole.
@@ -8781,7 +8790,9 @@ async def _ask(
         except Exception:  # noqa: BLE001 — a row that fits no schema answers nothing
             return False
         found = _span(row)
-        return found is not None and bool(_ends_on_answer(found[0], found[1][2]))
+        return found is not None and any(
+            _ends_on_answer(found[0], unit[2]) for unit in located_in[found[0].id].units(found[1])
+        )
 
     def _sound(row: Any) -> bool:
         try:
@@ -8805,7 +8816,7 @@ async def _ask(
         )
 
     def _on_feedback(asked: Sequence[Violation]) -> None:
-        shown.extend(_by_place(v, checked[0], _where) for v in asked)
+        shown.extend(k for v in asked for k in _by_place(v, checked[0], _places))
         tally.count([v for v in asked if not v.question_only])
 
     # The call failing, wherever it fails, is no answer at all: each sentence the ledger's
@@ -8847,7 +8858,8 @@ async def _ask(
         [
             v
             for v in violations
-            if retries and raised_only_in_retry(_by_place(v, payload, _where), shown)
+            if retries
+            and all(raised_only_in_retry(k, shown) for k in _by_place(v, payload, _places))
         ]
         if feeds_back()
         else []
@@ -8910,19 +8922,22 @@ _ROW_PATH = re.compile(r"sentences\.(\d+)(?:\.|$)")
 
 
 def _by_place(
-    violation: Violation, payload: Any, where: Callable[[Any], tuple[str, str]]
-) -> Violation:
-    """``violation`` with the row its path names (``sentences.N``) named by the passage and
-    the sentence the row answers (``where``), the place a row keeps whatever its number in an
-    answer, so a finding is the same finding before a retry and after it (T-719); any other
-    finding as it is."""
+    violation: Violation, payload: Any, places: Callable[[Any], list[tuple[str, str]]]
+) -> list[Violation]:
+    """``violation`` once for each sentence the row its path names (``sentences.N``) answers,
+    each named by its passage and its place (``places``), the place a sentence keeps whatever
+    the row's number or shape in an answer: a finding is asked where any of its sentences was
+    shown a finding of that code before (T-719). Any other finding as it is."""
     found = _ROW_PATH.match(violation.path)
     raw = payload.get("sentences") if isinstance(payload, dict) else None
     rows = raw if isinstance(raw, list) else []
     if found is None or int(found.group(1)) >= len(rows):
-        return violation
-    passage, place = where(rows[int(found.group(1))])
-    return replace(violation, path=f"sentences[{passage}@{place}]{violation.path[found.end(1) :]}")
+        return [violation]
+    rest = violation.path[found.end(1) :]
+    return [
+        replace(violation, path=f"sentences[{passage}@{place}]{rest}")
+        for passage, place in places(rows[int(found.group(1))])
+    ]
 
 
 def _no_turn_left(violations: Sequence[Violation], payload: Any) -> list[Violation]:
