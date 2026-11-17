@@ -53,9 +53,14 @@ file (its submitted name, or its digest with an extension), whose image is
 that file, and that no process running the file started. The mark is given
 only where the record does not contradict it. Where such a process states a
 parent and its task lists a process with no id, or the parent's number names
-more than one process, nothing of that task is marked. Where the sandbox marks
-the sample's processes on any row of the task, a row without that mark is not
-marked. A path the report shows written during the run (the files it collected
+more than one process, nothing of that task is marked. A process whose image
+is a path the system itself ships, asked of the platform's one catalogue of
+shipped paths (`data/host_benign_locations_v1.json`, read by
+`stated_host_values.shipped_match`, the path whole), is never the place; a
+row that states no folder and whose name the system ships cannot be told and
+is not marked either. The sandbox's own mark of the sample's processes is not
+read: it stands on the sample's children and the desktop's processes, not on
+the process the sandbox started. A path the report shows written during the run (the files it collected
 and its file-write operations, each part where the reader declares it fills
 it) is never marked, an image that states no folder read against the written
 files' names; where the report records no file writes at all, nothing is

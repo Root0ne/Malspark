@@ -5951,9 +5951,11 @@ is assembled from what the run gathered rather than recomputed beside it:
   whose image is that file, and that no process running the file started.
   The mark is given only where the record does not contradict it: where the
   parent such a process states cannot be told (a process of its task states
-  no id, or the number names two), nothing of the task is marked; where the
-  sandbox marks the sample's processes on any row of the task, a row without
-  that mark is not marked; a path the report shows written during the run
+  no id, or the number names two), nothing of the task is marked; a process
+  whose image is a path the system ships (the catalogue of shipped paths,
+  asked whole through `stated_host_values.shipped_match` by the process view),
+  or a bare name the system ships, is never a candidate, and the sandbox's own
+  mark of the sample's processes is not read; a path the report shows written during the run
   (`written_during_the_run`: the collected files and the file-write
   operations, each part where the reader declares it fills it, read once per
   answer and only where a process qualifies) is never marked, and where the
