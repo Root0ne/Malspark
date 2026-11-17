@@ -105,6 +105,7 @@ COMPOSER_CHECKS: tuple[str, ...] = (
     "configuration_citation_violations",
     "identifier_citation_violations",
     "stated_value_violations",
+    "start_path_value_violations",
     "cited_id_violations",
     "style_violations",
     "channel_binding_violations",
@@ -2324,6 +2325,7 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
         sandbox_entry_ids,
         sandbox_item_observation,
         sandbox_saw_no_persistence,
+        sandbox_start_question,
     )
     from malspark.reporting.models import EncryptionScheme, RansomNote
 
@@ -2353,6 +2355,7 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
     entry_tools = {row.id: str(row.tool or "") for row in report.evidence_index}
     flow_fact = sample_flow_fact(report)
     saw_no_persistence = sandbox_saw_no_persistence(report)
+    start_path = sandbox_start_question(report, entries)
     published_ids = list(pro.published_techniques(report))
     names = pro.agent_names(report)
     findings_text = "\n".join([report.executive_summary, *(f.text for f in report.key_findings)])
@@ -2403,10 +2406,12 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
         "configuration": [
             lambda p: v.configuration_citation_violations(p, known_ids, items),
             lambda p: v.stated_value_violations(p, entries),
+            lambda p: v.start_path_value_violations(p, start_path),
         ],
         "host_identifiers": [
             lambda p: v.identifier_citation_violations(p, known_ids, items),
             lambda p: v.stated_value_violations(p, entries),
+            lambda p: v.start_path_value_violations(p, start_path),
         ],
         "commands": [lambda p: v.cited_id_violations(p, entries)],
     }

@@ -99,6 +99,7 @@ from malspark.pipeline.validation import (
     schema_violations,
     section_capability_violations,
     section_cut_violation,
+    start_path_value_violations,
     stated_value_violations,
     technique_name_violations,
     unpublished_value_violations,
@@ -141,6 +142,7 @@ from malspark.reporting.evidence_bundles import (
     sandbox_item_observation,
     sandbox_saw_no_persistence,
     sandbox_start_matcher,
+    sandbox_start_question,
 )
 from malspark.reporting.models import (
     C2Channel,
@@ -1475,6 +1477,9 @@ class ReportComposer:
         # What the Persistence section prints as "no persistence observed":
         # a step or that section's prose stating persistence is asked once.
         saw_no_persistence = sandbox_saw_no_persistence(report)
+        # A configuration or identifier row stating the path the sandbox
+        # started the submitted file from, from process rows alone, is asked.
+        start_path = sandbox_start_question(report, self._entries)
 
         # 1. Introduction / background.
         def _intro(out: BaseModel | None) -> int:
@@ -1656,6 +1661,7 @@ class ReportComposer:
                 [
                     lambda p: configuration_citation_violations(p, known_ids, self._items),
                     lambda p: stated_value_violations(p, self._entries),
+                    lambda p: start_path_value_violations(p, start_path),
                 ],
                 _config,
             ),
@@ -1666,6 +1672,7 @@ class ReportComposer:
                 [
                     lambda p: identifier_citation_violations(p, known_ids, self._items),
                     lambda p: stated_value_violations(p, self._entries),
+                    lambda p: start_path_value_violations(p, start_path),
                 ],
                 _identifiers,
             ),

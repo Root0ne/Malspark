@@ -1376,6 +1376,96 @@ def sandbox_start_line(report: MalwareReport) -> str:
     )
 
 
+def sandbox_start_question(
+    report: MalwareReport, entries: Any
+) -> Callable[[str, Iterable[str]], str] | None:
+    """``(value, cited) -> fact``: the start path's fact where a row states it from process rows.
+
+    For a table row's value and the ids it cites: :func:`sandbox_start_facts`'
+    sentence for the path, where the value is the image path or the command
+    line of a row the report marks (:func:`sandbox_start_matcher`'s reading)
+    and every cited entry the run holds (``entries``, an ``EntryTexts``)
+    holds it only as a process row: a process view, the item reader's
+    processes, or a behaviour link of a process's command line. ``""``
+    otherwise: a row citing nothing, an id the run did not issue, or an entry
+    that holds the value as anything else. Read by the entries' declared
+    kinds and the row's value; no text is read for what it says. ``None``
+    where the report marks no row.
+    """
+    from malspark.reporting.dedupe import indicator_fingerprint
+
+    nodes = sandbox_started_nodes(report)
+    if not nodes:
+        return None
+    facts = sandbox_start_facts(report)
+    by_path = {indicator_fingerprint("path", path): said for path, said in facts.items()}
+    by_command = {
+        str(node.command_line).strip(): by_path.get(indicator_fingerprint("path", str(node.name)))
+        for node in nodes
+        if node.command_line and node.name
+    }
+    held = getattr(entries, "entries", None) or {}
+
+    def _fact(value: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        return by_command.get(text) or by_path.get(indicator_fingerprint("path", text)) or ""
+
+    def _asked(value: str, cited: Iterable[str]) -> str:
+        said = _fact(value)
+        ids = [str(one).strip().lower() for one in cited if str(one).strip()]
+        if not said or not ids:
+            return ""
+        for entry_id in ids:
+            found = held.get(entry_id)
+            # A behaviour link holds the path as its process's command line too.
+            if found is None or not _holds_as_a_process_row(found, lambda t: _fact(t) == said):
+                return ""
+        return said
+
+    return _asked
+
+
+# The kinds whose every answer is the report's process rows, and the item
+# reader's, whose answer is one only when it was asked for its processes.
+_PROCESS_ROW_KINDS = frozenset({"sandbox_processes"})
+_ITEM_READER_KIND = "sandbox_items"
+_BEHAVIOUR_LINK_KIND = "behaviour_code_links"
+
+
+def _holds_as_a_process_row(entry: Any, same: Callable[[str], bool]) -> bool:
+    """Whether an entry holds the value only as a process row, by its declared kind.
+
+    A process view; the item reader asked for the processes section; the
+    behaviour links where every link of the value (``same``: its path or its
+    process's command line) was observed in process items only (their prefix,
+    ``sandbox_sections.SECTION_PREFIXES``).
+    """
+    from malspark.analysis.sandbox_sections import SECTION_PREFIXES, split_qualifier
+
+    kind = tool_kinds.kind_of(entry)
+    if kind in _PROCESS_ROW_KINDS:
+        return True
+    if kind == _ITEM_READER_KIND:
+        args = entry.args if isinstance(entry.args, dict) else {}
+        return str(args.get("section") or "").strip().lower() == "processes"
+    if kind != _BEHAVIOUR_LINK_KIND:
+        return False
+    data = entry.structured if isinstance(entry.structured, dict) else {}
+    process = f"{SECTION_PREFIXES['processes']}:"
+    links = [
+        row
+        for row in data.get("links") or []
+        if isinstance(row, dict) and same(str(row.get("value") or ""))
+    ]
+    return bool(links) and all(
+        split_qualifier(str(item))[1].startswith(process)
+        for row in links
+        for item in row.get("items") or []
+    )
+
+
 def _sandbox_start(report: MalwareReport) -> dict[str, Any]:
     """The section fact :data:`SANDBOX_START_FACT`, where a row is marked; else nothing."""
     started = sandbox_start_facts(report)
