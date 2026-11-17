@@ -329,3 +329,19 @@ def test_a_whole_copy_and_its_sentences_one_by_one_end_alike_under_placement(
         )
 
     assert ended([f"{FIRST} {_T}"]) == ended([FIRST, _T])
+
+
+@pytest.mark.parametrize("named", ["introduction", "held.introduction"])
+def test_a_key_a_row_writes_is_never_the_round_s_own_mark_wherever_the_rows_enter(
+    named: str,
+) -> None:
+    # The round's mark of a placed row, written by a row itself under any key a JSON answer
+    # can hold, is read past by every check and by the ends: the row is the same row.
+    row = {**_row(_UNKNOWN, "drop", [], reason="the lines shown say otherwise"), "passage": named}
+    marked = {**row, "\x00placed_from": "nowhere.1"}
+    plain, plain_counts, plain_records, plain_found = _applied({"sentences": [row]})
+    report, counts, records, found = _applied({"sentences": [marked]})
+    assert found == plain_found
+    assert counts == plain_counts
+    assert [(v.code, v.message) for v in records] == [(v.code, v.message) for v in plain_records]
+    assert report.model_dump() == plain.model_dump()
