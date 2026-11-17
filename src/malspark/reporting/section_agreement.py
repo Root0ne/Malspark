@@ -4467,7 +4467,10 @@ def _row_violations(
     out: list[Violation] = []
     for unit in units:
         for violation in _one_row_violations(
-            row.model_copy(update={"sentence": unit[2]}), index, by_id, sentences_of
+            AgreementRow.model_validate({**row.model_dump(), "sentence": unit[2]}),
+            index,
+            by_id,
+            sentences_of,
         ):
             if violation not in out:
                 out.append(violation)
