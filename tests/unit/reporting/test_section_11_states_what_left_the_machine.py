@@ -280,3 +280,21 @@ def test_the_disclosure_row_prints_where_the_inventory_prints_none() -> None:
     report.run_summary["disclosure"] = _record([LOOKUP], [])
     section = _section_11(report)
     assert LIST_LABEL in section and LEFT_THE_MACHINE_RECORD in section
+
+
+def test_a_technique_row_with_no_evidence_prints_no_evidence_bracket() -> None:
+    from malspark.reporting.models import CapabilityCell
+
+    report = _report(_ledger())
+    report.capability_matrix = [
+        CapabilityCell(
+            tactic="TA0005",
+            tactic_name="Defense Evasion",
+            technique_id="T1055",
+            technique_name="Process Injection",
+            not_published="the judge dropped it",
+        )
+    ]
+    analyst = MarkdownRenderer(layout=ANALYST).render(report)
+    (line,) = [line for line in analyst.splitlines() if line.startswith("- T1055")]
+    assert "evidence" not in line

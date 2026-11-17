@@ -97,6 +97,8 @@ from malspark.reporting.renderers.markdown import (
 )
 from malspark.reporting.sentence_ends import SENTENCE_CLOSE, close_end, ends_sentence
 from malspark.reporting.technique_evidence import (
+    NO_LEDGER_ENTRY,
+    NOT_RECORDED,
     evidence_words,
     technique_evidence_ids,
     technique_sandbox_items,
@@ -2542,8 +2544,14 @@ class _Analyst:
         return _item(
             f"{cell.technique_id} {_one_line(cell.technique_name)}: {status}"
             + self._status(cell.technique_id, "")
-            + f" (evidence: {self._evidence(cell)})"
+            + self._evidence_bracket(cell)
         )
+
+    def _evidence_bracket(self, row: Any) -> str:
+        """`` (evidence: …)`` after a technique's row, or nothing where it has no evidence: no
+        entry, no sandbox item, no source cited for an absence (T-719)."""
+        words = self._evidence(row)
+        return "" if words in (NOT_RECORDED, NO_LEDGER_ENTRY) else f" (evidence: {words})"
 
     def _evidence(self, row: Any) -> str:
         """A technique's evidence as this report cites: one note listing the

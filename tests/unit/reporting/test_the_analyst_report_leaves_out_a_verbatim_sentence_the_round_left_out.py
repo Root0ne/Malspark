@@ -109,8 +109,8 @@ def test_a_reason_left_out_leaves_the_technique_claimed_and_not_published() -> N
     attack = _section(markdown, "## 10. MITRE ATT&CK mapping")
 
     assert (
-        "- T1055 Process Injection: claimed, not published: the judge dropped it (evidence: -)"
-        in attack
+        "- T1055 Process Injection: claimed, not published: the judge dropped it"
+        in attack.splitlines()
     )
     assert "No write into another process" not in attack
     assert "No write into another process" not in html
