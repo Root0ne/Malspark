@@ -14,12 +14,7 @@ from typing import Any
 from malspark.providers.sandbox.readers import required_reader
 from malspark.providers.sandbox_tools import read_view, sandbox_processes
 from malspark.schemas.sandbox_document import sandbox_document
-from malspark.schemas.sandbox_report import (
-    STAGED_KEY,
-    STAGED_NOTE,
-    STAGED_NOTE_KEY,
-    cape_report_to_sandbox_report,
-)
+from malspark.schemas.sandbox_report import STAGED_KEY, STAGED_NOTE, STAGED_NOTE_KEY
 
 DIGEST = "c" * 64
 TEMP = "C:\\Users\\u\\AppData\\Local\\Temp"
@@ -39,7 +34,6 @@ def _triage(image: str = STAGED, copy: str = COPY) -> dict[str, Any]:
                 "procid_parent": 0,
                 "image": "C:\\Windows\\explorer.exe",
                 "cmd": "explorer.exe",
-                "orig": True,
             },
         ]
     }
@@ -50,21 +44,29 @@ def _triage(image: str = STAGED, copy: str = COPY) -> dict[str, Any]:
 
 
 def _cape(name: str = "invoice.exe") -> dict[str, Any]:
+    # The CAPE family's own fields: a process names itself and its parent by
+    # ``process_id`` and ``parent_id``, as its reader declares.
     raw = {
         "target": {"file": {"name": "invoice.exe", "sha256": DIGEST}},
         "behavior": {
             "processes": [
-                {"pid": 400, "ppid": 300, "process_name": name, "command_line": f'"{name}"'},
                 {
-                    "pid": 404,
-                    "ppid": 400,
+                    "process_id": 400,
+                    "parent_id": 300,
+                    "process_name": name,
+                    "command_line": f'"{name}"',
+                },
+                {
+                    "process_id": 404,
+                    "parent_id": 400,
                     "process_name": "cmd.exe",
                     "command_line": "cmd.exe /c invoice.exe -r",
                 },
-            ]
+            ],
+            "summary": {"write_files": []},
         },
     }
-    report = cape_report_to_sandbox_report(raw, provider="cape", source_format="cape")
+    report = required_reader("cape2").read(raw, provider="cape")
     return sandbox_document(report)
 
 
@@ -87,8 +89,9 @@ class TestTheRowIsMarked:
         assert _marked(sandbox_processes(_triage(copy=copy))) == [1]
 
     def test_a_cape_shaped_report_marks_the_root_that_runs_the_submitted_name(self) -> None:
-        answer = sandbox_processes(_cape())
-        assert _marked(answer) == [400]
+        answer = read_view("sandbox_processes", _cape(), ("cape", "cape2"))
+        # The view prints no id for this family's rows; the first row is marked.
+        assert [STAGED_KEY in row for row in answer["processes"]] == [True, False]
         assert answer[STAGED_NOTE_KEY] == STAGED_NOTE
 
     def test_the_read_through_the_entry_point_marks_it_too(self) -> None:

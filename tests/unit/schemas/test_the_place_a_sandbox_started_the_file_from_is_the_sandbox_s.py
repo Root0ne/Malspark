@@ -74,11 +74,13 @@ class TestTheRootThatRunsTheFileIsTheSandboxS:
         rows = [_row(5, 1, "C:\\Windows\\System32\\rundll32.exe", f"rundll32.exe {STAGED},#1")]
         assert _pids(rows, "", DIGEST) == []
 
-    def test_the_sandbox_s_own_mark_does_not_change_the_place(self) -> None:
+    def test_where_the_sandbox_marks_another_process_this_one_is_not_marked(self) -> None:
         rows = [
             _row(10, 4, STAGED),
             _row(20, 2, "C:\\Windows\\explorer.exe", marked=True),
         ]
+        assert _pids(rows, "", DIGEST) == []
+        rows[0]["marked"] = True
         assert _pids(rows, "", DIGEST) == [10]
 
 

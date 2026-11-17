@@ -51,7 +51,9 @@ from malspark.schemas.sandbox_report import (
     STAGED_NOTE,
     STAGED_NOTE_KEY,
     dropped_size,
+    process_lineage,
     started_by_the_sandbox,
+    written_during_the_run,
 )
 from malspark.schemas.signature_indicators import (
     CHARS_LEFT_OUT,
@@ -312,17 +314,20 @@ def sandbox_processes(
     # "this is the sample" mark points at the picked script or a wrapper,
     # never at the sample: it is set aside, and only the launch lineage says.
     launched = _launcher_attributed(report, processes)
-    # Every process's row, so the place the sandbox started the submitted file
-    # from is read over the whole listing, whichever page is asked for.
+    # Every process's row; the place the sandbox started the submitted file
+    # from is read from the report's own processes (their ids as the reader
+    # declares them, never the rows printed here), over the whole listing
+    # whichever page is asked for, and the row of the same process marked.
     built = [_process_row(proc, launched) if isinstance(proc, dict) else None for proc in processes]
-    staged = {
-        id(row)
-        for row in started_by_the_sandbox(
-            [row for row in built if row is not None],
-            *_submitted(report),
-            written=lambda: _written_paths(report, normalised_by),
+    reading = _reading(normalised_by)
+    lineage = process_lineage(processes, reading, lambda proc: _is_marked(proc, launched))
+    named = {
+        id(node)
+        for node in started_by_the_sandbox(
+            lineage, *_submitted(report), written=lambda: written_during_the_run(report, reading)
         )
     }
+    staged = {id(row) for row, node in zip(built, lineage, strict=True) if id(node) in named}
     page, meta = _page(built, offset, limit)
     rows: list[dict[str, Any]] = []
     for row in page:
@@ -337,27 +342,6 @@ def sandbox_processes(
     if any(STAGED_KEY in row for row in rows):
         answer = {STAGED_NOTE_KEY: STAGED_NOTE, **answer}
     return answer
-
-
-def _written_paths(report: dict[str, Any], normalised_by: Sequence[str] | None) -> list[str]:
-    """Every path the report records as written during the run, as the dropped-files view reads it.
-
-    Its rows of the sample's files and the platform's alike, each row's guest
-    path (or paths) and its name, read through :func:`read_view`
-    with the run's reader: the one reading of the record. Read once per
-    answer, and only where a process could be marked.
-    """
-    answer = read_view("sandbox_dropped_files", report, normalised_by)
-    out: list[str] = []
-    for key in ("dropped", "platform_files"):
-        for row in answer.get(key) or []:
-            if not isinstance(row, dict):
-                continue
-            path = row.get("path")
-            out.extend(str(p) for p in (path if isinstance(path, list) else [path]) if p)
-            if row.get("name"):
-                out.append(str(row["name"]))
-    return out
 
 
 def _submitted(report: dict[str, Any]) -> tuple[str, str]:
@@ -397,9 +381,17 @@ def _process_row(proc: dict[str, Any], launched: bool) -> dict[str, Any]:
     task = _task_of(proc)
     if task:
         row["task"] = task
-    if lineage == LINEAGE_SAMPLE or (not launched and not lineage and _marked_as_the_sample(proc)):
+    if _is_marked(proc, launched):
         row["marked"] = True
     return row
+
+
+def _is_marked(proc: dict[str, Any], launched: bool) -> bool:
+    """Whether a process is marked as the sample's: by the launch lineage, else by the sandbox."""
+    lineage = _launch_lineage(proc)
+    return lineage == LINEAGE_SAMPLE or (
+        not launched and not lineage and _marked_as_the_sample(proc)
+    )
 
 
 def _task_of(proc: dict[str, Any]) -> str:

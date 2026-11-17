@@ -601,6 +601,12 @@ class Reading:
     # declares them (``schemas.signature_indicators``); ``None`` where the
     # source states none.
     signature_indicators: IndicatorFields | None = None
+    # The fields of a process row that state its id in the report's process
+    # list and its parent's, where the reader's source names them otherwise
+    # than the document's layout does; read before the generic names
+    # (:data:`PROCESS_ID_FIELDS`, :data:`PROCESS_PARENT_FIELDS`).
+    process_id_fields: tuple[str, ...] = ()
+    process_parent_fields: tuple[str, ...] = ()
 
 
 # What a report read by a reader that keeps its source's arrangement reached
@@ -1346,34 +1352,43 @@ def started_by_the_sandbox(
     roots: list[Any],
     file_name: str = "",
     sha256: str = "",
-    written: Callable[[], Iterable[str]] | None = None,
+    written: Callable[[], list[str] | None] | None = None,
 ) -> list[Any]:
-    """The listed processes whose image is the submitted file as the sandbox started it.
+    """The listed process whose image is the submitted file as the sandbox started it, per task.
 
-    A process that runs the submitted file (its name or its digest,
-    :func:`runs_the_submitted_file`), whose image is that file, and that
-    starts the sample's tree by that fact: no process its parent chain
-    reaches runs the file (:func:`_placed`'s links). A copy the sample makes
-    of itself and runs is under a process that runs the file: behaviour,
-    never this. A process that names the file only on its command line
-    (``rundll32.exe <file>,#1``) has another image and is not it, and a
+    ``roots`` are the report's processes as :func:`process_lineage` reads
+    them from its own record (the reader's declared ids, never a view's
+    printed rows). A process qualifies that runs the submitted file (its name
+    or its digest, :func:`runs_the_submitted_file`), whose image is that
+    file, and that starts the sample's tree by that fact: no process its
+    parent chain reaches runs the file (:func:`_placed`'s links). A copy the
+    sample makes of itself and runs is under a process that runs the file:
+    behaviour, never this. A process that names the file only on its command
+    line (``rundll32.exe <file>,#1``) has another image and is not it, and a
     listing that runs the file under a name the reading does not know names
     none.
 
-    The mark is given only where the record does not contradict it. A path
-    the report shows written during the run (``written``, the paths its
-    record of written files holds, read once and only where a process
-    qualifies) is the sample's doing and never this: an image that states no
-    folder is read against the written paths' file names. The processes of
-    one task so read share one image path: where they run from more than one,
-    only the path of the process the record states started first
-    (``first_seen``, :func:`_started_order`) is theirs, and none where the
-    record states no order among them. Each task's processes are read on
-    their own, a process being its task and its id
-    (``schemas.process_identity``), each listed process by its own place in
-    the listing; in listing order.
+    The mark is given only where the record does not contradict it:
+
+    * where a qualifying process states a parent and a process of its task
+      states no id, or the parent's number names more than one process of the
+      task (``schemas.process_identity``), the parent cannot be told, and
+      nothing of that task is marked;
+    * where a process of the task carries the sandbox's own mark of the
+      sample's processes (``marked``), a process without it is not marked;
+    * a path the report shows written during the run (``written``, the paths
+      :func:`written_during_the_run` reads, read once and only where a
+      process qualifies) is the sample's doing and never this: an image that
+      states no folder is read against the written paths' file names; where
+      the reader records no file writes at all (``None``), nothing is marked;
+    * at most one process of a task is marked: the one the record states
+      started first (``first_seen``, :func:`_started_order`), and none where
+      the starts of those that qualify cannot be compared.
+
+    Each task's processes are read on their own, a process being its task and
+    its id; in listing order.
     """
-    from malspark.schemas.process_identity import TASK_KEY
+    from malspark.schemas.process_identity import TASK_KEY, ProcessIdentities
 
     if not (file_name or sha256):
         return []
@@ -1382,7 +1397,7 @@ def started_by_the_sandbox(
         grouped.setdefault(str(_node_field(node, TASK_KEY) or ""), []).append(node)
     paths: tuple[frozenset[str], frozenset[str]] | None = None
     found: set[int] = set()
-    for held in grouped.values():
+    for task, held in grouped.items():
         placed = _placed(held, file_name, sha256)
         qualifying: list[tuple[Any, str]] = []
         for index in sorted(placed.runs):
@@ -1392,22 +1407,135 @@ def started_by_the_sandbox(
                 name, "", file_name, sha256
             ):
                 qualifying.append((node, _image_path(name)))
+        if not qualifying or not _parents_told(qualifying, held, task, ProcessIdentities()):
+            continue
+        if any(_node_field(node, "marked") is True for node in _listed(held)):
+            qualifying = [(n, p) for n, p in qualifying if _node_field(n, "marked") is True]
         if not qualifying:
             continue
         if paths is None:
-            paths = _written_paths(written() if written is not None else ())
+            stated = written() if written is not None else []
+            if stated is None:
+                return []
+            paths = _written_paths(stated)
         full, names = paths
         kept = [
             (node, path)
             for node, path in qualifying
             if path not in full and not (_is_bare(path) and path in names)
         ]
-        chosen = {path for _node, path in kept}
-        if len(chosen) > 1:
-            first = _started_first([(_node_field(node, "first_seen"), path) for node, path in kept])
-            chosen = {first} if first else set()
-        found.update(id(node) for node, path in kept if path in chosen)
+        first = _started_first([(_node_field(node, "first_seen"), id(node)) for node, _p in kept])
+        if first is not None:
+            found.add(first)
     return [node for node in _listed(roots) if id(node) in found]
+
+
+def _parents_told(qualifying: list[tuple[Any, str]], held: list[Any], task: str, ids: Any) -> bool:
+    """Whether the parent each qualifying process states names at most one process of its task.
+
+    Read through the one process identity: where a process of the task
+    states no id, a stated parent cannot be told from it, and a number one
+    listing holds twice, or that two processes answer to, names none.
+    """
+    keys = ids.add_listing((_node_field(node, "pid"), task, "") for node in _listed(held))
+    unnamed = any(key is None for key in keys)
+    for node, _path in qualifying:
+        parent = _node_field(node, "ppid")
+        if pid_text(parent) and (unnamed or len(ids.keys(parent, task, alias=False)) > 1):
+            return False
+    return True
+
+
+# Where a process row of a report states its id in its process list and its
+# parent's, read where the reader declares none (``Reading.process_id_fields``):
+# the names the document's own layout writes (``schemas.sandbox_document``).
+PROCESS_ID_FIELDS: tuple[str, ...] = ("pid",)
+PROCESS_PARENT_FIELDS: tuple[str, ...] = ("ppid", "parent_id")
+
+
+def process_lineage(
+    processes: list[Any], reading: Reading | None, marked: Callable[[Any], bool]
+) -> list[dict[str, Any]]:
+    """The report's processes as :func:`started_by_the_sandbox` reads them, one per row, in order.
+
+    Each row's id and parent's id where its reader declares them
+    (``Reading.process_id_fields``, ``process_parent_fields``), every
+    declared field read, then the generic names; its image, command line,
+    task and stated start; ``marked`` where ``marked(row)`` says the sandbox
+    marks it as the sample's. A row that is not a mapping is ``{}``.
+    """
+    ids = (*(reading.process_id_fields if reading else ()), *PROCESS_ID_FIELDS)
+    parents = (*(reading.process_parent_fields if reading else ()), *PROCESS_PARENT_FIELDS)
+    out: list[dict[str, Any]] = []
+    for proc in processes:
+        if not isinstance(proc, Mapping):
+            out.append({})
+            continue
+        extra = proc.get("extra")
+        out.append(
+            {
+                "pid": _first_id(proc, ids),
+                "ppid": _first_id(proc, parents),
+                "name": str(proc.get("process_name") or proc.get("name") or ""),
+                "command_line": str(proc.get("command_line") or proc.get("cmd") or ""),
+                "task": str(extra.get(PROCESS_TASK_KEY) or "")
+                if isinstance(extra, Mapping)
+                else "",
+                "first_seen": proc.get("first_seen"),
+                "marked": marked(proc),
+            }
+        )
+    return out
+
+
+def _first_id(row: Mapping[str, Any], fields: tuple[str, ...]) -> str:
+    """The first id one of ``fields`` states on ``row`` (:func:`pid_text`); ``""`` for none."""
+    return next((pid_text(row.get(f)) for f in fields if pid_text(row.get(f))), "")
+
+
+# The parts a report records files written during the run in: the files the
+# sandbox collected and its file-write operations, each read where the
+# reader declares it fills it (``Reading.fills``), every one where no reader
+# is known.
+FILE_WRITE_PARTS: tuple[str, ...] = (
+    "dropped_files",
+    "file_writes",
+    "summary.write_files",
+    "summary.wrote_files",
+    "summary.modified_files",
+)
+
+
+def written_during_the_run(document: Any, reading: Reading | None) -> list[str] | None:
+    """Every path ``document`` records as written during the run; ``None`` where it records none.
+
+    The parts of :data:`FILE_WRITE_PARTS` the reader declares it fills: a
+    collected file's guest paths and names (:func:`_dropped_paths`, and each
+    field the reader declares holds a guest path), a file-write operation's
+    path. ``None`` where none of those parts is in the document at all: the
+    record does not say what was written, which is not that nothing was.
+    """
+    from malspark.schemas.sandbox_document import place
+
+    parts = [p for p in FILE_WRITE_PARTS if reading is None or p in reading.fills]
+    guest = reading.guest_path_fields if reading is not None else ()
+    held = False
+    out: list[str] = []
+    for part in parts:
+        rows = place(document, part)
+        if part == "dropped_files" and not isinstance(rows, list) and isinstance(document, Mapping):
+            # A document written before the parts were declared named the list so.
+            rows = document.get("dropped_files")
+        if not isinstance(rows, list):
+            continue
+        held = True
+        for row in rows:
+            if isinstance(row, Mapping):
+                out.extend(_dropped_paths(row))
+                out.extend(str(row[f]) for f in guest if isinstance(row.get(f), str) and row[f])
+            elif isinstance(row, str) and row.strip():
+                out.append(row)
+    return out if held else None
 
 
 def _image_path(name: str) -> str:
@@ -1441,8 +1569,9 @@ def _started_order(value: Any) -> tuple[str, Any] | None:
     """A process's stated start as an order key: a number, or a timestamp; ``None`` for none.
 
     A number (a sandbox's offset from the run's start) is compared as one; a
-    timestamp by its text, which sorts in time order where two have the same
-    length. Anything else states no order.
+    timestamp by its text, only with one of the same form (each digit in the
+    same place, the same separators), which sorts in time order. Anything
+    else states no order.
     """
     text = "" if value is None or isinstance(value, bool) else str(value).strip()
     if not text:
@@ -1452,25 +1581,26 @@ def _started_order(value: Any) -> tuple[str, Any] | None:
     except ValueError:
         pass
     if _STARTED_AT_RE.fullmatch(text):
-        return (f"time{len(text)}", text)
+        return ("time " + re.sub(r"\d", "0", text), text)
     return None
 
 
-def _started_first(starts: list[tuple[Any, str]]) -> str:
-    """The path of the process the record states started first; ``""`` where it states no order.
+def _started_first(starts: list[tuple[Any, int]]) -> int | None:
+    """The process the record states started first, of those given; ``None`` where it states none.
 
-    Every process must state a start of one form, and one start must come
-    before every other path's: a tie between two paths, a process with no
-    stated start, or two forms state no order among them.
+    One process is the first. Of several, every one must state a start of one
+    form (:func:`_started_order`) and one must come before every other: a
+    tie, a process with no stated start, or two forms state no order.
     """
-    keyed = [(_started_order(value), path) for value, path in starts]
-    if any(key is None for key, _path in keyed) or len({key[0] for key, _ in keyed if key}) != 1:
-        return ""
-    ordered = sorted(((key[1], path) for key, path in keyed if key), key=lambda one: one[0])
-    first, path = ordered[0]
-    if any(at == first and other != path for at, other in ordered[1:]):
-        return ""
-    return path
+    if len(starts) <= 1:
+        return starts[0][1] if starts else None
+    keyed = [(_started_order(value), key) for value, key in starts]
+    if any(order is None for order, _key in keyed) or len({o[0] for o, _ in keyed if o}) != 1:
+        return None
+    ordered = sorted(((o[1], key) for o, key in keyed if o), key=lambda one: one[0])
+    if ordered[1][0] == ordered[0][0]:
+        return None
+    return ordered[0][1]
 
 
 def _listed(roots: list[Any]) -> list[Any]:

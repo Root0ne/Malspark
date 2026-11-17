@@ -92,9 +92,11 @@ class TestOneTaskMarksOnePath:
         assert _marked(answer) == []
         assert STAGED_NOTE_KEY not in answer
 
-    def test_one_path_run_twice_is_marked_on_both_rows(self) -> None:
-        report = _report([_process(10, 4, STAGED), _process(12, 4, STAGED)])
-        assert _marked(sandbox_processes(report)) == [10, 12]
+    def test_one_path_run_twice_marks_the_earliest_only(self) -> None:
+        report = _report([_process(10, 4, STAGED, "200"), _process(12, 4, STAGED, "100")])
+        assert _marked(sandbox_processes(report)) == [12]
+        unordered = _report([_process(10, 4, STAGED), _process(12, 4, STAGED)])
+        assert _marked(sandbox_processes(unordered)) == []
 
 
 class TestNothingMarkedSaysNothing:

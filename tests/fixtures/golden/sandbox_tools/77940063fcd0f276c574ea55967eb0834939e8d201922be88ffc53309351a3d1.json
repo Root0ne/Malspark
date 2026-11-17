@@ -3409,11 +3409,9 @@
         "first_seen": "2026-08-13 22:33:16,453",
         "name": "77940063fcd0f276c574.exe",
         "pid": null,
-        "ppid": 2508,
-        "staged_by_sandbox": true
+        "ppid": 2508
       }
     ],
-    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 1
   },
   "sandbox_registry_ops": {

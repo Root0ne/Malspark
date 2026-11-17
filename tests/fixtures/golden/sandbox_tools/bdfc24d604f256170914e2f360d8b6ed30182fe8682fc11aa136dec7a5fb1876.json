@@ -3780,8 +3780,7 @@
         "first_seen": "2026-08-13 23:42:59,453",
         "name": "bdfc24d604f256170914.exe",
         "pid": null,
-        "ppid": 2508,
-        "staged_by_sandbox": true
+        "ppid": 2508
       },
       {
         "call_count": 13,
@@ -3797,8 +3796,7 @@
         "first_seen": "2026-08-13 23:45:40,454",
         "name": "bdfc24d604f256170914.exe",
         "pid": null,
-        "ppid": 3952,
-        "staged_by_sandbox": true
+        "ppid": 3952
       },
       {
         "call_count": 270,
@@ -3825,7 +3823,6 @@
         "ppid": 5556
       }
     ],
-    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 6
   },
   "sandbox_registry_ops": {

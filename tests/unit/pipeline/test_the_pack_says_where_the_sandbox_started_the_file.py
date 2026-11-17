@@ -27,6 +27,8 @@ def _report(image: str) -> dict[str, Any]:
                 {"pid": 5, "ppid": 4, "process_name": "C:\\Windows\\System32\\cmd.exe"},
             ]
         },
+        # The record of files written during the run: none.
+        "dropped": [],
     }
 
 
