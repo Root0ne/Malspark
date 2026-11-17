@@ -964,7 +964,7 @@ def passages_of(
     """
     from malspark.reporting.call_bindings import binding_words
     from malspark.reporting.composer import COMPOSED_SECTIONS
-    from malspark.reporting.evidence_bundles import reads_code
+    from malspark.reporting.evidence_bundles import reads_code, sandbox_start_line
     from malspark.reporting.judge_decision import judge_decision
 
     facts: list[Passage] = []
@@ -995,6 +995,14 @@ def passages_of(
                     + (f" ({_sample_text(bound.parameter)})" if bound.parameter else "")
                 ),
             )
+        )
+
+    # The place the sandbox started the submitted file from, where a row is
+    # marked: one fact, from the one writer (``evidence_bundles.sandbox_start_line``).
+    started = sandbox_start_line(report)
+    if started:
+        facts.append(
+            Passage(id="sandbox_start", label="sandbox start path", text=started, kind=FACT)
         )
 
     ta = report.technical_analysis

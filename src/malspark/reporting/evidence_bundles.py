@@ -977,6 +977,7 @@ def _bundle_for(
             "binary": base,
             "facts": {
                 "process_tree": tree,
+                **_sandbox_start(report),
                 "sandbox_entries": [
                     f"{row.id} ({row.tool})"
                     for row in report.evidence_index
@@ -1330,6 +1331,55 @@ def sandbox_started_nodes(report: MalwareReport) -> list[Any]:
             out.append(node)
         stack.extend(reversed(list(node.children or [])))
     return out
+
+
+# The fact a section is shown where the report marks the row the sandbox
+# started the submitted file from (:func:`sandbox_start_facts`).
+SANDBOX_START_FACT = "sandbox_start_path"
+
+
+def sandbox_start_facts(report: MalwareReport) -> dict[str, str]:
+    """Each path the sandbox started the submitted file from, with what the record shows of it.
+
+    The one writer of the fact every writer that decides is shown (a
+    section's facts, the narrative's facts block, the agreement round's
+    facts): the words every surface writes beside the marked row, the rows'
+    pids, and the sentence the process view states (``STAGED_NOTE``),
+    unchanged. One entry per path in the platform's normal form for a path,
+    in tree order; ``{}`` where no row is marked.
+    """
+    from malspark.reporting.dedupe import indicator_fingerprint
+    from malspark.schemas.sandbox_report import STAGED_NOTE, STAGED_WORDS
+
+    pids: dict[tuple[str, str], list[str]] = {}
+    paths: dict[tuple[str, str], str] = {}
+    for node in sandbox_started_nodes(report):
+        if not node.name:
+            continue
+        key = indicator_fingerprint("path", str(node.name))
+        paths.setdefault(key, str(node.name))
+        held = pids.setdefault(key, [])
+        if f"pid {node.pid}" not in held:
+            held.append(f"pid {node.pid}")
+    return {
+        path: f"{STAGED_WORDS} ({', '.join(pids[key])}). {STAGED_NOTE}"
+        for key, path in paths.items()
+    }
+
+
+def sandbox_start_line(report: MalwareReport) -> str:
+    """:func:`sandbox_start_facts` as one line, each path a quoted value; ``""`` with none."""
+    from malspark.agents.tool_fence import quoted_value
+
+    return "; ".join(
+        f"{quoted_value(path)}: {said}" for path, said in sandbox_start_facts(report).items()
+    )
+
+
+def _sandbox_start(report: MalwareReport) -> dict[str, Any]:
+    """The section fact :data:`SANDBOX_START_FACT`, where a row is marked; else nothing."""
+    started = sandbox_start_facts(report)
+    return {SANDBOX_START_FACT: started} if started else {}
 
 
 def sandbox_start_matcher(report: MalwareReport) -> Callable[[str], bool] | None:
@@ -1701,6 +1751,7 @@ def _technical_facts(section: str, report: MalwareReport) -> dict[str, Any]:
             "user_agents": (net.user_agents if net else []),
             "string_entries": _string_entries(report),
             VALUE_HOLDERS_FACT: _network_holders(report),
+            **_sandbox_start(report),
         }
     if section == "host_identifiers":
         static = report.static
@@ -1715,6 +1766,7 @@ def _technical_facts(section: str, report: MalwareReport) -> dict[str, Any]:
                 for row in (static.interesting_strings if static else [])
                 if row.kind in _HOST_STRING_KINDS
             ],
+            **_sandbox_start(report),
         }
     if section == "commands":
         # Nothing measured says what an operator can ask for; the section runs
