@@ -1414,7 +1414,7 @@ def sandbox_start_question(
 
     def _asked(value: str, cited: Iterable[str]) -> str:
         said = _fact(value)
-        ids = [str(one).strip().lower() for one in cited if str(one).strip()]
+        ids = [found for found in map(_cited_entry, cited) if found]
         if not said or not ids:
             return ""
         for entry_id in ids:
@@ -1425,6 +1425,24 @@ def sandbox_start_question(
         return said
 
     return _asked
+
+
+def _cited_entry(cited: Any) -> str:
+    """The entry a citation names, in the normal form the other checks compare it in.
+
+    Without brackets or space round it, lower case (``validation._cited_form``);
+    an item citation of an entry (``ev_0012:proc:83``) is a citation of that
+    entry, its item one of the entry's rows. Anything else as it is.
+    """
+    from malspark.analysis.sandbox_sections import is_item_id
+    from malspark.pipeline.validation import _cited_form
+    from malspark.schemas.evidence import ENTRY_ID_RE
+
+    form = _cited_form(cited)
+    head, sep, item = form.partition(":")
+    if sep and ENTRY_ID_RE.fullmatch(head) and is_item_id(item):
+        return head
+    return form
 
 
 # The kinds whose every answer is the report's process rows, and the item

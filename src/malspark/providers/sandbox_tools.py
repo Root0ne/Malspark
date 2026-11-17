@@ -340,7 +340,7 @@ def sandbox_processes(
 
 
 def sandbox_started_positions(
-    report: dict[str, Any] | None, normalised_by: Sequence[str] | None = None
+    report: dict[str, Any] | None, normalised_by: Sequence[str] | None
 ) -> frozenset[int]:
     """The places in the report's process list of the rows the sandbox started the file from.
 
