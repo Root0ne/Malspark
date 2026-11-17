@@ -222,3 +222,50 @@ def test_the_round_s_records_of_a_whole_field_answer_are_its_sentences_records(
 
     # Refused with no turn left, each record quotes its own sentence, as the rows apart do.
     assert recorded([text]) == recorded(sentences)
+
+
+def test_a_finding_quoting_its_own_words_keeps_them_when_named_sentence_by_sentence() -> None:
+    from malspark.pipeline.validation import Violation
+    from malspark.reporting.section_agreement import _naming
+
+    own = Violation(code="c", message="m", path="sentences.0", quoted=("its own words",))
+    bare = Violation(code="c", message="m", path="sentences.0")
+    for sentence in (FIRST, _UNKNOWN):
+        kept, named = _naming([own, bare], sentence)
+        # Only a finding that names nothing yet is named after the sentence its row answers.
+        assert kept.quoted == ("its own words",)
+        assert named.quoted == (sentence,)
+
+
+def test_a_judge_refusal_of_a_whole_field_row_is_told_sentence_by_sentence() -> None:
+    from tests.unit.reporting.test_a_section_sentence_is_asked_against_the_judge_s_decision import (  # noqa: E501
+        CITABLE,
+        DROPPED,
+        OTHER,
+        WALK,
+        report_of,
+    )
+
+    def told(copied: list[str]) -> list[tuple[str, str, tuple[str, ...]]]:
+        rows = [
+            {
+                "passage": "string_resolution",
+                "sentence": s,
+                "decision": "keep",
+                "sources": [DROPPED],
+                "reason": "no source speaks of it",
+            }
+            for s in copied
+        ]
+        report = report_of(f"{WALK} {OTHER}")
+        found = agreement_violations({"sentences": rows}, passages_of(report), CITABLE)
+        return sorted(
+            (v.code, re.sub(r"row \d+", "row N", v.message), v.quoted)
+            for v in found
+            if v.question_only
+        )
+
+    whole, apart = told([f"{WALK} {OTHER}"]), told([WALK, OTHER])
+    # The refusal of the judge passage the row names quotes each sentence it answers.
+    assert sorted(q for _c, _m, q in whole) == [(WALK,), (OTHER,)]
+    assert whole == apart

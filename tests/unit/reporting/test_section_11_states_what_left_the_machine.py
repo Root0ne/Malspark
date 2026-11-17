@@ -365,6 +365,16 @@ def test_each_short_form_names_its_receiver() -> None:
     )
 
 
+def test_a_sandbox_submission_that_may_not_have_arrived_says_so_in_its_short_form() -> None:
+    row = _left({"uploads": [{**SANDBOX, "calls": 2, "failed": 1}]})
+    assert re.search(
+        r"Sample upload: the sample was submitted 2 times to the detonator sandbox at "
+        r"sandbox(\.|\[\.\])example \(outside this machine\); 1 of the attempts failed or did "
+        r"not finish, so whether it arrived cannot be told\.",
+        row,
+    )
+
+
 def test_a_technique_row_citing_no_ledger_entry_prints_no_evidence_bracket() -> None:
     from malspark.reporting.models import CapabilityCell
 
