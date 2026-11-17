@@ -103,7 +103,7 @@ def test_a_sentence_standing_in_two_passages_or_in_none_is_refused_as_before() -
         _report_, counts, records, found = _applied({"sentences": [row]})
         assert (UNKNOWN_PASSAGE_CODE, "sentences.0.passage") in found
         assert not [v for v in records if v.code == PLACED_BY_SENTENCE_CODE]
-        assert counts["not_applied"] == 1
+        assert counts["sentences"] == 1 and counts["rewritten"] == 0
 
 
 def test_the_round_places_a_row_of_either_answer_and_asks_nothing_of_its_form() -> None:

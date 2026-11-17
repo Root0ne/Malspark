@@ -432,6 +432,12 @@ KEEP_UNQUOTED_CODE = "agreement.keep_unquoted"
 # leaves out or changes, or one whose sentence the passage already prints, leaves the
 # sentence out as before (``DROPPED_CODE``).
 KEPT_IN_SOURCE_WORDS_CODE = "agreement.kept_in_source_words"
+# A row of the answer naming a passage no list of the question writes, whose sentence stands
+# whole in exactly one passage a row may answer: placed there by its text, checked and ended
+# as any row naming that passage, and recorded with the passage it named and its sentence.
+# A sentence standing in two passages, or in none, leaves the row refused as naming an
+# unknown passage (``UNKNOWN_PASSAGE_CODE``) (T-736).
+PLACED_BY_SENTENCE_CODE = "agreement.placed_by_sentence"
 # A sentence, or a rewrite, giving failed calls a number the ledger's count
 # does not.
 FAILURE_COUNT_CODE = "agreement.failure_count"
@@ -6897,6 +6903,85 @@ def _qualified(sentence: str, facts: Sequence[Passage]) -> str:
     return f"{base}; {clauses} {cites}{end}"
 
 
+# What a row placed by its sentence carries (:func:`_placed`): the passage it named. Set by
+# the round alone: the same key in a model's row is read past (:func:`_unplaced`).
+_PLACED_FROM = "\x00placed_from"
+
+
+def _unplaced(payload: Any) -> Any:
+    """``payload`` as the model wrote it, a key :data:`_PLACED_FROM` of its rows read past."""
+    rows = payload.get("sentences") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not any(
+        isinstance(row, dict) and _PLACED_FROM in row for row in rows
+    ):
+        return payload
+    return {
+        **payload,
+        "sentences": [
+            {k: v for k, v in row.items() if k != _PLACED_FROM} if isinstance(row, dict) else row
+            for row in rows
+        ],
+    }
+
+
+def _placed(
+    payload: Any, by_id: dict[str, Passage], sentences_of: Callable[[Passage], _Sentences]
+) -> Any:
+    """``payload`` with each row naming a passage no list writes placed by the sentence it
+    copies, where that sentence stands whole in exactly one passage a row may answer (a
+    passage written without the code or a section 5 passage, not one shown as a source only),
+    the passage it named kept under :data:`_PLACED_FROM`; every other row as it is. A sentence
+    standing in two passages, or in none, places nothing (T-736). One pass over the rows."""
+    rows = payload.get("sentences") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return payload
+    answerable = [
+        p for p in by_id.values() if p.kind in (CLAIM_LED, SECTION_5) and not p.source_only
+    ]
+    out: list[Any] = []
+    for row in rows:
+        named = row.get("passage") if isinstance(row, dict) else None
+        sentence = str(row.get("sentence") or "") if isinstance(row, dict) else ""
+        if (
+            isinstance(row, dict)
+            and isinstance(named, str)
+            and named.strip()
+            and (_form(named) not in by_id)
+            and sentence.strip()
+        ):
+            standing = [
+                p
+                for p in answerable
+                if _answered_span(sentences_of(p), sentence, row.get("decision")) is not None
+            ]
+            if len(standing) == 1:
+                row = {**row, "passage": standing[0].id, _PLACED_FROM: named}
+        out.append(row)
+    return {**payload, "sentences": out}
+
+
+def _placed_records(payload: Any) -> list[Violation]:
+    """The record of each row of ``payload`` the round placed by its sentence (:func:`_placed`):
+    the passage it named, the one it was placed in, and its sentence (T-736)."""
+    rows = payload.get("sentences") if isinstance(payload, dict) else None
+    return [
+        Violation(
+            code=PLACED_BY_SENTENCE_CODE,
+            message=(
+                f"The agreement question places row {safe_finding_value(index + 1)}, which names "
+                f"the passage {safe_finding_value(row[_PLACED_FROM])!r}, not one the question "
+                "lists, by the sentence it copies, which stands whole in "
+                f"{safe_finding_value(row.get('passage'))} alone: "
+                f"{safe_finding_value(row.get('sentence'))!r}."
+            ),
+            path=f"sentences.{index}",
+            answered=True,
+        )
+        for index, row in enumerate(rows if isinstance(rows, list) else [])
+        if isinstance(row, dict) and _PLACED_FROM in row
+    ]
+
+
 def _platform_rewrites(payload: Any, by_id: dict[str, Passage]) -> Any:
     """The payload with each section 5 rewrite resting on a fact written by the platform:
     the sentence unchanged and the facts' clauses (``_qualified``). Every other row as the
@@ -7040,7 +7125,6 @@ def agreement_violations(
     the retry shows it; without, bounded, as its record keeps it (T-736).
     """
     by_id = {passage.id: passage for passage in passages}
-    payload = _platform_rewrites(payload, by_id)
     cut: dict[str, _Sentences] = {}
 
     def _sentences(passage: Passage) -> _Sentences:
@@ -7048,6 +7132,7 @@ def agreement_violations(
             cut[passage.id] = _cut(passage)
         return cut[passage.id]
 
+    payload = _platform_rewrites(_placed(payload, by_id, _sentences), by_id)
     out: list[Violation] = []
     listed: set[tuple[str, int]] = set()
     rewritten: set[tuple[str, int]] = set()
@@ -7301,6 +7386,7 @@ def rewrites_violations(
         return cut[passage.id]
 
     out: list[Violation] = []
+    payload = _placed(payload, by_id, _sentences)
     checked, passed = _checked_rows(_rows(payload), by_id, _sentences, citable, items, entries)
     for index, _row, passage, own, rewritten, span, _told in checked:
         if passage is not None and span is not None and (passage.id, span[0]) in passed:
@@ -7821,7 +7907,6 @@ def apply_rows(
     place stores holds it (T-613). Every other answer ends by the rules above.
     """
     by_id = {passage.id: passage for passage in passages}
-    payload = _platform_rewrites(payload, by_id)
     cut: dict[str, _Sentences] = {}
 
     def _sentences(passage: Passage) -> _Sentences:
@@ -7829,6 +7914,7 @@ def apply_rows(
             cut[passage.id] = _cut(passage)
         return cut[passage.id]
 
+    payload = _platform_rewrites(_placed(payload, by_id, _sentences), by_id)
     counts = {
         "passages": sum(1 for passage in passages if _writable(passage)),
         "claim_led_passages": sum(
@@ -7845,7 +7931,8 @@ def apply_rows(
         # Closing sentences their source's own sentence stands in place of (T-705).
         "replaced": 0,
     }
-    listed: list[Violation] = []
+    # Each row placed by its sentence, recorded so (T-736).
+    listed: list[Violation] = _placed_records(payload) if asked else []
     written: list[Violation] = []
     spans: dict[str, list[tuple[int, int, str]]] = {}
     # Each closing sentence its source's own sentence may stand in place of, with where its
@@ -8772,6 +8859,8 @@ async def _ask(
             parsed = {"sentences": parsed}
         if not isinstance(parsed, dict):
             return None
+        # A row naming a passage no list writes is placed by its sentence (T-736).
+        parsed = _placed(_unplaced(parsed), by_id, _located)
         # A retry answering only what it was asked keeps the first answer's rows
         # that passed every check; one that did not is the retry's to fix or leave,
         # but for a sentence the ledger's lines hold, whose refused row stays its last
@@ -8793,6 +8882,11 @@ async def _ask(
         return [row] if len(units) < 2 else [{**row, "sentence": unit[2]} for unit in units]
 
     located_in: dict[str, _Sentences] = {}
+
+    def _located(passage: Passage) -> _Sentences:
+        if passage.id not in located_in:
+            located_in[passage.id] = _cut(passage)
+        return located_in[passage.id]
 
     def _span(row: Any) -> tuple[Passage, tuple[int, int, str, int]] | None:
         passage = by_id.get(_form(_field(row, "passage")))
@@ -8996,13 +9090,16 @@ def _bounded_held(
     if not any(v.path == f"[{_form(v.path)}]" for v in violations):
         return list(violations)
     bounded = {
-        (shown.code, shown.path, shown.message): kept.message
+        (shown.code, shown.path, shown.message): kept
         for shown, kept in zip(checked(True), checked(False), strict=True)
         if shown.message != kept.message
     }
-    return [
-        replace(v, message=bounded.get((v.code, v.path, v.message), v.message)) for v in violations
-    ]
+    out: list[Violation] = []
+    for violation in violations:
+        kept = bounded.get((violation.code, violation.path, violation.message))
+        # The record is the check's own bounded finding, asked or not as the loop marked it.
+        out.append(violation if kept is None else replace(kept, asked=violation.asked))
+    return out
 
 
 def _no_turn_left(violations: Sequence[Violation], payload: Any) -> list[Violation]:
