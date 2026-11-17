@@ -8828,6 +8828,8 @@ async def _ask(
     answered: list[Any] = [None]
     # Every answer of the round, first and retry, as parsed: the run's record keeps them.
     answers: list[Any] = []
+    # For each kept answer, whether the masking rule changed it (:data:`ANSWERS_MASKED`).
+    masked: list[bool] = []
     # The answer the checks last read, whose rows the findings shown name by their place.
     checked: list[Any] = [None]
     # Every finding the round was asked about, each row's named by the sentence the row
@@ -8840,9 +8842,11 @@ async def _ask(
         parsed = safe_parse_json(answer_read[0])
         # Kept whole for the run's record, as parsed, one that could not be read as its text,
         # masked as every stored model answer is (:func:`_masked_answer`, T-736).
-        answers.append(
-            _masked_answer(parsed if isinstance(parsed, (dict, list)) else answer_read[0])
-        )
+        given = parsed if isinstance(parsed, (dict, list)) else answer_read[0]
+        kept = _masked_answer(given)
+        answers.append(kept)
+        # Whether the mask changed it: such an answer is no longer the answer given.
+        masked.append(kept != given)
         # Shape only: a bare list of rows is the object the schema names.
         if isinstance(parsed, list):
             parsed = {"sentences": parsed}
@@ -9019,6 +9023,7 @@ async def _ask(
         else {p.id: text_digest(p.text) for p in passages if p.verbatim and not p.source_only}
     )
     summary[ANSWERS] = answers
+    summary[ANSWERS_MASKED] = masked
     logger.info(
         "section agreement: %d passage(s) asked about; %d sentence(s) listed, %d rewritten, "
         "%d kept, %d listed for reading, %d not applied, %d left out, %d qualified on the "
@@ -9132,8 +9137,12 @@ VERBATIM_UNSEEN = "verbatim_unseen"
 # Every answer of the round, the first and each retry, as parsed and whole: an object as read,
 # one that could not be read as the text it was read from, each text masked as every stored
 # model answer is (:func:`_masked_answer`). Shown to no model and printed in no report: the
-# round's own code re-applies them (:class:`StoredAnswers`, T-736).
+# round's own code re-applies them (:class:`StoredAnswers`), exactly for an answer the mask
+# left unchanged (T-736).
 ANSWERS = "answers"
+# For each answer of :data:`ANSWERS`, in order, whether the masking rule changed it: such an
+# answer is kept as masked and is not the answer the round was given (T-736).
+ANSWERS_MASKED = "answers_masked"
 
 
 def _masked_answer(value: Any) -> Any:
@@ -9149,21 +9158,43 @@ def _masked_answer(value: Any) -> Any:
     return value
 
 
+class AnswerChangedByMask(ValueError):
+    """A stored answer of the round the masking rule changed, asked to be handed back: it is
+    not the answer the round was given, so it is not re-applied as one (T-736)."""
+
+
 class StoredAnswers:
     """A reporter that answers the round with the answers a run's record keeps (:data:`ANSWERS`),
     in order, so the round's own code re-applies them with no model call; with none left, an
-    answer of no rows. Says nothing it could not do (``degradations``)."""
+    answer of no rows. An answer the record marks as changed by the mask
+    (:data:`ANSWERS_MASKED`) is refused when its turn comes (:class:`AnswerChangedByMask`):
+    re-application is exact for an answer the mask left unchanged. Says nothing it could not do
+    (``degradations``)."""
 
-    def __init__(self, answers: Sequence[Any]) -> None:
+    def __init__(self, answers: Sequence[Any], masked: Sequence[bool] = ()) -> None:
         self.answers = list(answers)
+        self.masked = [bool(flag) for flag in masked]
+        self.given = 0
         self.degradations: list[str] = []
+
+    @classmethod
+    def of_record(cls, record: Mapping[str, Any]) -> StoredAnswers:
+        """The answers of the round's record (``section_agreement``), each with its flag."""
+        return cls(record.get(ANSWERS) or [], record.get(ANSWERS_MASKED) or [])
 
     async def ask(self, turns: list[BaseMessage], *, call: str, what: str) -> BaseMessage:
         import json
 
         from langchain_core.messages import AIMessage
 
-        answer = self.answers.pop(0) if self.answers else {"sentences": []}
+        place = self.given
+        self.given += 1
+        if place < len(self.masked) and self.masked[place] and place < len(self.answers):
+            raise AnswerChangedByMask(
+                f"stored answer {place + 1} of the agreement question was changed by the "
+                "record's masking: it is not the answer given, and is not re-applied as one"
+            )
+        answer = self.answers[place] if place < len(self.answers) else {"sentences": []}
         return AIMessage(content=answer if isinstance(answer, str) else json.dumps(answer))
 
 
