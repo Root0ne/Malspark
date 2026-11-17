@@ -209,8 +209,9 @@ is left out and recorded with the row's sources, its reason and the sentence who
 A refusal of the round's last answer is recorded with the sentence its row was about, saying
 no turn was left (:func:`_no_turn_left`). Every answer of the round, the first and the
 retry's, is kept as parsed and whole in the round's record in the run summary (``answers``),
-shown to no model and printed in no report, so the round's own code re-applies a stored run's
-answers with no model call (:class:`StoredAnswers`, T-736).
+each text masked as every stored model answer is, shown to no model and printed in no report;
+the round's own code re-applies stored answers with no model call (:class:`StoredAnswers`,
+T-736).
 
 Every step is one pass over the passages and the answer's rows.
 """
@@ -428,11 +429,12 @@ KEEP_UNQUOTED_CODE = "agreement.keep_unquoted"
 # does not print), or one whose sentence the round itself leaves out or changes, leaves the
 # sentence out as before (``DROPPED_CODE``).
 KEPT_ON_ITS_QUOTE_CODE = "agreement.kept_on_its_quote"
-# A row of the answer naming a passage no list of the question writes, whose sentence stands
-# whole in exactly one passage a row may answer: placed there by its text, checked and ended
-# as any row naming that passage, and recorded with the passage it named and its sentence.
-# A sentence standing in two passages, or in none, leaves the row refused as naming an
-# unknown passage (``UNKNOWN_PASSAGE_CODE``) (T-736).
+# A row of the answer the row schema accepts, naming a passage no list of the question
+# writes, whose sentence exactly one passage a row may answer holds, whole and once: placed
+# there by its text, checked and ended as any row naming that passage, and recorded with the
+# passage it named and its sentence. A sentence standing in two passages, in none, or twice
+# in one leaves the row refused as naming an unknown passage (``UNKNOWN_PASSAGE_CODE``)
+# (T-736).
 PLACED_BY_SENTENCE_CODE = "agreement.placed_by_sentence"
 # A sentence, or a rewrite, giving failed calls a number the ledger's count
 # does not.

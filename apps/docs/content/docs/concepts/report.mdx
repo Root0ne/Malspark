@@ -94,10 +94,6 @@ The reporter writes; the code checks. Before the report is stored:
   section, and no list of words decides what a sentence refers to. Where the
   round itself leaves that source sentence out or changes it, the closing
   sentence is left out;
-- a section 5 sentence rewritten on the fact of a routine whose code no entry
-  lists stands in the reporter's own words, whether they say that code was read
-  or that it was not, and is checked as any rewrite; the platform appends no
-  clause to it. Every other fact's clause is the platform's, as written;
 - a sentence of a section the report models wrote is read against the
   judge's decision as the run records it (the verdict, the family or none, each
   technique published or dropped with the judge's reason): the decision only
@@ -114,15 +110,15 @@ not asked; in the agreement round a finding counts as asked where the sentence i
 is about was asked about, whatever rows carried it. The agreement round's retry
 names a passage only by its id in square brackets, as the round's list writes it,
 and quotes each sentence it asks about whole; the record keeps a bounded copy. A
-row naming a passage the list does not write is placed by the sentence it copies
-where that sentence stands whole in exactly one passage a row may answer, then
-checked as any row and recorded as placed (`agreement.placed_by_sentence`); a
-sentence standing in two passages or in none leaves the row refused. Every
-answer of the round, the first and the retry's, is kept as parsed in the round's
-record in the run summary, shown to no model and printed in no report, so a stored
-run can be put through the round again with no model call. A problem the reporter
-does not fix stays visible in the run summary, with each sentence left out
-recorded whole.
+well-formed row naming a passage the list does not write is placed by the
+sentence it copies where exactly one passage a row may answer holds that
+sentence, whole and once, then checked as any row and recorded as placed
+(`agreement.placed_by_sentence`); a sentence standing in two passages, in none,
+or twice in one leaves the row refused. Every answer of the round, the first and
+the retry's, is kept as parsed in the round's record in the run summary, masked
+as every stored model answer is, and shown to no model and printed in no report.
+A problem the reporter does not fix stays visible in the run summary, with each
+sentence left out recorded whole.
 
 One rule says where a sentence ends, for the agreement round and the analyst
 report alike: a period ends no sentence where it closes a run of two or more
