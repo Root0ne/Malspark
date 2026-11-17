@@ -131,3 +131,26 @@ def test_a_closing_keep_refused_for_one_sentence_keeps_the_other() -> None:
     assert report.technical_analysis is not None
     limitations = report.technical_analysis.analyst_limitations
     assert limitations is not None and limitations.body == FIRST
+
+
+def test_a_whole_field_row_a_retry_leaves_unanswered_stays_as_its_sentences_would() -> None:
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        _ask,
+        _Reporter,
+    )
+
+    text = f"{BODY} {_UNKNOWN}"
+
+    def ended(sentences: list[str]) -> tuple[str, list[str]]:
+        report = _report(FIRST, background=text)
+        rows = [{"passage": "introduction", "sentence": s, **ANSWERS["keep"]} for s in sentences]
+        done = _ask(report, _Reporter({"sentences": rows}, {"sentences": []}))
+        records = [r["message"] for r in done.tally.unresolved if r["code"] == "agreement.dropped"]
+        return report.intro_background, records
+
+    # The retry answers nothing: the first answer's row for the held sentence is its last,
+    # whole or apart, and the sentence is left out as refused, not as never answered.
+    whole, apart = ended([text]), ended([BODY, _UNKNOWN])
+    assert whole == apart
+    assert whole[0] == BODY
+    assert "its last answer, a keep, was refused" in whole[1][0]

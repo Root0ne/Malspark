@@ -359,3 +359,11 @@ def test_the_stored_wildcard_sentence_is_one_unit() -> None:
 def test_a_run_of_single_letters_opened_by_a_bracket_or_a_quote_ends_no_sentence() -> None:
     for text in ("It reads keys (e.g. The run key) first.", 'It reads "i.e. The key" first.'):
         assert _units(text) == [text]
+
+
+def test_a_mark_after_a_path_mark_opens_no_emphasis() -> None:
+    for text in (
+        "It reads C:\\Logs\\*Logs.* Then it exits.",
+        "It reads /var/*logs.* Then it exits.",
+    ):
+        assert _units(text) == [text]
