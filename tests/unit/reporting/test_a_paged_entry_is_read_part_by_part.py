@@ -312,9 +312,10 @@ class TestARunIsShownInTheEntrysOwnCase:
     def test_a_repeat_s_run_is_read_in_its_holder_s_parts(self) -> None:
         corpus = RunEvidenceCorpus(10_000_000)
         corpus.remember("ev_0001", "strings", json.dumps({"s": ["x"]}))
-        corpus.remember(
-            "ev_0001@100+100", "read_evidence", "page poolExampleNoteFile-READ.txtTail end"
-        )
+        # A page that is a JSON document: read as one in the holder's parts,
+        # its escaped backslashes are the path's own.
+        page = json.dumps({"s": ["Software\\Vendor\\RunTail"]})
+        corpus.remember("ev_0001@100+100", "read_evidence", page)
         texts = EntryTexts.from_ledger(
             [
                 _entry("ev_0001", json.dumps({"s": ["x"]})),
@@ -330,7 +331,7 @@ class TestARunIsShownInTheEntrysOwnCase:
             corpus,
         )
 
-        found = _one(_identifiers("ExampleNoteFile-READ.txt", "ev_0002"), texts)
+        found = _one(_identifiers("Software\\Vendor\\Run", "ev_0002"), texts)
 
         assert found.code == STATED_VALUE_INSIDE_A_TOKEN_CODE
-        assert "shown in lower case: 'poolexamplenotefile-read.txttail'." in found.message
+        assert "shown in lower case: 'software\\\\vendor\\\\runtail'." in found.message
