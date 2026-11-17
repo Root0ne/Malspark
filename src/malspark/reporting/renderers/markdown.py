@@ -6809,16 +6809,24 @@ def _truncate_escaped(text: str, length: int) -> str:
     return text[: _outside_marks(text, cut)] + "…"
 
 
+# A size a row states as text: a number written out, read as it is written.
+_SIZE_TEXT_RE = re.compile(r"[+-]?\d+(?:\.\d+)?")
+
+
 def dropped_size_cell(op: Mapping[str, Any]) -> str:
     """A written file's size as a table cell: what its row states, zero included.
 
-    ``"<size> bytes"`` for any size the row states (``0`` is a file of no
-    bytes); ``"not recorded"`` where it states none (no value, an empty text).
+    ``"<size> bytes"`` where the row states a size: a number (``0`` is a file
+    of no bytes), or text that is a number, written without the white space
+    around it. ``"not recorded"`` for anything else: no value, an empty or
+    blank text, text that is no number, a list, a mapping, a truth value.
     """
     size = op.get("size")
-    if size is None or size == "" or isinstance(size, bool):
-        return "not recorded"
-    return f"{size} bytes"
+    if isinstance(size, int | float) and not isinstance(size, bool):
+        return f"{size} bytes" if size == size and abs(size) != float("inf") else "not recorded"
+    if isinstance(size, str) and _SIZE_TEXT_RE.fullmatch(size.strip()):
+        return f"{size.strip()} bytes"
+    return "not recorded"
 
 
 def _process_tree_lines(
