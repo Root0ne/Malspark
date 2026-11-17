@@ -6914,6 +6914,15 @@ def _unplaced(payload: Any) -> Any:
     }
 
 
+def _fits_the_schema(row: Any) -> bool:
+    """Whether the round's row schema (:class:`AgreementRow`) accepts ``row``."""
+    try:
+        AgreementRow.model_validate(row)
+    except Exception:  # noqa: BLE001 — the schema check says why
+        return False
+    return True
+
+
 def _placed(
     payload: Any, by_id: dict[str, Passage], sentences_of: Callable[[Passage], _Sentences]
 ) -> Any:
@@ -6921,8 +6930,8 @@ def _placed(
     copies, where exactly one passage a row may answer (a passage written without the code or
     a section 5 passage, not one shown as a source only) holds that sentence at all, and holds
     it whole and once, the passage it named kept under :data:`_PLACED_FROM`; every other row as
-    it is. A sentence standing in two passages, in none, or twice in one places nothing
-    (T-736). One pass over the rows."""
+    it is. A sentence standing in two passages, in none, or twice in one places nothing, nor
+    does a row the round's row schema refuses (T-736). One pass over the rows."""
     rows = payload.get("sentences") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return payload
@@ -6939,6 +6948,7 @@ def _placed(
             and named.strip()
             and (_form(named) not in by_id)
             and sentence.strip()
+            and _fits_the_schema(row)
         ):
             # Every passage holding the sentence at all, once or more: a passage writing it
             # twice holds it, and leaves the row unplaced.
