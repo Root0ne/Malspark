@@ -33,7 +33,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import secrets
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from html.entities import html5
@@ -1265,7 +1265,7 @@ class MarkdownRenderer:
                 measured.append(
                     _row(
                         _code_span(_whole(ctx.plain(named))),
-                        f"{op['size']} bytes" if op.get("size") else "not recorded",
+                        dropped_size_cell(op),
                         _code_span(str(op.get("sha256")).lower()) if op.get("sha256") else "-",
                         op.get("type") or "-",
                         "; ".join(
@@ -6807,6 +6807,18 @@ def _truncate_escaped(text: str, length: int) -> str:
     if visible <= length or cut is None:
         return text
     return text[: _outside_marks(text, cut)] + "…"
+
+
+def dropped_size_cell(op: Mapping[str, Any]) -> str:
+    """A written file's size as a table cell: what its row states, zero included.
+
+    ``"<size> bytes"`` for any size the row states (``0`` is a file of no
+    bytes); ``"not recorded"`` where it states none (no value, an empty text).
+    """
+    size = op.get("size")
+    if size is None or size == "" or isinstance(size, bool):
+        return "not recorded"
+    return f"{size} bytes"
 
 
 def _process_tree_lines(
