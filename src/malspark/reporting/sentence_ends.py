@@ -39,31 +39,42 @@ _WORD_OPEN = "\"'\u2018\u201c([*_`"
 _SINGLE_LETTERS = re.compile(r"(?:[^\W\d_]\.){2,}")
 
 
-def _opens_emphasis(text: str, at: int, mark: str) -> bool:
-    """Whether emphasis by ``mark`` stands open over words on the line before ``text[at]``:
-    an odd count of marks there, each the first of its run and following no ``*``, ``\\`` or
-    ``/``, the last of them followed by a letter or a digit before ``at``."""
+def _marks(text: str, at: int, mark: str) -> list[int]:
+    """Where emphasis by ``mark`` opens or closes on the line before ``text[at]``: each mark
+    the first of its run, following no ``*``, ``\\`` or ``/``."""
     line = text.rfind("\n", 0, at) + 1
-    opened = []
+    out = []
     for i in range(line, at):
         before = text[i - 1] if i > line else ""
         if text[i] == mark and before != mark and not (before and before in _NO_EMPHASIS_AFTER):
-            opened.append(i)
+            out.append(i)
+    return out
+
+
+def _opens_emphasis(text: str, at: int, mark: str) -> bool:
+    """Whether emphasis by ``mark`` stands open over words on the line before ``text[at]``:
+    an odd count of its marks there (:func:`_marks`), the last followed by a letter or a digit
+    before ``at``."""
+    opened = _marks(text, at, mark)
     return len(opened) % 2 == 1 and any(c.isalnum() for c in text[opened[-1] : at])
 
 
 def close_end(text: str, at: int) -> int:
     """Where the closing marks after the end mark at ``text[at]`` end: each closing quote or
     bracket, and a run of a mark of emphasis where it closes emphasis opened earlier on the
-    line (T-719); else right after the mark."""
+    line and leaves no emphasis open after it (T-719); else right after the mark."""
     after = at + 1
     while after < len(text) and text[after] in SENTENCE_CLOSE:
         mark = text[after]
         if mark in _EMPHASIS:
             if text[after - 1] in _NO_EMPHASIS_AFTER or not _opens_emphasis(text, at, mark):
                 break
-            while after < len(text) and text[after] == mark:
-                after += 1
+            end = after
+            while end < len(text) and text[end] == mark:
+                end += 1
+            if any(len(_marks(text, end, other)) % 2 for other in _EMPHASIS):
+                break
+            after = end
             continue
         after += 1
     return after

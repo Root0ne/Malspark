@@ -367,3 +367,8 @@ def test_a_mark_after_a_path_mark_opens_no_emphasis() -> None:
         "It reads /var/*logs.* Then it exits.",
     ):
         assert _units(text) == [text]
+
+
+def test_a_mark_closing_emphasis_inside_open_emphasis_ends_no_sentence() -> None:
+    assert _units("**a _b._ c.** Next.") == ["**a _b._ c.**", "Next."]
+    assert _units("_a **b.** c._ Next.") == ["_a **b.** c._", "Next."]
