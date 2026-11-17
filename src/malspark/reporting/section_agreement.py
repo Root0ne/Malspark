@@ -7026,6 +7026,8 @@ def agreement_violations(
     citable: Sequence[str] = (),
     items: Any = None,
     entries: EntryTexts | None = None,
+    *,
+    whole: bool = False,
 ) -> list[Violation]:
     """What is structurally wrong with the answer's rows, as the retry turn shows it.
 
@@ -7034,7 +7036,8 @@ def agreement_violations(
     rewrite on a fact is read as the platform writes it (``_platform_rewrites``).
     A refused row for a sentence another row answers passing every check, its
     rewrite read against ``citable``, ``items`` and ``entries`` (:func:`_checked_rows`),
-    asks nothing more (T-600).
+    asks nothing more (T-600). With ``whole``, a held sentence no row lists is quoted whole, as
+    the retry shows it; without, bounded, as its record keeps it (T-736).
     """
     by_id = {passage.id: passage for passage in passages}
     payload = _platform_rewrites(payload, by_id)
@@ -7092,18 +7095,26 @@ def agreement_violations(
                 read=bool(rows),
                 answering=answering,
                 unread_told=unread_told,
+                whole=whole,
             )
         )
     return out
 
 
 def _unread_standing(
-    passage: Passage, sentence: str, facts: Sequence[Passage], end: str, rewrite: str = ""
+    passage: Passage,
+    sentence: str,
+    facts: Sequence[Passage],
+    end: str,
+    rewrite: str = "",
+    *,
+    whole: bool = False,
 ) -> Violation:
     """The retry's question on a sentence calling listed code not read, or on its ``rewrite``
     still calling it so: the listing named, a drop offered where it passes (a closing
     passage, a sentence the ledger's lines hold), and ``end``, what becomes of it where the
-    answer refused is its last (:func:`_unread_end`)."""
+    answer refused is its last (:func:`_unread_end`); located at its passage as the list writes
+    it (:func:`_held_at`), the sentence quoted whole with ``whole`` (T-736)."""
     shown = "; ".join(fact.text for fact in facts)
     return Violation(
         code=UNREAD_STANDING_CODE,
@@ -7113,7 +7124,7 @@ def _unread_standing(
                 f"the rewrite {safe_finding_value(rewrite)!r} of "
                 f"{safe_finding_value(sentence)!r} still calls"
                 if rewrite
-                else f"{safe_finding_value(sentence)!r} calls"
+                else f"{safe_finding_value(sentence, whole=whole)!r} calls"
             )
             + " code not read that the ledger lists "
             f"({safe_finding_value(', '.join(f.id for f in facts))}: "
@@ -7123,8 +7134,15 @@ def _unread_standing(
             + (f"; {safe_finding_value(end)}." if end else ".")
             + _EVERY_ROW
         ),
-        path=f"held.{passage.id}",
+        path=_held_at(passage),
     )
+
+
+def _held_at(passage: Passage) -> str:
+    """Where a finding on a held sentence of ``passage`` no row names stands: the passage, as
+    the question's list writes its id, so no token the round would refuse as a passage id is
+    shown (T-736)."""
+    return f"[{passage.id}]"
 
 
 def _held_unlisted(
@@ -7136,8 +7154,10 @@ def _held_unlisted(
     read: bool = True,
     answering: Mapping[tuple[str, int], AgreementRow] | None = None,
     unread_told: set[tuple[str, int]] | None = None,
+    whole: bool = False,
 ) -> list[Violation]:
-    """Each held sentence no row lists, in the passages' order; one whose own clause calls
+    """Each held sentence no row lists, in the passages' order, quoted whole with ``whole``
+    (the retry's question; its record keeps the bounded copy, T-736); one whose own clause calls
     listed code not read and that no row rewrote is asked about with the listing named. One
     the passage writes more than once, which no row can name, is not asked about: a refusal
     the round cannot act on opens no retry, and one the ledger's own lines hold is left out
@@ -7171,7 +7191,11 @@ def _held_unlisted(
                 if facts:
                     row = (answering or {}).get((passage.id, span[0]))
                     asked = _unread_standing(
-                        passage, sentence, facts, _unread_end(passage, sentence, row, by_id)
+                        passage,
+                        sentence,
+                        facts,
+                        _unread_end(passage, sentence, row, by_id),
+                        whole=whole,
                     )
                     # A field answered whole, or a sentence the ledger's lines hold, is told its
                     # end, and what the field is.
@@ -7210,7 +7234,7 @@ def _held_unlisted(
                     code=HELD_UNLISTED_CODE,
                     message=(
                         f"{safe_finding_value(passage.id)} {said}, and no row lists this "
-                        f"sentence: {safe_finding_value(sentence)!r}. List it: "
+                        f"sentence: {safe_finding_value(sentence, whole=whole)!r}. List it: "
                         + (
                             _whole_ends(passage, sentence)
                             if passage.whole
@@ -7227,7 +7251,7 @@ def _held_unlisted(
                         )
                         + _EVERY_ROW
                     ),
-                    path=f"held.{passage.id}",
+                    path=_held_at(passage),
                 )
             )
     return out
@@ -8158,7 +8182,7 @@ def apply_rows(
             span = _sentences(passage).span(sentence)
             held = _ends_on_answer(passage, sentence)
             if span is not None and (passage.id, span[0]) not in answered:
-                unpassed.append((passage, span, f"{unanswered}; {held}", (), f"held.{passage.id}"))
+                unpassed.append((passage, span, f"{unanswered}; {held}", (), _held_at(passage)))
             elif span is None:
                 # Written more than once: no row can name it, so it is left out each time.
                 copied = sentence.strip()
@@ -8170,7 +8194,7 @@ def apply_rows(
                             f"it stands more than once in the passage, so no answer could "
                             f"name it; {held}",
                             (),
-                            f"held.{passage.id}",
+                            _held_at(passage),
                         )
                     )
     for passage, span, why, refusals, path in unpassed:
@@ -8573,7 +8597,7 @@ def _qualify_unread_left(
                         f"shows: {safe_finding_value(span[2])!r} now reads "
                         f"{safe_finding_value(rewrite)!r}."
                     ),
-                    path=f"held.{passage.id}",
+                    path=_held_at(passage),
                 )
             )
     return out
@@ -8842,7 +8866,9 @@ async def _ask(
                 lambda p: schema_violations(
                     AgreementOutput, p, code=SCHEMA_CODE, answer=answer_read[0]
                 ),
-                lambda p: agreement_violations(p, passages, citable, items, evidence_texts),
+                lambda p: agreement_violations(
+                    p, passages, citable, items, evidence_texts, whole=True
+                ),
                 lambda p: rewrites_violations(p, citable, items, evidence_texts, passages),
             ],
             parse=_parse,
@@ -8857,6 +8883,13 @@ async def _ask(
         failed = f"The section agreement question was not answered ({type(exc).__name__})."
         payload, violations, retries = None, [], 0
     tally.retries += retries
+    # The retry quoted each held sentence no row lists whole; its record keeps the bounded copy.
+    violations = _bounded_held(
+        violations,
+        lambda whole: agreement_violations(
+            payload, passages, citable, items, evidence_texts, whole=whole
+        ),
+    )
     # A question that is no finding (a judge refusal told beside a row's own, T-717) is
     # counted and recorded nowhere.
     violations = [v for v in violations if not v.question_only]
@@ -8950,6 +8983,25 @@ def _by_place(
     return [
         replace(violation, path=f"sentences[{passage}@{place}]{rest}")
         for passage, place in places(rows[int(found.group(1))])
+    ]
+
+
+def _bounded_held(
+    violations: Sequence[Violation], checked: Callable[[bool], list[Violation]]
+) -> list[Violation]:
+    """``violations``, each finding on a held sentence no row lists that quotes the sentence
+    whole as the retry showed it (``checked(True)``) given its bounded copy, the one the same
+    check writes for the record (``checked(False)``, in the same order); any other as it is
+    (T-736)."""
+    if not any(v.path == f"[{_form(v.path)}]" for v in violations):
+        return list(violations)
+    bounded = {
+        (shown.code, shown.path, shown.message): kept.message
+        for shown, kept in zip(checked(True), checked(False), strict=True)
+        if shown.message != kept.message
+    }
+    return [
+        replace(v, message=bounded.get((v.code, v.path, v.message), v.message)) for v in violations
     ]
 
 

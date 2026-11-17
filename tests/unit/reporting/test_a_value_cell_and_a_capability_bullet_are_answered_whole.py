@@ -268,7 +268,7 @@ def test_a_cell_unanswered_in_the_first_turn_is_asked_again_told_what_it_is() ->
     assert [(v.code, v.path, v.message) for v in found] == [
         (
             HELD_UNLISTED_CODE,
-            "held.capability_summary.1",
+            "[capability_summary.1]",
             "capability_summary.1 is a capability bullet of the summary, every sentence of "
             f"which is answered, and no row lists this sentence: {BULLET!r}. {_WHOLE_ENDS}a "
             "bullet left with no sentence is not printed. Answer with every row again, this one "
@@ -276,7 +276,7 @@ def test_a_cell_unanswered_in_the_first_turn_is_asked_again_told_what_it_is() ->
         ),
         (
             HELD_UNLISTED_CODE,
-            "held.communications.1.encryption",
+            "[communications.1.encryption]",
             "communications.1.encryption is a table cell, every sentence of which is answered, "
             f"and no row lists this sentence: {CELL!r}. {_WHOLE_ENDS}a cell left with no "
             'sentence prints "-". Answer with every row again, this one included.',
@@ -292,7 +292,7 @@ def test_an_empty_answer_asks_nothing_of_a_cell_or_bullet_held_only_by_its_kind(
     assert [(v.code, v.path, v.message) for v in found] == [
         (
             HELD_UNLISTED_CODE,
-            "held.limitations",
+            "[limitations]",
             "limitations holds a sentence of a closing section, every one of which is answered, "
             f"and no row lists this sentence: {FIRST!r}. List it: rewrite it on the source that "
             "states otherwise, or keep it naming the source you read and found agreeing, quoting "
@@ -879,7 +879,7 @@ def test_a_cell_the_ledger_holds_is_asked_again_after_an_empty_answer_told_its_e
     assert [(v.code, v.path, v.message) for v in found] == [
         (
             HELD_UNLISTED_CODE,
-            "held.communications.1.encryption",
+            "[communications.1.encryption]",
             "communications.1.encryption names what a ledger.N fact shows, and no row lists "
             f"this sentence: {_HELD_CELL!r}. List it: it names what ledger.1 holds lines on: a "
             "keep of it as written is refused, and the same words with a citation added are a "
@@ -891,7 +891,7 @@ def test_a_cell_the_ledger_holds_is_asked_again_after_an_empty_answer_told_its_e
         ),
         (
             HELD_UNLISTED_CODE,
-            "held.limitations",
+            "[limitations]",
             "limitations holds a sentence of a closing section, every one of which is answered, "
             f"and no row lists this sentence: {FIRST!r}. List it: rewrite it on the source that "
             "states otherwise, or keep it naming the source you read and found agreeing, quoting "

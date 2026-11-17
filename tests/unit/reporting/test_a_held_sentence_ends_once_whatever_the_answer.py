@@ -129,7 +129,7 @@ def test_a_sentence_written_twice_that_is_not_held_stands_as_before() -> None:
     assert [
         v
         for v in agreement_violations({"sentences": []}, passages_of(report, entries=_ledger()))
-        if v.path == "held.introduction"
+        if v.path == "[introduction]"
     ] == []
     counts, records = _applied(report, [])
     assert report.intro_background == twice

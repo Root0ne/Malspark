@@ -97,5 +97,5 @@ def test_a_record_already_saying_so_or_naming_no_row_is_left_as_it_was() -> None
     assert _no_turn_left(once, {"sentences": [row]}) == once
     # A path past the answer's rows, or no row path at all, names no sentence.
     past = Violation(code=UNKNOWN_SOURCE_CODE, message="Refused.", path="sentences.3.sources")
-    held = Violation(code=UNKNOWN_SOURCE_CODE, message="Refused.", path="held.summary")
+    held = Violation(code=UNKNOWN_SOURCE_CODE, message="Refused.", path="[summary]")
     assert _no_turn_left([past, held], {"sentences": [row]}) == [past, held]
