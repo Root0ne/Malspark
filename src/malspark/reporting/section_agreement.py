@@ -520,10 +520,6 @@ class Passage:
     # A fact about a routine an entry lists, which contradicts a sentence that
     # calls that routine's code not read (``listed.N``).
     lists_code: bool = False
-    # A fact about a routine a read routine calls whose code no entry lists (``unread.N``): it
-    # contradicts only a sentence that says that code was read, so a row resting on it is
-    # answered in the model's own words either way (:func:`_in_own_words`, T-736).
-    unlisted_callee: bool = False
     # The sentences of a writable passage that call code not read which a
     # ``listed.N`` fact lists, each with those facts' ids and the ids of the
     # ones about the routine its own clause names (:func:`unread_listed_sentences`):
@@ -3366,7 +3362,6 @@ def _ledger_passages(
                     cites=cites,
                     addresses=_spelled_both([unread.address, *unread.callers], bases),
                     on_absence=True,
-                    unlisted_callee=True,
                     qualifier=unread_callee_clause(
                         _offsets([unread.address], bases), _offsets(unread.callers, bases), plural
                     ),
@@ -6557,20 +6552,13 @@ def _in_own_words(passage: Passage, sentence: str, sources: Sequence[Passage | N
 
     A sentence whose own clause calls listed code not read is, always: the
     platform never puts the listing beside words saying the opposite, and adds
-    its correction only to one the answer leaves standing (T-562). So is a row
-    resting on a routine no entry lists (``Passage.unlisted_callee``), keyed on the
-    fact's kind: it says the code was read or that it was not (T-736). A whole-code
+    its correction only to one the answer leaves standing (T-562). A whole-code
     absence is, unless every source it names is a fact that grounds the
     sentence, where the platform qualifies it as any section 5 sentence
     (``_qualified``). The words are read as any passage's rewrite is; the
     passage itself is never their source.
     """
     if passage.kind == SECTION_5 and _decisive_unread(passage, sentence):
-        return True
-    if passage.kind == SECTION_5 and any(s is not None and s.unlisted_callee for s in sources):
-        # A row resting on a routine no entry lists, whose fact contradicts only a sentence
-        # saying that code was read: the model states it either way, checked as any rewrite,
-        # and the platform appends nothing to its words (T-736).
         return True
     if passage.kind == SECTION_5 and sentence in passage.on_fact:
         # A denial a bound value's fact contradicts: the fact's clause beside it
