@@ -27,6 +27,7 @@ from malspark.reporting.renderers.markdown import dropped_size_cell
         ("2048", "2048 bytes"),
         (" 512 ", "512 bytes"),
         (1.5, "1.5 bytes"),
+        ("1.5", "1.5 bytes"),
         (None, "not recorded"),
         ("", "not recorded"),
         ("   ", "not recorded"),
