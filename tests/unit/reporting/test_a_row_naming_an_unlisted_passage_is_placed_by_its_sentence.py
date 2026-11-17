@@ -280,3 +280,52 @@ def test_a_copy_one_passage_holds_only_by_its_words_places_no_row() -> None:
     _report_, _counts, records, found = _applied({"sentences": [row]})
     assert (UNKNOWN_PASSAGE_CODE, "sentences.0.passage") in found
     assert not [v for v in records if v.code == PLACED_BY_SENTENCE_CODE]
+
+
+# A copy of several sentences: each sentence of it is asked where the row is placed.
+_T = "The sample writes no file to disk [ev_0107]."
+_X = "It also stops [ev_0107]."
+
+
+def _unplaced_ends(limitations: str, background: str, copy: str) -> None:
+    row = {**_row(copy, "drop", [], reason="the lines shown say otherwise"), "passage": "held.x"}
+    report = _report(limitations, background=background)
+    passages = passages_of(report, entries=_ledger())
+    found = [(v.code, v.path) for v in agreement_violations({"sentences": [row]}, passages)]
+    assert (UNKNOWN_PASSAGE_CODE, "sentences.0.passage") in found
+    _counts, records = apply_rows({"sentences": [row]}, passages)
+    assert not [v for v in records if v.code == PLACED_BY_SENTENCE_CODE]
+    assert report.intro_background == background
+    assert report.technical_analysis.analyst_limitations.body == limitations
+
+
+def test_a_copy_of_several_sentences_another_passage_holds_one_of_places_no_row() -> None:
+    # The limitations are the whole copy; the introduction holds its sentences inside a longer
+    # text: two passages hold a sentence of the copy, and every passage stands as written.
+    _unplaced_ends(f"{FIRST} {_T}", f"{FIRST} {_T} {_X}", f"{FIRST} {_T}")
+
+
+def test_a_copy_of_several_sentences_one_of_which_its_passage_holds_twice_places_no_row() -> None:
+    _unplaced_ends(f"{FIRST} {_T} {FIRST}", _X, f"{FIRST} {_T} {FIRST}")
+
+
+@pytest.mark.parametrize("background", [_X, f"{FIRST} {_T} {_X}"], ids=["placed", "refused"])
+def test_a_whole_copy_and_its_sentences_one_by_one_end_alike_under_placement(
+    background: str,
+) -> None:
+    def ended(sentences: list[str]) -> tuple[Any, ...]:
+        report = _report(f"{FIRST} {_T}", background=background)
+        rows = [
+            {**_row(s, "drop", [], reason="the lines shown say otherwise"), "passage": "held.x"}
+            for s in sentences
+        ]
+        done = _ask(report, _Reporter({"sentences": rows}, {"sentences": rows}))
+        # The ends and the codes that say how each sentence ended; a refused row is counted
+        # once per row, so the codes are compared as a set.
+        return (
+            report.model_dump(),
+            done.summary["dropped"],
+            {r["code"] for r in done.tally.unresolved if r["code"] != PLACED_BY_SENTENCE_CODE},
+        )
+
+    assert ended([f"{FIRST} {_T}"]) == ended([FIRST, _T])
