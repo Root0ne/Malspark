@@ -823,7 +823,7 @@ No comment names its meaning; the message at `malspark.pipeline.validation:valid
 
 A digest literal that is not a digest of the algorithm it is written under.
 
-- **Raised at** `malspark.reporting.renderers.stix_renderer:_judge_indicator_problem`
+- **Raised at** `malspark.reporting.renderers.stix_renderer:pattern_problem`
 - **Constant** `malspark.reporting.renderers.stix_renderer:MALFORMED_HASH_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
@@ -927,7 +927,7 @@ What the run summary calls a judge annotation whose technique did not survive va
 
 An indicator over something that is not an endpoint: a mailbox that is not one, a file name that names a directory or a root.
 
-- **Raised at** `malspark.reporting.renderers.stix_renderer:_judge_indicator_problem`
+- **Raised at** `malspark.reporting.renderers.stix_renderer:pattern_problem`
 - **Constant** `malspark.reporting.renderers.stix_renderer:UNPUBLISHABLE_ARTEFACT_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
@@ -951,7 +951,7 @@ No comment of its own names its meaning; the comment over the group of constants
 
 One endpoint question, one code. A URL, a name and an address that fail the same host question are one class of decline, so a reader filtering on the code finds that class under one name. The kind is in the sentence, where it says something.
 
-- **Raised at** `malspark.reporting.renderers.stix_renderer:ExtendedSTIXRenderer._render`, `malspark.reporting.renderers.stix_renderer:_judge_indicator_problem`
+- **Raised at** `malspark.reporting.renderers.stix_renderer:_unpublishable_endpoints`, `malspark.reporting.renderers.stix_renderer:pattern_problem`
 - **Constant** `malspark.reporting.renderers.stix_renderer:UNPUBLISHABLE_ENDPOINT_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
@@ -967,7 +967,7 @@ A judge object without a property the standard requires of it — a malware obje
 
 A pattern over an object type STIX does not have, which the judge was asked about under `stix.unknown_observable_type` and kept. This row is the export's decision rather than the judge's answer, so it has a code of its own.
 
-- **Raised at** `malspark.reporting.renderers.stix_renderer:_judge_indicator_problem`
+- **Raised at** `malspark.reporting.renderers.stix_renderer:pattern_problem`
 - **Constant** `malspark.reporting.renderers.stix_renderer:UNPUBLISHABLE_PATTERN_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
