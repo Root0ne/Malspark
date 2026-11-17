@@ -3304,12 +3304,97 @@ def render_pack(entries: list[LedgerEntry], max_chars: int, later_chars: int | N
     (``d2/proc:9``, :func:`_marked_line`). ``later_chars`` is that room where
     the caller sizes it apart (``nodes.pack_text`` takes the earlier run's
     block off the job's own room only); ``max_chars`` where it does not.
+
+    Within a bound, the job's own lines are laid out at the sizes they have
+    without the words a line gains from the rest of the pack (the capture
+    line's words on each conversation's address, the code-links line's on a
+    value's process and on the start path: :data:`_WORDS_ROOM`): the entries
+    shown, the trailer's count and every cut are that layout's. Each line the
+    layout shows whole then takes its words in what room the block leaves
+    (:func:`_with_words`).
     """
     first, later = _by_detonation(entries)
     if later:
         own = render_pack(first, max_chars)
         rest = _later_lines(later, max_chars if later_chars is None else later_chars)
         return "\n".join(part for part in (own, rest) if part)
+    if max_chars <= 0 or _WORDS_ROOM.get() is not None:
+        return _own_block(entries, max_chars)
+    with _laid_out(max_chars):
+        laid = _own_block(entries, max_chars)
+    return _with_words(laid, entries, max_chars)
+
+
+# The room a line's words may take: the capture line's on each conversation's
+# address and the code-links line's on a value's process and on the start
+# path. ``None`` is every word (a pack with no bound, a head, a line rendered
+# alone); ``0`` is none, the size a bounded pack is laid out at.
+_WORDS_ROOM: ContextVar[int | None] = ContextVar("pack_words_room", default=None)
+# The renderers whose lines gain such words.
+_WORDED_RENDERERS = frozenset({"capture_summary", "behaviour_code"})
+
+
+def _with_words(laid: str, entries: list[LedgerEntry], max_chars: int) -> str:
+    """``laid`` with each line it shows whole given its words, in order, within ``max_chars``.
+
+    A line is shown whole where it is its entry's line at the whole detail
+    laid out without words; a line cut to a room, at a lower detail or left
+    out stays as laid out. Each such line takes the words that fit what the
+    block leaves (the capture line's conversation by conversation, the
+    code-links line's all or none); a line whose words do not fit stays as
+    laid out. Only the lines of :data:`_WORDED_RENDERERS` are read again.
+    """
+    left = max_chars - len(laid)
+    if left <= 0:
+        return laid
+    by_id: dict[str, LedgerEntry] = {}
+    for one in entries:
+        if _shown(one)[0] in _WORDED_RENDERERS:
+            by_id.setdefault(str(one.id), one)
+    if not by_id:
+        return laid
+    lines = laid.split("\n")
+    with _viewing(entries):
+        for at, line in enumerate(lines):
+            found = _LINE_ID.match(line)
+            entry = by_id.get(found.group(1)) if found is not None else None
+            if entry is None or line != _line_at(entry, 0):
+                continue
+            worded = _line_at(entry, left)
+            grown = len(worded) - len(line)
+            if 0 < grown <= left:
+                lines[at] = worded
+                left -= grown
+            if left <= 0:
+                break
+    return "\n".join(lines)
+
+
+def _line_at(entry: LedgerEntry, words_room: int) -> str:
+    """``entry``'s line at the whole detail, its words within ``words_room``."""
+    detail, room = _DETAIL.set(WHOLE), _WORDS_ROOM.set(words_room)
+    try:
+        return _pack_line(entry)
+    finally:
+        _WORDS_ROOM.reset(room)
+        _DETAIL.reset(detail)
+
+
+@contextmanager
+def _laid_out(max_chars: int) -> Iterator[None]:
+    """Render at the sizes a pack of ``max_chars`` is laid out at: no words, within a bound."""
+    if max_chars <= 0 or _WORDS_ROOM.get() is not None:
+        yield
+        return
+    token = _WORDS_ROOM.set(0)
+    try:
+        yield
+    finally:
+        _WORDS_ROOM.reset(token)
+
+
+def _own_block(entries: list[LedgerEntry], max_chars: int) -> str:
+    """The job's own lines within ``max_chars``, ending with the unread rows' count."""
     unread = unread_rows_sentence(entries)
     if not unread:
         return _render_entries(entries, max_chars)
@@ -3803,7 +3888,8 @@ def pack_unsaid(entries: list[LedgerEntry], max_chars: int) -> list[LedgerEntry]
     Read in the room ``render_pack`` gives the entries (``_entries_room``).
     """
     max_chars = _entries_room(entries, max_chars)
-    with _viewing(entries):
+    # Read at the sizes the pack is laid out at (``render_pack``).
+    with _viewing(entries), _laid_out(max_chars):
         if any(_is_index(entry) for entry in entries):
             return _with_index(entries, max_chars)[1]
         if max_chars <= 0 or not any(_is_pass(entry) for entry in entries):
@@ -4937,7 +5023,8 @@ def _pcap(
     what the pack's network view says of an address
     (``ledger_projection.address_flow_facts``): its words follow each
     conversation they say something of, as room allows after the
-    conversations are chosen.
+    conversations are chosen, and within the room the pack leaves its words
+    (:data:`_WORDS_ROOM`).
     """
     if data.get("empty"):
         return "empty capture"
@@ -4988,29 +5075,33 @@ def _pcap(
         )
         return f"{head}; {said}" + (f": {rows}" if shown else "") + tail
 
-    whole = _line(len(conversations), len(conversations))
-    if max_chars is None or len(whole) <= max_chars:
-        return whole
     # The conversations are chosen without the words, by their own sizes: the
-    # words never cost a conversation. The most that fit, found by halving
-    # rather than by dropping one at a time: a capture can hold thousands.
-    low, high = 0, len(conversations)
-    while low < high:
-        middle = (low + high + 1) // 2
-        if len(_line(middle)) <= max_chars:
-            low = middle
-        else:
-            high = middle - 1
+    # words never cost a conversation.
+    low = len(conversations)
     line = _line(low)
-    if len(line) > max_chars:
-        return ""
+    if max_chars is not None and len(line) > max_chars:
+        # The most that fit, found by halving rather than by dropping one at
+        # a time: a capture can hold thousands.
+        low, high = 0, len(conversations)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if len(_line(middle)) <= max_chars:
+                low = middle
+            else:
+                high = middle - 1
+        line = _line(low)
+        if len(line) > max_chars:
+            return ""
     # Then the words, conversation by conversation in order, while room remains.
-    used, worded = len(line), 0
+    left = _WORDS_ROOM.get()
+    if max_chars is not None:
+        left = max_chars - len(line) if left is None else min(left, max_chars - len(line))
+    worded = 0
     for said in words[:low]:
         extra = len(_worded("", said))
-        if used + extra > max_chars:
+        if left is not None and extra > left:
             break
-        used += extra
+        left = None if left is None else left - extra
         worded += 1
     return _line(low, worded) if worded else line
 
@@ -5456,8 +5547,15 @@ def _behaviour_holding(holding: Mapping[str, Any], functions: Any) -> str:
     return f"{place} in {behaviour_code.function_words(holding, functions)}"
 
 
-def _behaviour_item(row: Mapping[str, Any], functions: Any, only: str) -> str:
-    """``mutex "X" (mutex:1) held at …; …``, or ``… observed only``."""
+def _behaviour_item(
+    row: Mapping[str, Any], functions: Any, only: str, *, with_words: bool = True
+) -> str:
+    """``mutex "X" (mutex:1) held at …; …``, or ``… observed only``.
+
+    Without its words (``with_words``) the item is laid out as it is sized: the publish
+    rule's words on its process said as "process not attributed", the start
+    path's words unsaid.
+    """
     items = [str(i) for i in row.get("items") or []]
     head = _detail().list_head
     shown = items if head is None else items[:head]
@@ -5466,10 +5564,12 @@ def _behaviour_item(row: Mapping[str, Any], functions: Any, only: str) -> str:
     )
     said = f"{row.get('kind')} {_quoted(str(row.get('value') or ''))}"
     attribution = behaviour_code.attribution_words(row)
+    if attribution and not with_words:
+        attribution = behaviour_code.NOT_ATTRIBUTED
     if attribution:
         cited = f"{cited}; {attribution}" if cited else attribution
     # A marked process's command line: the words every surface writes beside its row.
-    staged = staged_words(row)
+    staged = staged_words(row) if with_words else ""
     if staged:
         cited = f"{cited}; {staged}" if cited else staged
     if cited:
@@ -5520,18 +5620,29 @@ def _behaviour_code(data: dict[str, Any], max_chars: int | None = None) -> str:
         f"{whence}" + (f"; {missing}" if missing else "") + f"; {BEHAVIOUR_CODE_PROVENANCE}"
     )
 
-    def _line(shown: int) -> str:
+    def _line(shown: int, with_words: bool = True) -> str:
         said = (
             f"all {_n(total)} shown"
             if shown >= total
             else PASS_ROOM_SENTENCE.format(shown=_n(shown), total=_n(total))
         )
-        items = "; ".join(_behaviour_item(row, functions, only) for row in rows[:shown])
+        items = "; ".join(
+            _behaviour_item(row, functions, only, with_words=with_words) for row in rows[:shown]
+        )
         return f"{head}; {said}" + (f": {items}" if shown else "")
 
     strings_shown = _detail().strings_shown
     shown = total if strings_shown is None else min(total, strings_shown)
-    return _fit(_line, shown, max_chars)
+    room = _WORDS_ROOM.get()
+    if room is None:
+        return _fit(_line, shown, max_chars)
+    # Laid out without its words; they are added whole where the room the
+    # pack leaves them holds them, and not on a line cut to a room.
+    bare = _fit(partial(_line, with_words=False), shown, max_chars)
+    if room <= 0 or max_chars is not None:
+        return bare
+    worded = _fit(_line, shown, None)
+    return worded if len(worded) - len(bare) <= room else bare
 
 
 # ---------------------------------------------------------------------------

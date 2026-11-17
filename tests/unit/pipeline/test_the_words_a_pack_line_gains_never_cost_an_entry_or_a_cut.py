@@ -88,19 +88,27 @@ def _entries(links: dict[str, Any]) -> list[Any]:
     )
 
 
+def _below_heading(block: str) -> str:
+    """The pack's lines, which the room bounds: the block below its heading."""
+    heading, _, lines = block.partition("\n")
+    assert heading == triage_pack.PACK_HEADING
+    return lines
+
+
 def _worded(room: int) -> str:
-    return triage_pack.pack_block(_entries(_links()), room, normalised_by=READER)
+    return _below_heading(triage_pack.pack_block(_entries(_links()), room, normalised_by=READER))
 
 
 def _laid_out(room: int) -> str:
     """The pack at the sizes its lines have without the words."""
-    return triage_pack.pack_block(_entries(_bare_links(_links())), room)
+    return _below_heading(triage_pack.pack_block(_entries(_bare_links(_links())), room))
 
 
 def _unworded(line: str) -> str:
-    """``line`` with every word this branch adds taken off, its label put back."""
-    line = line.replace(f"; {UNLISTED_WORDS}", f"; {bc.NOT_ATTRIBUTED}", 1)
-    line = line.replace(f"({UNLISTED_WORDS}", f"({bc.NOT_ATTRIBUTED}", 1)
+    """``line`` with every word this branch adds taken off, the code-links label put back."""
+    if line.startswith("[ev_0015] "):
+        line = line.replace(f"; {UNLISTED_WORDS}", f"; {bc.NOT_ATTRIBUTED}")
+        line = line.replace(f"({UNLISTED_WORDS}", f"({bc.NOT_ATTRIBUTED}")
     for said in (STAGED_WORDS, *WORDS):
         line = line.replace(f"; {said}", "")
     return line
