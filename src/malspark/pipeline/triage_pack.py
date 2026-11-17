@@ -122,6 +122,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from functools import partial
 from pathlib import Path
 from typing import Any, cast
@@ -1480,13 +1481,7 @@ class _Pack:
             self.record(
                 "pcap_summary",
                 {"pcap_path": staging.job_relative(capture)},
-                # Beside the capture's own answer, what the pack's network view
-                # says of each conversation's address, read with the run's reader.
-                lambda: with_sandbox_rows(
-                    self.readers.read("pcap_summary", path=capture),
-                    self.recorder.entries,
-                    self.inputs.sandbox_normalised_by,
-                ),
+                lambda: self.readers.read("pcap_summary", path=capture),
             )
 
     def _reputation(self, step: PackStep) -> None:
@@ -4095,15 +4090,69 @@ def _within_room(entry: LedgerEntry, room: int) -> str | None:
     return line if body and len(line) <= room else None
 
 
-def pack_block(entries: list[LedgerEntry], max_chars: int, later_chars: int | None = None) -> str:
+class _Unstated(Enum):
+    """No reader stated: a pack rendered outside a run (a test, a replay of one line)."""
+
+    READER = "unstated"
+
+
+UNSTATED = _Unstated.READER
+
+
+def pack_block(
+    entries: list[LedgerEntry],
+    max_chars: int,
+    later_chars: int | None = None,
+    *,
+    normalised_by: Sequence[str] | None | _Unstated = UNSTATED,
+) -> str:
     """The heading and the rendered pack, or ``""`` when there is no pack.
 
     ``later_chars`` is the room of a further detonation's lines where it is
-    not ``max_chars`` (:func:`render_pack`).
+    not ``max_chars`` (:func:`render_pack`). ``normalised_by`` is the run's
+    reader of its sandbox report: with it, the capture line says what the
+    pack's network view says of each conversation's address
+    (:func:`_addresses_read`); a pack rendered with no reader stated says
+    nothing of them.
     """
     if not entries and not unread_rows_sentence(entries):
         return ""
-    return f"{PACK_HEADING}\n{render_pack(entries, max_chars, later_chars)}"
+    with _addresses_read(entries, normalised_by):
+        return f"{PACK_HEADING}\n{render_pack(entries, max_chars, later_chars)}"
+
+
+# What the pack's network view says of each address, while a pack rendered
+# with the run's reader is written (:func:`_addresses_read`); ``None`` outside.
+_ADDRESS_FACTS: ContextVar[Callable[[Any], str] | None] = ContextVar(
+    "pack_address_facts", default=None
+)
+
+
+@contextmanager
+def _addresses_read(
+    entries: Sequence[LedgerEntry], normalised_by: Sequence[str] | None | _Unstated
+) -> Iterator[None]:
+    """Render with what the pack's own network view says of each address, read with the reader.
+
+    The words are computed where the pack line is written, from the pack's
+    entries only (``ledger_projection.address_flow_facts``) with the run's
+    reader ``normalised_by``, and handed to the capture's renderer
+    (:func:`_pcap`); no entry holds them. With no reader stated, or where the
+    entries hold no whole network view, there are none.
+    """
+    from malspark.reporting.ledger_projection import address_flow_facts
+
+    facts: Callable[[Any], str] | None = None
+    if not isinstance(normalised_by, _Unstated):
+        try:
+            facts = address_flow_facts(list(entries), normalised_by=normalised_by)
+        except Exception as exc:  # noqa: BLE001 — the words must never cost the block
+            logger.warning("pack: the network view's rows could not be read (%s).", exc)
+    token = _ADDRESS_FACTS.set(facts)
+    try:
+        yield
+    finally:
+        _ADDRESS_FACTS.reset(token)
 
 
 def _pack_line(entry: LedgerEntry) -> str:
@@ -4877,10 +4926,18 @@ def _sandbox_sections(data: dict[str, Any]) -> str:
 # pack's own room (``_within_room``), and then says how many it shows.
 
 
-def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
+def _pcap(
+    data: dict[str, Any],
+    max_chars: int | None = None,
+    facts: Callable[[Any], str] | None = None,
+) -> str:
     """The capture's facts on one line, the conversations cut to ``max_chars``, the cut said.
 
-    ``None`` is no cut. ``""`` when not even the counts fit.
+    ``None`` is no cut. ``""`` when not even the counts fit. ``facts`` says
+    what the pack's network view says of an address
+    (``ledger_projection.address_flow_facts``): its words follow each
+    conversation they say something of, as room allows after the
+    conversations are chosen.
     """
     if data.get("empty"):
         return "empty capture"
@@ -4908,12 +4965,11 @@ def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
         else "none detected"
     )
 
-    # What the sandbox's rows say of each remote address, as the pack kept it
-    # beside the capture's answer when it recorded it (:func:`with_sandbox_rows`).
-    kept = data.get(SANDBOX_ROWS_KEY)
-    flows = kept if isinstance(kept, dict) else {}
+    # What the pack's network view says of each conversation's remote
+    # address, as the pack being written read it (:func:`_addresses_read`).
+    words = [facts(row.get("dst")) if facts is not None else "" for row in conversations]
 
-    def _line(shown: int) -> str:
+    def _line(shown: int, worded: int = 0) -> str:
         if not conversations:
             return f"{head}; no external conversations{tail}"
         total = len(conversations)
@@ -4926,14 +4982,18 @@ def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
             )
         )
         # Each line holds commas and semicolons of its own: the rows are parted by a bar.
-        rows = " | ".join(_conversation(row, flows) for row in conversations[:shown])
+        rows = " | ".join(
+            _worded(conversation_line(row), words[index] if index < worded else "")
+            for index, row in enumerate(conversations[:shown])
+        )
         return f"{head}; {said}" + (f": {rows}" if shown else "") + tail
 
-    whole = _line(len(conversations))
+    whole = _line(len(conversations), len(conversations))
     if max_chars is None or len(whole) <= max_chars:
         return whole
-    # The most conversations that fit, found by halving rather than by
-    # dropping one at a time: a capture can hold thousands of them.
+    # The conversations are chosen without the words, by their own sizes: the
+    # words never cost a conversation. The most that fit, found by halving
+    # rather than by dropping one at a time: a capture can hold thousands.
     low, high = 0, len(conversations)
     while low < high:
         middle = (low + high + 1) // 2
@@ -4942,49 +5002,22 @@ def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
         else:
             high = middle - 1
     line = _line(low)
-    return line if len(line) <= max_chars else ""
+    if len(line) > max_chars:
+        return ""
+    # Then the words, conversation by conversation in order, while room remains.
+    used, worded = len(line), 0
+    for said in words[:low]:
+        extra = len(_worded("", said))
+        if used + extra > max_chars:
+            break
+        used += extra
+        worded += 1
+    return _line(low, worded) if worded else line
 
 
-def _conversation(row: dict[str, Any], flows: Mapping[str, Any]) -> str:
-    """One conversation as every surface writes it, then what the sandbox's rows say of its peer."""
-    line = conversation_line(row)
-    said = flows.get(str(row.get("dst") or ""))
-    return f"{line}; {said}" if isinstance(said, str) and said else line
-
-
-# The platform's key on the capture's answer under which the pack keeps what
-# the sandbox's rows say of each conversation's remote address, by address.
-SANDBOX_ROWS_KEY = "sandbox_rows"
-
-
-def with_sandbox_rows(
-    answer: Any, ledger: Sequence[Any], normalised_by: Sequence[str] | None
-) -> Any:
-    """The capture's answer with what the pack's network view says of each remote address.
-
-    Read from the record only, when the capture is recorded: the ``ledger``'s
-    network view answers, read with the run's reader ``normalised_by`` as the
-    report's network block is (``ledger_projection.address_flow_facts``),
-    kept under :data:`SANDBOX_ROWS_KEY` for each conversation's address that
-    the rows say something of. An answer with no conversations, or a ledger
-    with no network view, is returned as it is.
-    """
-    from malspark.reporting.ledger_projection import address_flow_facts
-
-    if not isinstance(answer, dict) or answer.get("error"):
-        return answer
-    conversations = [row for row in answer.get("conversations") or [] if isinstance(row, dict)]
-    if not conversations:
-        return answer
-    facts = address_flow_facts(list(ledger), normalised_by=normalised_by)
-    if facts is None:
-        return answer
-    said = {
-        str(row.get("dst")): words
-        for row in conversations
-        if row.get("dst") and (words := facts(row.get("dst")))
-    }
-    return {**answer, SANDBOX_ROWS_KEY: said} if said else answer
+def _worded(line: str, said: str) -> str:
+    """A conversation's line, then what the sandbox's rows say of its peer, where they say it."""
+    return f"{line}; {said}" if said else line
 
 
 # The decoded-strings line. The pack is one block every agent reads, bounded
@@ -6418,7 +6451,7 @@ _RENDERERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "sandbox_channels": _sandbox_channels,
     "sandbox_sections": _sandbox_sections,
     "sandbox_status": lambda data: str(data.get("statement") or ""),
-    "capture_summary": _pcap,
+    "capture_summary": lambda data: _pcap(data, facts=_ADDRESS_FACTS.get()),
     "function_matches": _function_matches,
     "emulated_strings": _decoded_strings,
     "api_hash_resolution": _resolved_hashes,
@@ -6435,7 +6468,7 @@ _RENDERERS: dict[str, Callable[[dict[str, Any]], str]] = {
 # its heaviest conversations.
 _SHORTER_RENDERERS: dict[str, Callable[[dict[str, Any], int], str]] = {
     "emulated_strings": lambda data, room: _decoded_strings(data, max_chars=room),
-    "capture_summary": lambda data, room: _pcap(data, max_chars=room),
+    "capture_summary": lambda data, room: _pcap(data, max_chars=room, facts=_ADDRESS_FACTS.get()),
     "api_hash_resolution": lambda data, room: _resolved_hashes(data, max_chars=room),
     "decoded_blobs": lambda data, room: _decoded_blobs(data, max_chars=room),
     "crypto_constants": lambda data, room: _constant_sets(data, max_chars=room),
@@ -6452,7 +6485,9 @@ _SHORTER_RENDERERS: dict[str, Callable[[dict[str, Any], int], str]] = {
 _HEAD_DETAIL = PackDetail(list_head=0, strings_shown=0, labels_shown=0)
 
 
-def pack_row_heads(rows: Any) -> dict[str, str]:
+def pack_row_heads(
+    rows: Any, *, normalised_by: Sequence[str] | None | _Unstated = UNSTATED
+) -> dict[str, str]:
     """Each pack entry's line with none of its listed items, by lower-cased id.
 
     The line's own renderer decides what an item is, so the head keeps every
@@ -6460,12 +6495,13 @@ def pack_row_heads(rows: Any) -> dict[str, str]:
     entry's whole output elsewhere shows this head in the pack in place of the
     full line (``judge_agent.pack_rows_shown_below``). Rendered with the
     entries of the pack as the full pack is, so a line naming another tool
-    names it the same way. Linear in the entries.
+    names it the same way, and with the run's reader ``normalised_by`` as
+    :func:`pack_block` is. Linear in the entries.
     """
     entries = pack_entries(rows)
     if not entries:
         return {}
-    with _viewing(entries):
+    with _viewing(entries), _addresses_read(entries, normalised_by):
         lines = _render_lines(list(entries), _HEAD_DETAIL)
     # A later detonation's line says so, its ids qualified, as in the pack.
     return {
