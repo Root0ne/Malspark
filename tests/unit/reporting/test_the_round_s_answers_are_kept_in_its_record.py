@@ -157,3 +157,38 @@ def test_the_stored_answers_are_masked_as_every_stored_model_answer_is(
     reporter = StoredAnswers(copy.deepcopy(stored))
     handed = [asyncio.run(reporter.ask([], call="c", what="w")).content for _answer in range(3)]
     assert handed == [json.dumps(stored[0]), stored[1], json.dumps({"sentences": []})]
+
+
+def test_an_answer_the_mask_changed_is_flagged_and_not_handed_back_as_given(
+    configured_key: str,
+) -> None:
+    from malspark.reporting.section_agreement import ANSWERS_MASKED, AnswerChangedByMask
+    from tests.credential_shapes import password
+
+    # An address with user information: the mask takes it out of the stored answer, so the
+    # stored row no longer copies the sentence the round answered.
+    said = f"The sample uploads to ftp://bot:{password()}@203.0.113.9/drop [ev_0107]."
+    answer = {"sentences": [_row(said, "drop", [], reason="the lines shown say otherwise")]}
+    plain = {"sentences": []}
+    report = _report(said)
+    done = _asked(report, _Reporter(answer, plain))
+    stored = done.summary[ANSWERS]
+    assert stored[0] != answer
+    assert done.summary[ANSWERS_MASKED] == [True, *([False] * (len(stored) - 1))]
+    # Re-applied, the changed answer is refused, never handed back as the answer given.
+    reporter = StoredAnswers.of_record(done.summary)
+    with pytest.raises(AnswerChangedByMask, match="answer 1"):
+        asyncio.run(reporter.ask([], call="c", what="w"))
+
+
+def test_an_answer_the_mask_left_unchanged_is_handed_back_as_stored() -> None:
+    from malspark.reporting.section_agreement import ANSWERS_MASKED
+
+    answers = _ANSWERS["answered in the retry"]
+    report = _background()
+    done = _asked(report, _Reporter(*answers))
+    assert done.summary[ANSWERS_MASKED] == [False, False]
+    again = _background()
+    replayed = _asked(again, StoredAnswers.of_record(copy.deepcopy(done.summary)))
+    assert replayed.summary == done.summary
+    assert again.model_dump() == report.model_dump()
