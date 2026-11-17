@@ -1434,7 +1434,7 @@ class _Pack:
         if not report:
             return
         normalised_by = self.inputs.sandbox_normalised_by
-        processes = sandbox_tools.read_view("sandbox_processes", report, normalised_by)
+        processes = sandbox_tools.processes_view(report, normalised_by)
         if not processes.get("absent"):
             commands = _command_lines(processes)
             self.record(
@@ -1797,9 +1797,7 @@ class _Pack:
         if not report or platform is None:
             return
         rows = (
-            sandbox_tools.read_view(
-                "sandbox_api_calls", report, self.inputs.sandbox_normalised_by
-            ).get("apis")
+            sandbox_tools.api_calls_view(report, self.inputs.sandbox_normalised_by).get("apis")
             or []
         )
         names = list(

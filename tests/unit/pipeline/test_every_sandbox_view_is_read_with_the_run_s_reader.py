@@ -106,6 +106,8 @@ def view_reads(source: str) -> list[str]:
 READER_TAKERS: dict[str, tuple[int | None, str]] = {
     "read_view": (2, ""),
     "network_view": (1, ""),
+    "processes_view": (1, ""),
+    "api_calls_view": (1, ""),
     "network_from_sandbox_report": (1, "normalised_by"),
     "network_from_ledger": (None, "normalised_by"),
     "judge_sandbox_facts": (None, "sandbox_normalised_by"),
@@ -235,6 +237,8 @@ class TestOneEntryPoint:
         "source",
         [
             "network_view(report, None)\n",
+            "sandbox_tools.processes_view(report, None)\n",
+            "sandbox_tools.api_calls_view(report)\n",
             "sandbox_tools.read_view('sandbox_processes', report)\n",
             "partial(read_view, tool, report)\n",
             "partial(sandbox_tools.read_view, tool, report, None)\n",
@@ -253,6 +257,8 @@ class TestOneEntryPoint:
         "source",
         [
             "network_view(report, normalised_by)\n",
+            "sandbox_tools.processes_view(report, normalised_by)\n",
+            "sandbox_tools.api_calls_view(report, self.inputs.sandbox_normalised_by)\n",
             "partial(read_view, tool, report, record.normalised_by)\n",
             "network_from_ledger(ledger, normalised_by=normalised_by_of(container))\n",
             "MalwareReportBuilder(sandbox_normalised_by=held)\n",

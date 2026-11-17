@@ -1930,6 +1930,30 @@ def network_view(
     return read_view("sandbox_network", report, normalised_by)
 
 
+def processes_view(
+    report: dict[str, Any] | None, normalised_by: Sequence[str] | None, /
+) -> dict[str, Any]:
+    """The whole processes view of ``report``, read through :func:`read_view`.
+
+    For a reader that holds a report and looks its processes up as no tool's
+    call (the pack's lookup of the command lines), so it names no tool to
+    read them.
+    """
+    return read_view("sandbox_processes", report, normalised_by)
+
+
+def api_calls_view(
+    report: dict[str, Any] | None, normalised_by: Sequence[str] | None, /
+) -> dict[str, Any]:
+    """The whole API-calls view of ``report``, read through :func:`read_view`.
+
+    For a reader that holds a report and looks its API names up as no tool's
+    call (the pack's lookup of what the observed calls are known for), so it
+    names no tool to read them.
+    """
+    return read_view("sandbox_api_calls", report, normalised_by)
+
+
 # Every tool of this source that reads a detonation, each taking the
 # ``detonation`` selector; ``request_detonation`` asks for one and reads none.
 DETONATION_READERS: tuple[str, ...] = (*_VIEW_READERS, ITEMS_TOOL)
