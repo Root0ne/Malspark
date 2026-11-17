@@ -6925,15 +6925,29 @@ def _fits_the_schema(row: Any) -> bool:
     return True
 
 
+def _holds_the_run(text: str, copy: str) -> bool:
+    """Whether ``text`` holds ``copy`` as a run of whole words, whatever the white space, as
+    copied or with the escapes a quoted value is shown with read back (T-736)."""
+    held = f" {' '.join(text.split())} "
+    return any(
+        f" {words} " in held
+        for words in (" ".join(form.split()) for form in (copy, *pack_reads(copy)))
+        if words
+    )
+
+
 def _placed(
     payload: Any, by_id: dict[str, Passage], sentences_of: Callable[[Passage], _Sentences]
 ) -> Any:
     """``payload`` with each row naming a passage no list writes placed by the sentence it
     copies, where exactly one passage a row may answer (a passage written without the code or
-    a section 5 passage, not one shown as a source only) holds that sentence at all, and holds
-    it whole and once, the passage it named kept under :data:`_PLACED_FROM`; every other row as
-    it is. A sentence standing in two passages, in none, or twice in one places nothing, nor
-    does a row the round's row schema refuses (T-736). One pass over the rows."""
+    a section 5 passage, not one shown as a source only) holds any sentence of the copy, or the
+    copy as a run of its words, and every sentence of the copy stands there exactly once, the
+    row answering it there; the passage it named kept under :data:`_PLACED_FROM`; every other
+    row as it is. A copy of several sentences is so placed only where each of its sentences
+    would be, so a whole copy ends as its sentences given one by one. A sentence standing in
+    two passages, in none, or twice in one places nothing, nor does a row the round's row
+    schema refuses (T-736). One pass over the rows."""
     rows = payload.get("sentences") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return payload
@@ -6952,17 +6966,20 @@ def _placed(
             and sentence.strip()
             and _fits_the_schema(row)
         ):
-            # Every passage holding the sentence at all, once or more: a passage writing it
-            # twice holds it, and leaves the row unplaced.
+            # Each sentence of the copy, cut by the one sentence-end rule.
+            pieces = list(_sentence_units(sentence)[0]) or [sentence.strip()]
+            # Every passage holding any of them, once or more, or the copy as a run of its
+            # words: a passage writing one twice holds it, and leaves the row unplaced.
             holding = [
                 p
                 for p in answerable
-                if sentences_of(p).every(sentence)
+                if any(sentences_of(p).every(piece) for piece in pieces)
+                or _holds_the_run(p.text, sentence)
                 or _answered_span(sentences_of(p), sentence, row.get("decision")) is not None
             ]
             if (
                 len(holding) == 1
-                and len(sentences_of(holding[0]).every(sentence)) <= 1
+                and all(len(sentences_of(holding[0]).every(piece)) == 1 for piece in pieces)
                 and _answered_span(sentences_of(holding[0]), sentence, row.get("decision"))
                 is not None
             ):
