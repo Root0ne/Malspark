@@ -4324,7 +4324,8 @@
         "first_seen": "2026-08-13 21:17:33,760",
         "name": "3f4f590c05779739682f.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 1399,
@@ -4343,6 +4344,7 @@
         "ppid": 2484
       }
     ],
+    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 15
   },
   "sandbox_registry_ops": {
@@ -4715,7 +4717,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\tipWinid",
         "operation": "modify",
-        "value": "\\xec\\x02\\x03\\x00\\x00\\x00\\x00\\x00"
+        "value": "\\xec\\x02\\x03\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "tipWinid"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kothercloudservice\\dropbox\\",
@@ -4805,7 +4808,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\Nse\\IsEnterprise",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "IsEnterprise"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\Office\\6.0\\Common\\kic\\switch\\remote",
@@ -4830,37 +4834,44 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicUploadFileSwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicUploadFileSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicFileTransferSwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicFileTransferSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicShareFileSwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicShareFileSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicSyncFolderSwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicSyncFolderSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicDesktopSyncSwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicDesktopSyncSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicUploadSyncSwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicUploadSyncSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicSendBySwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicSendBySwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\funcRegSw\\WPSDriveEnabled",
@@ -5200,7 +5211,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\clouddisk\\wpsphotostatus",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "wpsphotostatus"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\kingsoft\\Office\\6.0\\common\\PluginMgr",
@@ -5240,7 +5252,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\userinfo\\userid",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "userid"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\enableExtraLogoutNotify",
@@ -5250,7 +5263,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\userinfo\\companyid",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "companyid"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\drivefolder\\",
@@ -5795,7 +5809,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\COMPONENTS\\ServicingStackVersions\\10.0.19041.5967 (WinBuild.160101.0800)",
         "operation": "modify",
-        "value": "2026/7/25:17:55:34.508 10.0.19041.5967 (WinBuild.160101.0800)"
+        "value": "2026/7/25:17:55:34.508 10.0.19041.5967 (WinBuild.160101.0800)",
+        "value_name": "10.0.19041.5967 (WinBuild.160101.0800)"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\System\\Setup",
@@ -6070,7 +6085,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\KBinLayoutOpt\\35\\BootTime",
         "operation": "modify",
-        "value": "\\x83\\xf4<\\xcd^\\x1c\\xdd\\x01"
+        "value": "\\x83\\xf4<\\xcd^\\x1c\\xdd\\x01",
+        "value_name": "BootTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\KBinLayoutOpt",
@@ -6090,7 +6106,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\KBinLayoutOpt\\35\\BootDuration",
         "operation": "modify",
-        "value": "\\x83\\xf4<\\xcd^\\x1c\\xdd\\x01"
+        "value": "\\x83\\xf4<\\xcd^\\x1c\\xdd\\x01",
+        "value_name": "BootDuration"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\KBinLayoutOpt\\FragmentSource",
@@ -6210,7 +6227,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\kcrashdumper\\reginfo\\WerRet",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "WerRet"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\.NETFramework\\Policy\\",
@@ -6715,7 +6733,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Orchestrator\\UpdateManagerCtorFailures",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "UpdateManagerCtorFailures"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Orchestrator\\Settings",
@@ -29175,7 +29194,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\KBinLayoutOpt\\35\\BootComponent",
         "operation": "modify",
-        "value": "\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "BootComponent"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\3f4f590c05779739682f.exe",
@@ -48275,7 +48295,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\SessionInfo\\1\\ApplicationViewManagement\\W32:00000000000701A4\\VirtualDesktop",
         "operation": "modify",
-        "value": "\\x10\\x00\\x00\\x0000DV\\x90\\x12\\x15 \\x90mLJ\\xb3,\\x83\\x7f\\xb5\\xbb\\xb8\\x07"
+        "value": "\\x10\\x00\\x00\\x0000DV\\x90\\x12\\x15 \\x90mLJ\\xb3,\\x83\\x7f\\xb5\\xbb\\xb8\\x07",
+        "value_name": "VirtualDesktop"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Internet Explorer\\Security",
@@ -48515,7 +48536,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.100\\CheckSetting",
         "operation": "modify",
-        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "CheckSetting"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.102",
@@ -48525,7 +48547,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.102\\CheckSetting",
         "operation": "modify",
-        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "CheckSetting"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.104",
@@ -48535,7 +48558,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance\\Checks\\{E8433B72-5842-4d43-8645-BC2C35960837}.check.104\\CheckSetting",
         "operation": "modify",
-        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "#\\x00A\\x00C\\x00B\\x00l\\x00o\\x00b\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "CheckSetting"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\CLSID\\{20D04FE0-3AEA-1069-A2D8-08002B30309D}",
@@ -49075,7 +49099,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.3g2\\OpenWithProgids\\WMP11.AssocFile.3G2",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.3G2"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\Interface\\{8CBD762A-1222-5EE5-B745-489E7A42C6EC}",
@@ -49110,7 +49135,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.3gp\\OpenWithProgids\\WMP11.AssocFile.3GP",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.3GP"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.3gp2",
@@ -49135,7 +49161,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.3gp2\\OpenWithProgids\\WMP11.AssocFile.3G2",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.3G2"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.3gpp",
@@ -49160,7 +49187,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.3gpp\\OpenWithProgids\\WMP11.AssocFile.3GP",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.3GP"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.3mf",
@@ -49270,7 +49298,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.aac\\OpenWithProgids\\WMP11.AssocFile.ADTS",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.ADTS"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ac3",
@@ -49365,7 +49394,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.adt\\OpenWithProgids\\WMP11.AssocFile.ADTS",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.ADTS"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ADTS",
@@ -49390,7 +49420,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.adts\\OpenWithProgids\\WMP11.AssocFile.ADTS",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.ADTS"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ai",
@@ -49445,7 +49476,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.aif\\OpenWithProgids\\WMP11.AssocFile.AIFF",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.AIFF"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.aifc",
@@ -49470,7 +49502,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.aifc\\OpenWithProgids\\WMP11.AssocFile.AIFF",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.AIFF"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.aiff",
@@ -49495,7 +49528,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.aiff\\OpenWithProgids\\WMP11.AssocFile.AIFF",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.AIFF"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.all",
@@ -50000,7 +50034,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.arw\\OpenWithProgids\\WPS.PIC.arw",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.arw"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.asa",
@@ -50130,7 +50165,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.asf\\OpenWithProgids\\WMP11.AssocFile.ASF",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.ASF"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.asm",
@@ -50290,7 +50326,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.asx\\OpenWithProgids\\WMP11.AssocFile.ASX",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.ASX"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.au",
@@ -50315,7 +50352,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.au\\OpenWithProgids\\WMP11.AssocFile.AU",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.AU"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.avci",
@@ -50370,7 +50408,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.avi\\OpenWithProgids\\WMP11.AssocFile.AVI",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.AVI"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.avif",
@@ -50595,7 +50634,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.bmp\\OpenWithProgids\\WPS.PIC.bmp",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.bmp"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.bsc",
@@ -50715,7 +50755,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.cab\\OpenWithProgids\\CABFolder",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "CABFolder"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.camp",
@@ -50975,7 +51016,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.cdxml\\OpenWithProgids\\Microsoft.PowerShellCmdletDefinitionXML.1",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "Microsoft.PowerShellCmdletDefinitionXML.1"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.cer",
@@ -51290,7 +51332,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.cr2\\OpenWithProgids\\WPS.PIC.cr2",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.cr2"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.cr3",
@@ -51315,7 +51358,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.cr3\\OpenWithProgids\\WPS.PIC.cr3",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.cr3"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.crl",
@@ -51410,7 +51454,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.crw\\OpenWithProgids\\WPS.PIC.crw",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.crw"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.cs",
@@ -51555,7 +51600,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.css\\OpenWithProgids\\CSSfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "CSSfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.csv",
@@ -51580,7 +51626,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.csv\\OpenWithProgids\\ET.Xls.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ET.Xls.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.cur",
@@ -51945,7 +51992,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.dds\\OpenWithProgids\\ddsfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ddsfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.def",
@@ -52210,7 +52258,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.dib\\OpenWithProgids\\Paint.Picture",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "Paint.Picture"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.dic",
@@ -52270,7 +52319,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.dif\\OpenWithProgids\\ET.DIF",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ET.DIF"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.diz",
@@ -52325,7 +52375,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.dll\\OpenWithProgids\\dllfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "dllfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.dl_",
@@ -52385,7 +52436,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.dng\\OpenWithProgids\\WPS.PIC.dng",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.dng"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.doc",
@@ -52410,7 +52462,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.doc\\OpenWithProgids\\WPS.Doc.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.Doc.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.docm",
@@ -52435,7 +52488,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.docm\\OpenWithProgids\\WPS.Docm.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.Docm.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.docx",
@@ -52460,7 +52514,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.docx\\OpenWithProgids\\WPS.Docx.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.Docx.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.dos",
@@ -52520,7 +52575,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.dot\\OpenWithProgids\\WPS.Dot.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.Dot.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.dotm",
@@ -52545,7 +52601,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.dotm\\OpenWithProgids\\WPS.Dotm.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.Dotm.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.dotx",
@@ -52570,7 +52627,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.dotx\\OpenWithProgids\\WPS.Dotx.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.Dotx.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.dps",
@@ -52595,7 +52653,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.dps\\OpenWithProgids\\KWPP.Presentation.9",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KWPP.Presentation.9"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.dpso",
@@ -52680,7 +52739,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.dpsx\\OpenWithProgids\\KWPP.Presentation.12",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KWPP.Presentation.12"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.dpt",
@@ -52705,7 +52765,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.dpt\\OpenWithProgids\\KWPP.Template.9",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KWPP.Template.9"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.dptx",
@@ -52730,7 +52791,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.dptx\\OpenWithProgids\\KWPP.Template.12",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KWPP.Template.12"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.drf",
@@ -52975,7 +53037,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.emf\\OpenWithProgids\\emffile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "emffile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.eml",
@@ -53110,7 +53173,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.et\\OpenWithProgids\\KET.Workbook.9",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KET.Workbook.9"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.eto",
@@ -53230,7 +53294,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.ett\\OpenWithProgids\\KET.Template.9",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KET.Template.9"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ettx",
@@ -53255,7 +53320,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.ettx\\OpenWithProgids\\KET.Template.12",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KET.Template.12"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.etx",
@@ -53280,7 +53346,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.etx\\OpenWithProgids\\KET.Sheet.12",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KET.Sheet.12"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.evt",
@@ -53370,7 +53437,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.exe\\OpenWithProgids\\exefile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "exefile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.exp",
@@ -53700,7 +53768,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.flac\\OpenWithProgids\\WMP11.AssocFile.FLAC",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.FLAC"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.fnd",
@@ -53795,7 +53864,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.fon\\OpenWithProgids\\fonfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "fonfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ghi",
@@ -53855,7 +53925,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.gif\\OpenWithProgids\\WPS.PIC.gif",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.gif"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.glb",
@@ -54120,7 +54191,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.heic\\OpenWithProgids\\WPS.PIC.heic",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.heic"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.heics",
@@ -54380,7 +54452,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.htm\\OpenWithProgids\\htmlfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "htmlfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.html",
@@ -54405,7 +54478,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.html\\OpenWithProgids\\htmlfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "htmlfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.htt",
@@ -54740,7 +54814,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.ico\\OpenWithProgids\\WPS.PIC.ico",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.ico"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ics",
@@ -55055,7 +55130,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.inf\\OpenWithProgids\\inffile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "inffile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ini",
@@ -55095,7 +55171,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.ini\\OpenWithProgids\\inifile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "inifile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.inl",
@@ -55260,7 +55337,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.iqy\\OpenWithProgids\\ET.iqyfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ET.iqyfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.iso",
@@ -55435,7 +55513,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.jfif\\OpenWithProgids\\WPS.PIC.jfif",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.jfif"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.Job",
@@ -55530,7 +55609,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.jpe\\OpenWithProgids\\WPS.PIC.jpe",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.jpe"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.jpeg",
@@ -55555,7 +55635,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.jpeg\\OpenWithProgids\\WPS.PIC.jpeg",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.jpeg"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.jpg",
@@ -55580,7 +55661,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.jpg\\OpenWithProgids\\WPS.PIC.jpg",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.jpg"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.js",
@@ -55710,7 +55792,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.jxr\\OpenWithProgids\\wdpfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "wdpfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.k25",
@@ -55975,7 +56058,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.lnk\\OpenWithProgids\\lnkfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "lnkfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.local",
@@ -56175,7 +56259,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.m1v\\OpenWithProgids\\WMP11.AssocFile.MPEG",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MPEG"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.M2T",
@@ -56200,7 +56285,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.m2t\\OpenWithProgids\\WMP11.AssocFile.M2TS",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.M2TS"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.M2TS",
@@ -56225,7 +56311,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.m2ts\\OpenWithProgids\\WMP11.AssocFile.M2TS",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.M2TS"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.M2V",
@@ -56250,7 +56337,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.M2V\\OpenWithProgids\\WMP11.AssocFile.MPEG",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MPEG"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.m3u",
@@ -56275,7 +56363,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.m3u\\OpenWithProgids\\WMP11.AssocFile.m3u",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.m3u"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.m4a",
@@ -56300,7 +56389,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.m4a\\OpenWithProgids\\WMP11.AssocFile.M4A",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.M4A"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.m4b",
@@ -56385,7 +56475,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.m4v\\OpenWithProgids\\WMP11.AssocFile.MP4",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MP4"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mak",
@@ -56550,7 +56641,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mht\\OpenWithProgids\\mhtmlfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "mhtmlfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mhtml",
@@ -56575,7 +56667,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mhtml\\OpenWithProgids\\mhtmlfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "mhtmlfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mid",
@@ -56600,7 +56693,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mid\\OpenWithProgids\\WMP11.AssocFile.MIDI",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MIDI"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.midi",
@@ -56625,7 +56719,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.midi\\OpenWithProgids\\WMP11.AssocFile.MIDI",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MIDI"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mk",
@@ -56685,7 +56780,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mk3d\\OpenWithProgids\\WMP11.AssocFile.MK3D",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MK3D"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mka",
@@ -56710,7 +56806,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mka\\OpenWithProgids\\WMP11.AssocFile.MKA",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MKA"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mkv",
@@ -56735,7 +56832,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mkv\\OpenWithProgids\\WMP11.AssocFile.MKV",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MKV"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mlc",
@@ -56860,7 +56958,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mod\\OpenWithProgids\\WMP11.AssocFile.MPEG",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MPEG"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mos",
@@ -56900,7 +56999,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mov\\OpenWithProgids\\WMP11.AssocFile.MOV",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MOV"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.movie",
@@ -56960,7 +57060,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.MP2\\OpenWithProgids\\WMP11.AssocFile.MP3",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MP3"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mp2v",
@@ -56985,7 +57086,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mp2v\\OpenWithProgids\\WMP11.AssocFile.MPEG",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MPEG"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mp3",
@@ -57010,7 +57112,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mp3\\OpenWithProgids\\WMP11.AssocFile.MP3",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MP3"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mp4",
@@ -57035,7 +57138,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mp4\\OpenWithProgids\\WMP11.AssocFile.MP4",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MP4"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mp4v",
@@ -57060,7 +57164,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mp4v\\OpenWithProgids\\WMP11.AssocFile.MP4",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MP4"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mpa",
@@ -57085,7 +57190,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mpa\\OpenWithProgids\\WMP11.AssocFile.MPEG",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MPEG"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mpe",
@@ -57110,7 +57216,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.MPE\\OpenWithProgids\\WMP11.AssocFile.MPEG",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MPEG"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mpeg",
@@ -57135,7 +57242,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mpeg\\OpenWithProgids\\WMP11.AssocFile.MPEG",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MPEG"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mpg",
@@ -57160,7 +57268,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mpg\\OpenWithProgids\\WMP11.AssocFile.MPEG",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MPEG"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mpv2",
@@ -57185,7 +57294,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mpv2\\OpenWithProgids\\WMP11.AssocFile.MPEG",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MPEG"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mrw",
@@ -57210,7 +57320,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mrw\\OpenWithProgids\\WPS.PIC.mrw",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.mrw"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ms-windows-store-license",
@@ -57560,7 +57671,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.mts\\OpenWithProgids\\WMP11.AssocFile.M2TS",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.M2TS"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.mv",
@@ -57690,7 +57802,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.nef\\OpenWithProgids\\WPS.PIC.nef",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.nef"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.nfo",
@@ -57845,7 +57958,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.ocx\\OpenWithProgids\\ocxfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ocxfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.oc_",
@@ -58030,7 +58144,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.odt\\OpenWithProgids\\odtfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "odtfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.oga",
@@ -58145,7 +58260,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.orf\\OpenWithProgids\\WPS.PIC.orf",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.orf"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ori",
@@ -58220,7 +58336,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.otf\\OpenWithProgids\\otffile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "otffile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.oxps",
@@ -58720,7 +58837,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.pdf\\OpenWithProgids\\KWPS.PDF.9",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KWPS.PDF.9"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.pdfwpsshellnew",
@@ -58810,7 +58928,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.pef\\OpenWithProgids\\WPS.PIC.pef",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.pef"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.perfmoncfg",
@@ -59325,7 +59444,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.png\\OpenWithProgids\\WPS.PIC.png",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.png"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.pos",
@@ -59440,7 +59560,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.pot\\OpenWithProgids\\WPP.POT.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPP.POT.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.potm",
@@ -59465,7 +59586,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.potm\\OpenWithProgids\\WPP.POTM.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPP.POTM.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.potx",
@@ -59490,7 +59612,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.potx\\OpenWithProgids\\WPP.POTX.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPP.POTX.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ppa",
@@ -59640,7 +59763,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.pps\\OpenWithProgids\\WPP.PPT.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPP.PPT.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ppsm",
@@ -59665,7 +59789,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.ppsm\\OpenWithProgids\\WPP.PPSM.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPP.PPSM.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ppsx",
@@ -59690,7 +59815,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.ppsx\\OpenWithProgids\\WPP.PPSX.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPP.PPSX.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ppt",
@@ -59715,7 +59841,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.ppt\\OpenWithProgids\\WPP.PPT.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPP.PPT.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.pptm",
@@ -59740,7 +59867,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.pptm\\OpenWithProgids\\WPP.PPTM.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPP.PPTM.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.pptx",
@@ -59765,7 +59893,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.pptx\\OpenWithProgids\\WPP.PPTX.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPP.PPTX.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.pptxwpsaicreateshellnew",
@@ -59960,7 +60089,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.ps1\\OpenWithProgids\\Microsoft.PowerShellScript.1",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "Microsoft.PowerShellScript.1"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ps1xml",
@@ -60000,7 +60130,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.ps1xml\\OpenWithProgids\\Microsoft.PowerShellXMLData.1",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "Microsoft.PowerShellXMLData.1"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.psb",
@@ -60120,7 +60251,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.psd1\\OpenWithProgids\\Microsoft.PowerShellData.1",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "Microsoft.PowerShellData.1"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.psm1",
@@ -60145,7 +60277,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.psm1\\OpenWithProgids\\Microsoft.PowerShellModule.1",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "Microsoft.PowerShellModule.1"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.pssc",
@@ -60185,7 +60318,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.pssc\\OpenWithProgids\\Microsoft.PowerShellSessionConfiguration.1",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "Microsoft.PowerShellSessionConfiguration.1"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ptx",
@@ -60335,7 +60469,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.raf\\OpenWithProgids\\WPS.PIC.raf",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.raf"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.rar",
@@ -60725,7 +60860,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.rle\\OpenWithProgids\\rlefile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "rlefile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.rll",
@@ -60785,7 +60921,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.rmi\\OpenWithProgids\\WMP11.AssocFile.MIDI",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.MIDI"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.rpc",
@@ -60880,7 +61017,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.rtf\\OpenWithProgids\\WPS.RTF.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.RTF.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.rul",
@@ -60940,7 +61078,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.rw2\\OpenWithProgids\\WPS.PIC.rw2",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.rw2"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.rwl",
@@ -61155,7 +61294,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.scf\\OpenWithProgids\\SHCmdFile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "SHCmdFile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.sch",
@@ -61290,7 +61430,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.search-ms\\OpenWithProgids\\SearchFolder",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "SearchFolder"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.searchConnector-ms",
@@ -61550,7 +61691,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.sldm\\OpenWithProgids\\WPP.SLDM.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPP.SLDM.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.sldx",
@@ -61575,7 +61717,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.sldx\\OpenWithProgids\\WPP.SLDX.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPP.SLDX.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.slk",
@@ -61630,7 +61773,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.snd\\OpenWithProgids\\WMP11.AssocFile.AU",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.AU"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.sol",
@@ -62055,7 +62199,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.sys\\OpenWithProgids\\sysfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "sysfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.sy_",
@@ -62340,7 +62485,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.tif\\OpenWithProgids\\WPS.PIC.tif",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.tif"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.tiff",
@@ -62365,7 +62511,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.tiff\\OpenWithProgids\\WPS.PIC.tiff",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.tiff"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.tlb",
@@ -62575,7 +62722,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.TS\\OpenWithProgids\\WMP11.AssocFile.TTS",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.TTS"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.tsp",
@@ -62665,7 +62813,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.ttc\\OpenWithProgids\\ttcfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ttcfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ttf",
@@ -62690,7 +62839,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.ttf\\OpenWithProgids\\ttffile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ttffile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.TTS",
@@ -62715,7 +62865,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.TTS\\OpenWithProgids\\WMP11.AssocFile.TTS",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.TTS"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.txt",
@@ -62740,7 +62891,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.txt\\OpenWithProgids\\txtfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "txtfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.ubundle",
@@ -63635,7 +63787,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wav\\OpenWithProgids\\WMP11.AssocFile.WAV",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.WAV"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.wax",
@@ -63660,7 +63813,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wax\\OpenWithProgids\\WMP11.AssocFile.WAX",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.WAX"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.wbcat",
@@ -63815,7 +63969,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wdp\\OpenWithProgids\\WPS.PIC.wdp",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.wdp"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.weba",
@@ -63870,7 +64025,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.webp\\OpenWithProgids\\WPS.PIC.webp",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.webp"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.webpnp",
@@ -64050,7 +64206,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wm\\OpenWithProgids\\WMP11.AssocFile.ASF",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.ASF"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.wma",
@@ -64075,7 +64232,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wma\\OpenWithProgids\\WMP11.AssocFile.WMA",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.WMA"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.WMD",
@@ -64170,7 +64328,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wmf\\OpenWithProgids\\WPS.PIC.wmf",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.wmf"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.wmp",
@@ -64265,7 +64424,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wmv\\OpenWithProgids\\WMP11.AssocFile.WMV",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.WMV"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.wmx",
@@ -64290,7 +64450,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wmx\\OpenWithProgids\\WMP11.AssocFile.ASX",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.ASX"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.wmz",
@@ -64350,7 +64511,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.WPL\\OpenWithProgids\\WMP11.AssocFile.WPL",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.WPL"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.wps",
@@ -64375,7 +64537,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wps\\OpenWithProgids\\KWPS.Document.9",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KWPS.Document.9"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.wpso",
@@ -64490,7 +64653,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wpsx\\OpenWithProgids\\KWPS.Document.12",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KWPS.Document.12"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.wpt",
@@ -64515,7 +64679,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wpt\\OpenWithProgids\\KWPS.Template.9",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KWPS.Template.9"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.wptx",
@@ -64540,7 +64705,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wptx\\OpenWithProgids\\KWPS.Template.12",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "KWPS.Template.12"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.wri",
@@ -64785,7 +64951,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.wvx\\OpenWithProgids\\WMP11.AssocFile.WVX",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WMP11.AssocFile.WVX"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.x",
@@ -64840,7 +65007,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.x3f\\OpenWithProgids\\WPS.PIC.x3f",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "WPS.PIC.x3f"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.xaml",
@@ -65070,7 +65238,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.xla\\OpenWithProgids\\ET.Addin",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ET.Addin"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.xlam",
@@ -65225,7 +65394,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.xls\\OpenWithProgids\\ET.Xls.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ET.Xls.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.xlsb",
@@ -65250,7 +65420,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.xlsb\\OpenWithProgids\\ET.Xlsb.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ET.Xlsb.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.xlsm",
@@ -65275,7 +65446,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.xlsm\\OpenWithProgids\\ET.Xlsm.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ET.Xlsm.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.xlsx",
@@ -65300,7 +65472,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.xlsx\\OpenWithProgids\\ET.Xlsx.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ET.Xlsx.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.xlt",
@@ -65325,7 +65498,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.xlt\\OpenWithProgids\\ET.Xlt.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ET.Xlt.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.xltm",
@@ -65360,7 +65534,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.xltm\\OpenWithProgids\\ET.Xlt.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ET.Xlt.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.xltx",
@@ -65395,7 +65570,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.xltx\\OpenWithProgids\\ET.Xlt.6",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ET.Xlt.6"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.xmind",
@@ -65450,7 +65626,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.xml\\OpenWithProgids\\xmlfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "xmlfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.xpm",
@@ -65620,7 +65797,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.xsl\\OpenWithProgids\\xslfile",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "xslfile"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.xslt",
@@ -65800,7 +65978,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.zip\\OpenWithProgids\\CompressedFolder",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "CompressedFolder"
       },
       {
         "key": "HKEY_CLASSES_ROOT\\SystemFileAssociations\\.zoo",

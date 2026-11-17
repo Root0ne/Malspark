@@ -432,7 +432,7 @@ def test_the_mapped_network_survives_the_real_parsers_not_as_na():
     assert "45.33.32.23" in parsed
     assert "N/A / N/A" not in parsed
 
-    iocs = network_from_sandbox_report(rendered)
+    iocs = network_from_sandbox_report(rendered, ("triage", "triage", "tasks"))
     assert iocs is not None
     assert any(d.fqdn == "update-relay-c9f2.net" for d in iocs.domains)
     assert any(ip.address == "45.33.32.23" for ip in iocs.ips)

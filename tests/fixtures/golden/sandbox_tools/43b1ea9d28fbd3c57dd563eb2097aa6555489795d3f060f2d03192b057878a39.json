@@ -3650,7 +3650,8 @@
         "first_seen": "2026-07-25 17:53:12,785",
         "name": "43b1ea9d28fbd3c57dd5.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 183,
@@ -3669,6 +3670,7 @@
         "ppid": 4812
       }
     ],
+    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 3
   },
   "sandbox_registry_ops": {
@@ -3786,7 +3788,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\rbkgplueajs",
         "operation": "modify",
-        "value": "C:\\Users\\Admin\\AppData\\Roaming\\avfo\\ktdyhdmv.exe \"C:\\Users\\Admin\\AppData\\Local\\Temp\\43b1ea9d28fbd3c57dd5.exe\""
+        "value": "C:\\Users\\Admin\\AppData\\Roaming\\avfo\\ktdyhdmv.exe \"C:\\Users\\Admin\\AppData\\Local\\Temp\\43b1ea9d28fbd3c57dd5.exe\"",
+        "value_name": "rbkgplueajs"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\GRE_Initialize",
@@ -4796,17 +4799,20 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\AmiOverridePath",
         "operation": "modify",
-        "value": "C:\\Windows\\AppCompat\\Programs\\Amcache.hve.tmp"
+        "value": "C:\\Windows\\AppCompat\\Programs\\Amcache.hve.tmp",
+        "value_name": "AmiOverridePath"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\AmiHivePermissionsCorrect",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "AmiHivePermissionsCorrect"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\AmiHiveOwnerCorrect",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "AmiHiveOwnerCorrect"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\{11517B7C-E79D-4e20-961B-75A811715ADD}",
@@ -4816,12 +4822,14 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\{11517B7C-E79D-4e20-961B-75A811715ADD}\\CreatingCommand",
         "operation": "modify",
-        "value": "C:\\Windows\\SysWOW64\\WerFault.exe -u -p 4812 -s 628"
+        "value": "C:\\Windows\\SysWOW64\\WerFault.exe -u -p 4812 -s 628",
+        "value_name": "CreatingCommand"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\{11517B7C-E79D-4e20-961B-75A811715ADD}\\CreatingModule",
         "operation": "modify",
-        "value": "C:\\Windows\\SYSTEM32\\aepic.dll"
+        "value": "C:\\Windows\\SYSTEM32\\aepic.dll",
+        "value_name": "CreatingModule"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root",
@@ -4836,7 +4844,8 @@
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\WritePermissionsCheck",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "WritePermissionsCheck"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\PermissionsCheckTestKey",
@@ -4871,102 +4880,122 @@
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\ProviderSyncId",
         "operation": "modify",
-        "value": "{cce86efd-9029-43f2-82ec-9a0660c53438}"
+        "value": "{cce86efd-9029-43f2-82ec-9a0660c53438}",
+        "value_name": "ProviderSyncId"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\ProgramId",
         "operation": "modify",
-        "value": "00061a45dc1f0d1b25841fb20c67819b723300000904"
+        "value": "00061a45dc1f0d1b25841fb20c67819b723300000904",
+        "value_name": "ProgramId"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\FileId",
         "operation": "modify",
-        "value": "0000724b274388945b7bfeac08e09493cce224209237"
+        "value": "0000724b274388945b7bfeac08e09493cce224209237",
+        "value_name": "FileId"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\LowerCaseLongPath",
         "operation": "modify",
-        "value": "c:\\users\\admin\\appdata\\local\\temp\\43b1ea9d28fbd3c57dd5.exe"
+        "value": "c:\\users\\admin\\appdata\\local\\temp\\43b1ea9d28fbd3c57dd5.exe",
+        "value_name": "LowerCaseLongPath"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\LongPathHash",
         "operation": "modify",
-        "value": "43b1ea9d28fbd3c5|1699d35e7fc2081d"
+        "value": "43b1ea9d28fbd3c5|1699d35e7fc2081d",
+        "value_name": "LongPathHash"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\Name",
         "operation": "modify",
-        "value": "43b1ea9d28fbd3c57dd5.exe"
+        "value": "43b1ea9d28fbd3c57dd5.exe",
+        "value_name": "Name"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\OriginalFileName",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "OriginalFileName"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\Publisher",
         "operation": "modify",
-        "value": "2"
+        "value": "2",
+        "value_name": "Publisher"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\Version",
         "operation": "modify",
-        "value": "94.80.24.2"
+        "value": "94.80.24.2",
+        "value_name": "Version"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\BinFileVersion",
         "operation": "modify",
-        "value": "94.80.24.2"
+        "value": "94.80.24.2",
+        "value_name": "BinFileVersion"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\BinaryType",
         "operation": "modify",
-        "value": "pe32_i386"
+        "value": "pe32_i386",
+        "value_name": "BinaryType"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\ProductName",
         "operation": "modify",
-        "value": "94.80.24.2"
+        "value": "94.80.24.2",
+        "value_name": "ProductName"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\ProductVersion",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "ProductVersion"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\LinkDate",
         "operation": "modify",
-        "value": "09/25/2021 21:56:47"
+        "value": "09/25/2021 21:56:47",
+        "value_name": "LinkDate"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\BinProductVersion",
         "operation": "modify",
-        "value": "94.80.24.2"
+        "value": "94.80.24.2",
+        "value_name": "BinProductVersion"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\AppxPackageFullName",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "AppxPackageFullName"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\AppxPackageRelativeId",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "AppxPackageRelativeId"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\Size",
         "operation": "modify",
-        "value": "=\n\\x05\\x00\\x00\\x00\\x00\\x00"
+        "value": "=\n\\x05\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "Size"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\Language",
         "operation": "modify",
-        "value": "1033"
+        "value": "1033",
+        "value_name": "Language"
       },
       {
         "key": "\\REGISTRY\\A\\{65db824f-781f-2165-de09-42fc684cd298}\\Root\\InventoryApplicationFile\\43b1ea9d28fbd3c5|1699d35e7fc2081d\\Usn",
         "operation": "modify",
-        "value": "P\\xae\\xf5\\x01\\x00\\x00\\x00\\x00"
+        "value": "P\\xae\\xf5\\x01\\x00\\x00\\x00\\x00",
+        "value_name": "Usn"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Rpc\\SecurityService",
@@ -6251,7 +6280,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\Software\\Microsoft\\TIP\\AggregateResults\\data",
         "operation": "modify",
-        "value": "_7\\x11\\x02\\x01\\x00\\x00\\x80\\x85mw\\xff\\x00\\x00\\x00\\x00\\x03\\x00\\x00\\x00{\n\\x00\\x00\\xe4\\xf0\\x8e\\x02\\x01\\x00\\x01\\x00O%\\\\xbe\\x00\\x00\\x00\\x00\\x03\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xe9\\xf0\\x8e\\x02\\x01\\x00\\x01\\x00\\xceL\\x0bb\\x00\\x00\\x00\\x00\\x03\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xdb\\xba\\x91\\x02\\x01\\x00\\x00\\x80I.C\\x0e\\x00\\x00\\x00\\x00\\x02\\x00\\x00\\x00.~\\x01\\x00\\xdb\\xba\\x91\\x02\\x03\\x00\\x04\\x00W1K\\xeb\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00t:\\x01\\x00\\xd0N\\x98\\x02\\x01\\x00\\x03\\x00\\xb1\\x01w\\xde\\x00\\x00\\x00\\x00@\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x1c\\xcf\\x9a\\x02\\x01\\x00\\x01\\x00\\x87\\xae\\xb6\\xbe\\x0c\\x00\\x00\\x00\\x04\\x00\\x00\\x00v\\x07\\x00\\x00\\x1c\\xcf\\x9a\\x02\\x01\\x00\\x03\\x00\\xb5\\xb9\\xb1r\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x00\\x14\\x04\\x00\\x00\\x1c\\xcf\\x9a\\x02\\x01\\x00\\x00\\x80\\x1e\\xb4\\xe8\\xd5\\xe5\\x07\\x00\\x00\\x03\\x00\\x00\\x00\t\\x00\\x00\\x00\\x1c\\xcf\\x9a\\x02\\x01\\x00\\x00\\x80\\x1e\\xb4\\xe8\\xd5\\xe6\\x07\\x00\\x00\\x03\\x00\\x00\\x00\\x0b\\x00\\x00\\x00\\x9b\\xe7\\x9f\\x02\\x01&\\x00\\x80\\x89u\\xb2\\x80\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xcd\\xf7\\xca\\x02\\x01\\x00\\x00\\x00\\xd3\\xb5\\x9b}\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x04\\x00\\x00\\x00\\x9e\\x96\\x03\\x03\\x01\\x00\\x00\\x80\\xc0\\xf2\\xcc\\xa9\\x00\\x00\\x00\\x00\\xb2\\x0b\\x00\\x00J\\x00\\x00\\x00\\x1a\\xee\\x08\\x03\\x01\\x00\\x00\\x80\\x84_\\x18\\xca\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00k`\\x00\\x00\\x1a\\xee\\x08\\x03\\x02\\x00\\x01\\x00\\xfc~\\xfe\\x9d\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x95\\x02\\x00\\x00\\x1a\\xee\\x08\\x03\\x03\\x00\\x07\\x00U\\xb5!\\xf7\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x87\\x91\\x0b\\x03\\x01\\x00\\x00\\x80\\xadA\\xff\\x86\\x00\\x00\\x00\\x00\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x91K\\x1b\\x03\\x04\\x00\\x02\\x00:\\x0f\\x1e\\xf7\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xa9K\\x1b\\x03\\x01\\x00\\x00\\x80w\\x04\\xf5\\xa6\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\xb55\\x03\\x01\\x00\\x01\\x00Uu\\x14\\xdf\\x00\\x00\\x00\\x00\\x03\\x00\\x00\\x00`J\\x04\\x00\\xa6\\xd55\\x03\\x01\\x00\\x0b\\x00;\\x14\\x9f1\\x00\\x00\\x00\\x00\\x03\\x00\\x00\\x00]\\xd2\\x06\\x00"
+        "value": "_7\\x11\\x02\\x01\\x00\\x00\\x80\\x85mw\\xff\\x00\\x00\\x00\\x00\\x03\\x00\\x00\\x00{\n\\x00\\x00\\xe4\\xf0\\x8e\\x02\\x01\\x00\\x01\\x00O%\\\\xbe\\x00\\x00\\x00\\x00\\x03\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xe9\\xf0\\x8e\\x02\\x01\\x00\\x01\\x00\\xceL\\x0bb\\x00\\x00\\x00\\x00\\x03\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xdb\\xba\\x91\\x02\\x01\\x00\\x00\\x80I.C\\x0e\\x00\\x00\\x00\\x00\\x02\\x00\\x00\\x00.~\\x01\\x00\\xdb\\xba\\x91\\x02\\x03\\x00\\x04\\x00W1K\\xeb\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00t:\\x01\\x00\\xd0N\\x98\\x02\\x01\\x00\\x03\\x00\\xb1\\x01w\\xde\\x00\\x00\\x00\\x00@\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x1c\\xcf\\x9a\\x02\\x01\\x00\\x01\\x00\\x87\\xae\\xb6\\xbe\\x0c\\x00\\x00\\x00\\x04\\x00\\x00\\x00v\\x07\\x00\\x00\\x1c\\xcf\\x9a\\x02\\x01\\x00\\x03\\x00\\xb5\\xb9\\xb1r\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x00\\x14\\x04\\x00\\x00\\x1c\\xcf\\x9a\\x02\\x01\\x00\\x00\\x80\\x1e\\xb4\\xe8\\xd5\\xe5\\x07\\x00\\x00\\x03\\x00\\x00\\x00\t\\x00\\x00\\x00\\x1c\\xcf\\x9a\\x02\\x01\\x00\\x00\\x80\\x1e\\xb4\\xe8\\xd5\\xe6\\x07\\x00\\x00\\x03\\x00\\x00\\x00\\x0b\\x00\\x00\\x00\\x9b\\xe7\\x9f\\x02\\x01&\\x00\\x80\\x89u\\xb2\\x80\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xcd\\xf7\\xca\\x02\\x01\\x00\\x00\\x00\\xd3\\xb5\\x9b}\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x04\\x00\\x00\\x00\\x9e\\x96\\x03\\x03\\x01\\x00\\x00\\x80\\xc0\\xf2\\xcc\\xa9\\x00\\x00\\x00\\x00\\xb2\\x0b\\x00\\x00J\\x00\\x00\\x00\\x1a\\xee\\x08\\x03\\x01\\x00\\x00\\x80\\x84_\\x18\\xca\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00k`\\x00\\x00\\x1a\\xee\\x08\\x03\\x02\\x00\\x01\\x00\\xfc~\\xfe\\x9d\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x95\\x02\\x00\\x00\\x1a\\xee\\x08\\x03\\x03\\x00\\x07\\x00U\\xb5!\\xf7\\x00\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x87\\x91\\x0b\\x03\\x01\\x00\\x00\\x80\\xadA\\xff\\x86\\x00\\x00\\x00\\x00\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x91K\\x1b\\x03\\x04\\x00\\x02\\x00:\\x0f\\x1e\\xf7\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\xa9K\\x1b\\x03\\x01\\x00\\x00\\x80w\\x04\\xf5\\xa6\\x00\\x00\\x00\\x00\\x14\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\xb55\\x03\\x01\\x00\\x01\\x00Uu\\x14\\xdf\\x00\\x00\\x00\\x00\\x03\\x00\\x00\\x00`J\\x04\\x00\\xa6\\xd55\\x03\\x01\\x00\\x0b\\x00;\\x14\\x9f1\\x00\\x00\\x00\\x00\\x03\\x00\\x00\\x00]\\xd2\\x06\\x00",
+        "value_name": "data"
       }
     ],
     "total": 516

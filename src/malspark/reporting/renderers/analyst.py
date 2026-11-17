@@ -89,6 +89,7 @@ from malspark.reporting.renderers.markdown import (
     _title_heading,
     _whole,
     confidence_word,
+    dropped_size_cell,
     inside_a_token_kept,
     is_carve_note,
     lost_tools_sentence,
@@ -1857,7 +1858,7 @@ class _Analyst:
             lines.append(
                 _row(
                     _code_span(_whole(ctx.plain(named))),
-                    f"{op['size']} bytes" if op.get("size") else "not recorded",
+                    dropped_size_cell(op),
                     _code_span(str(op.get("sha256")).lower()) if op.get("sha256") else "-",
                     "dropped while a sandbox watched",
                 )

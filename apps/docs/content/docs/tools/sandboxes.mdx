@@ -44,6 +44,38 @@ sandbox's own key. The form holds:
 | Namespaced platform rows (`linux.systemd`, `android.permissions`, ...) | `channels` |
 | Every block with no place above, under the source's own name | its own name |
 
+The place a sandbox started the submitted file from is read from the
+report's own processes, whichever sandbox wrote it, each process row read the
+one way the document reads it, whichever reader built it (its id under `pid` or
+`process_id`, its parent under `ppid` or `parent_id`, its name and its image
+path), never from the rows a view prints: a process that runs the submitted
+file (its submitted name, or its digest with an extension), whose image is
+that file, and that no process running the file started. The mark is given
+only where the record does not contradict it. Where such a process states a
+parent and its task lists a process with no id, or the parent's number names
+more than one process, nothing of that task is marked. A process whose image
+is a path the system itself ships, asked of the platform's one catalogue of
+shipped paths (`data/host_benign_locations_v1.json`, read by
+`stated_host_values.shipped_match`, the path whole), is never the place; a
+row that states no folder and whose name the system ships cannot be told and
+is not marked either. The sandbox's own mark of the sample's processes is not
+read: it stands on the sample's children and the desktop's processes, not on
+the process the sandbox started. A path the report shows written during the run (the files it collected
+and its file-write operations, each part where the reader declares it fills
+it) is never marked, an image that states no folder read against the written
+files' names; where the report records no file writes at all, nothing is
+marked. At most one row of a task is marked: the earliest started of those
+that qualify (`first_seen`, compared only where both are numbers or both one
+timestamp form), none where their starts cannot be compared. The process view (`sandbox_processes`) marks that row
+`staged_by_sandbox: true`, left out on every other row, and its answer
+carries one sentence, once, under `staged_by_sandbox_note`: the marked row is
+the first process that runs the submitted file, started by no process that
+runs it, at a path the report does not show written during the run, and the
+sandbox started the file from there. Where nothing is marked the answer is as
+it was. A copy the sample makes of itself and runs is never marked: a process
+running the file started it. A sandbox that starts the file under a name neither
+reading knows marks nothing, and its rows read as before.
+
 Nothing a reader reads is dropped: a field of a process or a signature that no
 part names is kept on the row under `extra`, and a block with no part of its
 own is kept under its own name. A CAPE, Cuckoo or mock report keeps its own
@@ -116,8 +148,24 @@ declares holds it (`Reading.dropped_writer_fields`: a Triage task report's
 declares the field its source writes the writer's guest pid under
 (`Reading.dropped_guest_pid_fields`: a Triage task report's `pid`) and it is
 another number, that pid as `guest_pid`; a row naming its writer by the guest
-pid alone is named by it. The pack reads every sandbox view with the job's
-reader, as an agent's call of it does. A long answer is sized by the job's
+pid alone is named by it. A row's size is read from every field the reader
+declares states one (`Reading.dropped_size_fields`: a Triage report's `size`,
+then a dumped region's `length`), the first one stated, then from `size`; a row
+stating none states no size, and a stated size of zero prints as zero; a size
+that is a number or text that is a number prints in bytes, other text prints
+as the record states it with no unit, as one code span read as text (never a
+link, an image or a tag), and only an empty or blank text or a
+value that is no scalar prints "not recorded". A
+request record's User-Agent header is read in one place
+(`sandbox_report.request_user_agent`): every field the reader declares states
+it (`Reading.request_user_agent_fields`: a CAPE report's `user-agent`), then
+`user_agent`. The network view states each record as it is, the agent once,
+and the report reads the agent through that one place with the job's reader
+(the job's record holds it); a later detonation's request is read by
+`user_agent`. Every sandbox view is read through one entry
+point that takes the reader's declaration (`sandbox_tools.read_view`): the
+pack, the read of a later detonation and an agent's call each read a view with
+the reader that built its report. A long answer is sized by the job's
 answer guardrail as every other view's is: the rows it does not show are
 counted, and `offset` and `limit` page them. The document holds each such block once per
 task, by reference (`{"task_report": ..., "block_rows": <block>}`), and every

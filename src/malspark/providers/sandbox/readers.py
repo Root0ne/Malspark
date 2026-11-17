@@ -466,6 +466,8 @@ class CapeReportReader(ReportReader):
     # names the process it was seen in by the process list's id, an API call's
     # mark its call (the API under ``call.api``), an indicator's mark its
     # category and the indicator itself.
+    # A request record states the User-Agent header it carried under this field.
+    request_user_agent_fields = ("user-agent",)
     signature_indicators = IndicatorFields(
         lists=("marks", "data"),
         process=("pid", "process_id"),
@@ -506,6 +508,7 @@ class CapeReportReader(ReportReader):
             CAPE_NORMALISER_FILLS,
             rendered=read_from == READ_FROM_MODEL,
             signature_indicators=self.signature_indicators,
+            request_user_agent_fields=self.request_user_agent_fields,
         )
 
     def run_facts(self, payload: Any, fmt: Any = None, **context: Any) -> dict[str, Any]:
@@ -653,11 +656,13 @@ class TriageReportReader(ReportReader):
                 signature_indicators=self.signature_indicators,
                 dropped_writer_fields=self.DROPPED_WRITER_FIELDS,
                 dropped_guest_pid_fields=self.DROPPED_GUEST_PID_FIELDS,
+                dropped_size_fields=self.DROPPED_SIZE_FIELDS,
             )
         # A task report's dumped file names its guest path under ``path``.
         return Reading(
             TRIAGE_NORMALISER_FILLS,
             guest_path_fields=("path",),
+            dropped_size_fields=self.DROPPED_SIZE_FIELDS,
             dropped_writer_fields=self.DROPPED_WRITER_FIELDS,
             dropped_guest_pid_fields=self.DROPPED_GUEST_PID_FIELDS,
             signature_indicators=self.signature_indicators,
@@ -667,6 +672,9 @@ class TriageReportReader(ReportReader):
     # ``procid``, and the guest's pid of that process under ``pid``.
     DROPPED_WRITER_FIELDS = ("procid",)
     DROPPED_GUEST_PID_FIELDS = ("pid",)
+    # A written file's row states its size under ``size``, a dumped region's
+    # its length under ``length``.
+    DROPPED_SIZE_FIELDS = ("size", "length")
 
     # What a behavioural task's row in the overview, and its task report's
     # ``task`` block, say of the machine the task ran in: ``resource`` is the

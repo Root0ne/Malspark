@@ -3103,9 +3103,11 @@
         "first_seen": "2026-08-13 18:40:59,328",
         "name": "7faba2fe65c014143a60.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       }
     ],
+    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 1
   },
   "sandbox_registry_ops": {
@@ -3258,7 +3260,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\udludende\\unsoundnesses\\Feltmadras171",
         "operation": "modify",
-        "value": "Boneset"
+        "value": "Boneset",
+        "value_name": "Feltmadras171"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
@@ -3458,7 +3461,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\ruskomsnusket\\Computerspillets\\onfroi",
         "operation": "modify",
-        "value": "Bemestre"
+        "value": "Bemestre",
+        "value_name": "onfroi"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\gardenpartienes",
@@ -3478,7 +3482,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Braggardism\\foringers\\ldrepolitikken",
         "operation": "modify",
-        "value": "`dC"
+        "value": "`dC",
+        "value_name": "ldrepolitikken"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\prefocus",
@@ -3503,7 +3508,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Viatical189\\Ankermndenes45\\bevaringstilstand",
         "operation": "modify",
-        "value": "%Smircher%\\fabriksinspektr\\spotwelder.Pac101"
+        "value": "%Smircher%\\fabriksinspektr\\spotwelder.Pac101",
+        "value_name": "bevaringstilstand"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\forskningsprotokollerne\\ruths",
@@ -3513,7 +3519,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\forskningsprotokollerne\\ruths\\databasedelen",
         "operation": "modify",
-        "value": "%hydrobranchiate%\\Vitrescibility136.prm"
+        "value": "%hydrobranchiate%\\Vitrescibility136.prm",
+        "value_name": "databasedelen"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\dialekters\\Tended",
@@ -3523,7 +3530,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\dialekters\\Tended\\fungeret",
         "operation": "modify",
-        "value": "lingster"
+        "value": "lingster",
+        "value_name": "fungeret"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Filmudvalget188\\dydsmnstrene",
@@ -3543,7 +3551,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Billedopsamling\\Skeich",
         "operation": "modify",
-        "value": "%habiting%\\barselvikar\\Sportsflyvningen119.kon"
+        "value": "%habiting%\\barselvikar\\Sportsflyvningen119.kon",
+        "value_name": "Skeich"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Control\\Session Manager\\SafeProcessSearchMode",
@@ -3568,7 +3577,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Lettendes\\mnemotechnic\\fastgoerelse",
         "operation": "modify",
-        "value": "\\xff\\xf7$\\xb2"
+        "value": "\\xff\\xf7$\\xb2",
+        "value_name": "fastgoerelse"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\preinclusion\\Uninstall\\virled",
@@ -3588,7 +3598,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\disarranged\\Gstendes71",
         "operation": "modify",
-        "value": "%Propagative%\\Bankier211\\Discute.amp"
+        "value": "%Propagative%\\Bankier211\\Discute.amp",
+        "value_name": "Gstendes71"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\lowland\\Uninstall\\Hemmeligholdelserne",
@@ -3598,7 +3609,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\lowland\\Uninstall\\Hemmeligholdelserne\\nattesde",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "nattesde"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Classes\\CLSID\\{20D04FE0-3AEA-1069-A2D8-08002B30309D}\\ShellFolder",
@@ -3708,7 +3720,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\thorleks\\spektakulres",
         "operation": "modify",
-        "value": "%vaje%\\overcapitalization\\Indberegne.ura"
+        "value": "%vaje%\\overcapitalization\\Indberegne.ura",
+        "value_name": "spektakulres"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\fuldtidsbeskftigedes\\Uninstall\\Menelaus135\\Mundhulens",
@@ -3718,7 +3731,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\fuldtidsbeskftigedes\\Uninstall\\Menelaus135\\Mundhulens\\septentrion",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "septentrion"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Desktop\\NameSpace",
@@ -3773,7 +3787,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\pawnbroker\\Uninstall\\nonfervently\\brodernationen\\pladsholderreferencers",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "pladsholderreferencers"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\recomposer",
@@ -3813,7 +3828,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\plymouths\\skaaltalerne\\Plirres",
         "operation": "modify",
-        "value": "\\xff|\\xd9\\xe0"
+        "value": "\\xff|\\xd9\\xe0",
+        "value_name": "Plirres"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Quinquevalent\\torten",
@@ -3828,7 +3844,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\terrorregimentet\\permissioners",
         "operation": "modify",
-        "value": "%nonelectrification%\\poltina\\Spiritusindkb.Non42"
+        "value": "%nonelectrification%\\poltina\\Spiritusindkb.Non42",
+        "value_name": "permissioners"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\grandgore\\Uninstall\\frerbevisers\\personalerabatter",
@@ -3838,7 +3855,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\grandgore\\Uninstall\\frerbevisers\\personalerabatter\\Sceuophorion",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "Sceuophorion"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\tegnomraaders",
@@ -3848,7 +3866,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\tegnomraaders\\brandsted",
         "operation": "modify",
-        "value": "\\\\xef\\xd9"
+        "value": "\\\\xef\\xd9",
+        "value_name": "brandsted"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\autobiografers\\Uninstall\\ddsforagten\\kontordamers",
@@ -3863,7 +3882,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\sydhavserne\\Uninstall\\Styrtbjler\\transpirationens",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "transpirationens"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\synetic",
@@ -3878,7 +3898,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\preteach\\palaiste\\buckeroos",
         "operation": "modify",
-        "value": "\\xff\\x89\\x99\\xae"
+        "value": "\\xff\\x89\\x99\\xae",
+        "value_name": "buckeroos"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\Endamebic61\\Uninstall\\Luftrumsorganisationen140",
@@ -3888,7 +3909,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\Endamebic61\\Uninstall\\Luftrumsorganisationen140\\stalls",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "stalls"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\leonharts",
@@ -3898,7 +3920,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\leonharts\\graabynke",
         "operation": "modify",
-        "value": "x@\\xf4"
+        "value": "x@\\xf4",
+        "value_name": "graabynke"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\pusleris\\Uninstall\\Crucifier",
@@ -3918,7 +3941,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\SetupADA\\Alloi now",
         "operation": "modify",
-        "value": "user32::EnumWindows(i r1 ,i 0)"
+        "value": "user32::EnumWindows(i r1 ,i 0)",
+        "value_name": "Alloi now"
       }
     ],
     "total": 162

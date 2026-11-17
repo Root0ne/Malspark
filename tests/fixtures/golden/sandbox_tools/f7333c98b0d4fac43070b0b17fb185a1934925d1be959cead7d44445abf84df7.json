@@ -3394,7 +3394,8 @@
         "first_seen": "2026-08-10 22:08:20,216",
         "name": "f7333c98b0d4fac43070.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 889,
@@ -3421,6 +3422,7 @@
         "ppid": 744
       }
     ],
+    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 8
   },
   "sandbox_registry_ops": {
@@ -4273,7 +4275,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Orchestrator\\UpdateManagerCtorFailures",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "UpdateManagerCtorFailures"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Orchestrator\\Settings",

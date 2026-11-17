@@ -80,15 +80,18 @@ from malspark.schemas.sandbox_report import (
     LINEAGE_MARKED_STORED,
     PROCESS_UNLISTED_KEY,
     SAMPLE_TREE_KEY,
+    STAGED_KEY,
     STORED_TRAFFIC_PROCESS_FIELD,
     TRAFFIC_FLOWS_KEY,
     TRAFFIC_FLOWS_LEFT_OUT_KEY,
     TRAFFIC_FLOWS_UNSETTLED_KEY,
     TRAFFIC_PROCESS_KEY,
+    reading_of_run,
+    request_user_agent,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterable, Iterator, Sequence
 
     from malspark.schemas.evidence import LedgerEntry
     from malspark.schemas.isr_models import AgentISR
@@ -1062,6 +1065,7 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
                 command_line=str(row.get("command_line") or ""),
                 marked=row.get("marked") is True,
                 task=str(row.get("task") or ""),
+                staged_by_sandbox=row.get(STAGED_KEY) is True,
             )
             for row in data.get("processes") or []
             if isinstance(row, dict)
@@ -1335,6 +1339,8 @@ def network_from_ledger(
     sandbox_report: dict[str, Any] | None = None,
     recovered: Iterable[str] = (),
     sightings: dict[str, list[tuple[str, str]]] | None = None,
+    *,
+    normalised_by: Sequence[str] | None = None,
 ) -> NetworkIOCs | None:
     """``NetworkIOCs`` from the sandbox network tool, the IOC tools and the recovered values.
 
@@ -1368,6 +1374,12 @@ def network_from_ledger(
     report, and an address a paged view never showed is still an address the
     sample's guest reached. Without it the ledger's views are read, and a page
     of a view states no attribution but the sample's own.
+
+    ``normalised_by`` is the reader of the job's report, as the job's record
+    holds it (the container's ``sandbox_normalised``): the job's report is
+    read with it, and a request row of the job's detonation states its user
+    agent where that reader declares (``sandbox_report.request_user_agent``).
+    A further detonation's rows are read by the generic name.
 
     Domains are scored by the same assessor the DGA layer reads
     (``extractors.network_extractor``), so ``is_suspicious``, ``dga_score`` and
@@ -1530,17 +1542,18 @@ def network_from_ledger(
         for e, d in _payloads(ledger, "sandbox_network", detonations=True)
         if later_detonation(e)
     ]
+    reading = reading_of_run(normalised_by)
     views = [
         *(
-            (d, w, ObservedIn(detonation=FIRST_DETONATION))
-            for d, w in _sandbox_views(ledger, sandbox_report)
+            (d, w, ObservedIn(detonation=FIRST_DETONATION), reading)
+            for d, w in _sandbox_views(ledger, sandbox_report, normalised_by)
         ),
         *(
-            (d, w, observed_mark(e))
+            (d, w, observed_mark(e), None)
             for (d, w), (e, _) in zip(_ledger_views(later_reads), later_reads, strict=True)
         ),
     ]
-    for data, whole, mark in views:
+    for data, whole, mark, read_by in views:
         marking[0] = mark
         # Each DNS question reads the answers for its own name, and a request's
         # unnamed answers, within the request's own size. A ``domains`` row is
@@ -1662,12 +1675,19 @@ def network_from_ledger(
                 for part in (("domain", value_key("domain", host)), ("url", _fold_url_host(url))):
                     if part[1]:
                         tallies.setdefault(part, _MakerTally()).more = True
-            # The method the request record states, and none where it states
-            # none: the first record of the URL that names one.
+            # The method and the user agent of one request record, never two
+            # records' facts joined: the first record of the URL that names a
+            # method gives both (its agent, or none where it states none);
+            # until one does, the first record that states an agent gives it.
             method = _first_str(row, "method").upper() if isinstance(row, dict) else ""
+            agent = request_user_agent(row, read_by) if isinstance(row, dict) else ""
             known_url = urls.get(_fold_url_host(url)) if url else None
-            if method and known_url is not None and not known_url.method:
-                known_url.method = method
+            if known_url is not None and not known_url.method:
+                if method:
+                    known_url.method = method
+                    known_url.user_agent = agent or None
+                elif agent and not known_url.user_agent:
+                    known_url.user_agent = agent
 
     # The job's own capture is of its own detonation.
     marking[0] = ObservedIn(detonation=FIRST_DETONATION)
@@ -2619,7 +2639,9 @@ def address_key(value: Any) -> str:
 
 
 def _sandbox_views(
-    ledger: list[LedgerEntry], sandbox_report: dict[str, Any] | None
+    ledger: list[LedgerEntry],
+    sandbox_report: dict[str, Any] | None,
+    normalised_by: Sequence[str] | None,
 ) -> list[tuple[dict[str, Any], bool]]:
     """The sandbox network views to project, each with whether it is a whole view.
 
@@ -2632,9 +2654,10 @@ def _sandbox_views(
     own answers.
     """
     if isinstance(sandbox_report, dict) and sandbox_report:
-        from malspark.providers.sandbox_tools import sandbox_network
+        from malspark.providers.sandbox_tools import network_view
 
-        view = sandbox_network(sandbox_report)
+        # Read with the run's reader, as an agent's call of the view is.
+        view = network_view(sandbox_report, normalised_by)
         if isinstance(view, dict) and not view.get("error"):
             return [(view, True)]
     return _ledger_views(_payloads(ledger, "sandbox_network"))
@@ -2672,19 +2695,21 @@ def _as_int(value: Any) -> int:
         return 0
 
 
-def network_from_sandbox_report(report: dict[str, Any] | None) -> NetworkIOCs | None:
+def network_from_sandbox_report(
+    report: dict[str, Any] | None, normalised_by: Sequence[str] | None
+) -> NetworkIOCs | None:
     """The network block a sandbox report yields when read through its own tool.
 
     For a caller holding a raw sandbox report and no ledger — a provider test,
-    a mapping check. It asks the same tool an analyst would and gets the same
-    block back, so what a probe sees and what the report prints cannot
-    disagree.
+    a mapping check. It asks the same tool an analyst would, with the reader
+    ``normalised_by`` names, and gets the same block back, so what a probe
+    sees and what the report prints cannot disagree.
     """
-    from malspark.providers.sandbox_tools import sandbox_network
+    from malspark.providers.sandbox_tools import network_view
 
     if not report:
         return None
-    answer = sandbox_network(report)
+    answer = network_view(report, normalised_by)
     entry = build_entry(
         entry_id=format_entry_id(1),
         seq=1,
@@ -2695,7 +2720,7 @@ def network_from_sandbox_report(report: dict[str, Any] | None) -> NetworkIOCs | 
         output=json.dumps(answer),
         source="sandbox",
     )
-    return network_from_ledger([entry])
+    return network_from_ledger([entry], normalised_by=normalised_by)
 
 
 def _fold_url_host(url: str) -> str:

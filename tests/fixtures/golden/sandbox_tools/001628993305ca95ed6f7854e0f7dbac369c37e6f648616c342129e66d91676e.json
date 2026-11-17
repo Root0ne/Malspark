@@ -2866,7 +2866,8 @@
         "first_seen": "2026-08-13 22:15:09,688",
         "name": "001628993305ca95ed6f.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 442,
@@ -2877,6 +2878,7 @@
         "ppid": 1044
       }
     ],
+    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 2
   },
   "sandbox_registry_ops": {
@@ -5654,7 +5656,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Services\\svchcst\\Description",
         "operation": "modify",
-        "value": "\\xffb9\\xffdc\\xffc0\\xffed\\xffbb\\xfff9\\xffd3\\xffda\\xffd7\\xffe9\\xffbc\\xfffe\\xffb6\\xffd4\\xffcf\\xfff3\\xffc4\\xffa3\\xffd0\\xffcd\\xffb5\\xffc4\\xffba\\xffcb\\xffd0\\xffc4\\xffb7\\xfffe\\xffce\\xfff1,\\xffc8\\xffe7\\xffb9\\xfffb\\xffb7\\xfffe\\xffce\\xfff1\\xffb1\\xffbb\\xffbd\\xfffb\\xffd3\\xffc3\\xffa3\\xffac\\xffbc\\xffc6\\xffcb\\xffe3\\xffbb\\xfffa\\xffbd\\xffab\\xffce\\xffde\\xffb7\\xffa8\\xffd5\\xfffd\\xffb3\\xffa3\\xffd4\\xffcb\\xffd0\\xffd0\\xffa1\\xffa3"
+        "value": "\\xffb9\\xffdc\\xffc0\\xffed\\xffbb\\xfff9\\xffd3\\xffda\\xffd7\\xffe9\\xffbc\\xfffe\\xffb6\\xffd4\\xffcf\\xfff3\\xffc4\\xffa3\\xffd0\\xffcd\\xffb5\\xffc4\\xffba\\xffcb\\xffd0\\xffc4\\xffb7\\xfffe\\xffce\\xfff1,\\xffc8\\xffe7\\xffb9\\xfffb\\xffb7\\xfffe\\xffce\\xfff1\\xffb1\\xffbb\\xffbd\\xfffb\\xffd3\\xffc3\\xffa3\\xffac\\xffbc\\xffc6\\xffcb\\xffe3\\xffbb\\xfffa\\xffbd\\xffab\\xffce\\xffde\\xffb7\\xffa8\\xffd5\\xfffd\\xffb3\\xffa3\\xffd4\\xffcb\\xffd0\\xffd0\\xffa1\\xffa3",
+        "value_name": "Description"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\svchcst\\Parameters",
@@ -5664,7 +5667,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Services\\svchcst\\Parameters\\ServiceDll",
         "operation": "modify",
-        "value": "C:\\Windows\\system32\\276562.bat"
+        "value": "C:\\Windows\\system32\\276562.bat",
+        "value_name": "ServiceDll"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Svchost",
@@ -5674,7 +5678,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows NT\\CurrentVersion\\Svchost\\svchcst",
         "operation": "modify",
-        "value": "t\\xff94\\xff8f\\x02\\xffc0"
+        "value": "t\\xff94\\xff8f\\x02\\xffc0",
+        "value_name": "svchcst"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\ODBC",

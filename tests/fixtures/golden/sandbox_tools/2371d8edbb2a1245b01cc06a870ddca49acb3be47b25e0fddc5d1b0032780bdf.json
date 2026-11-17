@@ -3693,7 +3693,8 @@
         "first_seen": "2026-07-25 17:53:07,485",
         "name": "2371d8edbb2a1245b01c.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 4292,
@@ -3704,6 +3705,7 @@
         "ppid": 1740
       }
     ],
+    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 2
   },
   "sandbox_registry_ops": {
@@ -4121,7 +4123,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\WinRAR\\HWID",
         "operation": "modify",
-        "value": "{42D81810-DE71-4621-B19D-A902BCDE9CD2}"
+        "value": "{42D81810-DE71-4621-B19D-A902BCDE9CD2}",
+        "value_name": "HWID"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Far\\Plugins\\FTP\\Hosts",
@@ -5966,7 +5969,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\5.0\\Cache\\Content\\CachePrefix",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "CachePrefix"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\5.0\\Cache\\Content\\CacheVersion",
@@ -5986,7 +5990,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\5.0\\Cache\\Cookies\\CachePrefix",
         "operation": "modify",
-        "value": "Cookie:"
+        "value": "Cookie:",
+        "value_name": "CachePrefix"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\5.0\\Cache\\Cookies\\CacheVersion",
@@ -6131,7 +6136,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\5.0\\Cache\\History\\CachePrefix",
         "operation": "modify",
-        "value": "Visited:"
+        "value": "Visited:",
+        "value_name": "CachePrefix"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\5.0\\Cache\\History\\CacheVersion",

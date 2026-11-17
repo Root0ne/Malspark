@@ -2398,9 +2398,11 @@
         "first_seen": "2026-08-10 20:41:06,243",
         "name": "2ccb45525205729f2412.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       }
     ],
+    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 1
   },
   "sandbox_registry_ops": {
@@ -2413,7 +2415,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows NT\\CurrentVersion\\Svchost\\netsvcs",
         "operation": "modify",
-        "value": "\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "netsvcs"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\Nls\\CustomLocale",
@@ -2463,7 +2466,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Services\\Windows_upnphostWindows\\Description",
         "operation": "modify",
-        "value": "\\xffcf\\xffd4\\xffca\\xffbe\\xffc9\\xffe8\\xffb1\\xffb8\\xffbc\\xffe0\\xffb2\\xffe2\\xffba\\xffcd\\xffbc\\xffe0\\xffca\\xffd3\\xffd0\\xffc2\\xffd3\\xffb2\\xffbc\\xfffe\\xffc9\\xffe8\\xffb1\\xffb8\\xffb2\\xffa2\\xffd7\\xffd4\\xffb6\\xffaf\\xffb8\\xfffc\\xffd0\\xffc2\\xffc9\\xffe8\\xffb1\\xffb8\\xffc7\\xfffd\\xffb6\\xffaf"
+        "value": "\\xffcf\\xffd4\\xffca\\xffbe\\xffc9\\xffe8\\xffb1\\xffb8\\xffbc\\xffe0\\xffb2\\xffe2\\xffba\\xffcd\\xffbc\\xffe0\\xffca\\xffd3\\xffd0\\xffc2\\xffd3\\xffb2\\xffbc\\xfffe\\xffc9\\xffe8\\xffb1\\xffb8\\xffb2\\xffa2\\xffd7\\xffd4\\xffb6\\xffaf\\xffb8\\xfffc\\xffd0\\xffc2\\xffc9\\xffe8\\xffb1\\xffb8\\xffc7\\xfffd\\xffb6\\xffaf",
+        "value_name": "Description"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Windows_upnphostWindows\\Parameters",
@@ -2473,7 +2477,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SYSTEM\\ControlSet001\\Services\\Windows_upnphostWindows\\Parameters\\ServiceDll",
         "operation": "modify",
-        "value": "C:\\Program Files (x86)\\Darksart.dll"
+        "value": "C:\\Program Files (x86)\\Darksart.dll",
+        "value_name": "ServiceDll"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\GRE_Initialize",

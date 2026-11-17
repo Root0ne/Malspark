@@ -3206,9 +3206,11 @@
         "first_seen": "2026-07-25 17:53:16,162",
         "name": "e8d4ad02e8811033f3ce.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       }
     ],
+    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 1
   },
   "sandbox_registry_ops": {
@@ -3616,7 +3618,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\Runtime Broker",
         "operation": "modify",
-        "value": "C:\\Windows\\system32\\MSDCSC\\Runtime Broker.exe"
+        "value": "C:\\Windows\\system32\\MSDCSC\\Runtime Broker.exe",
+        "value_name": "Runtime Broker"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
@@ -3631,7 +3634,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\UserInit",
         "operation": "modify",
-        "value": "C:\\Windows\\system32\\userinit.exe,C:\\Windows\\system32\\MSDCSC\\Runtime Broker.exe"
+        "value": "C:\\Windows\\system32\\userinit.exe,C:\\Windows\\system32\\MSDCSC\\Runtime Broker.exe",
+        "value_name": "UserInit"
       }
     ],
     "total": 84

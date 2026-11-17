@@ -106,9 +106,9 @@ def test_the_probe_only_sandbox_entry_records_the_sandbox_source(
 
     seen: list[Any] = []
     monkeypatch.setattr(
-        ledger_projection, "network_from_ledger", lambda entries: seen.extend(entries)
+        ledger_projection, "network_from_ledger", lambda entries, **_: seen.extend(entries)
     )
-    ledger_projection.network_from_sandbox_report({"network": {"dns": []}})
+    ledger_projection.network_from_sandbox_report({"network": {"dns": []}}, None)
     assert [(e.tool, e.source) for e in seen] == [("sandbox_network", "sandbox")]
 
 

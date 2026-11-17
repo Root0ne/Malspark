@@ -21,7 +21,7 @@ after this deterministic phase.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from malspark.analysis.run_summary import NOT_APPLICABLE
@@ -131,11 +131,16 @@ class MalwareReportBuilder:
         evidence_ledger: list[LedgerEntry] | None = None,
         job_id: str | None = None,
         evidence_corpus: Any = None,
+        sandbox_normalised_by: Sequence[str] | None = None,
     ) -> None:
         self.file_hash = file_hash
         self.file_name = file_name
         self.sample_path = sample_path
         self.sandbox_report = sandbox_report or {}
+        # The reader of the job's report, as the job's record holds it
+        # (``sandbox_tools.normalised_by_of``): the report's own read of the
+        # sandbox's views is read with it.
+        self.sandbox_normalised_by = sandbox_normalised_by
         self.reports = reports or {}
         self.isr_reports = isr_reports or {}
         self.stix_output = stix_output or {}
@@ -249,6 +254,7 @@ class MalwareReportBuilder:
             sandbox_report=self.sandbox_report,
             recovered=recovered_network_values(emulated),
             sightings=sightings,
+            normalised_by=self.sandbox_normalised_by,
         )
         persistence = persistence_from_ledger(ledger)
         cells, mappings = build_capability_matrix(

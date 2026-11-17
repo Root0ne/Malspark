@@ -33,7 +33,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import secrets
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from html.entities import html5
@@ -1270,7 +1270,7 @@ class MarkdownRenderer:
                 measured.append(
                     _row(
                         _code_span(_whole(ctx.plain(named))),
-                        f"{op['size']} bytes" if op.get("size") else "not recorded",
+                        dropped_size_cell(op),
                         _code_span(str(op.get("sha256")).lower()) if op.get("sha256") else "-",
                         op.get("type") or "-",
                         "; ".join(
@@ -6890,15 +6890,49 @@ def _truncate_escaped(text: str, length: int) -> str:
     return text[: _outside_marks(text, cut)] + "…"
 
 
+# A size a row states as text: a number written out, read as it is written.
+_SIZE_TEXT_RE = re.compile(r"[+-]?\d+(?:\.\d+)?")
+
+
+def dropped_size_cell(op: Mapping[str, Any]) -> str:
+    """A written file's size as a table cell: what its row states, zero included.
+
+    ``"<size> bytes"`` where the row states a size that is a number (``0`` is
+    a file of no bytes), or text that is a number, written without the white
+    space around it. Any other size the row states is a sandbox's free text:
+    it is printed as it states it, trimmed, with no unit added, as one code
+    span (:func:`_code_span`, as every other untrusted value of the table), so
+    a viewer reads it as text and never as a link, an image or a tag
+    (``"`12kB`"``). ``"not recorded"`` only where it states none: no value, an
+    empty or blank text, a list, a mapping, a truth value. Nothing a row states
+    is replaced by ``"not recorded"``.
+    """
+    size = op.get("size")
+    if isinstance(size, int | float) and not isinstance(size, bool):
+        finite = size == size and abs(size) != float("inf")
+        return f"{size} bytes" if finite else str(size)
+    if isinstance(size, str) and size.strip():
+        text = size.strip()
+        return f"{text} bytes" if _SIZE_TEXT_RE.fullmatch(text) else _code_span(text)
+    return "not recorded"
+
+
 def _process_tree_lines(
     node: ProcessNode, depth: int, plain: Callable[[str], str] = lambda text: text
 ) -> list[str]:
-    """The process tree, one line per process, each name and command line defanged."""
+    """The process tree, one line per process, each name and command line defanged.
+
+    A process whose image is the submitted file as the sandbox started it says
+    so in words beside it (``sandbox_report.staged_words``).
+    """
+    from malspark.schemas.sandbox_report import staged_words
+
     indent = "  " * depth
     prefix = "└─ " if depth > 0 else ""
     label = _one_line(plain(node.name)) or f"pid={node.pid}"
     extra = f"  ({_one_line(plain(node.command_line))})" if node.command_line else ""
-    line = f"{indent}{prefix}pid={node.pid} ppid={node.ppid} {label}{extra}"
+    staged = f"  [{staged_words(node)}]" if staged_words(node) else ""
+    line = f"{indent}{prefix}pid={node.pid} ppid={node.ppid} {label}{extra}{staged}"
     out = [line]
     if node.injected_into:
         out.append(f"{indent}    [injected_into={', '.join(str(p) for p in node.injected_into)}]")

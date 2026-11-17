@@ -4629,9 +4629,11 @@
         "first_seen": "2026-08-13 22:41:30,964",
         "name": "6da676db8e7ca7727cc1.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       }
     ],
+    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 14
   },
   "sandbox_registry_ops": {
@@ -5179,7 +5181,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\COMPONENTS\\ServicingStackVersions\\10.0.19041.5967 (WinBuild.160101.0800)",
         "operation": "modify",
-        "value": "2026/7/25:17:55:17.931 10.0.19041.5967 (WinBuild.160101.0800)"
+        "value": "2026/7/25:17:55:17.931 10.0.19041.5967 (WinBuild.160101.0800)",
+        "value_name": "10.0.19041.5967 (WinBuild.160101.0800)"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\System\\Setup",
@@ -6424,7 +6427,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Search\\InstalledWin32AppsRevision",
         "operation": "modify",
-        "value": "{E0BC6959-A8D2-4F97-A4AF-56191B9ACBCD}"
+        "value": "{E0BC6959-A8D2-4F97-A4AF-56191B9ACBCD}",
+        "value_name": "InstalledWin32AppsRevision"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Search\\BackgroundAppGlobalToggle",
@@ -6984,7 +6988,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\StartIsBack\\Cache\\IdealHeight.6",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "IdealHeight.6"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Policies\\Microsoft\\InputMethod\\Settings\\JPN",
@@ -9839,22 +9844,26 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\ProxyBypass",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "ProxyBypass"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\IntranetName",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "IntranetName"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\UNCAsIntranet",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "UNCAsIntranet"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\AutoDetect",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "AutoDetect"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\2",
@@ -10969,7 +10978,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\remcos_rcwmeclkzt\\EXEpath",
         "operation": "modify",
-        "value": "\\xffe7\\xff88\\xffb01:\\xffe8I\\xff94\\xfff8\\xff82\\xffc2w\\xff93T\\xfff1\\xffbc:\\xfff0\\x06^\\xffcc\\xff96\\x7fh\\xfffaJ7\\xffa8MZG\\xffca\\xff98\\xffa3\\xff97\\xffdc\\x0el\\xff88[\\xffba\\xffc0Q7 \\xffb7\\xff8a\\x08\\xff93\\xffea\\xff86\\xffc9{\\xffee"
+        "value": "\\xffe7\\xff88\\xffb01:\\xffe8I\\xff94\\xfff8\\xff82\\xffc2w\\xff93T\\xfff1\\xffbc:\\xfff0\\x06^\\xffcc\\xff96\\x7fh\\xfffaJ7\\xffa8MZG\\xffca\\xff98\\xffa3\\xff97\\xffdc\\x0el\\xff88[\\xffba\\xffc0Q7 \\xffb7\\xff8a\\x08\\xff93\\xffea\\xff86\\xffc9{\\xffee",
+        "value_name": "EXEpath"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\WPSCloud",
@@ -11114,7 +11124,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\tipWinid",
         "operation": "modify",
-        "value": "\\xea\\x02\\x06\\x00\\x00\\x00\\x00\\x00"
+        "value": "\\xea\\x02\\x06\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "tipWinid"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kothercloudservice\\dropbox\\",
@@ -11204,7 +11215,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\Nse\\IsEnterprise",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "IsEnterprise"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\Office\\6.0\\Common\\kic\\switch\\remote",
@@ -11229,37 +11241,44 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicUploadFileSwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicUploadFileSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicFileTransferSwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicFileTransferSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicShareFileSwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicShareFileSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicSyncFolderSwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicSyncFolderSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicDesktopSyncSwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicDesktopSyncSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicUploadSyncSwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicUploadSyncSwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\kicSendBySwitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "kicSendBySwitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\funcRegSw\\WPSDriveEnabled",
@@ -11584,7 +11603,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\clouddisk\\wpsphotostatus",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "wpsphotostatus"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\kingsoft\\Office\\6.0\\common\\PluginMgr",
@@ -11624,7 +11644,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\userinfo\\userid",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "userid"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\enableExtraLogoutNotify",
@@ -11634,7 +11655,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\userinfo\\companyid",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "companyid"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\drivefolder\\",
@@ -11649,12 +11671,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\guestAccount",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "guestAccount"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\welcomeBind",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "welcomeBind"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\common\\",
@@ -11664,7 +11688,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\SecdocLastActiveUser",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "SecdocLastActiveUser"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\regtime",
@@ -11789,7 +11814,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\wps\\RecentFiles\\PersistentStatus",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "PersistentStatus"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\RecentFiles\\",
@@ -11824,7 +11850,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\et\\RecentFiles\\PersistentStatus",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "PersistentStatus"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\wpp\\RecentFiles\\",
@@ -11859,7 +11886,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\wpp\\RecentFiles\\PersistentStatus",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "PersistentStatus"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\pdf\\RecentFiles\\",
@@ -11894,7 +11922,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\pdf\\RecentFiles\\PersistentStatus",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "PersistentStatus"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\ofd\\RecentFiles\\",
@@ -11929,7 +11958,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\ofd\\RecentFiles\\PersistentStatus",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "PersistentStatus"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\messagepushcenter\\wns\\",
@@ -12069,22 +12099,26 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\devices\\transfer_helper_nearfield_switch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "transfer_helper_nearfield_switch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\devices\\transfer_helper_feature_check",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "transfer_helper_feature_check"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\devices\\softbuss_transfer_helper",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "softbuss_transfer_helper"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\devices\\transfer_helper_nearfield_datasendpersecond",
         "operation": "modify",
-        "value": "11534336"
+        "value": "11534336",
+        "value_name": "transfer_helper_nearfield_datasendpersecond"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\ktransferhelper\\",
@@ -12094,32 +12128,38 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\ktransferhelper\\pullmsgswitch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "pullmsgswitch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\ktransferhelper\\usev3switch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "usev3switch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\usercenter\\devices\\send_my_device_switch",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "send_my_device_switch"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\ktransferhelper\\disableSendToWpsReport",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "disableSendToWpsReport"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\ktransferhelper\\sendToWpsFirstReportTimerSec",
         "operation": "modify",
-        "value": "301"
+        "value": "301",
+        "value_name": "sendToWpsFirstReportTimerSec"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\ktransferhelper\\enableWin11MenuSendMyDevice",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "enableWin11MenuSendMyDevice"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\KSharedWindowsDbgLog",
@@ -12619,12 +12659,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\DeliveryOptimization\\Config\\DownloadMode_BackCompat",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "DownloadMode_BackCompat"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\DeliveryOptimization\\Config\\DODownloadMode",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "DODownloadMode"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\PolicyManager\\default\\DeliveryOptimization\\DOSetHoursToLimitForegroundDownloadBandwidth",
@@ -13204,12 +13246,14 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\KBinLayoutOpt\\35\\BootTime",
         "operation": "modify",
-        "value": "S\\xf6\\x0e\\xd1^\\x1c\\xdd\\x01"
+        "value": "S\\xf6\\x0e\\xd1^\\x1c\\xdd\\x01",
+        "value_name": "BootTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\KBinLayoutOpt\\35\\BootComponent",
         "operation": "modify",
-        "value": "\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00"
+        "value": "\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00",
+        "value_name": "BootComponent"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Kingsoft\\KBinLayoutOpt",
@@ -13229,7 +13273,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\KBinLayoutOpt\\35\\BootDuration",
         "operation": "modify",
-        "value": "S\\xf6\\x0e\\xd1^\\x1c\\xdd\\x01"
+        "value": "S\\xf6\\x0e\\xd1^\\x1c\\xdd\\x01",
+        "value_name": "BootDuration"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\KBinLayoutOpt\\FragmentSource",
@@ -13349,7 +13394,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\kcrashdumper\\reginfo\\WerRet",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "WerRet"
       },
       {
         "key": "Policy\\Standards",

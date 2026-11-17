@@ -24,6 +24,7 @@ from malspark.reporting import tool_kinds
 from malspark.reporting.dedupe import distinct_processes
 from malspark.reporting.defang import defang
 from malspark.reporting.models import Figure, MalwareReport, ProcessNode
+from malspark.schemas.sandbox_report import staged_words
 from malspark.utils.marked_cut import marked_cut
 
 # Kill-chain tactic order for the ATT&CK matrix / infection chain.
@@ -135,7 +136,8 @@ def build_process_tree(report: MalwareReport) -> Figure | None:
         # The name a sandbox recorded, defanged as the report's text is.
         from malspark.reporting.renderers.markdown import _defanged_text
 
-        label = f"{_defanged_text(node.name or 'proc')} (pid {node.pid}){injected}"
+        staged = f" ({staged_words(node)})" if staged_words(node) else ""
+        label = f"{_defanged_text(node.name or 'proc')} (pid {node.pid}){staged}{injected}"
         if depth > 0:
             parts.append(
                 f'<line x1="{x - 13}" y1="{y - 6}" x2="{x - 3}" y2="{y - 6}" stroke="{_LINE}"/>'

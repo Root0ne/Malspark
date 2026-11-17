@@ -3953,7 +3953,8 @@
         "first_seen": "2026-08-13 23:37:04,597",
         "name": "a06d2f622eb4e0403f8a.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 21600,
@@ -3980,6 +3981,7 @@
         "ppid": 816
       }
     ],
+    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 9
   },
   "sandbox_registry_ops": {
@@ -4647,62 +4649,74 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Wbem\\WDM\\C:\\Windows\\system32\\kernelbase.dll[MofResourceName]",
         "operation": "modify",
-        "value": "LowDateTime:707405134,HighDateTime:31187784***Binary mof compiled successfully"
+        "value": "LowDateTime:707405134,HighDateTime:31187784***Binary mof compiled successfully",
+        "value_name": "C:\\Windows\\system32\\kernelbase.dll[MofResourceName]"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Wbem\\WDM\\C:\\Windows\\system32\\en-US\\kernelbase.dll.mui[MofResourceName]",
         "operation": "modify",
-        "value": "LowDateTime:1769653177,HighDateTime:31187784***Binary mof compiled successfully"
+        "value": "LowDateTime:1769653177,HighDateTime:31187784***Binary mof compiled successfully",
+        "value_name": "C:\\Windows\\system32\\en-US\\kernelbase.dll.mui[MofResourceName]"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Wbem\\WDM\\C:\\Windows\\System32\\drivers\\ACPI.sys[ACPIMOFResource]",
         "operation": "modify",
-        "value": "LowDateTime:-4562214,HighDateTime:31187783***Binary mof compiled successfully"
+        "value": "LowDateTime:-4562214,HighDateTime:31187783***Binary mof compiled successfully",
+        "value_name": "C:\\Windows\\System32\\drivers\\ACPI.sys[ACPIMOFResource]"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Wbem\\WDM\\C:\\Windows\\System32\\drivers\\en-US\\ACPI.sys.mui[ACPIMOFResource]",
         "operation": "modify",
-        "value": "LowDateTime:-32042354,HighDateTime:30780584***Binary mof compiled successfully"
+        "value": "LowDateTime:-32042354,HighDateTime:30780584***Binary mof compiled successfully",
+        "value_name": "C:\\Windows\\System32\\drivers\\en-US\\ACPI.sys.mui[ACPIMOFResource]"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Wbem\\WDM\\C:\\Windows\\system32\\drivers\\ndis.sys[MofResourceName]",
         "operation": "modify",
-        "value": "LowDateTime:702927526,HighDateTime:31187784***Binary mof failed, see WMIPROV.LOG"
+        "value": "LowDateTime:702927526,HighDateTime:31187784***Binary mof failed, see WMIPROV.LOG",
+        "value_name": "C:\\Windows\\system32\\drivers\\ndis.sys[MofResourceName]"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Wbem\\WDM\\C:\\Windows\\system32\\drivers\\en-US\\ndis.sys.mui[MofResourceName]",
         "operation": "modify",
-        "value": "LowDateTime:-6885910,HighDateTime:30780584***Binary mof failed, see WMIPROV.LOG"
+        "value": "LowDateTime:-6885910,HighDateTime:30780584***Binary mof failed, see WMIPROV.LOG",
+        "value_name": "C:\\Windows\\system32\\drivers\\en-US\\ndis.sys.mui[MofResourceName]"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Wbem\\WDM\\C:\\Windows\\System32\\drivers\\mssmbios.sys[MofResource]",
         "operation": "modify",
-        "value": "LowDateTime:590886656,HighDateTime:30780579***Binary mof compiled successfully"
+        "value": "LowDateTime:590886656,HighDateTime:30780579***Binary mof compiled successfully",
+        "value_name": "C:\\Windows\\System32\\drivers\\mssmbios.sys[MofResource]"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Wbem\\WDM\\C:\\Windows\\System32\\drivers\\en-US\\mssmbios.sys.mui[MofResource]",
         "operation": "modify",
-        "value": "LowDateTime:-25003186,HighDateTime:30780584***Binary mof compiled successfully"
+        "value": "LowDateTime:-25003186,HighDateTime:30780584***Binary mof compiled successfully",
+        "value_name": "C:\\Windows\\System32\\drivers\\en-US\\mssmbios.sys.mui[MofResource]"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Wbem\\WDM\\C:\\Windows\\System32\\drivers\\HDAudBus.sys[HDAudioMofName]",
         "operation": "modify",
-        "value": "LowDateTime:-18176942,HighDateTime:31187783***Binary mof compiled successfully"
+        "value": "LowDateTime:-18176942,HighDateTime:31187783***Binary mof compiled successfully",
+        "value_name": "C:\\Windows\\System32\\drivers\\HDAudBus.sys[HDAudioMofName]"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Wbem\\WDM\\C:\\Windows\\System32\\drivers\\processr.sys[PROCESSORWMI]",
         "operation": "modify",
-        "value": "LowDateTime:-4158407,HighDateTime:31187783***Binary mof compiled successfully"
+        "value": "LowDateTime:-4158407,HighDateTime:31187783***Binary mof compiled successfully",
+        "value_name": "C:\\Windows\\System32\\drivers\\processr.sys[PROCESSORWMI]"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Wbem\\WDM\\C:\\Windows\\System32\\drivers\\en-US\\processr.sys.mui[PROCESSORWMI]",
         "operation": "modify",
-        "value": "LowDateTime:-32042354,HighDateTime:30780584***Binary mof compiled successfully"
+        "value": "LowDateTime:-32042354,HighDateTime:30780584***Binary mof compiled successfully",
+        "value_name": "C:\\Windows\\System32\\drivers\\en-US\\processr.sys.mui[PROCESSORWMI]"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Wbem\\WDM\\C:\\Windows\\System32\\Drivers\\portcls.SYS[PortclsMof]",
         "operation": "modify",
-        "value": "LowDateTime:-16865434,HighDateTime:31187783***Binary mof compiled successfully"
+        "value": "LowDateTime:-16865434,HighDateTime:31187783***Binary mof compiled successfully",
+        "value_name": "C:\\Windows\\System32\\Drivers\\portcls.SYS[PortclsMof]"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\COM3",
@@ -18842,7 +18856,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\legender\\Protremata",
         "operation": "modify",
-        "value": "Programafprvningens"
+        "value": "Programafprvningens",
+        "value_name": "Protremata"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\forretningsgangene\\ubeslutsomheden",
@@ -18852,7 +18867,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\forretningsgangene\\ubeslutsomheden\\Blodbgenes",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "Blodbgenes"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\joinings",
@@ -18862,7 +18878,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\joinings\\iced",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "iced"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\CommonFilesDir",
@@ -18877,7 +18894,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\strafudmaalingen\\Vinylens\\Popeism173",
         "operation": "modify",
-        "value": "?\\xc5\\x16"
+        "value": "?\\xc5\\x16",
+        "value_name": "Popeism173"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Security and Maintenance",
@@ -22657,7 +22675,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\Shell\\Bags\\1\\Desktop\\IconNameVersion",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "IconNameVersion"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FolderDescriptions\\{f42ee2d3-909f-4907-8871-4c22fc0bf756}\\PropertyBag\\ThisPCPolicy",
@@ -23107,7 +23126,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Search\\InstalledWin32AppsRevision",
         "operation": "modify",
-        "value": "{272A1CF2-189C-4CCE-9312-16C861A5D0DD}"
+        "value": "{272A1CF2-189C-4CCE-9312-16C861A5D0DD}",
+        "value_name": "InstalledWin32AppsRevision"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Search\\BackgroundAppGlobalToggle",
@@ -23512,7 +23532,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\SessionInfo\\1\\ApplicationViewManagement\\W32:00000000000202D8\\VirtualDesktop",
         "operation": "modify",
-        "value": "\\x10\\x00\\x00\\x0000DV\\x90\\x12\\x15 \\x90mLJ\\xb3,\\x83\\x7f\\xb5\\xbb\\xb8\\x07"
+        "value": "\\x10\\x00\\x00\\x0000DV\\x90\\x12\\x15 \\x90mLJ\\xb3,\\x83\\x7f\\xb5\\xbb\\xb8\\x07",
+        "value_name": "VirtualDesktop"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CloudExperienceHost",

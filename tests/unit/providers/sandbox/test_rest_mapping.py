@@ -271,7 +271,7 @@ def test_the_xyz_golden_renders_through_the_tools_an_agent_calls():
     # purpose: a documentation-range IP or a *.example domain is filtered by
     # the emittable rules, and a golden built from one would pin an empty
     # table and prove nothing about the mapped rows reaching a real IOC list.
-    network = network_from_sandbox_report(cape_shaped)
+    network = network_from_sandbox_report(cape_shaped, ("rest", "generic"))
     assert network is not None
     assert network.domains, "the golden must carry at least one real DNS row"
     assert network.ips, "the golden must carry at least one real TCP/IP row"

@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import re
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -583,6 +583,11 @@ class Reading:
     # names no such field (a field of the same name may hold a path on the
     # sandbox's own host, which is never shown).
     guest_path_fields: tuple[str, ...] = ()
+    # The fields of a dropped file's row that state its size in bytes, as the
+    # reader's source declares them, the first one a row states read; empty
+    # where the source names no field of its own, and ``size`` is read
+    # (:data:`DROPPED_SIZE_FIELDS`).
+    dropped_size_fields: tuple[str, ...] = ()
     # The fields of a dropped file's row that hold the guest's pid of the
     # process that wrote it, where the source names the writer by an id of its
     # process list beside it; empty where the source names no such field.
@@ -596,6 +601,10 @@ class Reading:
     # declares them (``schemas.signature_indicators``); ``None`` where the
     # source states none.
     signature_indicators: IndicatorFields | None = None
+    # The fields of a request record that state the User-Agent header it
+    # carried, where the reader's source names it otherwise; read before the
+    # generic name (:data:`REQUEST_USER_AGENT_FIELDS`).
+    request_user_agent_fields: tuple[str, ...] = ()
 
 
 # What a report read by a reader that keeps its source's arrangement reached
@@ -648,6 +657,19 @@ def normaliser_reading(
     if reader is None:
         return None
     return reader.reading(str(read_from or "").strip().lower(), str(provider or "").strip().lower())
+
+
+def reading_of_run(normalised_by: Sequence[str] | None) -> Reading | None:
+    """What the reader a run states declares its reports hold, or ``None`` when unknown.
+
+    ``normalised_by`` is ``(provider, source_format[, read_from])`` as the
+    job's record holds it (``DetonationRecord.normalised_by``, the
+    container's ``sandbox_normalised``).
+    """
+    if not normalised_by or len(normalised_by) not in (2, 3):
+        return None
+    provider, source_format, *rest = (str(part or "").strip() for part in normalised_by)
+    return normaliser_reading(source_format, provider, rest[0] if rest else "")
 
 
 def declared_process_id_fields() -> tuple[str, ...]:
@@ -1057,6 +1079,12 @@ class _Placed:
     # The processes that record a lineage of their own: a parent pid, or a
     # place under another listed process.
     linked: set[int]
+    # The processes that run the submitted file, the processes whose parent
+    # chain reaches one of them, and each process's parent (its index, ``None``
+    # for none): what the facts above are read from.
+    runs: frozenset[int] = frozenset()
+    by_file: frozenset[int] = frozenset()
+    parents: tuple[int | None, ...] = ()
 
 
 def _placed(roots: list[Any], file_name: str, sha256: str) -> _Placed:
@@ -1134,6 +1162,9 @@ def _placed(roots: list[Any], file_name: str, sha256: str) -> _Placed:
         marked=by_mark,
         stated=bool(by_file or by_mark),
         linked={i for i, row in enumerate(nodes) if row[2] or row[3] is not None},
+        runs=frozenset(i for i, row in enumerate(nodes) if row[5]),
+        by_file=frozenset(by_file),
+        parents=tuple(_parent_of(i) for i in range(len(nodes))),
     )
 
 
@@ -1311,6 +1342,312 @@ def process_placement(
             where = PLACED_OUTSIDE
         out.append((node, where))
     return out
+
+
+# The field a process row is marked by where its image is the submitted file
+# as the sandbox started it (:func:`started_by_the_sandbox`), left out where
+# not; the words every surface that renders the row writes beside it
+# (:func:`staged_words`); and the sentence an answer holding such a row carries
+# once, under :data:`STAGED_NOTE_KEY`.
+STAGED_KEY = "staged_by_sandbox"
+STAGED_WORDS = "the sandbox started the submitted file from this path"
+STAGED_NOTE_KEY = "staged_by_sandbox_note"
+STAGED_NOTE = (
+    f"The row marked {STAGED_KEY} is the first process that runs the submitted file, "
+    "started by no process that runs it, at a path the report does not show written "
+    "during the run: the sandbox started the submitted file from there."
+)
+
+
+def started_by_the_sandbox(
+    roots: list[Any],
+    file_name: str = "",
+    sha256: str = "",
+    written: Callable[[], list[str] | None] | None = None,
+    shipped: Callable[[str], bool] | None = None,
+) -> list[Any]:
+    """The listed process whose image is the submitted file as the sandbox started it, per task.
+
+    ``roots`` are the report's processes as :func:`process_lineage` reads
+    them from its own record (the document's one reading of a process row,
+    never a view's printed rows). A process qualifies that runs the
+    submitted file (its name or its digest, :func:`runs_the_submitted_file`),
+    whose image is that file, and that starts the sample's tree by that fact: no process its
+    parent chain reaches runs the file (:func:`_placed`'s links). A copy the
+    sample makes of itself and runs is under a process that runs the file:
+    behaviour, never this. A process that names the file only on its command
+    line (``rundll32.exe <file>,#1``) has another image and is not it, and a
+    listing that runs the file under a name the reading does not know names
+    none.
+
+    The mark is given only where the record does not contradict it:
+
+    * where a qualifying process states a parent and a process of its task
+      states no id, or the parent's number names more than one process of the
+      task (``schemas.process_identity``), the parent cannot be told, and
+      nothing of that task is marked;
+    * a process's image is the path its row states (``image_path``), its
+      name only where the row states no path, as :func:`_image_path` writes
+      it; a process whose image is a path the system itself ships
+      (``shipped``: the caller reads the platform's catalogue of shipped
+      paths) is no candidate; an image that states no folder and whose name
+      the system ships cannot be told and is no candidate either. The
+      sandbox's own mark of the sample's processes is not read: it stands on
+      the sample's children and the desktop's processes, not on the process
+      the sandbox started;
+    * a path the report shows written during the run (``written``, the paths
+      :func:`written_during_the_run` reads, read once and only where a
+      process qualifies) is the sample's doing and never this: an image that
+      states no folder is read against the written paths' file names; where
+      the reader records no file writes at all (``None``), nothing is marked;
+    * at most one process of a task is marked: the one the record states
+      started first (``first_seen``, :func:`_started_order`), and none where
+      the starts of those that qualify cannot be compared.
+
+    Each task's processes are read on their own, a process being its task and
+    its id; in listing order.
+    """
+    from malspark.schemas.process_identity import TASK_KEY, ProcessIdentities
+
+    if not (file_name or sha256):
+        return []
+    grouped: dict[str, list[Any]] = {}
+    for node in roots:
+        grouped.setdefault(str(_node_field(node, TASK_KEY) or ""), []).append(node)
+    paths: tuple[frozenset[str], frozenset[str]] | None = None
+    found: set[int] = set()
+    for task, held in grouped.items():
+        placed = _placed(held, file_name, sha256)
+        qualifying: list[tuple[Any, str]] = []
+        for index in sorted(placed.runs):
+            parent = placed.parents[index]
+            node, _pid, name = placed.nodes[index]
+            if (parent is None or parent not in placed.by_file) and runs_the_submitted_file(
+                name, "", file_name, sha256
+            ):
+                image = str(_node_field(node, "image_path") or "") or name
+                qualifying.append((node, _image_path(image)))
+        if not qualifying or not _parents_told(qualifying, held, task, ProcessIdentities()):
+            continue
+        if shipped is not None:
+            qualifying = [(node, path) for node, path in qualifying if not shipped(path)]
+        if not qualifying:
+            continue
+        if paths is None:
+            stated = written() if written is not None else []
+            if stated is None:
+                return []
+            paths = _written_paths(stated)
+        full, names = paths
+        kept = [
+            (node, path)
+            for node, path in qualifying
+            if path not in full and not (_is_bare(path) and path in names)
+        ]
+        first = _started_first([(_node_field(node, "first_seen"), id(node)) for node, _p in kept])
+        if first is not None:
+            found.add(first)
+    return [node for node in _listed(roots) if id(node) in found]
+
+
+def _parents_told(qualifying: list[tuple[Any, str]], held: list[Any], task: str, ids: Any) -> bool:
+    """Whether the parent each qualifying process states names at most one process of its task.
+
+    Read through the one process identity: where a process of the task
+    states no id, a stated parent cannot be told from it, and a number one
+    listing holds twice, or that two processes answer to, names none.
+    """
+    keys = ids.add_listing((_node_field(node, "pid"), task, "") for node in _listed(held))
+    unnamed = any(key is None for key in keys)
+    for node, _path in qualifying:
+        parent = _node_field(node, "ppid")
+        if pid_text(parent) and (unnamed or len(ids.keys(parent, task, alias=False)) > 1):
+            return False
+    return True
+
+
+def process_lineage(processes: list[Any]) -> list[dict[str, Any]]:
+    """The report's processes as :func:`started_by_the_sandbox` reads them, one per row, in order.
+
+    Each row read the one way the document reads a process row
+    (``schemas.sandbox_document``: :data:`PROCESS_ID_KEYS`,
+    :data:`PROCESS_PARENT_KEYS`, :data:`PROCESS_NAME_KEYS`,
+    :data:`PROCESS_IMAGE_PATH_KEYS`), whichever reader built it: its id, its
+    parent's id, its name and the path of its image where it states one; its
+    command line, task and stated start. A row that is not a mapping is ``{}``.
+    """
+    from malspark.schemas.sandbox_document import (
+        PROCESS_ID_KEYS,
+        PROCESS_IMAGE_PATH_KEYS,
+        PROCESS_NAME_KEYS,
+        PROCESS_PARENT_KEYS,
+    )
+
+    out: list[dict[str, Any]] = []
+    for proc in processes:
+        if not isinstance(proc, Mapping):
+            out.append({})
+            continue
+        extra = proc.get("extra")
+        out.append(
+            {
+                "pid": _first_id(proc, PROCESS_ID_KEYS),
+                "ppid": _first_id(proc, PROCESS_PARENT_KEYS),
+                "name": _first_text(proc, PROCESS_NAME_KEYS),
+                "image_path": _first_text(proc, PROCESS_IMAGE_PATH_KEYS),
+                "command_line": str(proc.get("command_line") or proc.get("cmd") or ""),
+                "task": str(extra.get(PROCESS_TASK_KEY) or "")
+                if isinstance(extra, Mapping)
+                else "",
+                "first_seen": proc.get("first_seen"),
+            }
+        )
+    return out
+
+
+def _first_id(row: Mapping[str, Any], fields: tuple[str, ...]) -> str:
+    """The first id one of ``fields`` states on ``row`` (:func:`pid_text`); ``""`` for none."""
+    return next((pid_text(row.get(f)) for f in fields if pid_text(row.get(f))), "")
+
+
+def _first_text(row: Mapping[str, Any], fields: tuple[str, ...]) -> str:
+    """The first of ``fields`` ``row`` fills, as text; ``""`` for none."""
+    return next((str(row[f]) for f in fields if row.get(f)), "")
+
+
+# The parts a report records files written during the run in: the files the
+# sandbox collected and its file-write operations, each read where the
+# reader declares it fills it (``Reading.fills``), every one where no reader
+# is known.
+FILE_WRITE_PARTS: tuple[str, ...] = (
+    "dropped_files",
+    "file_writes",
+    "summary.write_files",
+    "summary.wrote_files",
+    "summary.modified_files",
+)
+
+
+def written_during_the_run(document: Any, reading: Reading | None) -> list[str] | None:
+    """Every path ``document`` records as written during the run; ``None`` where it records none.
+
+    The parts of :data:`FILE_WRITE_PARTS` the reader declares it fills: a
+    collected file's guest paths and names (:func:`_dropped_paths`, and each
+    field the reader declares holds a guest path), a file-write operation's
+    path. ``None`` where none of those parts is in the document at all: the
+    record does not say what was written, which is not that nothing was. With
+    no reader every part is read, and a part counts only where it is not
+    empty, since a composed document lays out every part, empty or not.
+    """
+    from malspark.schemas.sandbox_document import place
+
+    parts = [p for p in FILE_WRITE_PARTS if reading is None or p in reading.fills]
+    guest = reading.guest_path_fields if reading is not None else ()
+    held = False
+    out: list[str] = []
+    for part in parts:
+        rows = place(document, part)
+        if part == "dropped_files" and not isinstance(rows, list) and isinstance(document, Mapping):
+            # A document written before the parts were declared named the list so.
+            rows = document.get("dropped_files")
+        if not isinstance(rows, list):
+            continue
+        # With no reader, a part a composed document lays out empty states
+        # nothing: only a part that shows a write says writes are recorded.
+        held = held or reading is not None or bool(rows)
+        for row in rows:
+            if isinstance(row, Mapping):
+                out.extend(_dropped_paths(row))
+                out.extend(str(row[f]) for f in guest if isinstance(row.get(f), str) and row[f])
+            elif isinstance(row, str) and row.strip():
+                out.append(row)
+    return out if held else None
+
+
+def _image_path(name: str) -> str:
+    """A listed image as a written path is compared with it: lower case, backslashes, unquoted.
+
+    The path inside the first pair of quotes of a quoted name, else the text
+    before a listing's note (``(cmdline: ...)``), as :func:`_image_of` reads it.
+    """
+    quoted = _QUOTED.search(name or "")
+    path = quoted.group(1) if quoted else (name or "").split("(", 1)[0]
+    return path.strip().strip('"').strip("'").replace("/", "\\").lower()
+
+
+def _is_bare(path: str) -> bool:
+    """Whether a compared path states no folder: a file name alone."""
+    return "\\" not in path
+
+
+def _written_paths(paths: Iterable[str]) -> tuple[frozenset[str], frozenset[str]]:
+    """The written paths as :func:`_image_path` writes them, and their file names."""
+    full = frozenset(key for key in (_image_path(str(p)) for p in paths) if key)
+    return full, frozenset(key.rsplit("\\", 1)[-1] for key in full)
+
+
+# A start a record states as a timestamp: a date, then a time of day, read in
+# the order its text sorts in where every value has the one form.
+_STARTED_AT_RE = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?Z?")
+
+
+def _started_order(value: Any) -> tuple[str, Any] | None:
+    """A process's stated start as an order key: a number, or a timestamp; ``None`` for none.
+
+    A number (a sandbox's offset from the run's start) is compared as one; a
+    timestamp by its text, only with one of the same form (each digit in the
+    same place, the same separators), which sorts in time order. Anything
+    else states no order.
+    """
+    text = "" if value is None or isinstance(value, bool) else str(value).strip()
+    if not text:
+        return None
+    try:
+        return ("number", float(text))
+    except ValueError:
+        pass
+    if _STARTED_AT_RE.fullmatch(text):
+        return ("time " + re.sub(r"\d", "0", text), text)
+    return None
+
+
+def _started_first(starts: list[tuple[Any, int]]) -> int | None:
+    """The process the record states started first, of those given; ``None`` where it states none.
+
+    One process is the first. Of several, every one must state a start of one
+    form (:func:`_started_order`) and one must come before every other: a
+    tie, a process with no stated start, or two forms state no order.
+    """
+    if len(starts) <= 1:
+        return starts[0][1] if starts else None
+    keyed = [(_started_order(value), key) for value, key in starts]
+    if any(order is None for order, _key in keyed) or len({o[0] for o, _ in keyed if o}) != 1:
+        return None
+    ordered = sorted(((o[1], key) for o, key in keyed if o), key=lambda one: one[0])
+    if ordered[1][0] == ordered[0][0]:
+        return None
+    return ordered[0][1]
+
+
+def _listed(roots: list[Any]) -> list[Any]:
+    """Every listed process, each root followed by what is listed under it, in order."""
+    out: list[Any] = []
+    stack = list(reversed(roots))
+    while stack:
+        node = stack.pop()
+        out.append(node)
+        stack.extend(reversed(list(_node_field(node, "children") or [])))
+    return out
+
+
+def staged_words(row: Any) -> str:
+    """The words a rendered process row carries beside it where it is marked :data:`STAGED_KEY`.
+
+    ``""`` for any other row. The one reading of the mark: the pack's line,
+    the ledger's table, the report's process tree and its figure each write
+    these words beside the row.
+    """
+    return STAGED_WORDS if _node_field(row, STAGED_KEY) is True else ""
 
 
 # Which of the two facts alone names a flow's process as the sample's, on a
@@ -1667,6 +2004,46 @@ def _signature_nodes(
 # The fields a written file names the processes that wrote it under where its
 # reader declares none of its own (``Reading.dropped_writer_fields``).
 DROPPED_WRITER_FIELDS: tuple[str, ...] = ("pids", "pid", "process_id")
+
+
+# The field a written file states its size under where its reader declares
+# none of its own, or the row states none it declares
+# (``Reading.dropped_size_fields``).
+DROPPED_SIZE_FIELDS: tuple[str, ...] = ("size",)
+
+
+def dropped_size(row: Mapping[str, Any], reading: Reading | None) -> Any:
+    """The size a written file's row states, ``None`` where it states none.
+
+    Every field the row's reader declares states a size is read, in its
+    order, then :data:`DROPPED_SIZE_FIELDS`; the first one the row states (any
+    value but ``None`` or an empty text) is the size, as the row states it.
+    """
+    declared = reading.dropped_size_fields if reading is not None else ()
+    for key in (*declared, *DROPPED_SIZE_FIELDS):
+        value = row.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+# The field a request record states its User-Agent header under where its
+# reader declares none of its own (``Reading.request_user_agent_fields``).
+REQUEST_USER_AGENT_FIELDS: tuple[str, ...] = ("user_agent",)
+
+
+def request_user_agent(row: Mapping[str, Any], reading: Reading | None) -> str:
+    """The User-Agent header a request record states, ``""`` where it states none.
+
+    Every field the record's reader declares states it is read, in its order,
+    then :data:`REQUEST_USER_AGENT_FIELDS`; the first text one states is it.
+    """
+    declared = reading.request_user_agent_fields if reading is not None else ()
+    for key in (*declared, *REQUEST_USER_AGENT_FIELDS):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
 
 
 def dropped_writer(row: Mapping[str, Any], reading: Reading | None) -> tuple[list[str], str]:

@@ -47,7 +47,7 @@ def test_dga_legacy_consonant_heavy_still_flagged() -> None:
 
 def test_the_projection_carries_the_verdict_onto_the_domain() -> None:
     report = {"network": {"domains": ["kq3x9zjptlvbq.top", "google.com"]}}
-    result = network_from_sandbox_report(report)
+    result = network_from_sandbox_report(report, None)
     assert result is not None
     by_fqdn = {d.fqdn: d for d in result.domains}
     dga = by_fqdn["kq3x9zjptlvbq.top"]
@@ -67,7 +67,7 @@ def test_punycode_brand_homograph_flagged() -> None:
     """A punycode label that decodes to a brand look-alike is flagged with the
     target brand and ``is_punycode``."""
     report = {"network": {"domains": ["xn--pypal-4ve.com"]}}
-    result = network_from_sandbox_report(report)
+    result = network_from_sandbox_report(report, None)
     assert result is not None
     dom = result.domains[0]
     assert dom.is_suspicious is True

@@ -3806,7 +3806,8 @@
         "first_seen": "2026-07-25 17:53:00,192",
         "name": "6eca9859b0f441c63c62.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 7453,
@@ -3849,6 +3850,7 @@
         "ppid": 628
       }
     ],
+    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 6
   },
   "sandbox_registry_ops": {
@@ -5381,7 +5383,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\EnableConsoleTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableConsoleTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Tracing\\RegSvcs_RASAPI32",
@@ -5406,37 +5409,44 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\EnableFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\EnableAutoFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableAutoFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\EnableConsoleTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableConsoleTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\FileTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "FileTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\ConsoleTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "ConsoleTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\MaxFileSize",
         "operation": "modify",
-        "value": "1048576"
+        "value": "1048576",
+        "value_name": "MaxFileSize"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASAPI32\\FileDirectory",
         "operation": "modify",
-        "value": "%windir%\\tracing"
+        "value": "%windir%\\tracing",
+        "value_name": "FileDirectory"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Tracing\\RegSvcs_RASMANCS",
@@ -5451,37 +5461,44 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\EnableFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\EnableAutoFileTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableAutoFileTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\EnableConsoleTracing",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "EnableConsoleTracing"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\FileTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "FileTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\ConsoleTracingMask",
         "operation": "modify",
-        "value": "18446744073709486080"
+        "value": "18446744073709486080",
+        "value_name": "ConsoleTracingMask"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\MaxFileSize",
         "operation": "modify",
-        "value": "1048576"
+        "value": "1048576",
+        "value_name": "MaxFileSize"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Tracing\\RegSvcs_RASMANCS\\FileDirectory",
         "operation": "modify",
-        "value": "%windir%\\tracing"
+        "value": "%windir%\\tracing",
+        "value_name": "FileDirectory"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\rasman\\parameters",

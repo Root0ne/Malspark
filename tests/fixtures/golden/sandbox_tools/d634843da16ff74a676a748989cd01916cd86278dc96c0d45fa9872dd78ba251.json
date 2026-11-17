@@ -4206,7 +4206,8 @@
         "first_seen": "2026-08-10 23:05:10,178",
         "name": "d634843da16ff74a676a.exe",
         "pid": null,
-        "ppid": 2508
+        "ppid": 2508,
+        "staged_by_sandbox": true
       },
       {
         "call_count": 1091,
@@ -4233,6 +4234,7 @@
         "ppid": 312
       }
     ],
+    "staged_by_sandbox_note": "The row marked staged_by_sandbox is the first process that runs the submitted file, started by no process that runs it, at a path the report does not show written during the run: the sandbox started the submitted file from there.",
     "total": 18
   },
   "sandbox_registry_ops": {
@@ -11400,7 +11402,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Orchestrator\\UpdateManagerCtorFailures",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "UpdateManagerCtorFailures"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Orchestrator\\Settings",
@@ -12665,7 +12668,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\ETag",
         "operation": "modify",
-        "value": "\"39929200:7A635E280B89B0B95EB986F8B998A652:2F2C55510A\""
+        "value": "\"39929200:7A635E280B89B0B95EB986F8B998A652:2F2C55510A\"",
+        "value_name": "ETag"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\ETagBackup",
@@ -12685,12 +12689,14 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\LastUpdated",
         "operation": "modify",
-        "value": "\\x86\\x9e\\xde\\xd2\\x94\\x1c\\xdd\\x01"
+        "value": "\\x86\\x9e\\xde\\xd2\\x94\\x1c\\xdd\\x01",
+        "value_name": "LastUpdated"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\LastRefreshAttempted",
         "operation": "modify",
-        "value": "\\x88\\xb8\\xd2\\xbb^\\x1c\\xdd\\x01"
+        "value": "\\x88\\xb8\\xd2\\xbb^\\x1c\\xdd\\x01",
+        "value_name": "LastRefreshAttempted"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\LastRefreshByApp",
@@ -12700,32 +12706,38 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\RefreshInterval",
         "operation": "modify",
-        "value": "240"
+        "value": "240",
+        "value_name": "RefreshInterval"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\LastHTTPCode",
         "operation": "modify",
-        "value": "304"
+        "value": "304",
+        "value_name": "LastHTTPCode"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\LastDeviceTokenResult",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "LastDeviceTokenResult"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\LastUserTokenResult",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "LastUserTokenResult"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\QueryStringHash",
         "operation": "modify",
-        "value": "-\\xa16\\x90\\x02\\xe0\\x80;\\x19y\\xd6\\xa9\\x14\\xd4n\\xca9jS#D\\xc7,\\xcd\\xaa\\xb9\\\\xf1\\xc5n\\x94\\xfa"
+        "value": "-\\xa16\\x90\\x02\\xe0\\x80;\\x19y\\xd6\\xa9\\x14\\xd4n\\xca9jS#D\\xc7,\\xcd\\xaa\\xb9\\\\xf1\\xc5n\\x94\\xfa",
+        "value_name": "QueryStringHash"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\Version",
         "operation": "modify",
-        "value": null
+        "value": null,
+        "value_name": "Version"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\Environment",
@@ -12750,7 +12762,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\LastForceRefresh",
         "operation": "modify",
-        "value": "\\x88\\xb8\\xd2\\xbb^\\x1c\\xdd\\x01"
+        "value": "\\x88\\xb8\\xd2\\xbb^\\x1c\\xdd\\x01",
+        "value_name": "LastForceRefresh"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FCON\\WnsEnvironment",
@@ -12790,7 +12803,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FSS\\ETag",
         "operation": "modify",
-        "value": "\"08B305699F5149C4::2F2C5577B6\""
+        "value": "\"08B305699F5149C4::2F2C5577B6\"",
+        "value_name": "ETag"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FSS\\ETagBackup",
@@ -12810,47 +12824,56 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FSS\\LastUpdated",
         "operation": "modify",
-        "value": "\\xb4\\x0f\\xb7\\xbd\\x94\\x1c\\xdd\\x01"
+        "value": "\\xb4\\x0f\\xb7\\xbd\\x94\\x1c\\xdd\\x01",
+        "value_name": "LastUpdated"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FSS\\LastRefreshAttempted",
         "operation": "modify",
-        "value": "\\x82\\xdap\\xb7^\\x1c\\xdd\\x01"
+        "value": "\\x82\\xdap\\xb7^\\x1c\\xdd\\x01",
+        "value_name": "LastRefreshAttempted"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FSS\\LastRefreshByApp",
         "operation": "modify",
-        "value": "\\x82\\xdap\\xb7^\\x1c\\xdd\\x01"
+        "value": "\\x82\\xdap\\xb7^\\x1c\\xdd\\x01",
+        "value_name": "LastRefreshByApp"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FSS\\RefreshInterval",
         "operation": "modify",
-        "value": "1357"
+        "value": "1357",
+        "value_name": "RefreshInterval"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FSS\\LastHTTPCode",
         "operation": "modify",
-        "value": "200"
+        "value": "200",
+        "value_name": "LastHTTPCode"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FSS\\LastDeviceTokenResult",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "LastDeviceTokenResult"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FSS\\LastUserTokenResult",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "LastUserTokenResult"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FSS\\QueryStringHash",
         "operation": "modify",
-        "value": "\\x87\\x02\\xe4`\\xdcl\\x11\\xdb\\x03\\x8d\\xde\\x0c\\x18\\xccc\\x9f\\xd7\\x02\\x11'\\xae\\xf3\\xd2\\xdb\\xf4v\\xa7T\\x181{\\x89"
+        "value": "\\x87\\x02\\xe4`\\xdcl\\x11\\xdb\\x03\\x8d\\xde\\x0c\\x18\\xccc\\x9f\\xd7\\x02\\x11'\\xae\\xf3\\xd2\\xdb\\xf4v\\xa7T\\x181{\\x89",
+        "value_name": "QueryStringHash"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FSS\\Version",
         "operation": "modify",
-        "value": "10.0"
+        "value": "10.0",
+        "value_name": "Version"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\FSS\\Environment",
@@ -14105,7 +14128,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\WOSC\\ETag",
         "operation": "modify",
-        "value": "\"724070FA6927138869F231205DC2D053::2F2C55510A\""
+        "value": "\"724070FA6927138869F231205DC2D053::2F2C55510A\"",
+        "value_name": "ETag"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\WOSC\\ETagBackup",
@@ -14125,12 +14149,14 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\WOSC\\LastUpdated",
         "operation": "modify",
-        "value": "[\\xbc\\xf4\\xa7\\x94\\x1c\\xdd\\x01"
+        "value": "[\\xbc\\xf4\\xa7\\x94\\x1c\\xdd\\x01",
+        "value_name": "LastUpdated"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\WOSC\\LastRefreshAttempted",
         "operation": "modify",
-        "value": "\\xa9U\\xbc\\xbb^\\x1c\\xdd\\x01"
+        "value": "\\xa9U\\xbc\\xbb^\\x1c\\xdd\\x01",
+        "value_name": "LastRefreshAttempted"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\WOSC\\LastRefreshByApp",
@@ -14140,27 +14166,32 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\WOSC\\RefreshInterval",
         "operation": "modify",
-        "value": "1292"
+        "value": "1292",
+        "value_name": "RefreshInterval"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\WOSC\\LastHTTPCode",
         "operation": "modify",
-        "value": "200"
+        "value": "200",
+        "value_name": "LastHTTPCode"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\WOSC\\LastDeviceTokenResult",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "LastDeviceTokenResult"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\WOSC\\LastUserTokenResult",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "LastUserTokenResult"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\WOSC\\QueryStringHash",
         "operation": "modify",
-        "value": "\\xe1\\xe6Mw\\x01\\xc6\\xe6d\\x8a\\x8d\\xad\\xaa\\x10\\xbe\\x04\\xe0yY\\xa4\\xd0\\xff\n\\xa1\\x1e\\xd803XE\\x9a\\x95W"
+        "value": "\\xe1\\xe6Mw\\x01\\xc6\\xe6d\\x8a\\x8d\\xad\\xaa\\x10\\xbe\\x04\\xe0yY\\xa4\\xd0\\xff\n\\xa1\\x1e\\xd803XE\\x9a\\x95W",
+        "value_name": "QueryStringHash"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Wosc\\Client\\Persistent\\ClientState\\WOSC\\Version",
@@ -35205,7 +35236,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\WindowsSelfHost\\ClientState\\CurrentCallsPerDayCount",
         "operation": "modify",
-        "value": "2"
+        "value": "2",
+        "value_name": "CurrentCallsPerDayCount"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\WindowsSelfHost\\ClientState\\FirstCallOfTheDayTime",
@@ -35250,7 +35282,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\WindowsUpdate\\Orchestrator\\ShutdownFlyoutOptions",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "ShutdownFlyoutOptions"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\WindowsUpdate\\UX\\Settings\\ModelState",
@@ -38270,7 +38303,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\Common\\kcrashdumper\\reginfo\\WerRet",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "WerRet"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FolderDescriptions",
@@ -38575,17 +38609,20 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\processActiveTime",
         "operation": "modify",
-        "value": "1785002140"
+        "value": "1785002140",
+        "value_name": "processActiveTime"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\alreadyHandleStockNewDeviceInfo",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "alreadyHandleStockNewDeviceInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\alreadyHandleRecordNewDeviceInfo",
         "operation": "modify",
-        "value": "true"
+        "value": "true",
+        "value_name": "alreadyHandleRecordNewDeviceInfo"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\officespace\\flogin\\closeForcedLoginConfig",
@@ -38705,7 +38742,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kconfigcentersdk\\db_path_type",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "db_path_type"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\plugins\\kconfigcentersdk\\kccsdklog",
@@ -38725,7 +38763,8 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\WPSCloud\\userinfo\\forceLoginState",
         "operation": "modify",
-        "value": "false"
+        "value": "false",
+        "value_name": "forceLoginState"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\kingsoft\\Office\\6.0\\common\\DomainMgr\\",
@@ -41955,22 +41994,26 @@
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\ProxyBypass",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "ProxyBypass"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\IntranetName",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "IntranetName"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\UNCAsIntranet",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "UNCAsIntranet"
       },
       {
         "key": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\ZoneMap\\AutoDetect",
         "operation": "modify",
-        "value": "0"
+        "value": "0",
+        "value_name": "AutoDetect"
       },
       {
         "key": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Zones\\2",
@@ -44025,17 +44068,20 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}\\InProcServer32\\ThreadingModel",
         "operation": "modify",
-        "value": "Apartment"
+        "value": "Apartment",
+        "value_name": "ThreadingModel"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}\\AppID",
         "operation": "modify",
-        "value": "{B02DA394-9290-4FA5-80B7-17A47A357F2C}"
+        "value": "{B02DA394-9290-4FA5-80B7-17A47A357F2C}",
+        "value_name": "AppID"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}\\DisableLowILProcessIsolation",
         "operation": "modify",
-        "value": "1"
+        "value": "1",
+        "value_name": "DisableLowILProcessIsolation"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Classes\\.zip\\ShellEx\\{8895b1c6-b41f-4c1c-a562-0d564250836f}",
@@ -44075,7 +44121,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\AppID\\{B02DA394-9290-4FA5-80B7-17A47A357F2C}\\DllSurrogate",
         "operation": "modify",
-        "value": "%SystemRoot%\\System32\\prevhost.exe"
+        "value": "%SystemRoot%\\System32\\prevhost.exe",
+        "value_name": "DllSurrogate"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\PreviewHandlers",
@@ -44085,7 +44132,8 @@
       {
         "key": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PreviewHandlers\\{A3DA03D4-2B35-4072-83DC-5E5631AF019D}",
         "operation": "modify",
-        "value": "ArchivePreviewHandler"
+        "value": "ArchivePreviewHandler",
+        "value_name": "{A3DA03D4-2B35-4072-83DC-5E5631AF019D}"
       },
       {
         "key": "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\.NETFramework\\Policy\\",

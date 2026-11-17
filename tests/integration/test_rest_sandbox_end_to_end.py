@@ -117,7 +117,7 @@ async def test_a_job_detonates_and_the_dynamic_sections_are_filled(stub, tmp_pat
     assert [p.pid for p in dynamic.process_tree] == [100]
     assert dynamic.sandbox_signatures[0].name == "persistence_run_key"
 
-    network = network_from_sandbox_report(report)
+    network = network_from_sandbox_report(report, ("rest", "generic"))
     assert network is not None
     assert network.domains[0].fqdn == "telemetry-sync-71ad.net"
     assert network.ips[0].address == "185.220.101.42"
