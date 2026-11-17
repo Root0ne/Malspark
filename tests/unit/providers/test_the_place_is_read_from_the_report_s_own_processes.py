@@ -2,13 +2,15 @@
 
 Each report is read by the real reader of its family, with that family's own
 field names, and the fact is read from the document's processes through the
-reader's declaration and the one process identity, never from the view's
-printed rows. Where the listing states no ids, nothing is marked. A path the
-record shows written (its collected files or its file-write operations) is
-never marked; where the reader records no file writes at all, nothing is.
-At most one row of a task is marked: the earliest started of those that
-qualify, only where their starts can be compared. Where the sandbox marks the
-sample's processes on any row, a row without that mark is never marked.
+document's one reading of a process row (its id, its parent, its name and its
+image path) and the one process identity, never from the view's printed rows.
+Where the listing states no ids, nothing is marked. The image path a row
+states is what is asked and compared, its bare name only where it states no
+path. A path the record shows written (its collected files, its file-write
+operations or its modified files) is never marked; where the reader records
+no file writes at all, nothing is. At most one row of a task is marked: the
+earliest started of those that qualify, only where their starts can be
+compared. The sandbox's own mark of the sample's processes is not read.
 Synthetic reports only; nothing is run.
 """
 
@@ -42,28 +44,34 @@ def _cape(
     *,
     dropped: tuple[str, ...] = (),
     writes: tuple[str, ...] | None = (),
+    modified: tuple[str, ...] = (),
+    operations: tuple[str, ...] = (),
     collected: bool = True,
     name: str = NAME,
+    paths: bool = True,
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     rows = []
     for pid, ppid, image, start in procs:
         row: dict[str, Any] = {
             "parent_id": ppid,
             "process_name": image.rsplit("\\", 1)[-1],
-            "module_path": image,
             "first_seen": start,
             "calls": [],
         }
+        if paths:
+            row["module_path"] = image
         if pid is not None:
             row["process_id"] = pid
         rows.append(row)
     behavior: dict[str, Any] = {"processes": rows}
     if writes is not None:
-        behavior["summary"] = {"write_files": list(writes)}
+        behavior["summary"] = {"write_files": list(writes), "modified_files": list(modified)}
     raw: dict[str, Any] = {
         "target": {"category": "file", "file": {"name": name, "sha256": DIGEST}},
         "behavior": behavior,
     }
+    if operations:
+        raw["file_writes"] = list(operations)
     if collected:
         raw["dropped"] = [
             {"name": path.rsplit("\\", 1)[-1], "filepath": path, "sha256": "f" * 64}
@@ -124,9 +132,13 @@ def _generic(procs: list[Proc], dropped: tuple[str, ...] = ()) -> tuple[dict[str
     return sandbox_document(report), ("lab", "generic")
 
 
-def _marked(built: tuple[dict[str, Any], Any]) -> list[int]:
-    """The indices of the marked rows, which hold whatever id the view prints."""
+def _marked(built: tuple[dict[str, Any], Any], *, read_by: Any = ...) -> list[int]:
+    """The indices of the marked rows, which hold whatever id the view prints.
+
+    Read with the report's own reader, or with ``read_by`` where it is given.
+    """
     document, reader = built
+    reader = reader if read_by is ... else read_by
     answer = read_view("sandbox_processes", document, reader)
     marked = [i for i, row in enumerate(answer["processes"]) if row.get(STAGED_KEY)]
     assert (STAGED_NOTE_KEY in answer) == bool(marked)
@@ -148,6 +160,31 @@ class TestTheCapeFamilyIsReadByItsOwnIds:
         assert _marked(_cape(reader, procs, writes=(COPY,))) == []
         # The same copy, not shown written: the record does not contradict it.
         assert _marked(_cape(reader, procs)) == [2]
+
+    def test_a_copy_shown_only_among_the_file_write_operations_is_not_marked(
+        self, reader: str
+    ) -> None:
+        procs = [(1, 99, RANDOM, "1"), (3, 77, SVCHOST, "2"), (4, 3, COPY, "3")]
+        assert _marked(_cape(reader, procs, operations=(COPY,))) == []
+        assert _marked(_cape(reader, procs, operations=(SVCHOST,))) == [2]
+
+    def test_a_copy_shown_only_among_the_modified_files_is_not_marked(self, reader: str) -> None:
+        procs = [(1, 99, RANDOM, "1"), (3, 77, SVCHOST, "2"), (4, 3, COPY, "3")]
+        assert _marked(_cape(reader, procs, modified=(COPY,))) == []
+        assert _marked(_cape(reader, procs, modified=(SVCHOST,))) == [2]
+
+    def test_a_row_is_read_one_way_whatever_reader_is_named(self, reader: str) -> None:
+        # The id, the parent and the image of a process row are the document's
+        # one reading of a row: a read that names no reader reads them alike.
+        procs = [(1, 99, STAGED, "1"), (2, 1, STAGED, "2"), (3, 2, COPY, "3")]
+        assert _marked(_cape(reader, procs), read_by=None) == [0]
+
+    def test_the_image_path_is_compared_with_a_written_path(self, reader: str) -> None:
+        # A file of the submitted name written in another folder is not the
+        # process's image: the row states its path, and the path is compared.
+        procs = [(1, 99, f"{TEMP}{NAME}", "1")]
+        assert _marked(_cape(reader, procs, dropped=(COPY,))) == [0]
+        assert _marked(_cape(reader, procs, dropped=(f"{TEMP}{NAME}",))) == []
 
     def test_a_report_that_records_no_file_writes_marks_nothing(self, reader: str) -> None:
         procs = [(1, 99, STAGED, "1")]
@@ -217,11 +254,19 @@ class TestAPathTheSystemShipsIsNoCandidate:
         assert _marked(_triage({"behavioral1": procs}, name="svchost.exe")) == [1]
 
     @pytest.mark.parametrize("reader", CAPE_FAMILY)
-    def test_a_bare_name_the_system_ships_cannot_be_told(self, reader: str) -> None:
-        # This family lists a process by its bare name: the system's svchost
-        # and the submitted one read alike, so neither is marked.
+    def test_this_family_s_image_path_is_asked_never_its_bare_name(self, reader: str) -> None:
+        # This family names a process by its bare name and states its image's
+        # path beside it: the path is asked, so the row the other shapes mark
+        # is marked.
         procs = [(5, 77, SYSTEM_SVCHOST, "1"), (1, 56, STAGED_SVCHOST, "2")]
-        assert _marked(_cape(reader, procs, name="svchost.exe")) == []
+        assert _marked(_cape(reader, procs, name="svchost.exe")) == [1]
+
+    @pytest.mark.parametrize("reader", CAPE_FAMILY)
+    def test_a_bare_name_the_system_ships_cannot_be_told(self, reader: str) -> None:
+        # A row that states no path: the system's svchost and the submitted one
+        # read alike, so neither is marked.
+        procs = [(5, 77, SYSTEM_SVCHOST, "1"), (1, 56, STAGED_SVCHOST, "2")]
+        assert _marked(_cape(reader, procs, name="svchost.exe", paths=False)) == []
 
     def test_only_the_system_s_own_process_marks_nothing(self) -> None:
         procs = [(5, 77, SYSTEM_SVCHOST, "50")]
