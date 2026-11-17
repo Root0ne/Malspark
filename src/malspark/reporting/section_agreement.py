@@ -9145,6 +9145,21 @@ ANSWERS = "answers"
 ANSWERS_MASKED = "answers_masked"
 
 
+def without_stored_answers(run_summary: Any) -> Any:
+    """``run_summary`` with the agreement round's stored answers (:data:`ANSWERS`) left out, the
+    rest of it as it is: what a value check reads from the run summary as text the report
+    holds never holds a model's answer to this round (T-736)."""
+    if not isinstance(run_summary, Mapping):
+        return run_summary
+    record = run_summary.get("section_agreement")
+    if not isinstance(record, Mapping) or ANSWERS not in record:
+        return run_summary
+    return {
+        **run_summary,
+        "section_agreement": {key: value for key, value in record.items() if key != ANSWERS},
+    }
+
+
 def _masked_answer(value: Any) -> Any:
     """An answer of the round as the run's record keeps it: each text it holds, a key as a
     value, masked by the one rule for a whole model answer (``events.safe_answer_text``), its
