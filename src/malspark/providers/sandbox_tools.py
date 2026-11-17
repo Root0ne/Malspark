@@ -316,12 +316,13 @@ def sandbox_processes(
     # never at the sample: it is set aside, and only the launch lineage says.
     launched = _launcher_attributed(report, processes)
     # Every process's row; the place the sandbox started the submitted file
-    # from is read from the report's own processes (their ids as the reader
-    # declares them, never the rows printed here), over the whole listing
-    # whichever page is asked for, and the row of the same process marked.
+    # from is read from the report's own processes (each row read the one way
+    # the document reads a process row, never the rows printed here), over
+    # the whole listing whichever page is asked for, and the row of the same
+    # process marked.
     built = [_process_row(proc, launched) if isinstance(proc, dict) else None for proc in processes]
     reading = _reading(normalised_by)
-    lineage = process_lineage(processes, reading)
+    lineage = process_lineage(processes)
     named = {
         id(node)
         for node in started_by_the_sandbox(

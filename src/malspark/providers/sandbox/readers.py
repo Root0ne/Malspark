@@ -466,10 +466,6 @@ class CapeReportReader(ReportReader):
     # names the process it was seen in by the process list's id, an API call's
     # mark its call (the API under ``call.api``), an indicator's mark its
     # category and the indicator itself.
-    # A process row of the report names itself and its parent by the process
-    # list's ids under these fields, where the document keeps its arrangement.
-    process_id_fields = ("process_id",)
-    process_parent_fields = ("parent_id",)
     # A request record states the User-Agent header it carried under this field.
     request_user_agent_fields = ("user-agent",)
     signature_indicators = IndicatorFields(
@@ -512,8 +508,6 @@ class CapeReportReader(ReportReader):
             CAPE_NORMALISER_FILLS,
             rendered=read_from == READ_FROM_MODEL,
             signature_indicators=self.signature_indicators,
-            process_id_fields=self.process_id_fields,
-            process_parent_fields=self.process_parent_fields,
             request_user_agent_fields=self.request_user_agent_fields,
         )
 

@@ -601,12 +601,6 @@ class Reading:
     # declares them (``schemas.signature_indicators``); ``None`` where the
     # source states none.
     signature_indicators: IndicatorFields | None = None
-    # The fields of a process row that state its id in the report's process
-    # list and its parent's, where the reader's source names them otherwise
-    # than the document's layout does; read before the generic names
-    # (:data:`PROCESS_ID_FIELDS`, :data:`PROCESS_PARENT_FIELDS`).
-    process_id_fields: tuple[str, ...] = ()
-    process_parent_fields: tuple[str, ...] = ()
     # The fields of a request record that state the User-Agent header it
     # carried, where the reader's source names it otherwise; read before the
     # generic name (:data:`REQUEST_USER_AGENT_FIELDS`).
@@ -1362,10 +1356,10 @@ def started_by_the_sandbox(
     """The listed process whose image is the submitted file as the sandbox started it, per task.
 
     ``roots`` are the report's processes as :func:`process_lineage` reads
-    them from its own record (the reader's declared ids, never a view's
-    printed rows). A process qualifies that runs the submitted file (its name
-    or its digest, :func:`runs_the_submitted_file`), whose image is that
-    file, and that starts the sample's tree by that fact: no process its
+    them from its own record (the document's one reading of a process row,
+    never a view's printed rows). A process qualifies that runs the
+    submitted file (its name or its digest, :func:`runs_the_submitted_file`),
+    whose image is that file, and that starts the sample's tree by that fact: no process its
     parent chain reaches runs the file (:func:`_placed`'s links). A copy the
     sample makes of itself and runs is under a process that runs the file:
     behaviour, never this. A process that names the file only on its command
@@ -1379,13 +1373,15 @@ def started_by_the_sandbox(
       states no id, or the parent's number names more than one process of the
       task (``schemas.process_identity``), the parent cannot be told, and
       nothing of that task is marked;
-    * a process whose image is a path the system itself ships (``shipped``,
-      asked of the image as :func:`_image_path` writes it: the caller reads
-      the platform's catalogue of shipped paths) is no candidate; an image
-      that states no folder and whose name the system ships cannot be told
-      and is no candidate either. The sandbox's own mark of the sample's
-      processes is not read: it stands on the sample's children and the
-      desktop's processes, not on the process the sandbox started;
+    * a process's image is the path its row states (``image_path``), its
+      name only where the row states no path, as :func:`_image_path` writes
+      it; a process whose image is a path the system itself ships
+      (``shipped``: the caller reads the platform's catalogue of shipped
+      paths) is no candidate; an image that states no folder and whose name
+      the system ships cannot be told and is no candidate either. The
+      sandbox's own mark of the sample's processes is not read: it stands on
+      the sample's children and the desktop's processes, not on the process
+      the sandbox started;
     * a path the report shows written during the run (``written``, the paths
       :func:`written_during_the_run` reads, read once and only where a
       process qualifies) is the sample's doing and never this: an image that
@@ -1416,7 +1412,8 @@ def started_by_the_sandbox(
             if (parent is None or parent not in placed.by_file) and runs_the_submitted_file(
                 name, "", file_name, sha256
             ):
-                qualifying.append((node, _image_path(name)))
+                image = str(_node_field(node, "image_path") or "") or name
+                qualifying.append((node, _image_path(image)))
         if not qualifying or not _parents_told(qualifying, held, task, ProcessIdentities()):
             continue
         if shipped is not None:
@@ -1456,23 +1453,23 @@ def _parents_told(qualifying: list[tuple[Any, str]], held: list[Any], task: str,
     return True
 
 
-# Where a process row of a report states its id in its process list and its
-# parent's, read where the reader declares none (``Reading.process_id_fields``):
-# the names the document's own layout writes (``schemas.sandbox_document``).
-PROCESS_ID_FIELDS: tuple[str, ...] = ("pid",)
-PROCESS_PARENT_FIELDS: tuple[str, ...] = ("ppid", "parent_id")
-
-
-def process_lineage(processes: list[Any], reading: Reading | None) -> list[dict[str, Any]]:
+def process_lineage(processes: list[Any]) -> list[dict[str, Any]]:
     """The report's processes as :func:`started_by_the_sandbox` reads them, one per row, in order.
 
-    Each row's id and parent's id where its reader declares them
-    (``Reading.process_id_fields``, ``process_parent_fields``), every
-    declared field read, then the generic names; its image, command line,
-    task and stated start. A row that is not a mapping is ``{}``.
+    Each row read the one way the document reads a process row
+    (``schemas.sandbox_document``: :data:`PROCESS_ID_KEYS`,
+    :data:`PROCESS_PARENT_KEYS`, :data:`PROCESS_NAME_KEYS`,
+    :data:`PROCESS_IMAGE_PATH_KEYS`), whichever reader built it: its id, its
+    parent's id, its name and the path of its image where it states one; its
+    command line, task and stated start. A row that is not a mapping is ``{}``.
     """
-    ids = (*(reading.process_id_fields if reading else ()), *PROCESS_ID_FIELDS)
-    parents = (*(reading.process_parent_fields if reading else ()), *PROCESS_PARENT_FIELDS)
+    from malspark.schemas.sandbox_document import (
+        PROCESS_ID_KEYS,
+        PROCESS_IMAGE_PATH_KEYS,
+        PROCESS_NAME_KEYS,
+        PROCESS_PARENT_KEYS,
+    )
+
     out: list[dict[str, Any]] = []
     for proc in processes:
         if not isinstance(proc, Mapping):
@@ -1481,9 +1478,10 @@ def process_lineage(processes: list[Any], reading: Reading | None) -> list[dict[
         extra = proc.get("extra")
         out.append(
             {
-                "pid": _first_id(proc, ids),
-                "ppid": _first_id(proc, parents),
-                "name": str(proc.get("process_name") or proc.get("name") or ""),
+                "pid": _first_id(proc, PROCESS_ID_KEYS),
+                "ppid": _first_id(proc, PROCESS_PARENT_KEYS),
+                "name": _first_text(proc, PROCESS_NAME_KEYS),
+                "image_path": _first_text(proc, PROCESS_IMAGE_PATH_KEYS),
                 "command_line": str(proc.get("command_line") or proc.get("cmd") or ""),
                 "task": str(extra.get(PROCESS_TASK_KEY) or "")
                 if isinstance(extra, Mapping)
@@ -1497,6 +1495,11 @@ def process_lineage(processes: list[Any], reading: Reading | None) -> list[dict[
 def _first_id(row: Mapping[str, Any], fields: tuple[str, ...]) -> str:
     """The first id one of ``fields`` states on ``row`` (:func:`pid_text`); ``""`` for none."""
     return next((pid_text(row.get(f)) for f in fields if pid_text(row.get(f))), "")
+
+
+def _first_text(row: Mapping[str, Any], fields: tuple[str, ...]) -> str:
+    """The first of ``fields`` ``row`` fills, as text; ``""`` for none."""
+    return next((str(row[f]) for f in fields if row.get(f)), "")
 
 
 # The parts a report records files written during the run in: the files the
