@@ -148,7 +148,7 @@ def test_a_reason_left_out_keeps_the_platform_s_words_without_the_bracket() -> N
     markdown = MarkdownRenderer(layout=ANALYST).render(report)
 
     assert (
-        "- T1055 Process Injection: claimed, not published: the judge dropped it; evidence -"
-        in (markdown)
+        "- T1055 Process Injection: claimed, not published: the judge dropped it"
+        in markdown.splitlines()
     )
     assert "No write into another process" not in markdown

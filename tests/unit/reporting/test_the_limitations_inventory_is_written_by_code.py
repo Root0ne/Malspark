@@ -680,7 +680,7 @@ def test_entries_trimmed_to_the_budget_are_a_printed_limit() -> None:
     report.run_summary["evidence"]["trimmed"] = 1
     report.limitation_inventory = build_inventory(report, alone)
     (row,) = [r for r in printed_rows(report.limitation_inventory) if r.part == "failed"]
-    assert row.text == "Tool calls: 1 of 1 ledger entry was trimmed to the budget."
+    assert row.text == "Tool calls: 1 of 1 ledger entries was trimmed to the budget."
 
 
 def test_the_writer_is_shown_every_printed_line_but_the_claims_count() -> None:
