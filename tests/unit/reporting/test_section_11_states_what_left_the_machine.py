@@ -157,7 +157,9 @@ def test_section_11_states_every_kind_the_record_places_outside() -> None:
         row,
     )
     # A kind whose destination the record cannot tell: named, with its count.
-    assert "Sample uploads: 5 calls, destination not recorded." in row
+    # Who received each upload is named, the tool server, though its place is not recorded.
+    assert "Sample upload: tool server local was handed the sample 3 times, destination not " in row
+    assert "Sample upload: tool server local was handed the sample 2 times, destination not " in row
     assert (
         "Enrichment questions about the report's indicators: count not recorded, destination "
         "not recorded." in row
@@ -211,7 +213,10 @@ def test_section_11_disclosure_words_match_the_bundle_block() -> None:
     # The short form of each writer: the block's line opens with the same words.
     head = lookup.split(": ip ")[0]
     assert any(line.startswith(head) and line != lookup for line in block)
-    assert untold == "Sample uploads: 3 calls, destination not recorded."
+    assert untold == (
+        "Sample upload: tool server `local` was handed the sample 3 times, destination not "
+        "recorded."
+    )
     # The submission's sentence opens the bundle's line, its launch arguments after.
     assert any(line.startswith(upload) and line != upload for line in block)
 
@@ -293,6 +298,85 @@ def test_a_technique_row_with_no_evidence_prints_no_evidence_bracket() -> None:
             technique_id="T1055",
             technique_name="Process Injection",
             not_published="the judge dropped it",
+        )
+    ]
+    analyst = MarkdownRenderer(layout=ANALYST).render(report)
+    (line,) = [line for line in analyst.splitlines() if line.startswith("- T1055")]
+    assert "evidence" not in line
+
+
+def _left(record: dict[str, Any]) -> str:
+    return plain(_row(_section_11(_with({**_record([], []), **record}))))
+
+
+NO_CALL = "no answered call recorded, so whether it received anything cannot be told"
+
+
+def test_a_kind_placed_outside_with_no_recorded_call_is_stated() -> None:
+    model = {**MODEL, "calls": 0, "agents": {}}
+    row = _left({"models": [model], "partial_reason": "the run was stopped part-way"})
+    assert f"Model prompts: a model service (outside this machine): {NO_CALL}." in row
+    row = _left({"servers": [{**SERVER, "calls": 0}]})
+    assert re.search(r"Tool calls: tool server remote at tools(\.|\[\.\])example \(outside", row)
+    assert NO_CALL in row
+    row = _left({"lookups": [{**LOOKUP, "calls": 0, "served": 0}]})
+    assert re.search(r"Lookups: lookup(\.|\[\.\])example \(outside this machine\): no answ", row)
+    row = _left({"uploads": [{**SANDBOX, "calls": 0}]})
+    assert re.search(r"Sample upload: the detonator sandbox at sandbox(\.|\[\.\])example", row)
+    assert NO_CALL in row
+
+
+def test_a_model_row_naming_no_receiver_prints_no_calls_per_role() -> None:
+    model = {**MODEL, "service": "", "where": "unknown", "why": "the ledger filed them"}
+    row = _left({"models": [model]})
+    assert "Model prompts: 12 calls, destination not recorded." in row
+    assert "judge" not in row and "reporter" not in row
+
+
+def test_each_short_form_names_its_receiver() -> None:
+    store = {"why": "", "host": "store.example", "where": "remote", "backend": "vectors"}
+    row = _left({"stores": [store]})
+    assert re.search(
+        r"Case memory: the vectors case-memory store at store(\.|\[\.\])example "
+        r"\(outside this machine\)\.",
+        row,
+    )
+    staged = {**STAGED, "by": "staging", "host": "files.example", "where": "remote", "why": ""}
+    row = _left({"uploads": [staged]})
+    assert re.search(
+        r"Sample upload: the sample was staged 3 times to tool server local at "
+        r"files(\.|\[\.\])example \(outside this machine\)\.",
+        row,
+    )
+    handed = {**STAGED, "host": "tools.example", "where": "remote", "why": ""}
+    row = _left({"uploads": [handed]})
+    assert re.search(
+        r"Sample upload: tool server local at tools(\.|\[\.\])example \(outside this "
+        r"machine\) was handed the sample 3 times\.",
+        row,
+    )
+    # A receiver whose host the record names but does not place.
+    placed_not = {**STAGED, "host": "tools.example"}
+    row = _left({"uploads": [placed_not]})
+    assert re.search(
+        r"Sample upload: tool server local at tools(\.|\[\.\])example was handed the sample "
+        r"3 times, where it runs is not recorded\.",
+        row,
+    )
+
+
+def test_a_technique_row_citing_no_ledger_entry_prints_no_evidence_bracket() -> None:
+    from malspark.reporting.models import CapabilityCell
+
+    report = _report(_ledger())
+    report.capability_matrix = [
+        CapabilityCell(
+            tactic="TA0005",
+            tactic_name="Defense Evasion",
+            technique_id="T1055",
+            technique_name="Process Injection",
+            not_published="the judge dropped it",
+            evidence_ids=[],
         )
     ]
     analyst = MarkdownRenderer(layout=ANALYST).render(report)

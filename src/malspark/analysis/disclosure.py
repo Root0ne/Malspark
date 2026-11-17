@@ -1596,13 +1596,49 @@ def _how(row: Mapping[str, Any]) -> str:
     return transport or "transport not recorded"
 
 
+# What a short form says of a receiver the record places outside with no call it recorded.
+_NO_CALL = "no answered call recorded, so whether it received anything cannot be told"
+
+
+def _short(
+    what: str,
+    receiver: str,
+    done: str,
+    row: Mapping[str, Any],
+    calls: int | None,
+    tail: str = "",
+) -> str:
+    """A writer's short form: what, who received it (``receiver``, where the record names one)
+    and how many times (``done``, its own separator first), or that no call is recorded; then,
+    where the record does not place the receiver, that its destination, or where a named host
+    runs, is not recorded (T-719)."""
+    said = f"{what}: {receiver}" if receiver else f"{what}:"
+    said += f": {_NO_CALL}" if calls == 0 and receiver else (f" {_NO_CALL}" if calls == 0 else done)
+    if not _placed(row):
+        said += (
+            ", where it runs is not recorded" if row.get("host") else ", destination not recorded"
+        )
+    return said + tail + "."
+
+
+def _receiver(row: Mapping[str, Any], name: str, code: Callable[[str], str]) -> str:
+    """``name`` at the row's host, marked where the record places it."""
+    at = f" at {code(str(row['host']))}" if row.get("host") else ""
+    return f"{name}{at} {_mark(row)}" if at and _placed(row) else f"{name}{at}"
+
+
 def _model_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: bool = False) -> str:
     """A model row's sentence; ``short``, who received the prompts and how many calls, the
     calls per role and the roles that made none being the block's alone (T-719)."""
     calls = int(row.get("calls") or 0)
-    if short and (row.get("host") or row.get("service")):
-        name = code(str(row["host"])) if row.get("host") else str(row["service"])
-        return f"Model prompts: {name} {_mark(row)} received {count_label(calls, 'call')}."
+    if short:
+        name = code(str(row["host"])) if row.get("host") else str(row.get("service") or "")
+        receiver = f"{name} {_mark(row)}" if name and _placed(row) else name
+        if not name:
+            return _short("Model prompts", "", f" {count_label(calls, 'call')}", row, calls)
+        return _short(
+            "Model prompts", receiver, f" received {count_label(calls, 'call')}", row, calls
+        )
     agents = dict(row.get("agents") or {})
     listed = list(row.get("configured_for") or [])
     if not row.get("host") and not row.get("service"):
@@ -1660,8 +1696,11 @@ def _lookup_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: b
     calls = int(row.get("calls") or 0)
     server = _server(str(row.get("source") or ""), code)
     kinds = _kinds(row)
-    if short and _placed(row) and row.get("host"):
-        return f"Lookups: {code(str(row['host']))} {_mark(row)} was asked {_times(calls)}: {kinds}."
+    if short:
+        host = code(str(row["host"])) if row.get("host") else server
+        receiver = f"{host} {_mark(row)}" if _placed(row) and row.get("host") else host
+        done = f" was asked {_times(calls)}" + (f": {kinds}" if kinds else "")
+        return _short("Lookups", receiver, done, row, calls)
     asked = f"was asked {_times(calls)}{_again(row)}"
     if _placed(row) and row.get("host"):
         return (
@@ -1686,11 +1725,11 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: b
     )
     untold = "" if _placed(row) else _untold(row, "it")
     by = row.get("by")
+    if short:
+        return _short_upload(row, code, calls, failure)
     if by == BY_SANDBOX:
         sandbox = f"{code(str(row.get('source') or ''))} sandbox{at}{failure}{untold}."
         subject = _submitted_subject(row, code)
-        if short:
-            return f"Sample upload: {subject} was submitted {times} to the {sandbox}"
         return (
             f"Sample upload{_detonation_of(row)}: {subject} was submitted {times} to the "
             f"{sandbox}" + _launch_clause(row, code)
@@ -1699,18 +1738,36 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: b
     if by == BY_STAGING:
         what = str(row.get("what") or "")
         sent = STAGED_FILES.get(what, f"a file of the job ({code(what)})") if what else "the sample"
-        if short:
-            return f"Sample upload: {sent} was staged {times} to {server}{at}{failure}{untold}."
         return (
             f"Sample upload: {sent} was staged {times} to {server} ({_how(row)}){at} through "
             f"its put_sample tools, for its tools to read{failure}{untold}."
         )
-    if short:
-        return f"Sample upload: {server}{at} was handed the sample {times}{failure}{untold}."
     return (
         f"Sample upload: {server} ({_how(row)}){at} was handed the sample {times}{_again(row)} "
         f"by a tool declared to send it out of the deployment{failure}{untold}."
     )
+
+
+def _short_upload(
+    row: Mapping[str, Any], code: Callable[[str], str], calls: int, failure: str
+) -> str:
+    """An upload row's short form: what was sent, to whom, how many times (T-719)."""
+    times = _times(calls)
+    by = row.get("by")
+    if by == BY_SANDBOX:
+        receiver = _receiver(row, f"the {code(str(row.get('source') or ''))} sandbox", code)
+        if not calls:
+            return _short("Sample upload", receiver, "", row, calls)
+        done = f" was submitted {times} to {receiver}"
+        return _short("Sample upload", _submitted_subject(row, code), done, row, calls, failure)
+    receiver = _receiver(row, _server(str(row.get("source") or ""), code), code)
+    if by == BY_STAGING and calls:
+        what = str(row.get("what") or "")
+        sent = STAGED_FILES.get(what, f"a file of the job ({code(what)})") if what else "the sample"
+        done = f" was staged {times} to {receiver}"
+        return _short("Sample upload", sent, done, row, calls, failure)
+    done = "" if by == BY_STAGING else f" was handed the sample {times}"
+    return _short("Sample upload", receiver, done, row, calls, failure)
 
 
 def _detonation_of(row: Mapping[str, Any]) -> str:
@@ -1785,8 +1842,9 @@ def _server_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: b
     """A tool server row's sentence; ``short``, which server, where, and how many calls."""
     server = _server(str(row.get("source") or ""), code)
     if short:
-        made = count_label(int(row.get("calls") or 0), "call")
-        return f"Tool calls: {server}{_at(row, code)}: {made}."
+        made = int(row.get("calls") or 0)
+        receiver = _receiver(row, server, code)
+        return _short("Tool calls", receiver, f": {count_label(made, 'call')}", row, made)
     calls = count_label(int(row.get("calls") or 0), "call") + _again(row)
     if _placed(row) and row.get("host"):
         return (
@@ -1868,7 +1926,7 @@ def _store_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: bo
     """A store row's sentence; ``short``, which store, and where."""
     store = f"the {code(str(row.get('backend') or ''))} case-memory store"
     if short:
-        return f"Case memory: {store}{_at(row, code)}."
+        return _short("Case memory", _receiver(row, store, code), "", row, None)
     if _placed(row) and row.get("host"):
         return (
             f"Case memory: {store} at {code(str(row['host']))} {_mark(row)}, which this job "
@@ -2017,15 +2075,14 @@ def _nothing_sentence(record: Mapping[str, Any], code: Callable[[str], str]) -> 
 LEFT_THE_MACHINE_RECORD = "The full record of what left this machine is in the bundle."
 
 
-# Each part of the record whose rows say where a thing went: its writer, and what the row
-# names a thing of that part by where the record cannot place it (T-719).
-_LEFT_PARTS: tuple[tuple[str, Callable[..., str], str], ...] = (
-    ("models", _model_line, "Model prompts"),
-    ("lookups", _lookup_line, "Lookups"),
-    ("uploads", _upload_line, "Sample uploads"),
-    ("servers", _server_line, "Tool calls"),
-    ("stores", _store_line, "Case memory"),
-    ("undeclared", _server_line, "Tool calls to tools that declare no effects"),
+# Each part of the record whose rows say where a thing went, and its writer (T-719).
+_LEFT_PARTS: tuple[tuple[str, Callable[..., str]], ...] = (
+    ("models", _model_line),
+    ("lookups", _lookup_line),
+    ("uploads", _upload_line),
+    ("servers", _server_line),
+    ("stores", _store_line),
+    ("undeclared", _server_line),
 )
 
 
@@ -2081,18 +2138,11 @@ def left_the_machine(record: Any, code: Callable[[str], str] = _code) -> str:
     if not isinstance(record, Mapping) or "models" not in record or record.get("nothing_left"):
         return ""
     lines: list[str] = []
-    for part, write, what in _LEFT_PARTS:
+    for part, write in _LEFT_PARTS:
         rows = [row for row in record.get(part) or [] if isinstance(row, Mapping)]
-        lines.extend(
-            write(row, code, short=True)
-            for row in rows
-            if row.get("where") == REMOTE and ("calls" not in row or int(row["calls"] or 0))
-        )
-        untold = [row for row in rows if row.get("where") not in (REMOTE, LOCAL)]
-        if untold:
-            calls = [int(row["calls"]) for row in untold if "calls" in row]
-            hosts = [code(str(row["host"])) for row in untold if row.get("host")]
-            lines.append(_not_recorded_line(what, sum(calls) if calls else None, hosts))
+        # Every row the record does not place on this machine, its receiver named where the
+        # record names one, with what the record says of it (T-719).
+        lines.extend(write(row, code, short=True) for row in rows if row.get("where") != LOCAL)
     lines.extend(_enrichment_left(record.get("enrichment"), code))
     if record.get("tracing"):
         lines.append(_not_recorded_line("Tracing of every prompt and answer", None))
