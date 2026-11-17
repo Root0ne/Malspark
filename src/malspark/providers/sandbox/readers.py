@@ -470,6 +470,8 @@ class CapeReportReader(ReportReader):
     # list's ids under these fields, where the document keeps its arrangement.
     process_id_fields = ("process_id",)
     process_parent_fields = ("parent_id",)
+    # A request record states the User-Agent header it carried under this field.
+    request_user_agent_fields = ("user-agent",)
     signature_indicators = IndicatorFields(
         lists=("marks", "data"),
         process=("pid", "process_id"),
@@ -512,6 +514,7 @@ class CapeReportReader(ReportReader):
             signature_indicators=self.signature_indicators,
             process_id_fields=self.process_id_fields,
             process_parent_fields=self.process_parent_fields,
+            request_user_agent_fields=self.request_user_agent_fields,
         )
 
     def run_facts(self, payload: Any, fmt: Any = None, **context: Any) -> dict[str, Any]:

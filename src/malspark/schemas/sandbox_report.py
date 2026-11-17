@@ -607,6 +607,10 @@ class Reading:
     # (:data:`PROCESS_ID_FIELDS`, :data:`PROCESS_PARENT_FIELDS`).
     process_id_fields: tuple[str, ...] = ()
     process_parent_fields: tuple[str, ...] = ()
+    # The fields of a request record that state the User-Agent header it
+    # carried, where the reader's source names it otherwise; read before the
+    # generic name (:data:`REQUEST_USER_AGENT_FIELDS`).
+    request_user_agent_fields: tuple[str, ...] = ()
 
 
 # What a report read by a reader that keeps its source's arrangement reached
@@ -1999,6 +2003,25 @@ def dropped_size(row: Mapping[str, Any], reading: Reading | None) -> Any:
         if value not in (None, ""):
             return value
     return None
+
+
+# The field a request record states its User-Agent header under where its
+# reader declares none of its own (``Reading.request_user_agent_fields``).
+REQUEST_USER_AGENT_FIELDS: tuple[str, ...] = ("user_agent",)
+
+
+def request_user_agent(row: Mapping[str, Any], reading: Reading | None) -> str:
+    """The User-Agent header a request record states, ``""`` where it states none.
+
+    Every field the record's reader declares states it is read, in its order,
+    then :data:`REQUEST_USER_AGENT_FIELDS`; the first text one states is it.
+    """
+    declared = reading.request_user_agent_fields if reading is not None else ()
+    for key in (*declared, *REQUEST_USER_AGENT_FIELDS):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
 
 
 def dropped_writer(row: Mapping[str, Any], reading: Reading | None) -> tuple[list[str], str]:
