@@ -45,15 +45,23 @@ sandbox's own key. The form holds:
 | Every block with no place above, under the source's own name | its own name |
 
 The place a sandbox started the submitted file from is read from the
-report's own lineage, whichever sandbox wrote it: a process that runs the
-submitted file (its submitted name, or its digest with an extension), whose
-image is that file, and that no process running the file started. The mark is
-given only where the record does not contradict it: a path the dropped-files
-view shows written during the run is never marked (an image that states no
-folder is read against the written files' names), and the marked rows of one
-task share one path, that of the process the record states started first
-(`first_seen`: a number, or a timestamp of one form), none where it states no
-order among them. The process view (`sandbox_processes`) marks that row
+report's own processes, whichever sandbox wrote it, each by the ids its reader
+declares (a CAPE, Cuckoo or mock report names a process and its parent by
+`process_id` and `parent_id`; a document laid out from the form by `pid` and
+`ppid`), never from the rows a view prints: a process that runs the submitted
+file (its submitted name, or its digest with an extension), whose image is
+that file, and that no process running the file started. The mark is given
+only where the record does not contradict it. Where such a process states a
+parent and its task lists a process with no id, or the parent's number names
+more than one process, nothing of that task is marked. Where the sandbox marks
+the sample's processes on any row of the task, a row without that mark is not
+marked. A path the report shows written during the run (the files it collected
+and its file-write operations, each part where the reader declares it fills
+it) is never marked, an image that states no folder read against the written
+files' names; where the report records no file writes at all, nothing is
+marked. At most one row of a task is marked: the earliest started of those
+that qualify (`first_seen`, compared only where both are numbers or both one
+timestamp form), none where their starts cannot be compared. The process view (`sandbox_processes`) marks that row
 `staged_by_sandbox: true`, left out on every other row, and its answer
 carries one sentence, once, under `staged_by_sandbox_note`: the marked row is
 the first process that runs the submitted file, started by no process that
