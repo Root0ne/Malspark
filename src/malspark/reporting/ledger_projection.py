@@ -2731,13 +2731,16 @@ SAMPLE_TREE_FLOW = "the sandbox attributes a flow to it to the sample's process 
 NO_SANDBOX_ROW = "no row of the sandbox's network view holds it"
 
 
-def address_flow_facts(ledger: list[LedgerEntry]) -> Callable[[Any], str] | None:
+def address_flow_facts(
+    ledger: list[LedgerEntry], *, normalised_by: Sequence[str] | None
+) -> Callable[[Any], str] | None:
     """``address -> words``: what the sandbox's rows say of the process behind each address.
 
     Read from the record only: the ``sandbox_network`` answers of ``ledger``
     projected as the report's network block is (:func:`network_from_ledger`),
-    each address's row said as the publish rule says it
-    (``stix_renderer.address_flow_reason``), or :data:`SAMPLE_TREE_FLOW`. An
+    with the run's reader ``normalised_by``, each address's row said as the
+    publish rule says it (``stix_renderer.address_flow_reason``), or
+    :data:`SAMPLE_TREE_FLOW`. An
     address no row holds is :data:`NO_SANDBOX_ROW` only where every answer
     read is the whole view; a page or a shortened answer says nothing of it.
     ``None`` where the ledger holds no such answer.
@@ -2748,7 +2751,7 @@ def address_flow_facts(ledger: list[LedgerEntry]) -> Callable[[Any], str] | None
     if not reads:
         return None
     whole = all(is_whole for _data, is_whole in _ledger_views(reads))
-    network = network_from_ledger([entry for entry, _data in reads])
+    network = network_from_ledger([entry for entry, _data in reads], normalised_by=normalised_by)
     rows = {ip.address: ip for ip in (network.ips if network else []) if ip.source == "sandbox"}
 
     def _fact(address: Any) -> str:

@@ -1480,7 +1480,13 @@ class _Pack:
             self.record(
                 "pcap_summary",
                 {"pcap_path": staging.job_relative(capture)},
-                lambda: self.readers.read("pcap_summary", path=capture),
+                # Beside the capture's own answer, what the pack's network view
+                # says of each conversation's address, read with the run's reader.
+                lambda: with_sandbox_rows(
+                    self.readers.read("pcap_summary", path=capture),
+                    self.recorder.entries,
+                    self.inputs.sandbox_normalised_by,
+                ),
             )
 
     def _reputation(self, step: PackStep) -> None:
@@ -3623,14 +3629,10 @@ class _View:
     decoders: list[str] = field(default_factory=list)
     before: dict[str, tuple[int, int]] = field(default_factory=dict)
     labels: dict[str, str] = field(default_factory=dict)
-    entries: Sequence[LedgerEntry] = ()
-    # What the sandbox's rows say of each address, read once on first use.
-    _flows: Callable[[Any], str] | None = field(default=None, repr=False)
-    _flows_read: bool = False
 
     @classmethod
     def of(cls, entries: Sequence[LedgerEntry]) -> _View:
-        view = cls(entries=entries)
+        view = cls()
         seen_rules: set[str] = set()
         seen_decoders: set[str] = set()
         for entry in entries:
@@ -3645,15 +3647,6 @@ class _View:
                 seen_decoders.add(name)
                 view.decoders.append(name)
         return view
-
-    def flow_facts(self) -> Callable[[Any], str] | None:
-        """What the entries' sandbox rows say of each address (``address_flow_facts``)."""
-        if not self._flows_read:
-            from malspark.reporting.ledger_projection import address_flow_facts
-
-            self._flows = address_flow_facts(list(self.entries))
-            self._flows_read = True
-        return self._flows
 
     def counts(self) -> tuple[int, int]:
         current = _CURRENT.get()
@@ -4915,14 +4908,10 @@ def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
         else "none detected"
     )
 
-    # What the sandbox's rows in view say of each remote address: the record's
-    # facts beside the conversation, nothing where the pack holds no such rows.
-    # The rows read are the job's own detonation's, so a further detonation's
-    # capture is not read against them.
-    view = _IN_VIEW.get()
-    current = _CURRENT.get()
-    later = current is not None and later_detonation_of(current) is not None
-    flows = view.flow_facts() if view is not None and conversations and not later else None
+    # What the sandbox's rows say of each remote address, as the pack kept it
+    # beside the capture's answer when it recorded it (:func:`with_sandbox_rows`).
+    kept = data.get(SANDBOX_ROWS_KEY)
+    flows = kept if isinstance(kept, dict) else {}
 
     def _line(shown: int) -> str:
         if not conversations:
@@ -4956,11 +4945,46 @@ def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
     return line if len(line) <= max_chars else ""
 
 
-def _conversation(row: dict[str, Any], flows: Callable[[Any], str] | None) -> str:
+def _conversation(row: dict[str, Any], flows: Mapping[str, Any]) -> str:
     """One conversation as every surface writes it, then what the sandbox's rows say of its peer."""
     line = conversation_line(row)
-    said = flows(row.get("dst")) if flows is not None else ""
-    return f"{line}; {said}" if said else line
+    said = flows.get(str(row.get("dst") or ""))
+    return f"{line}; {said}" if isinstance(said, str) and said else line
+
+
+# The platform's key on the capture's answer under which the pack keeps what
+# the sandbox's rows say of each conversation's remote address, by address.
+SANDBOX_ROWS_KEY = "sandbox_rows"
+
+
+def with_sandbox_rows(
+    answer: Any, ledger: Sequence[Any], normalised_by: Sequence[str] | None
+) -> Any:
+    """The capture's answer with what the pack's network view says of each remote address.
+
+    Read from the record only, when the capture is recorded: the ``ledger``'s
+    network view answers, read with the run's reader ``normalised_by`` as the
+    report's network block is (``ledger_projection.address_flow_facts``),
+    kept under :data:`SANDBOX_ROWS_KEY` for each conversation's address that
+    the rows say something of. An answer with no conversations, or a ledger
+    with no network view, is returned as it is.
+    """
+    from malspark.reporting.ledger_projection import address_flow_facts
+
+    if not isinstance(answer, dict) or answer.get("error"):
+        return answer
+    conversations = [row for row in answer.get("conversations") or [] if isinstance(row, dict)]
+    if not conversations:
+        return answer
+    facts = address_flow_facts(list(ledger), normalised_by=normalised_by)
+    if facts is None:
+        return answer
+    said = {
+        str(row.get("dst")): words
+        for row in conversations
+        if row.get("dst") and (words := facts(row.get("dst")))
+    }
+    return {**answer, SANDBOX_ROWS_KEY: said} if said else answer
 
 
 # The decoded-strings line. The pack is one block every agent reads, bounded
