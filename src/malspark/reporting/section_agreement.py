@@ -234,6 +234,7 @@ from malspark.agents.tool_fence import (
 from malspark.core.logger import logger
 from malspark.core.spend import SpendCeilingStop
 from malspark.pipeline.events import safe_finding_value
+from malspark.pipeline.feedback_mode import feeds_back
 from malspark.pipeline.validation import (
     _BARE_ADDRESS,
     _HEX_ADDRESS,
@@ -249,6 +250,7 @@ from malspark.pipeline.validation import (
     generic_function_name,
     ledger_absence_contradictions,
     misstated_entry_contents,
+    raised_only_in_retry,
     retry_with_feedback,
     schema_violations,
     wrong_entry_citations,
@@ -286,6 +288,7 @@ from malspark.reporting.models import (
     MalwareReport,
     TechnicalSubsection,
 )
+from malspark.reporting.sentence_ends import close_end, ends_sentence, pieces
 from malspark.schemas.evidence import entry_ids_in
 from malspark.utils.sentence_cut import left_out_span
 from malspark.utils.written_forms import pack_escaped, pack_reads
@@ -4241,9 +4244,10 @@ def _rows(payload: Any) -> list[tuple[int, AgreementRow]]:
 def _sentence_units(text: str) -> tuple[dict[str, list[int]], set[int]]:
     """Where each sentence of ``text`` starts, by its words, and where each one ends.
 
-    A sentence ends after a ``.``, ``!`` or ``?`` (and any closing quote or
-    bracket after it) that a space or the end follows, or at a line break,
-    or at the end of the text. One pass. A sentence is keyed by its text from
+    A sentence ends after a mark the one sentence-end rule reads as its end
+    (``sentence_ends.ends_sentence``, with any closing quote, bracket or emphasis
+    after it), or at a line break, or at the end of the text: the analyst report
+    reads the same rule (T-719). One pass. A sentence is keyed by its text from
     its first character to its end, so a copied sentence is found whole by its
     words.
     """
@@ -4259,13 +4263,10 @@ def _sentence_units(text: str) -> tuple[dict[str, list[int]], set[int]]:
         stop = None
         if char in "\n\r":
             stop = at
-        elif char in ".!?":
-            after = at + 1
-            while after < length and text[after] in "\"')]":
-                after += 1
-            if after == length or text[after].isspace():
-                stop = after
-                at = after - 1
+        elif char in ".!?" and ends_sentence(text, at):
+            after = close_end(text, at)
+            stop = after
+            at = after - 1
         if stop is not None:
             end = stop
             while end > begin and text[end - 1].isspace():
@@ -4317,7 +4318,7 @@ class _Sentences:
                 return [(start, end, self.text[start:end], reading) for start, end in found]
         return []
 
-    def span(self, sentence: str) -> tuple[int, int, str, int] | None:
+    def span(self, sentence: str, *, whole: bool = False) -> tuple[int, int, str, int] | None:
         """Where the one sentence copied stands, once, or ``None``; for a text cut
         ``by_words``, the first place :meth:`every` gives.
 
@@ -4326,18 +4327,67 @@ class _Sentences:
         The last item says which: ``-1`` as copied, else the reading's place in
         ``pack_reads``, so a rewrite is read back the same way. It has to be
         exactly one sentence of the passage; cut otherwise than ``by_words``, one
-        standing there exactly once: a fragment, a word, a run of sentences or a
-        sentence the passage writes twice is not one.
+        standing there exactly once: a fragment, a word, a run of sentences short of
+        the whole text or a sentence the passage writes twice is not one. With
+        ``whole``, a copy of the whole text, by its words, is found as one span however
+        many sentences it holds (:meth:`whole`, T-719).
         """
         if self.by_words:
             places = self.every(sentence)
-            return places[0] if places else None
+            if places:
+                return places[0]
+            return self.whole(sentence) if whole else None
         for reading, form in enumerate((sentence, *pack_reads(sentence)), -1):
             copied = form.strip()
             found = self.starts.get(copied, []) if copied else []
             if len(found) == 1:
                 return found[0], found[0] + len(copied), copied, reading
+        return self.whole(sentence) if whole else None
+
+    def whole(self, sentence: str) -> tuple[int, int, str, int] | None:
+        """The whole text as one span, where the sentence copied is all of it by its words
+        (as copied, or with the escapes read back, as :meth:`span` reads it), else ``None``:
+        an answer copying the whole field answers each sentence of it (T-719)."""
+        text = " ".join(self.text.split())
+        if not text:
+            return None
+        for reading, form in enumerate((sentence, *pack_reads(sentence)), -1):
+            if " ".join(form.split()) == text:
+                start = len(self.text) - len(self.text.lstrip())
+                end = len(self.text.rstrip())
+                return start, end, self.text[start:end], reading
         return None
+
+    def units(self, span: tuple[int, int, str, int]) -> list[tuple[int, int, str, int]]:
+        """Each sentence ``span`` holds, as :meth:`span` gives one: the span itself where it is
+        one sentence, each sentence of the text where it is the whole text (:meth:`whole`), so
+        every check a sentence is asked by reads each of them (T-719)."""
+        inside = sorted(
+            (start, start + len(said), said, span[3])
+            for said, starts in self.starts.items()
+            for start in starts
+            if span[0] <= start < span[1]
+        )
+        return inside if len(inside) > 1 else [span]
+
+
+def _naming(found: Sequence[Violation], sentence: str) -> list[Violation]:
+    """``found``, each naming ``sentence`` as what it is about where it names nothing yet."""
+    return [v if v.quoted else replace(v, quoted=(sentence,)) for v in found]
+
+
+def _with_sentence(row: AgreementRow, sentence: str) -> AgreementRow:
+    """``row`` answering ``sentence`` alone: a whole-field answer read sentence by sentence."""
+    return AgreementRow.model_validate({**row.model_dump(), "sentence": sentence})
+
+
+def _answered_span(
+    sentences: _Sentences, sentence: str, decision: Any
+) -> tuple[int, int, str, int] | None:
+    """Where the sentence a row copied stands (:meth:`_Sentences.span`): a copy of the whole
+    field is found for a keep or a drop, which answer each of its sentences; a rewrite of more
+    than one sentence would put one text in place of several, and is not one (T-719)."""
+    return sentences.span(sentence, whole=decision != "rewrite")
 
 
 def _cut(passage: Passage) -> _Sentences:
@@ -4409,7 +4459,8 @@ def _row_violations(
     by_id: dict[str, Passage],
     sentences_of: Callable[[Passage], _Sentences],
 ) -> list[Violation]:
-    """What is structurally wrong with one row, against the passages shown."""
+    """What is structurally wrong with one row, against the passages shown; a whole-field row
+    is checked as its rows sentence by sentence (:func:`_checked_rows`, T-719)."""
     path = f"sentences.{index}"
     passage = by_id.get(_form(row.passage))
     if passage is None or passage.kind not in (CLAIM_LED, SECTION_5):
@@ -4465,7 +4516,7 @@ def _row_violations(
                 path=f"{path}.decision",
             )
         )
-    span = sentences_of(passage).span(row.sentence)
+    span = _answered_span(sentences_of(passage), row.sentence, row.decision)
     if span is None:
         out.append(
             Violation(
@@ -6692,24 +6743,31 @@ def whole_code_absences(
     run saw, so there a sentence naming an address is read whole, as before."""
     out: list[str] = []
     for sentence in _sentences_of(text):
-        named = bool(_addresses_named(sentence))
-        if not named and (
-            _WHOLE_CODE_ABSENCE.search(sentence)
-            or (unsettled and _UNSETTLED_ABSENCE.search(sentence))
-        ):
-            # Read whole, as before: naming no address, the sentence is held.
-            out.append(sentence)
-            continue
-        if (
-            by_clause
-            and named
-            and any(
-                not back and not _addresses_named(clause)
-                for clause, back in _absence_clauses(sentence, unsettled=unsettled)
-            )
+        # A sentence the one rule joined is held where any part of it would be (T-719).
+        if any(
+            _states_whole_code_absence(part, unsettled=unsettled, by_clause=by_clause)
+            for part in dict.fromkeys([sentence, *pieces(sentence)])
         ):
             out.append(sentence)
     return tuple(out)
+
+
+def _states_whole_code_absence(sentence: str, *, unsettled: bool, by_clause: bool) -> bool:
+    """Whether ``sentence`` is one :func:`whole_code_absences` holds."""
+    named = bool(_addresses_named(sentence))
+    if not named and (
+        _WHOLE_CODE_ABSENCE.search(sentence) or (unsettled and _UNSETTLED_ABSENCE.search(sentence))
+    ):
+        # Read whole, as before: naming no address, the sentence is held.
+        return True
+    return (
+        by_clause
+        and named
+        and any(
+            not back and not _addresses_named(clause)
+            for clause, back in _absence_clauses(sentence, unsettled=unsettled)
+        )
+    )
 
 
 def _absence_clauses(sentence: str, *, unsettled: bool) -> list[tuple[str, bool]]:
@@ -7654,16 +7712,43 @@ def _checked_rows(
             if row is not named and passage is not None
             else []
         )
-        own = _row_violations(row, index, by_id, sentences_of)
+        span = (
+            _answered_span(sentences_of(passage), row.sentence, row.decision)
+            if passage is not None
+            else None
+        )
+        units = sentences_of(passage).units(span) if passage is not None and span else []
+        # A keep or a drop copying the whole field answers each of its sentences as the same
+        # row answering it alone would, on every path after this one (T-719).
+        answers: list[tuple[AgreementRow, tuple[int, int, str, int] | None]] = [(row, span)]
+        if passage is not None and len(units) > 1:
+            cut = sentences_of(passage)
+            answers = [
+                (answer, _answered_span(cut, answer.sentence, answer.decision))
+                for answer in (_with_sentence(row, unit[2]) for unit in units)
+            ]
         rewritten = (
             _rewrite_violations(row.rewrite, citable, items, entries)
             if row.decision == "rewrite"
             else []
         )
-        span = sentences_of(passage).span(row.sentence) if passage is not None else None
-        if passage is not None and span is not None and not own and not rewritten:
-            passed.add((passage.id, span[0]))
-        checked.append((index, row, passage, own, rewritten, span, told))
+        for answer, at in answers:
+            own = _row_violations(answer, index, by_id, sentences_of)
+            if passage is not None and at is not None and not own and not rewritten:
+                passed.add((passage.id, at[0]))
+            # Each finding names the sentence its row answers, so a whole-field row's are
+            # told and recorded sentence by sentence, as its rows apart would be (T-719).
+            checked.append(
+                (
+                    index,
+                    answer,
+                    passage,
+                    _naming(own, answer.sentence),
+                    rewritten,
+                    at,
+                    _naming(told, answer.sentence),
+                )
+            )
     return checked, passed
 
 
@@ -8491,11 +8576,18 @@ def _qualify_unread_left(
     return out
 
 
+def _rows_of(payload: Any) -> list[Any]:
+    """The rows of an answer as it stands, fitting the schema or not."""
+    raw = payload.get("sentences") if isinstance(payload, dict) else None
+    return raw if isinstance(raw, list) else []
+
+
 def _merged_rows(
     first: Any,
     last: Any,
     sound: Callable[[Any], bool] = bool,
     where: Callable[[Any], tuple[str, str]] | None = None,
+    apart: Callable[[Any], list[Any]] | None = None,
 ) -> Any:
     """The retry's rows, with each sound row of the first answer the retry leaves out.
 
@@ -8504,8 +8596,9 @@ def _merged_rows(
     answering a sentence the ledger's lines hold, :func:`apply_rows`) are kept, the retry's row
     winning for the same passage and sentence: where it stands in the passage
     (``where``, the place :class:`_Sentences` locates it at, so the same sentence
-    copied with its escapes read back is one), else its words. Either answer that
-    is no object stands for none.
+    copied with its escapes read back is one), else its words; a row copying a whole
+    field answers each of its sentences (``apart``, T-719). Either answer that is no
+    object stands for none.
     """
 
     def _key(row: Any) -> tuple[str, str]:
@@ -8519,7 +8612,12 @@ def _merged_rows(
         return last
     if not isinstance(after, list):
         return first
-    seen = {_key(row) for row in after if isinstance(row, dict)}
+    seen = {
+        _key(one)
+        for row in after
+        if isinstance(row, dict)
+        for one in (apart(row) if apart is not None else [row])
+    }
     kept = [row for row in before if isinstance(row, dict) and _key(row) not in seen and sound(row)]
     return {**last, "sentences": [*after, *kept]}
 
@@ -8627,6 +8725,12 @@ async def _ask(
     answer_read = [""]
 
     answered: list[Any] = [None]
+    # The answer the checks last read, whose rows the findings shown name by their place.
+    checked: list[Any] = [None]
+    # Every finding the round was asked about, each row's named by the sentence the row
+    # answers, as a retry's rows stand in another order (``_merged_rows``), so one the retry's
+    # answer first raised is recorded as not asked, as the composer records one (T-719).
+    shown: list[Violation] = []
 
     def _parse(answer: Any) -> Any:
         answer_read[0] = structured_answer_text(answer, _message_text)
@@ -8640,9 +8744,21 @@ async def _ask(
         # that passed every check; one that did not is the retry's to fix or leave,
         # but for a sentence the ledger's lines hold, whose refused row stays its last
         # answer: no answer for it passed, and it is left out as refused (T-600).
-        parsed = _merged_rows(answered[0], parsed, lambda row: _sound(row) or _held(row), _where)
-        answered[0] = parsed
-        return _platform_rewrites(parsed, by_id)
+        parsed = _merged_rows(
+            answered[0], parsed, lambda row: _sound(row) or _held(row), _where, _apart
+        )
+        # Kept for a retry, a whole-field keep or drop is its rows sentence by sentence, so a
+        # retry answering one sentence leaves the others their first answer (T-719).
+        answered[0] = {**parsed, "sentences": [r for row in _rows_of(parsed) for r in _apart(row)]}
+        checked[0] = _platform_rewrites(parsed, by_id)
+        return checked[0]
+
+    def _apart(row: Any) -> list[Any]:
+        found = _span(row) if isinstance(row, dict) else None
+        if found is None:
+            return [row]
+        units = located_in[found[0].id].units(found[1])
+        return [row] if len(units) < 2 else [{**row, "sentence": unit[2]} for unit in units]
 
     located_in: dict[str, _Sentences] = {}
 
@@ -8652,7 +8768,9 @@ async def _ask(
             return None
         if passage.id not in located_in:
             located_in[passage.id] = _cut(passage)
-        span = located_in[passage.id].span(str(_field(row, "sentence") or ""))
+        span = _answered_span(
+            located_in[passage.id], str(_field(row, "sentence") or ""), _field(row, "decision")
+        )
         return (passage, span) if span is not None else None
 
     def _where(row: Any) -> tuple[str, str]:
@@ -8660,6 +8778,15 @@ async def _ask(
         if found is not None:
             return (found[0].id, str(found[1][0]))
         return (_form(_field(row, "passage")), " ".join(str(_field(row, "sentence") or "").split()))
+
+    def _places(row: Any) -> list[tuple[str, str]]:
+        # The place of each sentence the row answers: its own, or each of a field it copied
+        # whole, so a finding is asked where its sentence was asked about (T-719).
+        found = _span(row)
+        if found is None:
+            return [_where(row)]
+        passage, span = found
+        return [(passage.id, str(unit[0])) for unit in located_in[passage.id].units(span)]
 
     def _held(row: Any) -> bool:
         # A row fitting the schema that answers a sentence the ledger's own lines hold, or
@@ -8692,6 +8819,10 @@ async def _ask(
             shown.rewrite, citable, items, evidence_texts
         )
 
+    def _on_feedback(asked: Sequence[Violation]) -> None:
+        shown.extend(k for v in asked for k in _by_place(v, checked[0], _places))
+        tally.count([v for v in asked if not v.question_only])
+
     # The call failing, wherever it fails, is no answer at all: each sentence the ledger's
     # lines hold is left out for that reason, every other stands as written (T-600).
     failed = ""
@@ -8707,7 +8838,7 @@ async def _ask(
                 lambda p: rewrites_violations(p, citable, items, evidence_texts, passages),
             ],
             parse=_parse,
-            on_feedback=lambda shown: tally.count([v for v in shown if not v.question_only]),
+            on_feedback=_on_feedback,
         )
     except SpendCeilingStop as stop:
         failed = f"The section agreement question was not asked: {stop}."
@@ -8725,8 +8856,24 @@ async def _ask(
     # sentence the row was about and says so (T-717).
     violations = _no_turn_left(violations, payload)
     tally.count(violations)
-    if violations:
-        tally.record_unresolved(AGREEMENT_PRODUCER, violations)
+    # Only where every finding is asked: in ``record_only`` a finding is already marked not
+    # asked by the loop (``validation.recorded_not_asked``).
+    late = (
+        [
+            v
+            for v in violations
+            if retries
+            and all(raised_only_in_retry(k, shown) for k in _by_place(v, payload, _places))
+        ]
+        if feeds_back()
+        else []
+    )
+    tally.record_unresolved(AGREEMENT_PRODUCER, [v for v in violations if v not in late])
+    tally.record_unresolved(
+        AGREEMENT_PRODUCER,
+        [replace(v, message=f"{v.message} {ONLY_IN_THE_RETRY}") for v in late],
+        asked=False,
+    )
     counts, listed = apply_rows(
         payload,
         passages,
@@ -8768,7 +8915,33 @@ async def _ask(
 
 # What the record of a refusal of the round's last answer adds: no turn was left (T-717).
 _NO_TURN_LEFT = "No turn was left to answer this refusal"
+# What a finding first raised by the answer to the round's one retry says of itself: the
+# retry was spent on the first answer's findings, all asked together, and none was left for
+# this one (T-719).
+ONLY_IN_THE_RETRY = (
+    "Not asked: it first appeared in the answer to the agreement question's one retry, which "
+    "had asked about the first answer's findings, and no retry was left."
+)
 _ROW_PATH = re.compile(r"sentences\.(\d+)(?:\.|$)")
+
+
+def _by_place(
+    violation: Violation, payload: Any, places: Callable[[Any], list[tuple[str, str]]]
+) -> list[Violation]:
+    """``violation`` once for each sentence the row its path names (``sentences.N``) answers,
+    each named by its passage and its place (``places``), the place a sentence keeps whatever
+    the row's number or shape in an answer: a finding is asked where any of its sentences was
+    shown a finding of that code before (T-719). Any other finding as it is."""
+    found = _ROW_PATH.match(violation.path)
+    raw = payload.get("sentences") if isinstance(payload, dict) else None
+    rows = raw if isinstance(raw, list) else []
+    if found is None or int(found.group(1)) >= len(rows):
+        return [violation]
+    rest = violation.path[found.end(1) :]
+    return [
+        replace(violation, path=f"sentences[{passage}@{place}]{rest}")
+        for passage, place in places(rows[int(found.group(1))])
+    ]
 
 
 def _no_turn_left(violations: Sequence[Violation], payload: Any) -> list[Violation]:
@@ -8783,6 +8956,9 @@ def _no_turn_left(violations: Sequence[Violation], payload: Any) -> list[Violati
         found = _ROW_PATH.match(violation.path)
         row = rows[int(found.group(1))] if found and int(found.group(1)) < len(rows) else None
         sentence = str(_field(row, "sentence") or "").strip() if row is not None else ""
+        # A whole-field row's finding names the one sentence it is about (T-719).
+        about = [q for q in violation.quoted if isinstance(q, str) and q and q in sentence]
+        sentence = about[0] if len(about) == 1 else sentence
         if not sentence or _NO_TURN_LEFT in violation.message:
             out.append(violation)
             continue

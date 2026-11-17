@@ -1596,8 +1596,49 @@ def _how(row: Mapping[str, Any]) -> str:
     return transport or "transport not recorded"
 
 
-def _model_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
+# What a short form says of a receiver the record places outside with no call it recorded.
+_NO_CALL = "no answered call recorded, so whether it received anything cannot be told"
+
+
+def _short(
+    what: str,
+    receiver: str,
+    done: str,
+    row: Mapping[str, Any],
+    calls: int | None,
+    tail: str = "",
+) -> str:
+    """A writer's short form: what, who received it (``receiver``, where the record names one)
+    and how many times (``done``, its own separator first), or that no call is recorded; then,
+    where the record does not place the receiver, that its destination, or where a named host
+    runs, is not recorded (T-719)."""
+    said = f"{what}: {receiver}" if receiver else f"{what}:"
+    said += f": {_NO_CALL}" if calls == 0 and receiver else (f" {_NO_CALL}" if calls == 0 else done)
+    if not _placed(row):
+        said += (
+            ", where it runs is not recorded" if row.get("host") else ", destination not recorded"
+        )
+    return said + tail + "."
+
+
+def _receiver(row: Mapping[str, Any], name: str, code: Callable[[str], str]) -> str:
+    """``name`` at the row's host, marked where the record places it."""
+    at = f" at {code(str(row['host']))}" if row.get("host") else ""
+    return f"{name}{at} {_mark(row)}" if at and _placed(row) else f"{name}{at}"
+
+
+def _model_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: bool = False) -> str:
+    """A model row's sentence; ``short``, who received the prompts and how many calls, the
+    calls per role and the roles that made none being the block's alone (T-719)."""
     calls = int(row.get("calls") or 0)
+    if short:
+        name = code(str(row["host"])) if row.get("host") else str(row.get("service") or "")
+        receiver = f"{name} {_mark(row)}" if name and _placed(row) else name
+        if not name:
+            return _short("Model prompts", "", f" {count_label(calls, 'call')}", row, calls)
+        return _short(
+            "Model prompts", receiver, f" received {count_label(calls, 'call')}", row, calls
+        )
     agents = dict(row.get("agents") or {})
     listed = list(row.get("configured_for") or [])
     if not row.get("host") and not row.get("service"):
@@ -1650,11 +1691,17 @@ def _kinds(row: Mapping[str, Any]) -> str:
     return ", ".join(part for part in parts if part)
 
 
-def _lookup_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
+def _lookup_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: bool = False) -> str:
+    """A lookup row's sentence; ``short``, who was asked, how many times and about what."""
     calls = int(row.get("calls") or 0)
     server = _server(str(row.get("source") or ""), code)
-    asked = f"was asked {_times(calls)}{_again(row)}"
     kinds = _kinds(row)
+    if short:
+        host = code(str(row["host"])) if row.get("host") else server
+        receiver = f"{host} {_mark(row)}" if _placed(row) and row.get("host") else host
+        done = f" was asked {_times(calls)}" + (f": {kinds}" if kinds else "")
+        return _short("Lookups", receiver, done, row, calls)
+    asked = f"was asked {_times(calls)}{_again(row)}"
     if _placed(row) and row.get("host"):
         return (
             f"Lookups: {code(str(row['host']))} {_mark(row)} {asked} through {server} "
@@ -1663,7 +1710,9 @@ def _lookup_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
     return f"Lookups: {server} ({_how(row)}){_at(row, code)} {asked}: {kinds}{_untold(row)}."
 
 
-def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
+def _upload_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: bool = False) -> str:
+    """An upload row's sentence; ``short``, what was sent, how many times and to whom, a
+    submission's launch arguments and a detonation's askers being the block's alone (T-719)."""
     calls = int(row.get("calls") or 0)
     failed = int(row.get("failed") or 0)
     times = _times(calls)
@@ -1676,12 +1725,14 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
     )
     untold = "" if _placed(row) else _untold(row, "it")
     by = row.get("by")
+    if short:
+        return _short_upload(row, code, calls, failure)
     if by == BY_SANDBOX:
+        sandbox = f"{code(str(row.get('source') or ''))} sandbox{at}{failure}{untold}."
+        subject = _submitted_subject(row, code)
         return (
-            f"Sample upload{_detonation_of(row)}: {_submitted_subject(row, code)} was "
-            f"submitted {times} to the "
-            f"{code(str(row.get('source') or ''))} sandbox{at}{failure}{untold}."
-            + _launch_clause(row, code)
+            f"Sample upload{_detonation_of(row)}: {subject} was submitted {times} to the "
+            f"{sandbox}" + _launch_clause(row, code)
         )
     server = _server(str(row.get("source") or ""), code)
     if by == BY_STAGING:
@@ -1695,6 +1746,28 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
         f"Sample upload: {server} ({_how(row)}){at} was handed the sample {times}{_again(row)} "
         f"by a tool declared to send it out of the deployment{failure}{untold}."
     )
+
+
+def _short_upload(
+    row: Mapping[str, Any], code: Callable[[str], str], calls: int, failure: str
+) -> str:
+    """An upload row's short form: what was sent, to whom, how many times (T-719)."""
+    times = _times(calls)
+    by = row.get("by")
+    if by == BY_SANDBOX:
+        receiver = _receiver(row, f"the {code(str(row.get('source') or ''))} sandbox", code)
+        if not calls:
+            return _short("Sample upload", receiver, "", row, calls)
+        done = f" was submitted {times} to {receiver}"
+        return _short("Sample upload", _submitted_subject(row, code), done, row, calls, failure)
+    receiver = _receiver(row, _server(str(row.get("source") or ""), code), code)
+    if by == BY_STAGING and calls:
+        what = str(row.get("what") or "")
+        sent = STAGED_FILES.get(what, f"a file of the job ({code(what)})") if what else "the sample"
+        done = f" was staged {times} to {receiver}"
+        return _short("Sample upload", sent, done, row, calls, failure)
+    done = "" if by == BY_STAGING else f" was handed the sample {times}"
+    return _short("Sample upload", receiver, done, row, calls, failure)
 
 
 def _detonation_of(row: Mapping[str, Any]) -> str:
@@ -1765,9 +1838,14 @@ def _launch_clause_of(row: Mapping[str, Any], arguments: str, whose: str) -> str
     return f" {whose} {arguments} were requested and not honoured" + (f": {note}." if note else ".")
 
 
-def _server_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
-    calls = count_label(int(row.get("calls") or 0), "call") + _again(row)
+def _server_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: bool = False) -> str:
+    """A tool server row's sentence; ``short``, which server, where, and how many calls."""
     server = _server(str(row.get("source") or ""), code)
+    if short:
+        made = int(row.get("calls") or 0)
+        receiver = _receiver(row, server, code)
+        return _short("Tool calls", receiver, f": {count_label(made, 'call')}", row, made)
+    calls = count_label(int(row.get("calls") or 0), "call") + _again(row)
     if _placed(row) and row.get("host"):
         return (
             f"Tool calls: {server} over {row.get('transport')} at {code(str(row['host']))} "
@@ -1844,8 +1922,11 @@ def _stayed_line(rows: list[Mapping[str, Any]], code: Callable[[str], str]) -> s
     return f"Tool calls that stayed on this machine: {calls} ({by_source})."
 
 
-def _store_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
+def _store_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: bool = False) -> str:
+    """A store row's sentence; ``short``, which store, and where."""
     store = f"the {code(str(row.get('backend') or ''))} case-memory store"
+    if short:
+        return _short("Case memory", _receiver(row, store, code), "", row, None)
     if _placed(row) and row.get("host"):
         return (
             f"Case memory: {store} at {code(str(row['host']))} {_mark(row)}, which this job "
@@ -1990,6 +2071,87 @@ def _nothing_sentence(record: Mapping[str, Any], code: Callable[[str], str]) -> 
     return "Nothing left this machine. This rests on: " + "; ".join(parts) + "."
 
 
+# What the analyst report's limitations say after what left this machine (T-719).
+LEFT_THE_MACHINE_RECORD = "The full record of what left this machine is in the bundle."
+
+
+# Each part of the record whose rows say where a thing went, and its writer (T-719).
+_LEFT_PARTS: tuple[tuple[str, Callable[..., str]], ...] = (
+    ("models", _model_line),
+    ("lookups", _lookup_line),
+    ("uploads", _upload_line),
+    ("servers", _server_line),
+    ("stores", _store_line),
+    ("undeclared", _server_line),
+)
+
+
+def _not_recorded_line(what: str, count: int | None, hosts: Iterable[str] = ()) -> str:
+    """A kind of thing whose destination the record cannot tell: named with its count, or that
+    the record holds none, and the hosts the record names it may reach, else that its
+    destination is not recorded (T-719)."""
+    counted = count_label(count, "call") if count is not None else "count not recorded"
+    named = list(dict.fromkeys(hosts))
+    where = f"may reach {_joined(named)}" if named else "destination not recorded"
+    return f"{what}: {counted}, {where}."
+
+
+def _partial_line(record: Mapping[str, Any]) -> str:
+    return (
+        f"This record may be incomplete: {record['partial_reason']}, and a call made in the "
+        "step it stopped in may not be recorded, so it cannot be said that nothing left "
+        "this machine."
+    )
+
+
+def _enrichment_left(held: Any, code: Callable[[str], str]) -> list[str]:
+    """What the enrichment job sent: what it asked, in the block's words, where the record
+    says; a job whose questions the record does not follow, named as such; nothing for a job
+    only queued, or one that ran and asked nothing."""
+    if not isinstance(held, Mapping):
+        return []
+    asked = [row for row in held.get("asked") or [] if isinstance(row, Mapping)]
+    state = held.get("state")
+    out: list[str] = []
+    if state == ENRICHMENT_RUNNING:
+        reach = [row for row in held.get("may_reach") or [] if isinstance(row, Mapping)]
+        hosts = [code(str(h)) for row in reach for h in row.get("hosts") or [] if h]
+        out.append(
+            _not_recorded_line("Enrichment questions about the report's indicators", None, hosts)
+        )
+        if asked:
+            out.append("Enrichment: an earlier enrichment asked " + _asked_parts(asked, code) + ".")
+    elif state in (ENRICHMENT_DONE, ENRICHMENT_STOPPED) and asked:
+        out.extend(_enrichment_state_lines(held, code))
+    return out
+
+
+def left_the_machine(record: Any, code: Callable[[str], str] = _code) -> str:
+    """One sentence run stating what left this machine, for the analyst report's limitations:
+    every kind of thing the record places outside it, each row in the words the block of
+    :func:`disclosure_lines` gives it (a submission without its launch arguments); a kind
+    whose destination the record cannot tell, named with its count as "destination not
+    recorded"; what the enrichment job asked and whether tracing sent the run's prompts out;
+    and that the full record is in the bundle. ``""`` where the record places nothing outside
+    this machine. Hosts, kinds and counts only, as the record holds them: never a credential,
+    a query, a prompt or a file's content (T-719)."""
+    if not isinstance(record, Mapping) or "models" not in record or record.get("nothing_left"):
+        return ""
+    lines: list[str] = []
+    for part, write in _LEFT_PARTS:
+        rows = [row for row in record.get(part) or [] if isinstance(row, Mapping)]
+        # Every row the record does not place on this machine, its receiver named where the
+        # record names one, with what the record says of it (T-719).
+        lines.extend(write(row, code, short=True) for row in rows if row.get("where") != LOCAL)
+    lines.extend(_enrichment_left(record.get("enrichment"), code))
+    if record.get("tracing"):
+        lines.append(_not_recorded_line("Tracing of every prompt and answer", None))
+    if not lines:
+        return ""
+    head = [_partial_line(record)] if record.get("partial_reason") else []
+    return " ".join([*head, *lines, LEFT_THE_MACHINE_RECORD])
+
+
 def disclosure_lines(record: Any, code: Callable[[str], str] = _code) -> list[str]:
     """The block's sentences, one per line, for a list; ``[]`` for no record.
 
@@ -2002,11 +2164,7 @@ def disclosure_lines(record: Any, code: Callable[[str], str] = _code) -> list[st
     if record.get("nothing_left"):
         lines.append(_nothing_sentence(record, code))
     elif record.get("partial_reason"):
-        lines.append(
-            f"This record may be incomplete: {record['partial_reason']}, and a call made in the "
-            "step it stopped in may not be recorded, so it cannot be said that nothing left "
-            "this machine."
-        )
+        lines.append(_partial_line(record))
     writers: tuple[tuple[str, Callable[[Mapping[str, Any], Callable[[str], str]], str]], ...] = (
         ("models", _model_line),
         ("lookups", _lookup_line),

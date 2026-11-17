@@ -96,7 +96,10 @@ from malspark.reporting.renderers.markdown import (
     report_title,
     started_by_the_sample,
 )
+from malspark.reporting.sentence_ends import SENTENCE_CLOSE, close_end, ends_sentence
 from malspark.reporting.technique_evidence import (
+    NO_LEDGER_ENTRY,
+    NOT_RECORDED,
     evidence_words,
     technique_evidence_ids,
     technique_sandbox_items,
@@ -804,32 +807,28 @@ def _left_out_rows(count: int, what: str) -> str:
     )
 
 
-# What may close a sentence after its end mark: any closing quote, bracket or emphasis markup.
-_SENTENCE_CLOSE = "\"'\u2019\u201d)]*_"
+# A category the judge states as none ("none", "None: a legitimate tool"): no article.
+_STATED_NONE = re.compile(r"none\b", re.IGNORECASE)
 # Citation brackets right after a flagged text, read past to its end.
 _CITED_AFTER = re.compile(r"(?:[ \t]*\[[^\]\n]*\])*")
 # What may stand on a line before the sentence that opens it: a list item's or a quoted
 # block's marker, or nothing. A marker is one sign or a number with its mark, never both: the
 # number is read only where no sign stands right before it.
 _LINE_OPEN = re.compile(r"[ \t]*[-*+>]?(?:(?<![-*+>])\d+[.)])?[ \t]*")
-# A word of single letters each followed by a period ("e.g.", "i.e."): its last period ends
-# no sentence.
-_ABBREVIATION = re.compile(r"[\"'(\[]*(?:[A-Za-z]\.){2,}")
+# Whether the mark at ``text[at]`` ends a sentence: the one rule the agreement round's cut
+# reads too (``sentence_ends``, T-719), so a text it answers as one sentence is one here.
+_ends_sentence = ends_sentence
 
 
-def _ends_sentence(text: str, at: int) -> bool:
-    """Whether the mark at ``text[at]`` ends a sentence: a ``.``, ``!`` or ``?`` that white
-    space or the end follows, any closing quote, bracket or emphasis read past, and no
-    abbreviation's own (never "1.2", never "e.g.")."""
-    if text[at : at + 1] not in (".", "!", "?"):
-        return False
-    after = at + 1
-    while after < len(text) and text[after] in _SENTENCE_CLOSE:
-        after += 1
-    if after < len(text) and not text[after].isspace():
-        return False
-    word = text[: at + 1].split()[-1:] or [""]
-    return not _ABBREVIATION.fullmatch(word[0])
+def _mark_before(text: str, end: int) -> int:
+    """The end mark the closing marks before ``end`` follow, where they reach ``end`` as the
+    rule reads them (``sentence_ends.close_end``), else -1."""
+    mark = end - 1
+    while mark >= 0 and text[mark] in SENTENCE_CLOSE:
+        mark -= 1
+    if mark >= 0 and text[mark] in ".!?" and close_end(text, mark) >= end:
+        return mark
+    return -1
 
 
 def _stands_whole(text: str, start: int, end: int) -> bool:
@@ -843,12 +842,12 @@ def _stands_whole(text: str, start: int, end: int) -> bool:
         return False
     head = text[:start].rstrip(" \t*_")
     if not _LINE_OPEN.fullmatch(head[head.rfind("\n") + 1 :]):
-        mark = len(head.rstrip(_SENTENCE_CLOSE)) - 1
+        mark = _mark_before(text, len(head))
         if mark < 0 or not _ends_sentence(text, mark):
             return False
-    core = said.rstrip().rstrip(_SENTENCE_CLOSE)
-    if core[-1:] in (".", "!", "?"):
-        return _ends_sentence(text, start + len(core) - 1)
+    mark = _mark_before(text, start + len(said.rstrip()))
+    if mark >= start:
+        return _ends_sentence(text, mark)
     cited = _CITED_AFTER.match(text, end)
     after = cited.end() if cited else end
     rest = text[after:].lstrip(" \t")
@@ -2066,8 +2065,12 @@ class _Analyst:
         report = self.report
         lines = [_heading(7, "Conclusion"), ""]
         said = f"The sample is assessed as {self._verdict()}"
-        if self._category():
-            said += f", a {self._category()}"
+        category = self._category()
+        if _STATED_NONE.match(category):
+            # A category the judge states as none takes no article: printed as stated (T-719).
+            said += f", category: {category}"
+        elif category:
+            said += f", a {category}"
         family = self._family()
         said += (
             f", attributed to the family {family}"
@@ -2561,8 +2564,14 @@ class _Analyst:
         return _item(
             f"{cell.technique_id} {_one_line(cell.technique_name)}: {status}"
             + self._status(cell.technique_id, "")
-            + f"; evidence {self._evidence(cell)}"
+            + self._evidence_bracket(cell)
         )
+
+    def _evidence_bracket(self, row: Any) -> str:
+        """`` (evidence: …)`` after a technique's row, or nothing where it has no evidence: no
+        entry, no sandbox item, no source cited for an absence (T-719)."""
+        words = self._evidence(row)
+        return "" if words in (NOT_RECORDED, NO_LEDGER_ENTRY) else f" (evidence: {words})"
 
     def _evidence(self, row: Any) -> str:
         """A technique's evidence as this report cites: one note listing the
@@ -2671,6 +2680,9 @@ class _Analyst:
                 "Without a sandbox observation, what the sample does is read from its code and "
                 "was not watched running."
             )
+        sent = self._left_the_machine()
+        if sent:
+            said.append(sent)
         undiscussed = len(getattr(report, "claims_not_discussed", None) or [])
         if undiscussed:
             said.append(
@@ -2697,6 +2709,14 @@ class _Analyst:
         lines = [_heading(11, ANALYST_LIMITATIONS_TITLE), "", _paragraph_line(" ".join(said))]
         return "\n".join([*lines, "", _behind("limitations")])
 
+    def _left_the_machine(self) -> str:
+        """What left this machine, as the run's disclosure record states it, in the bundle
+        block's own words (``disclosure.left_the_machine``), or ``""`` (T-719)."""
+        from malspark.analysis.disclosure import left_the_machine
+
+        record = (self.report.run_summary or {}).get("disclosure")
+        return _one_line(left_the_machine(record, self.ctx.host_kept))
+
     def _measured_limitations(self, inventory: LimitationInventory, said: list[str]) -> str:
         """Section 11 of a report that holds the limitations inventory: each row of it that
         states a limit, one line each from the inventory's own templates, then the
@@ -2714,9 +2734,13 @@ class _Analyst:
             claims_not_discussed=len(getattr(report, "claims_not_discussed", None) or []),
         )
         lines = [_heading(11, ANALYST_LIMITATIONS_TITLE), ""]
-        if rows:
+        # What left this machine, from the run's own disclosure record: a row of the list,
+        # after the inventory's, which no count cuts (T-719).
+        sent = self._left_the_machine()
+        if rows or sent:
             lines.extend([LIST_LABEL, ""])
             listed = [_item(self.notes.moved(_one_line(row.text))) for row in rows]
+            listed += [_item(sent)] if sent else []
             lines.extend(listed)
             lines.append("")
             # The list names what it measured, it describes nothing: what it names is
