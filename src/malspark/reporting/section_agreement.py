@@ -4371,6 +4371,11 @@ class _Sentences:
         return inside if len(inside) > 1 else [span]
 
 
+def _naming(found: Sequence[Violation], sentence: str) -> list[Violation]:
+    """``found``, each naming ``sentence`` as what it is about where it names nothing yet."""
+    return [v if v.quoted else replace(v, quoted=(sentence,)) for v in found]
+
+
 def _with_sentence(row: AgreementRow, sentence: str) -> AgreementRow:
     """``row`` answering ``sentence`` alone: a whole-field answer read sentence by sentence."""
     return AgreementRow.model_validate({**row.model_dump(), "sentence": sentence})
@@ -7117,9 +7122,7 @@ def agreement_violations(
                 unread_told=unread_told,
             )
         )
-    # A whole-field answer is read as one row per sentence: a refusal of the row itself is
-    # told once (T-719).
-    return [v for at, v in enumerate(out) if v not in out[:at]]
+    return out
 
 
 def _unread_standing(
@@ -7764,7 +7767,19 @@ def _checked_rows(
             own = _row_violations(answer, index, by_id, sentences_of)
             if passage is not None and at is not None and not own and not rewritten:
                 passed.add((passage.id, at[0]))
-            checked.append((index, answer, passage, own, rewritten, at, told))
+            # Each finding names the sentence its row answers, so a whole-field row's are
+            # told and recorded sentence by sentence, as its rows apart would be (T-719).
+            checked.append(
+                (
+                    index,
+                    answer,
+                    passage,
+                    _naming(own, answer.sentence),
+                    rewritten,
+                    at,
+                    _naming(told, answer.sentence),
+                )
+            )
     return checked, passed
 
 
@@ -8974,6 +8989,9 @@ def _no_turn_left(violations: Sequence[Violation], payload: Any) -> list[Violati
         found = _ROW_PATH.match(violation.path)
         row = rows[int(found.group(1))] if found and int(found.group(1)) < len(rows) else None
         sentence = str(_field(row, "sentence") or "").strip() if row is not None else ""
+        # A whole-field row's finding names the one sentence it is about (T-719).
+        about = [q for q in violation.quoted if isinstance(q, str) and q and q in sentence]
+        sentence = about[0] if len(about) == 1 else sentence
         if not sentence or _NO_TURN_LEFT in violation.message:
             out.append(violation)
             continue

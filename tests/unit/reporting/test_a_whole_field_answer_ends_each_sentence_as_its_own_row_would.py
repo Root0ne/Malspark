@@ -93,7 +93,7 @@ def _ended(make: Callable[[], MalwareReport], pid: str, ledger: bool, sentences:
         report.model_dump(mode="json", exclude={"generated_at"}),
         counts,
         sorted(map(plain, records)),
-        sorted(set(map(plain, found))),
+        sorted(map(plain, found)),
     )
 
 
@@ -198,3 +198,27 @@ def test_a_whole_field_retry_answers_every_sentence_its_first_rows_answered() ->
 
     # The retry answers both sentences, whole or apart: no first-answer row stands beside it.
     assert refusals([text]) == refusals([BODY, _UNKNOWN])
+
+
+@pytest.mark.parametrize("answer", list(ANSWERS))
+@pytest.mark.parametrize("case", ["closing passage", "section 5 with a held sentence"])
+def test_the_round_s_records_of_a_whole_field_answer_are_its_sentences_records(
+    case: str, answer: str
+) -> None:
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        _ask,
+        _Reporter,
+    )
+
+    make, pid, _ledger_read = CASES[case]
+    text = next(p for p in passages_of(make()) if p.id == pid).text
+    starts, _ends = _sentence_units(text)
+    sentences = [s for _at, s in sorted((at, s) for s, ats in starts.items() for at in ats)]
+
+    def recorded(copied: list[str]) -> list[str]:
+        rows = {"sentences": [{"passage": pid, "sentence": s, **ANSWERS[answer]} for s in copied]}
+        done = _ask(make(), _Reporter(rows, rows))
+        return sorted(re.sub(r"row \d+", "row N", r["message"]) for r in done.tally.unresolved)
+
+    # Refused with no turn left, each record quotes its own sentence, as the rows apart do.
+    assert recorded([text]) == recorded(sentences)
