@@ -455,8 +455,9 @@ class TestInsideALongerToken:
             "identifier 1 (string: 'ExampleNoteFile-READ.txt') stands in ev_0012 (strings) only "
             f"inside a longer run of text: '{_POOL}'."
         )
-        assert "keep the row as written" in found.message
-        assert "write the token the entry holds" in found.message
+        # The two answers are said once per question, after every row's fact.
+        assert validation.INSIDE_A_TOKEN_ENDS not in found.message
+        assert validation.INSIDE_A_TOKEN_ENDS in validation.feedback_text([found])
         assert found.statements == ("identifiers.0.value",)
 
     def test_the_code_is_an_ordinary_asked_code(self) -> None:

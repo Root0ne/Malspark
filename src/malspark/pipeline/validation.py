@@ -392,6 +392,9 @@ def feedback_text(
             carded.add(violation.subject)
         shown = f" {violation.shown}" if violation.shown else ""
         lines.append(f"- [{violation.code}]{where} {violation.message}{card}{shown}")
+    if any(v.code == STATED_VALUE_INSIDE_A_TOKEN_CODE for v in violations):
+        # Said once for every row of the code, after their facts.
+        lines.append(INSIDE_A_TOKEN_ENDS)
     lines.append(closing)
     return "\n".join(lines)
 
@@ -9643,6 +9646,10 @@ class EntryTexts:
     # The entries whose call failed or whose answer is an error envelope
     # (:func:`_answer_failed`): what they hold is the failure's text.
     failed: frozenset[str] = frozenset()
+    # Each entry's text as the texts it was read in (the answer, then each page
+    # the model read of it), lower-cased; ``texts`` joins them. A reader that
+    # reads a text's notation reads it part by part, never on the join.
+    parts: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     # The run's sandbox items (``analysis.sandbox_sections.ItemCitations``): a
     # cited item is read through its own text, as an entry is through its
     # answer. Never in :meth:`holding` or :meth:`may_hold`, which offer entries.
@@ -9683,6 +9690,7 @@ class EntryTexts:
         entries: dict[str, Any] = {}
         partial: set[str] = set()
         failed: set[str] = set()
+        parts: dict[str, tuple[str, ...]] = {}
         for entry in ledger:
             written = str(getattr(entry, "id", "") or "").strip()
             entry_id = written.lower()
@@ -9690,13 +9698,18 @@ class EntryTexts:
                 continue
             entries.setdefault(entry_id, entry)
             text = ""
+            read: tuple[str, ...] = ()
             if corpus is not None:
                 try:
-                    from malspark.agents.run_evidence_corpus import read_of_entry
+                    from malspark.agents.run_evidence_corpus import (
+                        read_of_entry,
+                        read_parts_of_entry,
+                    )
 
                     text = read_of_entry(corpus, written)
+                    read = read_parts_of_entry(corpus, written) if text else ()
                 except Exception:  # noqa: BLE001 — a missing copy falls back to the stored one
-                    text = ""
+                    text, read = "", ()
             text = text or str(getattr(entry, "output", "") or "").lower()
             if getattr(entry, "truncated", False):
                 partial.add(entry_id)
@@ -9704,11 +9717,13 @@ class EntryTexts:
                 failed.add(entry_id)
             if text:
                 texts[entry_id] = text
+                parts[entry_id] = read or (text,)
                 tools[entry_id] = str(getattr(entry, "tool", "") or "")
                 words[entry_id] = entry_words(entry)
         holders = repeat_holders(ledger)
         for repeat in holders:
             texts.pop(repeat, None)
+            parts.pop(repeat, None)
             tools.pop(repeat, None)
             words.pop(repeat, None)
             partial.discard(repeat)
@@ -9716,6 +9731,7 @@ class EntryTexts:
         for repeat, holder in holders.items():
             if holder and holder in texts:
                 texts[repeat] = texts[holder]
+                parts[repeat] = parts[holder]
                 tools[repeat] = tools[holder]
                 words[repeat] = words[holder]
             if holder in partial:
@@ -9729,6 +9745,7 @@ class EntryTexts:
             entries=entries,
             partial=frozenset(partial),
             failed=frozenset(failed),
+            parts=parts,
         )
 
     def words_of(self, entry_id: str) -> frozenset[str]:
@@ -9769,6 +9786,15 @@ class EntryTexts:
         if not text and self.items is not None and is_item_id(key):
             text = self.items.text(key) or ""
         return text
+
+    def parts_of(self, cited: str) -> tuple[str, ...]:
+        """The texts a cited entry was read in (:attr:`parts`); its text as one where none."""
+        key = str(cited).strip().lower()
+        held = self.parts.get(key)
+        if held:
+            return held
+        text = self.text_of(key)
+        return (text,) if text else ()
 
     def has_text(self, cited: str) -> bool:
         """Whether a citation names an entry or an item whose text this run holds."""
@@ -11069,26 +11095,25 @@ def _hive_spellings() -> list[tuple[str, str]]:
 
 
 @lru_cache(maxsize=256)
-def _in_json_notation(text: str) -> bool:
-    """Whether an entry's text is a JSON document: its strings and escapes are JSON's."""
-    if text.lstrip()[:1] not in ("{", "["):
+def _a_json_document(part: str) -> bool:
+    """Whether one text an entry was read in is a JSON document: its strings and escapes are
+    JSON's. Asked of a part (the answer, a page), never of the texts joined."""
+    if part.lstrip()[:1] not in ("{", "["):
         return False
     try:
-        json.loads(text)
+        json.loads(part)
     except ValueError:
         return False
     return True
 
 
 def _line_start(text: str, at: int) -> int:
-    """Where the line of ``text`` that ``at`` stands in begins: after a newline, and in a
-    JSON text after the escape it writes one as and where the string ``at`` stands in
-    opens (an unescaped quote)."""
+    """Where the line of ``text`` that ``at`` stands in begins, by one local rule in any text:
+    after the latest of a newline, a newline written as an escape, and the last quote no
+    escape writes before ``at``. Where it cannot be told, the line is the shorter one."""
     from malspark.agents._indicator_denylists import escape_starts_at, string_opens_before
 
     begin = text.rfind("\n", 0, at) + 1
-    if not _in_json_notation(text):
-        return begin
     escaped = text.rfind("\\n", begin, at)
     while escaped != -1 and not escape_starts_at(text, escaped):
         escaped = text.rfind("\\n", begin, escaped)
@@ -11217,19 +11242,30 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                 for form in written_forms(spelling.lower()):
                     start = inside_a_longer_token_at(form, text)
                     if start is not None:
-                        found.append((ref, _run_shown(ref, text, start, start + len(form))))
+                        found.append((ref, _run_shown(ref, literal)))
                         break
                 else:
                     continue
                 break
         return found
 
-    def _run_shown(ref: str, text: str, start: int, end: int) -> str | None:
-        # The run around the value as the entry holds it, in the entry's own
-        # case where its stored text is the one read, bounded around the value
-        # by the bound of a value a finding quotes; None where the printer
-        # would print other text than the run.
-        json_notation = _in_json_notation(text)
+    def _run_shown(ref: str, literal: str) -> str | None:
+        # The run around the value in the part of the entry it stands in (the
+        # answer, a page), read as a JSON document only where that part is one,
+        # in the entry's own case where its stored text is the part read, and
+        # bounded around the value by the bound of a value a finding quotes;
+        # None where no part shows it, where the run does not hold the value
+        # as the row states it, or where the printer would print other text.
+        for part in entries.parts_of(ref):
+            for spelling in _stated_spellings(literal):
+                for form in written_forms(spelling.lower()):
+                    start = inside_a_longer_token_at(form, part)
+                    if start is not None:
+                        return _run_of(ref, literal, part, start, start + len(form))
+        return None
+
+    def _run_of(ref: str, literal: str, text: str, start: int, end: int) -> str | None:
+        json_notation = _a_json_document(text)
         first, last = run_around(text, start, end, json_notation=json_notation)
         stored = str(getattr(entries.entries.get(ref), "output", "") or "")
         source = stored if len(stored) == len(text) and stored.lower() == text else text
@@ -11245,6 +11281,8 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                 run = str(json.loads(f'"{run}"'))
             except ValueError:
                 pass
+        if not any(spelling.lower() in run.lower() for spelling in _stated_spellings(literal)):
+            return None
         run = f"{'…' if begin > first else ''}{run}{'…' if finish < last else ''}"
         return run if safe_finding_value(run) == run else None
 
@@ -11412,15 +11450,14 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
         for refs, read in inside.items():
             for (number, label, value, facts), row_at in zip(read, inside_at[refs], strict=True):
                 said = _inside_fact(noun, number, label, value, facts, entries)
+                # The citation is the set of entries cited, in one order
+                # whatever order the row writes them in. The two answers are
+                # said once per question (:func:`feedback_text`).
                 out.append(
                     Violation(
                         code=STATED_VALUE_INSIDE_A_TOKEN_CODE,
-                        message=(
-                            f"{said} Where the value is one of several strings joined in that "
-                            "run, keep the row as written; where the longer token is the value, "
-                            "write the token the entry holds."
-                        ),
-                        path=f"{list_key}.value:{','.join(refs)}",
+                        message=said,
+                        path=f"{list_key}.value:{','.join(sorted(set(refs)))}",
                         statements=(f"{list_key}.{row_at}.value",),
                         values=(value,),
                     )
@@ -11456,6 +11493,12 @@ def _inside_fact(
     return " ".join(said)
 
 
+# The two answers a value inside a longer run allows, said once per question
+# after every row's fact (:func:`feedback_text`), preferring neither.
+INSIDE_A_TOKEN_ENDS = (
+    "Where a value is one of several strings joined in its run, keep the row as written; "
+    "where the longer token is the value, write the token the entry holds."
+)
 # What a finding says in place of a run the printer would print as other text,
 # and what a row kept after it is marked by (``markdown._row_mark``).
 RUN_NOT_SHOWN = "which is not shown here"
