@@ -148,6 +148,26 @@ class TestWhatIsNotAsked:
         assert _asked(_config(STAGED, "ev_0001", "ev_0003")) == []
         assert _asked(_config(STAGED, "ev_0001", "ev_0005")) == []
 
+    def test_a_behaviour_link_also_observed_outside_the_processes_is_not_a_process_row(
+        self,
+    ) -> None:
+        links = {
+            "tool": bc.TOOL,
+            "links": [
+                {
+                    "kind": "command line",
+                    "value": f'"{STAGED}"',
+                    "items": ["proc:10", "cmd:1"],
+                    "held": [],
+                }
+            ],
+        }
+        ledger = [*_ledger(), _entry(6, "behaviour_code_links", links)]
+        question = evidence_bundles.sandbox_start_question(
+            _report(), v.EntryTexts.from_ledger(ledger)
+        )
+        assert v.start_path_value_violations(_config(STAGED, "ev_0006"), question) == []
+
     def test_a_row_citing_nothing_or_an_entry_the_run_did_not_issue_is_not_asked(self) -> None:
         assert _asked(_config(STAGED)) == []
         assert _asked(_config(STAGED, "ev_0099")) == []
