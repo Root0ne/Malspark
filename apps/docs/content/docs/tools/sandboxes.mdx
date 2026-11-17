@@ -152,8 +152,9 @@ pid alone is named by it. A row's size is read from every field the reader
 declares states one (`Reading.dropped_size_fields`: a Triage report's `size`,
 then a dumped region's `length`), the first one stated, then from `size`; a row
 stating none states no size, and a stated size of zero prints as zero; a size
-is a number or text that is a number, and anything else prints "not
-recorded". A
+that is a number or text that is a number prints in bytes, other text prints
+as the record states it with no unit, and only an empty or blank text or a
+value that is no scalar prints "not recorded". A
 request record's User-Agent header is read in one place
 (`sandbox_report.request_user_agent`): every field the reader declares states
 it (`Reading.request_user_agent_fields`: a CAPE report's `user-agent`), then

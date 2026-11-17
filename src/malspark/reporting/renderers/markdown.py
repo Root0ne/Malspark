@@ -6816,16 +6816,20 @@ _SIZE_TEXT_RE = re.compile(r"[+-]?\d+(?:\.\d+)?")
 def dropped_size_cell(op: Mapping[str, Any]) -> str:
     """A written file's size as a table cell: what its row states, zero included.
 
-    ``"<size> bytes"`` where the row states a size: a number (``0`` is a file
-    of no bytes), or text that is a number, written without the white space
-    around it. ``"not recorded"`` for anything else: no value, an empty or
-    blank text, text that is no number, a list, a mapping, a truth value.
+    ``"<size> bytes"`` where the row states a size that is a number (``0`` is
+    a file of no bytes), or text that is a number, written without the white
+    space around it. Any other size the row states is printed as it states
+    it, trimmed, with no unit added (``"12kB"``). ``"not recorded"`` only where
+    it states none: no value, an empty or blank text, a list, a mapping, a
+    truth value. Nothing a row states is replaced by ``"not recorded"``.
     """
     size = op.get("size")
     if isinstance(size, int | float) and not isinstance(size, bool):
-        return f"{size} bytes" if size == size and abs(size) != float("inf") else "not recorded"
-    if isinstance(size, str) and _SIZE_TEXT_RE.fullmatch(size.strip()):
-        return f"{size.strip()} bytes"
+        finite = size == size and abs(size) != float("inf")
+        return f"{size} bytes" if finite else str(size)
+    if isinstance(size, str) and size.strip():
+        text = size.strip()
+        return f"{text} bytes" if _SIZE_TEXT_RE.fullmatch(text) else text
     return "not recorded"
 
 
