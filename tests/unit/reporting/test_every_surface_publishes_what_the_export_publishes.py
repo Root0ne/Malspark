@@ -898,9 +898,44 @@ def test_a_host_row_is_written_after_the_judge_s_own_indicator() -> None:
     )
 
 
-def test_a_value_only_a_declined_judge_indicator_names_gets_no_row() -> None:
-    """Only a carried indicator gives a row for a value nobody else holds."""
+def test_a_value_only_a_declined_one_value_judge_indicator_names_is_its_row() -> None:
+    """The judge's statement about the value itself gives it a row, carried or not.
+
+    Published by the evidence rule (a second source holds it), as before, and
+    no object carries it: the platform mints none for a judge's row.
+    """
+    from malspark.reporting.misp import build_misp_attributes
+
     judge = _judge(f"[file:name = '{_RELAY}']")  # single backslashes: the grammar refuses it
+    report = _report(
+        judge,
+        overall_confidence=0.9,
+        dynamic=DynamicBehavior(
+            process_tree=[{"pid": 1, "name": "s.exe", "command_line": f"s.exe {_RELAY}"}]
+        ),
+    )
+    report.judge_indicators = _recorded(judge)
+    exported, _renderer = _export(report, judge)
+
+    row = _row(report, _RELAY)
+    assert (row.source, row.published) == ("judge", "yes: a second source in this run records it")
+    assert [r["published"] for r in ioc_feed_rows(report.model_dump()) if r["value"] == _RELAY] == [
+        True
+    ]
+    misp = build_misp_attributes(report, build_consolidated_iocs(report), owner="r")
+    assert any(a["value"] == _RELAY for a in misp)
+    assert _indicators_of(exported) == []
+
+
+@pytest.mark.parametrize("joint", ["OR", "AND"])
+def test_a_joint_judge_indicator_the_export_declines_gives_no_row(joint: str) -> None:
+    """A joint statement is not a statement about each part (R8, R9)."""
+    from malspark.reporting.misp import build_misp_attributes
+
+    carried = _RELAY.replace(chr(92), chr(92) * 2)
+    judge = _judge(
+        f"[file:name = '{carried}'] {joint} [domain-name:value = 'nobody.example-c2.net']"
+    )
     report = _report(
         judge,
         overall_confidence=0.9,
@@ -913,4 +948,6 @@ def test_a_value_only_a_declined_judge_indicator_names_gets_no_row() -> None:
 
     assert [r for r in build_consolidated_iocs(report) if r.value == _RELAY] == []
     assert [r for r in ioc_feed_rows(report.model_dump()) if r["value"] == _RELAY] == []
+    misp = build_misp_attributes(report, build_consolidated_iocs(report), owner="r")
+    assert not any(a["value"] == _RELAY for a in misp)
     assert _indicators_of(exported) == []

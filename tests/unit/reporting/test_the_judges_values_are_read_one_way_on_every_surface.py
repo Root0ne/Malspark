@@ -16,7 +16,7 @@ and the STIX export over it. The cases cross:
 
 It asserts the properties the rules state, not a list of answers:
 
-(a) every value of a judge indicator whose pattern the export accepts has a row;
+(a) every value of a judge indicator the export carries has a row;
 (b) a judge indicator is declined only for a reason true of it: its pattern's
     problem, or a value of it whose row is not published, which the reason names;
 (c) a row of the string sweep answers as it would with no judge indicator,
@@ -24,13 +24,18 @@ It asserts the properties the rules state, not a list of answers:
 (d) a published row's type is the type of an object the bundle carries for its
     value, and no row reads a type from an indicator the export declines;
 (e) the feed's published set equals the bundle's indicator values, with one
-    stated exception in its two forms: a string-sweep path whose shape the
-    judge's naming lifted while the export carries no judge indicator naming it
-    (declined by its pattern, or by the lookup) is a published row the bundle
-    writes no object for (as before this rule, a follow-up of its own);
+    stated exception: a row published on the judge's naming whose judge
+    indicators the export carries none of has no object — a string-sweep path
+    whose shape the naming lifted (declined by its pattern, or by the lookup),
+    or a value only a one-value judge indicator the export declines names (as
+    before this rule, a follow-up of its own);
 (f) naming through an indicator the export declines keeps a sandbox row and
     lifts the shape question exactly as naming through one it carries does,
-    and changes nothing else of the row.
+    and changes nothing else of the row;
+(g) a value nobody else holds has a row exactly where the judge's naming gives
+    one: a carried indicator naming it, or an indicator naming it and no other
+    value, carried or not; and no object of the platform's is minted for a
+    judge's row.
 """
 
 from __future__ import annotations
@@ -125,6 +130,7 @@ def _shapes(kind: str, value: str) -> dict[str, list[str]]:
         "or-digest": [f"[{one} OR {digest}]" if same_object else f"[{one}] OR [{digest}]"],
         "beside-no-value": [f"[{one} AND file:size > 10]" if same_object else f"[{one}]"],
         "two-kinds": [f"[{one}] OR [domain-name:value = 'other-c2.example.org']"],
+        "two-kinds-joined": [f"[{one}] AND [domain-name:value = 'other-c2.example.org']"],
         "cased": [f"[{_comparison(kind, value.upper())}]"],
         "declined-first": [declined, f"[{one}]"],
         "declined-second": [f"[{one}]", declined],
@@ -232,8 +238,8 @@ def test_the_judges_values_hold_every_property(
         values = [_key(v.kind, v.value) for v in pattern_values(pattern)]
         if all(v[1] in sample for v in values):
             continue  # names only the sample: folded into the sample's own indicator
-        if pattern_problem(pattern) is None:
-            # (a) every value of a judge indicator the export would carry has a row.
+        if pattern in carried_patterns:
+            # (a) every value of a judge indicator the export carries has a row.
             for found in values:
                 assert found in by_key, f"(a) no row for {found} of {pattern}"
         if pattern in carried_patterns or (values and all(v in carried for v in values)):
@@ -291,14 +297,47 @@ def test_the_judges_values_hold_every_property(
     exported = set(carried) | {_key("hash", d) for d in sample}
     # X5: a sweep path whose shape only the judge's naming lifted, the judge's
     # indicator declined: published, and no object of the bundle carries it.
+    # The judge's row published by the evidence whose one-value indicator the
+    # export declines: no object of the judge's, and none minted for it.
+    uncarried = not any(p in carried_patterns for p in patterns)
     exception = (
         {_key(kind, value)}
-        if label == "path-unshaped"
-        and place == "sweep-second-source"
-        and not any(p in carried_patterns for p in patterns)
+        if uncarried
+        and (
+            (label == "path-unshaped" and place == "sweep-second-source")
+            or (place in ("nowhere", "second-source") and by_key.get(_key(kind, value)))
+        )
         else set()
     )
     assert feed - exported <= exception, f"(e) feed only: {feed - exported}"
+
+    # (g) a value nobody else holds: a row exactly where the judge's naming gives one.
+    if place in ("nowhere", "second-source"):
+        published_keys_ = {_key(str(r.kind or ""), r.value) for r in rows if publishes(r.published)}
+
+        def _carried(pattern: str) -> bool:
+            return pattern_problem(pattern) is None and all(
+                _key(v.kind, v.value) in published_keys_ for v in rule_values(pattern)
+            )
+
+        naming = [
+            p
+            for p in patterns
+            if _key(kind, value) in {_key(v.kind, v.value) for v in pattern_values(p)}
+        ]
+        gives = any(len(pattern_values(p)) == 1 or _carried(p) for p in naming)
+        assert (_key(kind, value) in by_key) == gives, f"(g) row {_key(kind, value) in by_key}"
+        if _key(kind, value) in by_key:
+            judge_spellings = {p for p in patterns}
+            minted = [
+                o["pattern"]
+                for o in bundle["objects"]
+                if o.get("type") == "indicator"
+                and _key(kind, value)
+                in {_key(v.kind, v.value) for v in pattern_values(o["pattern"])}
+                and o["pattern"] not in judge_spellings
+            ]
+            assert minted == [], f"(g) minted for a judge row: {minted}"
 
     # (f) naming through a declined indicator answers the row as naming through a carried one.
     if shape == "declined-only" and place in ("sweep", "sweep-second-source", "host-row"):
@@ -313,4 +352,16 @@ def test_the_judges_values_hold_every_property(
 
 
 def test_the_net_is_as_wide_as_it_says() -> None:
-    assert len(CASES) == sum(len(PLACES[k]) for k, _v in VALUES.values()) * 9 * len(VERDICTS)
+    assert len(CASES) == sum(len(PLACES[k]) for k, _v in VALUES.values()) * 10 * len(VERDICTS)
+
+
+def test_an_unquoted_hash_key_is_read_as_no_value_as_today() -> None:
+    """As it is (a registered follow-up): ``file:hashes.MD5`` names no value the reader reads.
+
+    Such an indicator is carried with nothing asked of the digest, and no row
+    or feed entry holds the digest.
+    """
+    pattern = f"[file:hashes.MD5 = '{'d' * 32}']"
+
+    assert pattern_values(pattern) == []
+    assert exported_indicator_values({"objects": [_indicator(0, pattern)]}) == []
