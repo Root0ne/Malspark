@@ -27,8 +27,10 @@ def _report(image: str) -> dict[str, Any]:
                 {"pid": 5, "ppid": 4, "process_name": "C:\\Windows\\System32\\cmd.exe"},
             ]
         },
-        # The record of files written during the run: none.
-        "dropped": [],
+        # The record of files written during the run: a file no process runs.
+        # Read with no reader, a record states its file writes only where it
+        # shows one.
+        "dropped": [{"name": "run.log", "filepath": "C:\\Users\\u\\AppData\\Local\\Temp\\run.log"}],
     }
 
 
