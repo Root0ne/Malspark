@@ -112,6 +112,10 @@ READER_TAKERS: dict[str, tuple[int | None, str]] = {
     "network_from_ledger": (None, "normalised_by"),
     "judge_sandbox_facts": (None, "sandbox_normalised_by"),
     "MalwareReportBuilder": (None, "sandbox_normalised_by"),
+    "sandbox_started_positions": (1, "normalised_by"),
+    "address_flow_facts": (None, "normalised_by"),
+    "pack_block": (None, "normalised_by"),
+    "pack_row_heads": (None, "normalised_by"),
 }
 
 
@@ -248,6 +252,13 @@ class TestOneEntryPoint:
             "judge_sandbox_facts(ledger, isrs, report)\n",
             "MalwareReportBuilder(file_hash=h, sandbox_report=report)\n",
             "builder.MalwareReportBuilder(sandbox_normalised_by=None)\n",
+            "sandbox_started_positions(report)\n",
+            "sandbox_tools.sandbox_started_positions(report, None)\n",
+            "address_flow_facts(ledger)\n",
+            "address_flow_facts(ledger, normalised_by=None)\n",
+            "pack_block(entries, chars)\n",
+            "triage_pack.pack_block(entries, chars, normalised_by=None)\n",
+            "pack_row_heads(ledger)\n",
         ],
     )
     def test_the_guard_finds_a_reader_left_out_or_none(self, source: str) -> None:
@@ -262,6 +273,11 @@ class TestOneEntryPoint:
             "partial(read_view, tool, report, record.normalised_by)\n",
             "network_from_ledger(ledger, normalised_by=normalised_by_of(container))\n",
             "MalwareReportBuilder(sandbox_normalised_by=held)\n",
+            "sandbox_started_positions(report, normalised_by)\n",
+            "sandbox_started_positions(report, normalised_by=reading)\n",
+            "address_flow_facts(list(entries), normalised_by=normalised_by)\n",
+            "pack_block(entries, chars, normalised_by=_normalised_by_of(container))\n",
+            "pack_row_heads(ledger, normalised_by=normalised_by_of(container))\n",
         ],
     )
     def test_the_guard_passes_a_reader_the_run_states(self, source: str) -> None:
@@ -360,6 +376,12 @@ class TestThePackAndAnAnalystGiveOneRow:
 
         assert names.count(WRITTEN["name"]) == 1
         assert len(names) == len(set(names))
+
+
+class TestTheStartedRowsAreReadWithTheRunsReader:
+    def test_the_started_rows_are_not_read_without_a_reader(self) -> None:
+        with pytest.raises(TypeError):
+            sandbox_tools.sandbox_started_positions(_document())  # type: ignore[call-arg]
 
 
 class TestThePacksOwnReadsOfAViewAreTheRuns:

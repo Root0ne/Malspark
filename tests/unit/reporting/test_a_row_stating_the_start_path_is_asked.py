@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from malspark.analysis import behaviour_code as bc
 from malspark.pipeline import validation as v
 from malspark.reporting import evidence_bundles
@@ -141,6 +143,19 @@ class TestARowFromProcessRowsAlone:
 
     def test_the_path_in_another_spelling_is_the_path(self) -> None:
         assert _asked(_config(STAGED.lower().replace("\\", "/"), "ev_0001"))
+
+
+class TestACitationIsReadInItsNormalForm:
+    @pytest.mark.parametrize("cited", ["[ev_0001]", " EV_0001 ", "[ EV_0001 ]", "ev_0001:proc:10"])
+    def test_a_citation_of_the_process_view_however_written_is_asked(self, cited: str) -> None:
+        (found,) = _asked(_config(STAGED, cited))
+        assert found.code == v.SANDBOX_START_PATH_VALUE_CODE
+
+    def test_an_item_citation_of_another_entry_is_that_entry_s(self) -> None:
+        assert _asked(_config(STAGED, "ev_0001:proc:10", "[ev_0003]")) == []
+
+    def test_a_citation_of_an_item_alone_names_no_entry(self) -> None:
+        assert _asked(_config(STAGED, "proc:10")) == []
 
 
 class TestWhatIsNotAsked:
