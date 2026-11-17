@@ -399,6 +399,7 @@ def _deterministic_report(state: dict[str, Any], container: Any) -> dict[str, An
     """
     from malspark.pipeline import nodes
     from malspark.pipeline.outcome import corrected_reasons
+    from malspark.providers.sandbox_tools import normalised_by_of
     from malspark.reporting.builder import MalwareReportBuilder
     from malspark.schemas.evidence import LedgerEntry
 
@@ -447,6 +448,7 @@ def _deterministic_report(state: dict[str, Any], container: Any) -> dict[str, An
         file_name=state.get("file_name"),
         sample_path=state.get("sample_path"),
         sandbox_report=state.get("sandbox_report"),
+        sandbox_normalised_by=normalised_by_of(container),
         reports=state.get("reports"),
         isr_reports=dict(state.get("isr_reports") or {}),
         stix_output=state.get("stix_output"),

@@ -52,7 +52,7 @@ from malspark.schemas.sandbox_report import (
     STAGED_NOTE_KEY,
     dropped_size,
     process_lineage,
-    request_user_agent,
+    reading_of_run,
     started_by_the_sandbox,
     written_during_the_run,
 )
@@ -474,7 +474,6 @@ def sandbox_network(
     if report is None or _no_sandbox_ran(report):
         return _no_report(report)
     unavailable, fills = _unavailable(report), _fills(normalised_by)
-    reading = _reading(normalised_by)
     if not isinstance(report.get("network"), dict) or "network" in unavailable:
         return _absent("network")
     out: dict[str, Any] = {}
@@ -486,8 +485,6 @@ def sandbox_network(
         else:
             page, meta = _page(rows, offset, limit)
             out[key] = [_with_resolver_fact(row) for row in page]
-            if key == "http":
-                out[key] = [_with_user_agent(row, reading) for row in out[key]]
             if meta:
                 out[f"{key}_total"] = len(rows)
                 if "next_offset" in meta:
@@ -509,19 +506,6 @@ NETWORK_VIEW_KINDS: tuple[str, ...] = (
     "icmp",
     "tls",
 )
-
-
-def _with_user_agent(row: Any, reading: Any) -> Any:
-    """A request row, with the User-Agent its record states under ``user_agent`` beside its fields.
-
-    Where the reader declares the record states it under another field
-    (``sandbox_report.request_user_agent``); a row that states ``user_agent``
-    itself, or no agent, is as it was.
-    """
-    if not isinstance(row, dict) or row.get("user_agent"):
-        return row
-    agent = request_user_agent(row, reading)
-    return {**row, "user_agent": agent} if agent else row
 
 
 def _with_resolver_fact(row: Any) -> Any:
@@ -612,12 +596,7 @@ INDICATORS_GUEST_PID = (
 
 def _reading(normalised_by: Sequence[str] | None) -> Any:
     """What the job's reader declares its reports hold (``Reading``), or ``None`` when unknown."""
-    if not normalised_by or len(normalised_by) not in (2, 3):
-        return None
-    from malspark.schemas.sandbox_report import normaliser_reading
-
-    provider, source_format, *rest = (str(part or "").strip() for part in normalised_by)
-    return normaliser_reading(source_format, provider, rest[0] if rest else "")
+    return reading_of_run(normalised_by)
 
 
 def _size(value: Any) -> int:

@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import re
 from collections import deque
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -657,6 +657,19 @@ def normaliser_reading(
     if reader is None:
         return None
     return reader.reading(str(read_from or "").strip().lower(), str(provider or "").strip().lower())
+
+
+def reading_of_run(normalised_by: Sequence[str] | None) -> Reading | None:
+    """What the reader a run states declares its reports hold, or ``None`` when unknown.
+
+    ``normalised_by`` is ``(provider, source_format[, read_from])`` as the
+    job's record holds it (``DetonationRecord.normalised_by``, the
+    container's ``sandbox_normalised``).
+    """
+    if not normalised_by or len(normalised_by) not in (2, 3):
+        return None
+    provider, source_format, *rest = (str(part or "").strip() for part in normalised_by)
+    return normaliser_reading(source_format, provider, rest[0] if rest else "")
 
 
 def declared_process_id_fields() -> tuple[str, ...]:

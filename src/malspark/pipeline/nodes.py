@@ -571,8 +571,20 @@ def judge_facts_identity(state: Any) -> dict[str, str]:
     }
 
 
+def _normalised_by_of(container: Any) -> tuple[str, ...] | None:
+    """The reader of the job's report, where the job's record holds it (``sandbox_normalised``)."""
+    from malspark.providers.sandbox_tools import normalised_by_of
+
+    return normalised_by_of(container)
+
+
 def judge_sandbox_facts(
-    ledger: Any, isr_reports: Any, sandbox_report: Any, sample: Any = None
+    ledger: Any,
+    isr_reports: Any,
+    sandbox_report: Any,
+    sample: Any = None,
+    *,
+    sandbox_normalised_by: Any = None,
 ) -> Any:
     """What the sandbox says about each value it recorded, for the judge's indicator question.
 
@@ -585,6 +597,8 @@ def judge_sandbox_facts(
     sample's process tree is found by. ``None`` when neither block can be read: then
     nothing is asked, and nothing such a question would have decided is
     published. A block that cannot be read asks nothing of its own values.
+    ``sandbox_normalised_by`` is the reader of the job's report, as the job's
+    record holds it: the report is read with it, as the report builder reads it.
     """
     from malspark.reporting.ledger_projection import (
         dynamic_from_ledger,
@@ -600,6 +614,7 @@ def judge_sandbox_facts(
             answered,
             isr_reports,
             sandbox_report=sandbox_report if isinstance(sandbox_report, dict) else None,
+            normalised_by=sandbox_normalised_by,
         )
     except Exception as exc:  # noqa: BLE001 — a fact not read asks nothing
         logger.warning(
@@ -7595,6 +7610,7 @@ def make_judge_node(
                     isr_reports,
                     state.get("sandbox_report"),
                     sample=judge_facts_identity(state),
+                    sandbox_normalised_by=_normalised_by_of(container),
                 ),
             )
             # A verdict the judge never expressed as a bundle is the thinnest
@@ -8325,6 +8341,7 @@ def make_report_node(
                 file_name=state.get("file_name"),
                 sample_path=state.get("sample_path"),
                 sandbox_report=state.get("sandbox_report"),
+                sandbox_normalised_by=_normalised_by_of(container),
                 reports=state.get("reports"),
                 isr_reports=isr_reports,
                 stix_output=state.get("stix_output"),
