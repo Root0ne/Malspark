@@ -553,6 +553,14 @@ class IOCEntry(BaseModel):
     # and why the row is published, or ``no:`` and why not. Absent on a row
     # the service did not ask the rule about.
     publish_answer: str | None = None
+    # What the row is, as the report's IOC table records it: ``sample_identity``
+    # (a digest of the sample's own bytes), ``similarity`` (its imphash, ssdeep
+    # or TLSH), ``indicator`` or ``listed``; and the STIX ``indicator-type-ov``
+    # word the export carries it under (``benign`` for the sample's identity
+    # under a Benign verdict), absent where no export carries it. Absent on a
+    # row stored before the table recorded them.
+    role: str | None = None
+    indicator_type: str | None = None
     # For a domain, address or URL a recovering tool read from text the sample
     # hid: which tool (``floss``, emulation; ``decode_string_blobs``, a static
     # decoding of the file's bytes), its ledger entry and where in the file,

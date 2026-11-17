@@ -33,9 +33,9 @@ from malspark.reporting.builder import MalwareReportBuilder
 from malspark.reporting.ledger_projection import network_from_ledger
 from malspark.reporting.models import MalwareReport, NetworkURL, StaticAnalysis, StringIOC
 from malspark.reporting.renderers.stix_renderer import (
+    PUBLISHED_BECAUSE,
     UNPUBLISHABLE_ENDPOINT_CODE,
     ExtendedSTIXRenderer,
-    _indicator_for_url,
 )
 from malspark.schemas.evidence import build_entry
 from malspark.schemas.stix_models import Bundle
@@ -245,10 +245,16 @@ class TestWhoKnowsTheEndpoint:
             NetworkDomain(fqdn="c2.example.org", source="strings", reputation={"malicious": 2})
         )
 
-        indicator = _indicator_for_url(url, report)
+        bundle = ExtendedSTIXRenderer().render(report).model_dump(mode="json")
+        (indicator,) = [
+            obj
+            for obj in bundle["objects"]
+            if obj.get("pattern") == "[url:value = 'http://c2.example.org/gate.php']"
+        ]
 
-        assert indicator is not None
-        assert indicator.description == "a reputation provider has a record of it"
+        assert indicator["description"] == (
+            f"{PUBLISHED_BECAUSE}: a reputation provider has a record of it."
+        )
 
 
 class TestWhereTheUrlCameFrom:
@@ -517,7 +523,9 @@ class TestNothingCapsTheExport:
             }
             for n in range(20)
         ]
-        report = _report([])
+        # The report is built from the judge's bundle it is exported with, as a
+        # run's is: the table holds a row for each value the judge names.
+        report = _report([], judged)
 
         patterns = _patterns(
             ExtendedSTIXRenderer().render(
@@ -530,17 +538,6 @@ class TestNothingCapsTheExport:
         # judge names, so the table does not publish them.
         assert len(patterns) == 21
         assert patterns[0] == f"[file:hashes.'SHA-256' = '{'b' * 64}']"
-
-    def test_a_compound_hash_pattern_is_read_as_a_hash(self) -> None:
-        """The judge writes one: an imphash or a SHA-1 in the same expression."""
-        from malspark.reporting.renderers.stix_renderer import _BAND_JUDGE_HASH, _indicator_band
-
-        compound = (
-            "[file:extensions['pe'].pe_imphash = 'b15607f10222dbea' OR "
-            "file:hashes.'SHA-1' = '0456c056dfb21549']"
-        )
-
-        assert _indicator_band(compound) == _BAND_JUDGE_HASH
 
 
 class TestWhatTheCapSpendsItsBudgetOn:

@@ -49,6 +49,9 @@ from malspark.tools.strings import iter_string_iocs
 
 # This run's example: a runtime metric name the sweep cut out of its table.
 RUNTIME_PATH = "/cpu/classes/total"
+# A path of the shape the rule asks of a value the strings hold (a listed
+# extension), so a confirmation alone decides it.
+SHAPED_PATH = "/opt/relay/bin/agent.bin"
 # A made-up value of another shape.
 REGISTRY_KEY = "HKCU\\Software\\Vendor\\Relay\\State"
 
@@ -691,7 +694,7 @@ class TestEachReasonStatesItselfFirst:
         assert answer.split(";", 1)[0] == "no: seen only in the file's strings"
 
     def test_an_undeclared_confirmation_keeps_the_published_reason_first(self) -> None:
-        answer = _answer(_held_by(None, RUNTIME_PATH), RUNTIME_PATH)
+        answer = _answer(_held_by(None, SHAPED_PATH), SHAPED_PATH)
 
         assert answer.split(";", 1)[0] == "yes: a second source in this run records it"
 
@@ -788,9 +791,9 @@ class TestThePlatformsOwnToolsAreReadByTheirShippedKind:
         assert publishes(_answer(report, value))
 
     def test_an_operator_s_server_that_declares_nothing_keeps_full_strength(self) -> None:
-        report = _held_by(None, RUNTIME_PATH)
+        report = _held_by(None, SHAPED_PATH)
 
-        assert publishes(_answer(report, RUNTIME_PATH))
+        assert publishes(_answer(report, SHAPED_PATH))
 
     def test_an_operator_s_tool_named_as_a_platform_tool_keeps_full_strength(self) -> None:
         # Its server is not the platform's own: what the platform ships for a

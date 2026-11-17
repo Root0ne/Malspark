@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**134 codes in 12 families:** [agreement](#agreement) 20 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 20 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**135 codes in 12 families:** [agreement](#agreement) 20 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 21 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -713,6 +713,14 @@ No comment names its meaning; the message at `malspark.pipeline.validation:unpub
 - **Constant** `malspark.pipeline.validation:UNPUBLISHED_VALUE_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
+### `report.value_inside_a_longer_token`
+
+A table row whose value a cited entry holds only inside a longer run of letters or digits (`stated_value_violations`): one of several strings joined in that run, or the start or the end of a longer value. Asked once, with the run shown; a row kept after it is marked beside its evidence.
+
+- **Raised at** `malspark.pipeline.validation:stated_value_violations`
+- **Constant** `malspark.pipeline.validation:STATED_VALUE_INSIDE_A_TOKEN_CODE`, `malspark.reporting.renderers.markdown:_INSIDE_A_TOKEN_CODE`
+- **Docs** [Architecture](/docs/architecture/)
+
 ### `report.value_not_carried`
 
 No comment names its meaning; the message at `malspark.reporting.composer_pro:check_value_violations` reads: "The text at \<where> names code of which a claim you were shown states a check: \<said>. It does not carry \<listed>, what that check tests. Where the text describes that check, carry each value it tests, or say why the evidence does not hold it; where it names the code for another reason, keep it as it is. Hold each procedure to its own technique."
@@ -823,7 +831,7 @@ No comment names its meaning; the message at `malspark.pipeline.validation:valid
 
 A digest literal that is not a digest of the algorithm it is written under.
 
-- **Raised at** `malspark.reporting.renderers.stix_renderer:_judge_indicator_problem`
+- **Raised at** `malspark.reporting.renderers.stix_renderer:pattern_problem`
 - **Constant** `malspark.reporting.renderers.stix_renderer:MALFORMED_HASH_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
@@ -927,7 +935,7 @@ What the run summary calls a judge annotation whose technique did not survive va
 
 An indicator over something that is not an endpoint: a mailbox that is not one, a file name that names a directory or a root.
 
-- **Raised at** `malspark.reporting.renderers.stix_renderer:_judge_indicator_problem`
+- **Raised at** `malspark.reporting.renderers.stix_renderer:pattern_problem`
 - **Constant** `malspark.reporting.renderers.stix_renderer:UNPUBLISHABLE_ARTEFACT_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
@@ -951,7 +959,7 @@ No comment of its own names its meaning; the comment over the group of constants
 
 One endpoint question, one code. A URL, a name and an address that fail the same host question are one class of decline, so a reader filtering on the code finds that class under one name. The kind is in the sentence, where it says something.
 
-- **Raised at** `malspark.reporting.renderers.stix_renderer:ExtendedSTIXRenderer._render`, `malspark.reporting.renderers.stix_renderer:_judge_indicator_problem`
+- **Raised at** `malspark.reporting.renderers.stix_renderer:_unpublishable_endpoints`, `malspark.reporting.renderers.stix_renderer:pattern_problem`
 - **Constant** `malspark.reporting.renderers.stix_renderer:UNPUBLISHABLE_ENDPOINT_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
@@ -967,7 +975,7 @@ A judge object without a property the standard requires of it — a malware obje
 
 A pattern over an object type STIX does not have, which the judge was asked about under `stix.unknown_observable_type` and kept. This row is the export's decision rather than the judge's answer, so it has a code of its own.
 
-- **Raised at** `malspark.reporting.renderers.stix_renderer:_judge_indicator_problem`
+- **Raised at** `malspark.reporting.renderers.stix_renderer:pattern_problem`
 - **Constant** `malspark.reporting.renderers.stix_renderer:UNPUBLISHABLE_PATTERN_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 

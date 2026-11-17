@@ -4249,7 +4249,10 @@ def _extract_mitre(result: dict) -> list | None:
          every other technique surface of the report is built from.
       2. ``stix_bundle_extended`` / ``stix_output`` — fall back to walking the
          STIX bundle for ``attack-pattern`` SDOs when the report builder did
-         not run (mock mode without a configured pipeline, legacy rows).
+         not run (mock mode without a configured pipeline, legacy rows). A
+         report the builder wrote holds its published list even when it is
+         empty (a Benign verdict publishes no technique), and is not walked:
+         the judge's own bundle still carries the techniques it named.
 
     An entry with no technique id is not written on either path. One audited
     run served three of them from the fallback — ``/mitre`` listed three
@@ -4260,6 +4263,8 @@ def _extract_mitre(result: dict) -> list | None:
     """
     mr = result.get("malware_report") or {}
     mappings = mr.get("ttp_mappings") or []
+    if not mappings and isinstance(mr.get("ttp_mappings"), list):
+        return None
     if mappings:
         from malspark.reporting.technique_evidence import (
             technique_absence_ids,
