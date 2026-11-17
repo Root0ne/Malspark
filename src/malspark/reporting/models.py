@@ -1782,13 +1782,21 @@ def outcome_words(outcome: Any) -> str:
 
 
 class JudgeIndicator(BaseModel):
-    """One value a judge indicator names: its IOC kind, the value, a hash's algorithm."""
+    """One value a judge indicator names: its IOC kind, the value, a hash's algorithm.
+
+    ``indicator_patterns`` is the pattern of each judge indicator naming it
+    that the export accepts, in the bundle's order, and ``indicator_types``
+    the first type each claims, index for index; empty on a value stored
+    before they were recorded.
+    """
 
     model_config = _STRICT_CONFIG
 
     kind: str
     value: str
     algorithm: str = ""
+    indicator_patterns: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    indicator_types: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
 class ConsolidatedIOC(BaseModel):
@@ -1815,6 +1823,16 @@ class ConsolidatedIOC(BaseModel):
     source: str | None = None
     context: str = ""
     published: str | None = None
+    # What the row is to every surface, set with ``published`` by the table
+    # (``builder.ioc_table``): ``sample_identity`` (a digest of the sample's
+    # own bytes), ``similarity`` (its imphash, ssdeep or TLSH, which also match
+    # other files), ``indicator`` (a value an export carries as an indicator
+    # when published) or ``listed`` (a value the report lists and no export
+    # matches on). ``indicator_type`` is the STIX ``indicator-type-ov`` word
+    # the export carries it under, or ``None`` when no export carries it. Every
+    # surface reads the two from here and asks nothing of its own.
+    role: Literal["sample_identity", "similarity", "indicator", "listed"] | None = None
+    indicator_type: str | None = None
     # For a network value a tool recovered from text the sample hid: which
     # tool, its ledger entry and where in the file (``floss``, emulation;
     # ``decode_string_blobs``, a static decoding of the file's bytes). Empty

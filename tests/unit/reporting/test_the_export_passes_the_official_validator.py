@@ -251,10 +251,13 @@ class TestTheObservedData:
         assert by_id[child_ref]["pid"] == 101
 
 
-def test_the_rich_and_benign_exports_carry_the_judges_technique() -> None:
-    """The gate grades the shapes a real run publishes, attack-patterns included."""
-    for bundle in (_rich(), _benign()):
-        assert [o.type for o in bundle.objects].count("attack-pattern") == 1
+def test_the_rich_export_carries_the_judges_technique_and_the_benign_none() -> None:
+    """The gate grades the shapes a real run publishes, attack-patterns included.
+
+    Under a Benign verdict no technique is published, so its export has none.
+    """
+    assert [o.type for o in _rich().objects].count("attack-pattern") == 1
+    assert [o.type for o in _benign().objects].count("attack-pattern") == 0
 
 
 def _judge_observables() -> Bundle:

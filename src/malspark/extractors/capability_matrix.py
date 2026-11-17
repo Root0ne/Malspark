@@ -63,6 +63,7 @@ from malspark.schemas.isr_models import (
     judge_kept_note,
     retry_added_marker,
 )
+from malspark.schemas.judgement import BENIGN_VERDICT
 from malspark.schemas.stix_models import (
     EARLIER_RUN_PROPERTY,
     SIMILAR_CASES_PROPERTY,
@@ -113,8 +114,15 @@ def build_capability_matrix(
     isr_reports: dict[str, Any] | None,
     sample: dict[str, Any] | None = None,
     ledger: Sequence[Any] | None = None,
+    verdict: str | None = None,
 ) -> tuple[list[CapabilityCell], list[TTPMapping]]:
     """Return ``(capability_cells, ttp_mappings)`` for the report.
+
+    ``verdict`` is the run's. Under Benign no technique is published: every
+    cell stays in the matrix with :data:`BENIGN_TECHNIQUE_REASON` first, then
+    the reason it already had, then the judge's own words about it where it
+    gave any (its reason when asked, its attack-pattern's description), whole.
+    Every other verdict, and none, publishes by the rules below.
 
     Both lists are sorted by descending confidence so the UI renders the
     most relevant rows first.
@@ -150,6 +158,8 @@ def build_capability_matrix(
 
     out_of_scope = _out_of_scope(list(techniques), sample)
     review = technique_review(stix_output)
+    benign = str(verdict or "").strip() == BENIGN_VERDICT
+    described = _judge_technique_descriptions(stix_output) if benign else {}
     earlier = earlier_run_techniques(stix_output)
     similar = similar_case_techniques(stix_output)
 
@@ -304,6 +314,16 @@ def build_capability_matrix(
             notes.append(judge_kept_note(decided.reason))
         elif asked and decided is None and not not_published:
             notes.append(JUDGE_UNCONFIRMED_TECHNIQUE_MARKER)
+        if benign:
+            # Decided after the notes, so the cell's notes are the ones the
+            # evidence gives it under any verdict.
+            not_published = benign_technique_reason(
+                not_published,
+                f"the judge kept it when asked ({decided.reason.strip()})"
+                if decided is not None and decided.decision == "keep" and decided.reason.strip()
+                else "",
+                f"the judge described it: {described[tid]}" if described.get(tid) else "",
+            )
         cells.append(
             CapabilityCell(
                 tactic=tactic_id or "TA0000",
@@ -506,6 +526,20 @@ def independent_statements(statements: Sequence[tuple[str, str]]) -> tuple[list[
 FINDING_ONLY_REASON = (
     "it was named on a finding rather than on a claim, so no check asked what evidence holds it up"
 )
+
+# Why no technique is published under a Benign verdict: a capability the code
+# holds is listed in the matrix, and the verdict says the sample was not seen
+# using it as malware does. The cell keeps every statement, and the judge's own
+# words about the technique follow this reason whole.
+BENIGN_TECHNIQUE_REASON = (
+    "the verdict is Benign: a capability is listed in the matrix, not published as the "
+    "sample's behaviour"
+)
+
+
+def benign_technique_reason(*said: str) -> str:
+    """The Benign verdict's reason for a cell, then each of ``said`` that is not empty, whole."""
+    return "; ".join([BENIGN_TECHNIQUE_REASON, *(text for text in said if text)])
 
 
 # The note on a technique an earlier run on this sample also reported when no
@@ -967,6 +1001,19 @@ def technique_statements(
 def _judge_objects(stix_output: dict[str, Any] | None) -> list[dict[str, Any]]:
     objects = (stix_output or {}).get("objects")
     return [obj for obj in objects if isinstance(obj, dict)] if isinstance(objects, list) else []
+
+
+def _judge_technique_descriptions(stix_output: dict[str, Any] | None) -> dict[str, str]:
+    """The description the judge's attack-pattern gives each technique it names, as written."""
+    found: dict[str, str] = {}
+    for obj in _judge_objects(stix_output):
+        if obj.get("type") != "attack-pattern":
+            continue
+        tid = written_technique_id(obj)
+        text = str(obj.get("description") or "").strip()
+        if tid and text and tid not in found:
+            found[tid] = text
+    return found
 
 
 def _judge_technique_ids(stix_output: dict[str, Any] | None) -> list[str]:

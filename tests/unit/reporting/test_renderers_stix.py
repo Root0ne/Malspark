@@ -280,8 +280,8 @@ class TestNoCountBoundsTheIndicators:
             }
         }
         report = _build(sandbox_report=sandbox)
-        # Force a static block with 20 file:name candidates that pass
-        # _accept_string_ioc (real-looking paths with known extensions).
+        # Force a static block with 20 file:name candidates of the shape the
+        # one rule asks of a string path (real-looking paths with known extensions).
         report.static = StaticAnalysis(
             interesting_strings=[
                 StringIOC(value=f"/var/tmp/payload{i}.exe", kind="path", notes=None)
