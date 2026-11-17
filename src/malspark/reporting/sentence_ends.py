@@ -67,7 +67,7 @@ def close_end(text: str, at: int) -> int:
     while after < len(text) and text[after] in SENTENCE_CLOSE:
         mark = text[after]
         if mark in _EMPHASIS:
-            if text[after - 1] in _NO_EMPHASIS_AFTER or not _opens_emphasis(text, at, mark):
+            if not _opens_emphasis(text, at, mark):
                 break
             end = after
             while end < len(text) and text[end] == mark:

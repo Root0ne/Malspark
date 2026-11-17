@@ -381,3 +381,8 @@ def test_a_doubled_mark_is_one_mark_and_emphasis_opens_on_its_own_line() -> None
     ]
     # Emphasis opened on an earlier line closes nothing on this one.
     assert _units("**a\nb.** Next.") == ["**a", "b.** Next."]
+
+
+def test_a_mark_after_a_mark_of_the_other_kind_opens_no_emphasis() -> None:
+    # The ``_`` after ``*`` is no mark of emphasis: the ``*`` alone closes the sentence.
+    assert _units("*_b.* Next.") == ["*_b.*", "Next."]
