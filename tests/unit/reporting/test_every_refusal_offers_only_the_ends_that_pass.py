@@ -2407,7 +2407,7 @@ _RECORDS = frozenset(
         agreement.DROPPED_CODE,
         agreement.QUALIFIED_CODE,
         agreement.HELD_KEPT_CODE,
-        agreement.KEPT_IN_SOURCE_WORDS_CODE,
+        agreement.KEPT_ON_ITS_QUOTE_CODE,
         agreement.JUDGE_LEFT_OUT_CODE,
         agreement.PLACED_BY_SENTENCE_CODE,
     }

@@ -412,26 +412,22 @@ ABSENCE_KEPT_CODE = "agreement.absence_kept"
 # body absence names the sources that speak of it, which a rewrite of a section 5 one may
 # rest on, and offers a keep on the words of each that state the same absence. Still so
 # after the retry, a closing sentence is left out and recorded (``DROPPED_CODE``), but where
-# only those two word tests refuse a quote of a section 5 passage, whose one sentence holding
-# it may then stand in its place (``KEPT_IN_SOURCE_WORDS_CODE``, T-705); a body absence
-# stands, recorded
+# only those two word tests refuse a quote standing whole in one sentence of a section 5
+# passage: the sentence then stands as written (``KEPT_ON_ITS_QUOTE_CODE``, T-736); a body
+# absence stands, recorded
 # (``HELD_KEPT_CODE``).
 KEEP_UNQUOTED_CODE = "agreement.keep_unquoted"
 # A sentence of the conclusion or the limitations, of a record's value cell or of a
-# capability bullet, kept on a quote that stands word for word in a section 5 passage it
-# names, the body the code's reading backs, and that the checks refused only on the words of
-# what the sentence denies something of (the words before its negation, what a denied item
-# is), still so after the retry: the one sentence of that passage holding the whole quote, in
-# whole words, stands in its place, whole with its own citations, recorded with what stood,
-# whole, and counted (``replaced``) (T-705). Only a sentence that reads as prose wherever it
-# is printed is moved: none with a list marker, a table bar or a heading, none opening as no
-# sentence opens, and none opening on a word that points to the sentences before it ("It",
-# "Its", "They", "Their", "These", "This", "Those", "Such", "Which"). A quote no one sentence
-# of a section 5 passage it names holds (one running across two, one standing only in a fact
-# or a debate round, which the report does not print), one whose sentence the round itself
-# leaves out or changes, or one whose sentence the passage already prints, leaves the
+# capability bullet, kept on a quote that stands whole, in whole words, in one sentence of a
+# section 5 passage it names, the body the code's reading backs, and that the checks refused
+# only on the words of what the sentence denies something of (the words before its negation,
+# what a denied item is), still so after the retry: the composer's sentence stands as written,
+# recorded with the source and the quote, and counted (``kept_on_quote``); the source's
+# sentence is not moved (T-736). A quote no one sentence of a section 5 passage it names holds
+# (one running across two, one standing only in a fact or a debate round, which the report
+# does not print), or one whose sentence the round itself leaves out or changes, leaves the
 # sentence out as before (``DROPPED_CODE``).
-KEPT_IN_SOURCE_WORDS_CODE = "agreement.kept_in_source_words"
+KEPT_ON_ITS_QUOTE_CODE = "agreement.kept_on_its_quote"
 # A row of the answer naming a passage no list of the question writes, whose sentence stands
 # whole in exactly one passage a row may answer: placed there by its text, checked and ended
 # as any row naming that passage, and recorded with the passage it named and its sentence.
@@ -5841,17 +5837,11 @@ def quote_overlap(sentence: str, quote: str, generic: frozenset[str] = frozenset
 
 # The refusals of a quote that read what the sentence denies something of off its words: the
 # words before its negation (:func:`kept_subject`) and what a denied item is
-# (``denied_heads``). A quote standing in a passage the code wrote or checked that fails these
-# alone keeps no closing sentence, but its source's sentence stands in place of it (T-705).
+# (``denied_heads``). A quote standing whole in one sentence of a section 5 passage that fails
+# these alone keeps the closing sentence as written (T-736).
 _QUOTE_TOO_FEW = "shares too few of the words the sentence denies something of"
 _QUOTE_NAMES_NONE = "names none of what the sentence denies something of"
 _SUBJECT_REFUSALS = frozenset({_QUOTE_TOO_FEW, _QUOTE_NAMES_NONE})
-# The opening words of a sentence that point to what the sentences before it name ("Its
-# three hosts…", "Which check ended it…"): such a sentence is never printed in another
-# section, where nothing before it names that (T-705).
-_POINTING_OPENERS = frozenset(
-    {"it", "its", "they", "their", "these", "this", "those", "such", "which"}
-)
 # What a quote shorter than :data:`absence_answers.QUOTE_FLOOR` is refused for, and what the
 # TASK says of every quote once (T-600).
 _QUOTE_SHORT = f"is shorter than {QUOTE_FLOOR} characters, so it quotes nothing"
@@ -7928,15 +7918,17 @@ def apply_rows(
         "dropped": 0,
         "qualified": 0,
         "held_kept": 0,
-        # Closing sentences their source's own sentence stands in place of (T-705).
-        "replaced": 0,
+        # Closing sentences kept as written on a quote standing whole in one sentence of a
+        # section 5 passage, refused only on the words of what they deny something of (T-736).
+        "kept_on_quote": 0,
     }
     # Each row placed by its sentence, recorded so (T-736).
     listed: list[Violation] = _placed_records(payload) if asked else []
     written: list[Violation] = []
     spans: dict[str, list[tuple[int, int, str]]] = {}
-    # Each closing sentence its source's own sentence may stand in place of, with where its
-    # span stands among the passage's: decided once every other end is in (T-705).
+    # Each closing sentence kept on a quote standing in one sentence of its source, with where
+    # its span stands among the passage's: decided once every other end is in, as the round
+    # may leave that source's sentence out or change it (T-736).
     moved: list[
         tuple[
             Passage,
@@ -8039,9 +8031,10 @@ def apply_rows(
                     continue
                 in_words = _in_source_words(passage, span[2], row, found, by_id)
                 if in_words is not None:
-                    # Refused only on the words of what it denies something of: its source's
-                    # own sentence may stand in its place, which is decided once the round's
-                    # every removal and qualification is in (T-705).
+                    # Refused only on the words of what it denies something of, its quote
+                    # standing in one sentence of its source: it stands as written where the
+                    # round leaves that sentence as it is, decided once the round's every
+                    # removal and qualification is in (T-736).
                     moved.append(
                         (passage, len(taken), f"sentences.{index}", span, row, found, *in_words)
                     )
@@ -8328,39 +8321,24 @@ def _moved(
     spans: dict[str, list[tuple[int, int, str]]],
     counts: dict[str, int],
 ) -> Violation:
-    """End a closing sentence its source's own sentence may stand in place of, once every other
-    end of the round is in, and its record (T-705).
+    """End a closing sentence kept on a quote standing in one sentence of its source, once every
+    other end of the round is in, and its record (T-736).
 
-    The source's sentence stands in its place (``KEPT_IN_SOURCE_WORDS_CODE``) unless the round
-    left that sentence out of its passage or changed it there, or it already stands in the
-    closing passage: then the closing sentence is left out, as any refused keep
-    (``DROPPED_CODE``). ``at`` is where its span stands among the passage's in ``spans``."""
+    The sentence stands as written (``KEPT_ON_ITS_QUOTE_CODE``) unless the round left the
+    source's sentence holding the quote out of its passage or changed it there: then it is left
+    out, as any refused keep (``DROPPED_CODE``). ``at`` is where its span stands among the
+    passage's in ``spans``."""
     taken = spans[passage.id]
     starts = _sentence_units(source.text)[0][said][0]
     ends = starts + len(said)
-    changed = any(start < ends and starts < end for start, end, _ in spans.get(source.id, []))
-    others = [t for i, t in enumerate(taken) if i != at]
-    if not changed and not _printed_in(said, passage, others):
-        taken[at] = (span[0], span[1], said)
-        counts["replaced"] += 1
-        return _kept_in_source_words(passage, path, span[2], row, source, said)
+    if not any(start < ends and starts < end for start, end, _ in spans.get(source.id, [])):
+        taken[at] = (span[0], span[1], passage.text[span[0] : span[1]])
+        counts["kept_on_quote"] += 1
+        return _kept_on_its_quote(passage, path, span[2], row, source)
     taken[at] = (*left_out_span(passage.text, span[0], span[1]), "")
     counts["dropped"] += 1
-    why = (
-        f"the sentence of {source.id} holding its quote is left out or changed by this round"
-        if changed
-        # Its source's sentence already stands in the passage: printed once.
-        else f"the sentence of {source.id} holding its quote already stands here"
-    )
+    why = f"the sentence of {source.id} holding its quote is left out or changed by this round"
     return _left_out(passage, path, span[2], why, found)
-
-
-def _printed_in(said: str, passage: Passage, taken: Sequence[tuple[int, int, str]]) -> bool:
-    """Whether ``said`` already stands in the passage, as written or put in by another row."""
-    words = " ".join(said.split())
-    return any(
-        words in " ".join(text.split()) for text in (passage.text, *(t for _a, _b, t in taken))
-    )
 
 
 def _codes_of(found: Sequence[Violation]) -> str:
@@ -8423,8 +8401,8 @@ def _in_source_words(
     found: Sequence[Violation],
     by_id: dict[str, Passage],
 ) -> tuple[Passage, str] | None:
-    """The source and its own words printed in place of a closing sentence the row keeps, or
-    ``None`` (T-705).
+    """The source and its one sentence holding the quote of a closing sentence the row keeps,
+    on which that sentence stands as written, or ``None`` (T-705, T-736).
 
     Only for a keep of a sentence of the conclusion, the limitations, a value cell or a
     capability bullet whose every finding is the quote's refusal (``KEEP_UNQUOTED_CODE``),
@@ -8432,12 +8410,10 @@ def _in_source_words(
     alone (:data:`_SUBJECT_REFUSALS`: too few of the words before its negation, or none of what
     a denied item is): read without those two tests, the quote passes every other. The words
     are the one sentence of a section 5 passage the row names, the body the code's reading
-    backs, that holds the whole quote in whole words (:func:`_holding`), as it writes them,
-    citations included, and only where that sentence can stand in a paragraph, a cell or a
-    bullet (:func:`_stands_alone`). A quote no one such sentence holds (one running across two,
-    or standing in two) gives none, as a fact or a debate round does, which is no text the
-    report prints. A text printed in its writer's own words is never reworded, so gives none
-    either.
+    backs, that holds the whole quote in whole words (:func:`_holding`), as it writes them. No
+    word decides what the sentence refers to: it is not moved. A quote no one such sentence
+    holds (one running across two, or standing in two) gives none, as a fact or a debate round
+    does. A text printed in its writer's own words gives none either.
     """
     if (
         row.decision != "keep"
@@ -8465,7 +8441,7 @@ def _in_source_words(
         if source.kind == SECTION_5
         for said in _holding(source.text, row.quote)
     ]
-    if len(held) != 1 or not _stands_alone(held[0][0].text, held[0][1]):
+    if len(held) != 1:
         return None
     return held[0]
 
@@ -8493,45 +8469,23 @@ def _holding(text: str, quote: str) -> list[str]:
     ]
 
 
-# What opens a line as a list item, a quoted block or a heading, before its first sentence.
-_LINE_MARK = re.compile(r"\s*(?:[-*+>#]+|\d+[.)])\s*")
-# What may close a sentence after its end mark.
-_CLOSERS = "\"')]"
-
-
-def _stands_alone(text: str, said: str) -> bool:
-    """Whether the sentence ``said`` of ``text`` reads as prose wherever it is printed: no list
-    marker, table bar or heading with it, opening as a sentence opens (a capital, a digit or a
-    code span) and ending on its end mark, and opening on no word that points to what the
-    sentences before it name (:data:`_POINTING_OPENERS`); a line break never stands inside one
-    (:func:`_sentence_units`)."""
-    at = _sentence_units(text)[0][said][0]
-    line = text[text.rfind("\n", 0, at) + 1 : at]
-    opener = re.match(r"\W*(\w+)", said)
-    return (
-        not _LINE_MARK.fullmatch(line)
-        and "|" not in said
-        and (said[0].isupper() or said[0].isdigit() or said[0] == "`")
-        and said.rstrip(_CLOSERS)[-1:] in ".!?"
-        and (opener is None or opener.group(1).lower() not in _POINTING_OPENERS)
-    )
-
-
-def _kept_in_source_words(
-    passage: Passage, path: str, sentence: str, row: AgreementRow, source: Passage, said: str
+def _kept_on_its_quote(
+    passage: Passage, path: str, sentence: str, row: AgreementRow, source: Passage
 ) -> Violation:
-    """The record of a closing sentence its source's own words stand in place of (T-705)."""
+    """The record of a closing sentence kept as written on a quote standing whole in one
+    sentence of ``source``, refused only on the words of what it denies something of (T-736)."""
     return Violation(
-        code=KEPT_IN_SOURCE_WORDS_CODE,
+        code=KEPT_ON_ITS_QUOTE_CODE,
         message=(
-            f"The agreement question keeps a sentence of {safe_finding_value(passage.label)} on "
-            f"{safe_finding_value(source.id)}, quoting {safe_finding_value(row.quote)!r}, which "
-            "stands there but was refused on the words of what the sentence denies something "
-            f"of ({KEEP_UNQUOTED_CODE}): the source's own sentence stands in its place: "
-            f"{safe_finding_value(sentence)!r} now reads {safe_finding_value(said)!r}."
+            f"The agreement question keeps a sentence of {safe_finding_value(passage.label)} "
+            f"as written on {safe_finding_value(source.id)}, quoting "
+            f"{safe_finding_value(row.quote)!r}, which stands whole in one sentence there, "
+            "though the keep was refused only on the words of what the sentence denies "
+            f"something of ({KEEP_UNQUOTED_CODE}): {safe_finding_value(sentence)!r} stands as "
+            "written."
         ),
         path=path,
-        stood=safe_finding_value(sentence, whole=True),
+        answered=True,
     )
 
 
@@ -9033,7 +8987,7 @@ async def _ask(
     logger.info(
         "section agreement: %d passage(s) asked about; %d sentence(s) listed, %d rewritten, "
         "%d kept, %d listed for reading, %d not applied, %d left out, %d qualified on the "
-        "ledger, %d replaced by their source's sentence.",
+        "ledger, %d kept on a quote standing in their source.",
         counts["passages"],
         counts["sentences"],
         counts["rewritten"],
@@ -9042,7 +8996,7 @@ async def _ask(
         counts["not_applied"],
         counts["dropped"],
         counts["qualified"],
-        counts["replaced"],
+        counts["kept_on_quote"],
     )
     return AgreementRound(
         summary=summary, tally=tally, degradations=[*said(), *([failed] if failed else [])]

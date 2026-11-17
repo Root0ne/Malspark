@@ -9,12 +9,13 @@ relative clause ("The decodings that no code refers to were not examined"), a pr
 paraphrase put the quote's words elsewhere, so true sentences whose quote stands word for
 word in a section 5 passage were refused, and after the retry left out.
 
-Such a sentence is now replaced, where its quote fails that word test alone, by the
-source's own sentence holding the quote, whole with its own citations; the replacement is
-recorded with the model's sentence whole. Every other refusal ends as before: a quote
+Such a sentence now stands as written, where its quote fails that word test alone and stands
+whole in one sentence of the source, recorded with the source and the quote; the source's
+sentence is not moved, and no word decides what a sentence refers to (T-736). Every other
+refusal ends as before: a quote
 standing in no source it names, one stating no absence, one of a passage written without
 the code, which its refusal now names as the reason, and one no single sentence of the
-source holds. A sentence left out or replaced is recorded whole, however long. The texts
+source holds. A sentence left out is recorded whole, however long. The texts
 quote one stored run's sentences as examples; the second shape is made up.
 """
 
@@ -40,7 +41,7 @@ from malspark.reporting.section_agreement import (
     DROPPED_CODE,
     FACT,
     KEEP_UNQUOTED_CODE,
-    KEPT_IN_SOURCE_WORDS_CODE,
+    KEPT_ON_ITS_QUOTE_CODE,
     QUALIFIED_CODE,
     Passage,
     agreement_violations,
@@ -129,7 +130,7 @@ def _refusal(report: MalwareReport, row: dict[str, Any]) -> str:
         (UNEXAMINED, "referenced by no code and were not reviewed", DECODINGS),
     ],
 )
-def test_a_keep_refused_only_for_its_words_prints_the_source_s_sentence(
+def test_a_keep_refused_only_for_its_words_stands_in_the_composer_s_words(
     sentence: str, quote: str, printed: str
 ) -> None:
     report = _report()
@@ -138,31 +139,31 @@ def test_a_keep_refused_only_for_its_words_prints_the_source_s_sentence(
     # Refused for its words alone, as before.
     assert "shares too few of the words" in _refusal(report, row)
     found = _applied(report, row)
-    # Not left out: the source's own sentence, whole with its citation, stands in its place.
-    assert printed in _limitations(report)
-    assert sentence not in _limitations(report)
+    # Not left out: the composer's sentence stands as written; the source's is not moved.
+    assert sentence in _limitations(report)
+    assert printed not in _limitations(report)
     assert DROPPED_CODE not in [v.code for v in found]
-    (record,) = [v for v in found if v.code == KEPT_IN_SOURCE_WORDS_CODE]
-    assert record.stood == sentence
+    (record,) = [v for v in found if v.code == KEPT_ON_ITS_QUOTE_CODE]
+    assert record.stood == ""
     assert source in record.message and record.subject == ""
 
 
-def test_a_bullet_keep_refused_only_for_its_words_prints_the_source_s_sentence() -> None:
+def test_a_bullet_keep_refused_only_for_its_words_stands_as_written() -> None:
     report = _report(bullet=CLEAR)
     row = _keep("capability_summary.1", CLEAR, "string_resolution", "no cipher routine reads it")
     assert "of the words" in _refusal(report, row) or "names none of" in _refusal(report, row)
     found = _applied(report, row)
     ta = report.technical_analysis
     assert ta is not None
-    assert ta.capability_summary[0].text == STORED
-    assert [v.code for v in found] == [KEPT_IN_SOURCE_WORDS_CODE]
+    assert ta.capability_summary[0].text == CLEAR
+    assert [v.code for v in found] == [KEPT_ON_ITS_QUOTE_CODE]
 
 
 def test_the_other_sentences_of_the_passage_stand_as_written() -> None:
     report = _report()
     quote = "no option-gated or argument-gated branch was exercised"
     _applied(report, _keep("limitations", GATED, "command_and_control", quote))
-    assert _limitations(report) == f"{BRANCH} {UNEXAMINED}"
+    assert _limitations(report) == f"{GATED} {UNEXAMINED}"
 
 
 @pytest.mark.parametrize(
@@ -207,7 +208,7 @@ def test_a_quote_no_single_sentence_of_the_source_holds_leaves_the_sentence_out(
     assert _limitations(report) == GATED
 
 
-def test_a_source_sentence_already_standing_in_the_passage_is_printed_once() -> None:
+def test_two_keeps_quoting_one_source_sentence_both_stand_as_written() -> None:
     paths = "The destructive paths were not exercised in the sandbox run [ev_0028]."
     report = _report(limitations=f"{GATED} {paths}")
     quote = "no option-gated or argument-gated branch was exercised"
@@ -216,11 +217,8 @@ def test_a_source_sentence_already_standing_in_the_passage_is_printed_once() -> 
         _keep("limitations", GATED, "command_and_control", quote),
         _keep("limitations", paths, "command_and_control", quote),
     )
-    assert _limitations(report) == BRANCH
-    assert [v.code for v in found] == [KEPT_IN_SOURCE_WORDS_CODE, DROPPED_CODE]
-    assert "the sentence of command_and_control holding its quote already stands here" in (
-        found[1].message
-    )
+    assert _limitations(report) == f"{GATED} {paths}"
+    assert [v.code for v in found] == [KEPT_ON_ITS_QUOTE_CODE, KEPT_ON_ITS_QUOTE_CODE]
 
 
 def test_a_keep_that_passes_stands_as_written() -> None:
@@ -236,7 +234,7 @@ def test_a_keep_that_passes_stands_as_written() -> None:
     ]
     found = _applied(report, row)
     assert _limitations(report) == f"{GATED} {REVIEWED}"
-    assert KEPT_IN_SOURCE_WORDS_CODE not in [v.code for v in found]
+    assert KEPT_ON_ITS_QUOTE_CODE not in [v.code for v in found]
 
 
 # -- the refusal names the reason (Ruling 3) ----------------------------------------------
@@ -284,7 +282,7 @@ def test_a_sentence_left_out_is_recorded_whole_however_long() -> None:
     assert long not in row["message"]
 
 
-def test_a_sentence_replaced_is_recorded_whole_however_long() -> None:
+def test_a_long_sentence_kept_on_its_quote_stands_whole() -> None:
     long = (
         "The 968 decodings that no code refers to, among them the long runs of wide text, the "
         "format strings, the paths under the program data folder and the names of the "
@@ -296,9 +294,9 @@ def test_a_sentence_replaced_is_recorded_whole_however_long() -> None:
     found = _applied(report, _keep("limitations", long, "string_resolution", quote))
     tally = ValidationTally()
     tally.record_unresolved(AGREEMENT_PRODUCER, found)
-    (row,) = [r for r in tally.unresolved if r["code"] == KEPT_IN_SOURCE_WORDS_CODE]
-    assert row["stood"] == long
-    assert _limitations(report) == f"{GATED} {DECODINGS}"
+    (row,) = [r for r in tally.unresolved if r["code"] == KEPT_ON_ITS_QUOTE_CODE]
+    assert "stood" not in row
+    assert _limitations(report) == f"{GATED} {long}"
 
 
 @pytest.mark.parametrize("registered", [False, True])
@@ -378,26 +376,41 @@ def test_a_quote_running_across_two_sentences_leaves_the_sentence_out(
 
 
 @pytest.mark.parametrize(
-    "body",
+    ("body", "kept"),
     [
         # A list item, its marker and its emphasis with it.
-        f"The import table names 46 functions [ev_0004].\n- **Decodings**: {DECODINGS}\n- Next.",
+        (
+            "The import table names 46 functions [ev_0004].\n"
+            f"- **Decodings**: {DECODINGS}\n- Next.",
+            True,
+        ),
         # A made-up shape: a numbered list item, whose marker stands apart from its words.
-        f"The import table names 46 functions [ev_0004].\n1. {DECODINGS}\n2. {STORED}",
+        (f"The import table names 46 functions [ev_0004].\n1. {DECODINGS}\n2. {STORED}", True),
         # A table row.
-        f"| What | Seen |\n|---|---|\n| decodings | {DECODINGS} |",
+        (f"| What | Seen |\n|---|---|\n| decodings | {DECODINGS} |", True),
         # A review's case: a table's column bar inside the sentence.
-        "The import table names 46 functions [ev_0004]. A further 968 decodings are "
-        "referenced by no code and were not reviewed | as listed [ev_0021].",
-        # A sentence broken over two lines.
-        "The import table names 46 functions [ev_0004]. A further 968 decodings are "
-        "referenced by no\ncode and were not reviewed [ev_0021].",
+        (
+            "The import table names 46 functions [ev_0004]. A further 968 decodings are "
+            "referenced by no code and were not reviewed | as listed [ev_0021].",
+            True,
+        ),
         # A line opening a list, which ends on no sentence's mark.
-        "The import table names 46 functions [ev_0004]. A further 968 decodings are "
-        "referenced by no code and were not reviewed, among them:\n- the wide ones.",
+        (
+            "The import table names 46 functions [ev_0004]. A further 968 decodings are "
+            "referenced by no code and were not reviewed, among them:\n- the wide ones.",
+            True,
+        ),
+        # A sentence broken over two lines: the quote stands in no one sentence.
+        (
+            "The import table names 46 functions [ev_0004]. A further 968 decodings are "
+            "referenced by no\ncode and were not reviewed [ev_0021].",
+            False,
+        ),
     ],
 )
-def test_a_source_sentence_that_is_no_prose_is_not_moved(body: str) -> None:
+def test_the_shape_of_the_source_sentence_decides_nothing(body: str, kept: bool) -> None:
+    # The source's sentence is not moved, so how it is printed in its own place is no test:
+    # the composer's sentence stands wherever the quote stands whole in one sentence (T-736).
     report = _resolution(_report(), body)
     row = _keep(
         "limitations",
@@ -407,13 +420,17 @@ def test_a_source_sentence_that_is_no_prose_is_not_moved(body: str) -> None:
     )
     assert "shares too few of the words" in _refusal(report, row)
     found = _applied(report, row)
-    assert [v.code for v in found] == [DROPPED_CODE]
-    assert _limitations(report) == GATED
+    if kept:
+        assert [v.code for v in found] == [KEPT_ON_ITS_QUOTE_CODE]
+        assert _limitations(report) == f"{GATED} {UNEXAMINED}"
+    else:
+        assert [v.code for v in found] == [DROPPED_CODE]
+        assert _limitations(report) == GATED
 
 
-def test_a_source_sentence_holding_an_abbreviation_is_moved_whole() -> None:
+def test_a_source_sentence_holding_an_abbreviation_holds_the_quote() -> None:
     # Words after an abbreviation open no sentence (T-719): the sentence holding them, from
-    # its first word, is the source's sentence, and it reads as prose.
+    # its first word, is the source's sentence holding the quote.
     said = (
         "The import table names 46 functions, e.g. the 968 decodings are referenced by no "
         "code and were not reviewed [ev_0021]."
@@ -426,8 +443,8 @@ def test_a_source_sentence_holding_an_abbreviation_is_moved_whole() -> None:
         "referenced by no code and were not reviewed",
     )
     found = _applied(report, row)
-    assert [v.code for v in found] == [KEPT_IN_SOURCE_WORDS_CODE]
-    assert said in _limitations(report)
+    assert [v.code for v in found] == [KEPT_ON_ITS_QUOTE_CODE]
+    assert _limitations(report) == f"{GATED} {UNEXAMINED}"
 
 
 @pytest.mark.parametrize(
@@ -449,7 +466,7 @@ def test_a_quote_cut_inside_a_word_leaves_the_sentence_out(quote: str) -> None:
     assert _limitations(report) == GATED
 
 
-# -- a sentence that points outside itself is not moved (Ruling 9) ------------------------
+# -- no word decides what a sentence refers to: nothing is moved (T-736) -----------------
 
 
 @pytest.mark.parametrize(
@@ -467,7 +484,7 @@ def test_a_quote_cut_inside_a_word_leaves_the_sentence_out(quote: str) -> None:
         "[ev_0021].",
     ],
 )
-def test_a_source_sentence_opening_on_a_word_that_points_back_is_not_moved(said: str) -> None:
+def test_a_source_sentence_opening_on_any_word_keeps_the_composer_s_sentence(said: str) -> None:
     report = _resolution(_report(), f"The import table names 46 functions [ev_0004]. {said}")
     row = _keep(
         "limitations",
@@ -477,11 +494,12 @@ def test_a_source_sentence_opening_on_a_word_that_points_back_is_not_moved(said:
     )
     assert "shares too few of the words" in _refusal(report, row)
     found = _applied(report, row)
-    assert [v.code for v in found] == [DROPPED_CODE]
-    assert _limitations(report) == GATED
+    assert [v.code for v in found] == [KEPT_ON_ITS_QUOTE_CODE]
+    assert _limitations(report) == f"{GATED} {UNEXAMINED}"
+    assert said not in _limitations(report)
 
 
-def test_a_source_sentence_opening_on_both_is_moved() -> None:
+def test_a_source_sentence_opening_on_both_keeps_the_composer_s_sentence() -> None:
     # "Both" names its two items itself ("Both sandbox detonations ran…").
     said = "Both decoding tables are referenced by no code and were not reviewed [ev_0021]."
     report = _resolution(_report(), f"The import table names 46 functions [ev_0004]. {said}")
@@ -492,18 +510,18 @@ def test_a_source_sentence_opening_on_both_is_moved() -> None:
         "referenced by no code and were not reviewed",
     )
     found = _applied(report, row)
-    assert [v.code for v in found] == [KEPT_IN_SOURCE_WORDS_CODE]
-    assert _limitations(report) == f"{GATED} {said}"
+    assert [v.code for v in found] == [KEPT_ON_ITS_QUOTE_CODE]
+    assert _limitations(report) == f"{GATED} {UNEXAMINED}"
 
 
-# -- what the round removed is not reprinted (Ruling 10) ----------------------------------
+# -- a quote whose sentence the round removed or changed backs nothing (Ruling 10) --------
 
 
 def _with(report: MalwareReport, pid: str, **changed: Any) -> list[Passage]:
     return [dataclasses.replace(p, **changed) if p.id == pid else p for p in passages_of(report)]
 
 
-def test_a_source_sentence_the_round_leaves_out_is_not_printed_in_its_place() -> None:
+def test_a_source_sentence_the_round_leaves_out_backs_no_keep() -> None:
     # The decodings' sentence is held by the ledger's lines and no row answers it: the round
     # leaves it out of section 5, after the row keeping the limitations' sentence is read.
     report = _report()
@@ -520,10 +538,10 @@ def test_a_source_sentence_the_round_leaves_out_is_not_printed_in_its_place() ->
     assert DECODINGS not in ta.string_resolution.body
     assert _limitations(report) == GATED
     assert [v.code for v in found] == [DROPPED_CODE, DROPPED_CODE]
-    assert counts["dropped"] == 2 and counts["replaced"] == 0
+    assert counts["dropped"] == 2 and counts["kept_on_quote"] == 0
 
 
-def test_a_source_sentence_the_round_qualifies_is_not_printed_in_its_place() -> None:
+def test_a_source_sentence_the_round_qualifies_backs_no_keep() -> None:
     # A made-up shape: the decodings' sentence calls code not read that an entry lists, so
     # the platform adds the ledger's fact to it once every row is in.
     report = _report()
@@ -548,14 +566,14 @@ def test_a_source_sentence_the_round_qualifies_is_not_printed_in_its_place() -> 
     assert "the ledger lists the code" in ta.string_resolution.body
     assert _limitations(report) == GATED
     assert [v.code for v in found] == [QUALIFIED_CODE, DROPPED_CODE]
-    assert counts["qualified"] == 1 and counts["dropped"] == 1 and counts["replaced"] == 0
+    assert counts["qualified"] == 1 and counts["dropped"] == 1 and counts["kept_on_quote"] == 0
     assert "left out or changed by this round" in found[1].message
 
 
 # -- counted and logged (Ruling 11) -------------------------------------------------------
 
 
-def test_a_replacement_is_counted_as_one_and_not_as_a_drop() -> None:
+def test_a_keep_on_its_quote_is_counted_as_one_and_not_as_a_drop() -> None:
     report = _report()
     row = _keep(
         "limitations",
@@ -564,7 +582,7 @@ def test_a_replacement_is_counted_as_one_and_not_as_a_drop() -> None:
         "referenced by no code and were not reviewed",
     )
     counts, _found = apply_rows({"sentences": [row]}, passages_of(report))
-    assert counts["replaced"] == 1 and counts["dropped"] == 0 and counts["kept"] == 0
+    assert counts["kept_on_quote"] == 1 and counts["dropped"] == 0 and counts["kept"] == 0
 
 
 # -- each test of the rule holds (Ruling 13) ----------------------------------------------
@@ -580,11 +598,11 @@ def test_a_closing_text_printed_in_its_writer_s_own_words_is_never_reworded() ->
         "referenced by no code and were not reviewed",
     )
     _counts, found = apply_rows({"sentences": [row]}, passages)
-    assert KEPT_IN_SOURCE_WORDS_CODE not in [v.code for v in found]
+    assert KEPT_ON_ITS_QUOTE_CODE not in [v.code for v in found]
     assert DECODINGS not in _limitations(report)
 
 
-def test_a_quote_naming_none_of_what_is_denied_prints_the_source_s_sentence() -> None:
+def test_a_quote_naming_none_of_what_is_denied_keeps_the_composer_s_sentence() -> None:
     # A made-up shape: the quote shares two words of the sentence, but not what the denied
     # item is ("routine"), the second word test.
     key = "No cipher key for the 968 decodings was found in the file [ev_0021]."
@@ -595,12 +613,13 @@ def test_a_quote_naming_none_of_what_is_denied_prints_the_source_s_sentence() ->
     row = _keep("limitations", denied, "string_resolution", key.split(" in the file")[0])
     assert "names none of what the sentence denies something of" in _refusal(report, row)
     found = _applied(report, row)
-    assert [v.code for v in found] == [KEPT_IN_SOURCE_WORDS_CODE]
-    assert _limitations(report) == key
+    assert [v.code for v in found] == [KEPT_ON_ITS_QUOTE_CODE]
+    assert _limitations(report) == denied
 
 
-def test_a_source_sentence_already_standing_with_other_spacing_is_printed_once() -> None:
-    report = _report(limitations=f"{GATED} {UNEXAMINED}\n\n{DECODINGS.replace(' are ', '  are ')}")
+def test_a_source_sentence_already_standing_in_the_passage_keeps_the_composer_s_too() -> None:
+    standing = DECODINGS.replace(" are ", "  are ")
+    report = _report(limitations=f"{GATED} {UNEXAMINED}\n\n{standing}")
     row = _keep(
         "limitations",
         UNEXAMINED,
@@ -608,8 +627,8 @@ def test_a_source_sentence_already_standing_with_other_spacing_is_printed_once()
         "referenced by no code and were not reviewed",
     )
     found = _applied(report, row)
-    assert [v.code for v in found] == [DROPPED_CODE]
-    assert _limitations(report).count("were not reviewed") == 1
+    assert [v.code for v in found] == [KEPT_ON_ITS_QUOTE_CODE]
+    assert _limitations(report) == f"{GATED} {UNEXAMINED}\n\n{standing}"
 
 
 def test_a_quote_standing_in_a_passage_shown_as_a_source_only_is_not_called_unchecked() -> None:
