@@ -5913,8 +5913,10 @@ is assembled from what the run gathered rather than recomputed beside it:
   Only a structured network record (a flow, a DNS query, an HTTP request, a
   capture conversation) makes a sandbox row. A URL's HTTP method is the one its request record states and is absent
   on a URL no request carries (`NetworkURL.method`, `null`): no URL defaults to
-  `GET`, which could contradict a POST beacon decoded from the file. Its user agent is read the same
-  way (`NetworkURL.user_agent`): the first request record of the URL that states one.
+  `GET`, which could contradict a POST beacon decoded from the file. Its user agent
+  (`NetworkURL.user_agent`) is the user agent of the same record: the first record
+  of the URL that states a method gives both, and no row joins two requests' facts;
+  where no record states a method, the first that states a user agent gives it.
   A name's DNS answers are its `resolved_ips`. Such a value, with no second source, reads `no: seen only in the text
   of <entry> (<tool>), and no second source in this run records it;
   <artifact> lists it`. A value no answer
