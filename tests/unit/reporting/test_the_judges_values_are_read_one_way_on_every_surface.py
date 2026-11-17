@@ -71,6 +71,7 @@ from malspark.reporting.renderers.stix_renderer import (
     rule_values,
 )
 from malspark.schemas.stix_models import Bundle
+from malspark.schemas.stix_pattern import read_comparisons
 
 SHA256 = "a" * 64
 MD5 = "c" * 32
@@ -115,6 +116,7 @@ def _shapes(kind: str, value: str) -> dict[str, list[str]]:
     one = _comparison(kind, value)
     digest = f"file:hashes.MD5 = '{MD5}'"
     same_object = kind == "path"
+    object_type = "file" if same_object else "domain-name"
     # A pattern the export declines whole: one comparison the grammar refuses (a
     # stray backslash in a quoted value) where the value holds a backslash, else
     # a property its object type does not have.
@@ -130,6 +132,10 @@ def _shapes(kind: str, value: str) -> dict[str, list[str]]:
         "or-digest": [f"[{one} OR {digest}]" if same_object else f"[{one}] OR [{digest}]"],
         "beside-no-value": [f"[{one} AND file:size > 10]" if same_object else f"[{one}]"],
         "two-kinds": [f"[{one}] OR [domain-name:value = 'other-c2.example.org']"],
+        # A comparison that names the values fitting a shape, not one value.
+        "or-matches": [
+            f"[{one} OR {object_type}:{'name' if same_object else 'value'} MATCHES '^relay']"
+        ],
         # Beside the sample's own digest, its key quoted, so both are values read.
         "and-own-digest": [
             f"[{one} AND file:hashes.'MD5' = '{MD5}']"
@@ -331,16 +337,26 @@ def test_the_judges_values_hold_every_property(
             published_keys_.add(_key(kind, value))
 
         def _carried(pattern: str) -> bool:
-            return pattern_problem(pattern) is None and all(
-                _key(v.kind, v.value) in published_keys_ for v in rule_values(pattern)
+            # No pattern problem, no comparison written as a shape, every value published.
+            return (
+                pattern_problem(pattern) is None
+                and not re.search(r"\b(MATCHES|LIKE)\b", pattern)
+                and all(_key(v.kind, v.value) in published_keys_ for v in rule_values(pattern))
             )
+
+        def _one_value(pattern: str) -> bool:
+            # The judge's one-value indicator as the reader listed it before: a
+            # single comparison, a file's name with its directory counted as one.
+            comparisons = read_comparisons(pattern)
+            paired = any(c.prop == "parent_directory_ref.path" for c in comparisons)
+            return len(comparisons) - paired == 1 and bool(pattern_values(pattern))
 
         naming = [
             p
             for p in patterns
             if _key(kind, value) in {_key(v.kind, v.value) for v in pattern_values(p)}
         ]
-        gives = any(len(pattern_values(p)) == 1 or _carried(p) for p in naming)
+        gives = any(_one_value(p) or _carried(p) for p in naming)
         assert (_key(kind, value) in by_key) == gives, f"(g) row {_key(kind, value) in by_key}"
         if _key(kind, value) in by_key:
             judge_spellings = {p for p in patterns}
@@ -367,7 +383,7 @@ def test_the_judges_values_hold_every_property(
 
 
 def test_the_net_is_as_wide_as_it_says() -> None:
-    assert len(CASES) == sum(len(PLACES[k]) for k, _v in VALUES.values()) * 11 * len(VERDICTS)
+    assert len(CASES) == sum(len(PLACES[k]) for k, _v in VALUES.values()) * 12 * len(VERDICTS)
 
 
 def test_an_unquoted_hash_key_is_read_as_no_value_as_today() -> None:
