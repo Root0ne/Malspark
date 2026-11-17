@@ -236,7 +236,7 @@ from malspark.agents.tool_fence import (
 )
 from malspark.core.logger import logger
 from malspark.core.spend import SpendCeilingStop
-from malspark.pipeline.events import safe_finding_value
+from malspark.pipeline.events import safe_answer_text, safe_finding_value
 from malspark.pipeline.feedback_mode import feeds_back
 from malspark.pipeline.validation import (
     _BARE_ADDRESS,
@@ -8825,8 +8825,10 @@ async def _ask(
         answer_read[0] = structured_answer_text(answer, _message_text)
         parsed = safe_parse_json(answer_read[0])
         # Kept whole for the run's record, as parsed, one that could not be read as its text,
-        # so the round can be re-applied with no model call (:class:`StoredAnswers`, T-736).
-        answers.append(parsed if isinstance(parsed, (dict, list)) else answer_read[0])
+        # masked as every stored model answer is (:func:`_masked_answer`, T-736).
+        answers.append(
+            _masked_answer(parsed if isinstance(parsed, (dict, list)) else answer_read[0])
+        )
         # Shape only: a bare list of rows is the object the schema names.
         if isinstance(parsed, list):
             parsed = {"sentences": parsed}
@@ -9114,9 +9116,23 @@ def _no_turn_left(violations: Sequence[Violation], payload: Any) -> list[Violati
 VERBATIM_SHOWN = "verbatim_shown"
 VERBATIM_UNSEEN = "verbatim_unseen"
 # Every answer of the round, the first and each retry, as parsed and whole: an object as read,
-# one that could not be read as the text it was read from. Shown to no model and printed in no
-# report: the round's own code re-applies them (:class:`StoredAnswers`, T-736).
+# one that could not be read as the text it was read from, each text masked as every stored
+# model answer is (:func:`_masked_answer`). Shown to no model and printed in no report: the
+# round's own code re-applies them (:class:`StoredAnswers`, T-736).
 ANSWERS = "answers"
+
+
+def _masked_answer(value: Any) -> Any:
+    """An answer of the round as the run's record keeps it: each text it holds, a key as a
+    value, masked by the one rule for a whole model answer (``events.safe_answer_text``), its
+    shape as parsed (T-736)."""
+    if isinstance(value, dict):
+        return {safe_answer_text(key): _masked_answer(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_masked_answer(item) for item in value]
+    if isinstance(value, str):
+        return safe_answer_text(value)
+    return value
 
 
 class StoredAnswers:
