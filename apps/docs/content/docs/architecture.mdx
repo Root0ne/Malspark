@@ -2157,10 +2157,15 @@ decide.
    retract, remove, drop, delete), in either order ("I withdraw claim 2",
    "Claim 5 is withdrawn", "CLAIM 2 is withdrawn", "Drop claim 2"), is a
    doubt, the own number of a line the reader reads as a claim heading aside.
-   On a claim heading line the word withdraws only in the clause that writes
-   the number (a sentence end, a semicolon or a bracket ends a clause), so a
-   heading that describes deleting code and cites a claim in another clause
-   ("sets delete-on-close (0x3a24, claim 15)") describes a claim.
+   On a claim heading line the text after the heading is read a sentence at
+   a time (a period, "!" or "?" before white space or the line's end ends a
+   sentence; a bracket, a semicolon and a period inside a token end nothing),
+   and the word counts as a withdrawal the reader cannot read where its own
+   sentence writes a claim number ("This replaces claim 2 (dropped).") or the
+   sentence right before it does ("Claim 2 was wrong. I remove it."). A
+   heading whose deleting sentence has no claim number in it or in the
+   sentence before ("Claim 15 names the file. 0x3a10 opens it. 0x3a24 sets
+   delete-on-close.") describes a claim.
    A heading that withdraws its own claim is a doubt too: a withdrawing word
    in its note (`CLAIM 2 (withdrawn):`), "withdraw" or "retract" in any form
    anywhere in its sentence (`CLAIM 2: This claim is withdrawn because …`), or
