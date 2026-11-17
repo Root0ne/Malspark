@@ -1,15 +1,14 @@
-"""A TECHNIQUE line that opens with NONE and names no technique id claims none.
+"""A TECHNIQUE line that opens with NONE claims none, whatever note follows it.
 
-NONE is the word the format declares for a claim of no technique. A line that
-opens with it and names no technique id anywhere, bracketed or not, is read as
-no technique whatever note follows ("None; Process Injection is likely"); the
-note, the line as written, stays on the claim's record (``technique_note``),
-and no question is asked about it. A line that opens with NONE and names an id
-may assert it ("none asserted beyond T1140") or set it aside ("none; T1027 not
-observed"), which code cannot tell without reading the words: it is read as
-before. A line that puts an id first and a doubt after it is asked about as
-before, and so is a line whose every id is followed by words that do not
-assert it.
+NONE is the word the format declares for a claim of no technique. Analysts
+write a note after it ("none (T1027 and T1140 are not asserted; see the blob
+claim below)", "NONE (persistence covered by T1053.005)"), and the reader
+asked about every such line whose note held an id or a doubt; asked, the
+analysts wrote NONE every time. The line is read as no technique; the note,
+the line as written, stays on the claim's record (``technique_note``), and no
+question is asked about it. A line that puts an id first and a doubt after it
+says the id and doubts it: it is asked about as before, and so is a line whose
+every id is followed by words that do not assert it.
 
 Every id, address and sentence here is made up for the test.
 """
@@ -23,19 +22,13 @@ from malspark.pipeline.validation import TECHNIQUE_LINE_UNREAD_CODE, parse_viola
 from malspark.schemas.isr_models import AgentISR
 
 NONE_FIRST = (
-    "None; Process Injection is likely",
-    "none observed, though native api use is possible",
-    "**NONE** — the capability label only (capa rule, not observed)",
-    "NONE. The shared modules are the loader's, not the sample's.",
-    "none (persistence covered by the scheduled-task claim)",
-)
-# A line that opens with NONE and names an id, bracketed or not: asked as before.
-NONE_WITH_AN_ID = (
-    "none asserted beyond T1140 for the decoded name.",
+    "none (T1027 and T1140 are not asserted; see the blob claim below)",
     "NONE (persistence covered by T1053.005)",
     "none (T1055 covers the observed injection)",
-    "none (I do not tag T1573.001 on this evidence)",
+    "None; Process Injection is likely",
     "none asserted; T1041 would apply if transmission is shown",
+    "**NONE** — T1106 is the capability label only",
+    "NONE. T1129 (Shared Modules) is the loader's, not the sample's.",
     "NONE, T1027",
 )
 
@@ -43,19 +36,6 @@ NONE_WITH_AN_ID = (
 @pytest.mark.parametrize("line", NONE_FIRST)
 def test_a_line_that_opens_with_none_is_read_as_none(line: str) -> None:
     assert read_technique_line(line) == ((), None)
-
-
-@pytest.mark.parametrize("line", NONE_WITH_AN_ID)
-def test_a_none_line_that_names_an_id_is_asked_as_before(line: str) -> None:
-    claims = _claims(line)
-    isr = AgentISR(agent_id="static", domain="static", claims=claims)
-
-    assert read_technique_line(line) == ((), line)
-    assert [
-        (c.technique_id, c.technique_line, c.technique_note)  # type: ignore[attr-defined]
-        for c in claims
-    ] == [(None, line, None)]
-    assert TECHNIQUE_LINE_UNREAD_CODE in [v.code for v in parse_violations(isr)]
 
 
 @pytest.mark.parametrize(
@@ -73,9 +53,6 @@ def test_a_none_line_that_names_an_id_is_asked_as_before(line: str) -> None:
         # A word that only begins with the letters of "none".
         "nonexistent T1027",
         "Nonetheless T1055",
-        "Nonetheless Process Injection is likely",
-        # "none" later on a line that names no id.
-        "Process Injection; none other",
     ],
 )
 def test_a_line_that_does_not_open_with_none_is_asked_as_before(line: str) -> None:

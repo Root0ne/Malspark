@@ -10,16 +10,16 @@ or a reference or layout word of a closed set ("claim", "per", "one",
 between them ("the", "of", "this" ...): an ordinary word that hedges or
 negates ("perhaps", "cannot", "formerly") is no function word. A note that
 says the id is not asserted, followed only by where or by what ("T1547.001
-(not supported by the traced code)", "none (T1055 withdrawn)"), claims none,
-which is what the unread line claimed too. Any other note keeps the line whole
+(not supported by the traced code)"), claims none, which is what the unread
+line claimed too; a line that opens with NONE claims none whatever note
+follows it. Any other note keeps the line whole
 and asked about, as before: a doubt or a hedge (even one the id's card
 writes), a provenance, a tool's word, a word of fewer than three letters, a
 slash in a word, a second clause after a negation, or a negating note after a
 list, which may be said of every id of it. Ids written as a list separated by semicolons
-are a list. A line that opens with "none" and names no id claims none,
-whatever its note says. A dash before a bracketed note claims none when no id
-or name stands on it, and a one-word catalogue name that is an ordinary English
-word ("At") names a technique only written with its capital.
+are a list. A dash before a bracketed note claims none when no id or name
+stands on it, and a one-word catalogue name that is an ordinary English word
+("At") names a technique only written with its capital.
 """
 
 from __future__ import annotations
@@ -82,7 +82,9 @@ def test_an_id_with_a_note_of_its_own_words_is_read(line: str, ids: tuple[str, .
         "- (T1027, T1140 not asserted)",
         # An ordinary word in small letters that is a one-word catalogue name.
         "none asserted at this level",
-        # A line that opens with NONE and names no id, whatever its note says.
+        # A line that opens with NONE, whatever note follows it.
+        "none asserted (T1105 if a download is shown)",
+        "none for the sample (T1547.014 is the sandbox's label)",
         "None; Process Injection is likely",
         "none (At job)",
     ],
@@ -192,9 +194,7 @@ def test_a_hedge_or_a_negation_keeps_the_line_whole(note: str, technique: str) -
         # Words after an id with no bracket.
         "T1055 is not supported for the three named APIs",
         "T1218.011 for the rundll32 hits only",
-        # A "none" line whose bracketed id is not negated, or a dash line naming a technique.
-        "none asserted (T1105 if a download is shown)",
-        "none for the sample (T1547.014 is the sandbox's label)",
+        # A dash line whose bracketed id is not negated, or names a technique.
         "— (supports T1027 at application level)",
         "— (At job)",
         # A dash with no bracketed note after it.
