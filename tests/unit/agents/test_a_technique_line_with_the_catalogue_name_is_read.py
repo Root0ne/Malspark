@@ -5,10 +5,12 @@ catalogue's name for it, with no bracket. The bracketed form was read; this one
 was asked about, and kept unread after the retry, so sixteen claims carried no
 technique. A name with no bracket runs to the next comma, semicolon or the
 line's end, and is taken off only when all of it is the id's catalogue name.
-A line that opens with "none" claims none, whatever the words after it say,
-an id or a named candidate technique among them ("None; Process Injection is
-likely"). A qualifier ("candidate") or another name after an id is still asked
-about.
+A line that opens with "none" and holds no technique id and no catalogue
+technique name claims none, whatever the words after it say, and so does one
+whose ids stand in a closing note that sets them aside ("none (T1568 not
+supported)"). A qualifier ("candidate"), another name, or an id or a named
+candidate technique on a "none" line ("None; Process Injection is likely") is
+still asked about.
 """
 
 from __future__ import annotations
@@ -38,11 +40,6 @@ from tests.linear_cost import assert_ratio
         ("None additional.", ()),
         # The id on the "none" line is set aside by its note.
         ("none (T1568 not supported)", ()),
-        # A line that opens with "none", whatever follows it.
-        ("none (T1568 likely)", ()),
-        ("none asserted; T1041 would apply if transmission is shown", ()),
-        ("None; Process Injection is likely", ()),
-        ("none observed, though native api use is possible", ()),
     ],
 )
 def test_it_is_read(line: str, ids: tuple[str, ...]) -> None:
@@ -56,8 +53,12 @@ def test_it_is_read(line: str, ids: tuple[str, ...]) -> None:
         "T1071.001 Web Protocols (candidate)",
         "T1106 Native calls",
         "T1218.011 Signed Binary Proxy Execution: Rundll32",
+        "none (T1568 likely)",
+        "none asserted; T1041 would apply if transmission is shown",
         "nonexistent T1027",
         "T1027 or T1140",
+        "None; Process Injection is likely",
+        "none observed, though native api use is possible",
     ],
 )
 def test_it_is_asked_about(line: str) -> None:

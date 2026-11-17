@@ -421,7 +421,7 @@ A whole retry that restates fewer of the first answer's claims than it leaves ou
 
 ### `isr.technique_line_unread`
 
-A claim whose TECHNIQUE line is more than ids or NONE. No id is read from it, and the analyst is asked once for ids alone. A list of ids separated by commas, "and", slashes or semicolons is read (`base_agent.read_technique_line`) and not asked, and so is an id with a closing note in brackets that decides nothing or says the id is not asserted, and a line that opens with NONE, whatever note follows it.
+A claim whose TECHNIQUE line is more than ids or NONE. No id is read from it, and the analyst is asked once for ids alone. A list of ids separated by commas, "and", slashes or semicolons is read (`base_agent.read_technique_line`) and not asked, and so is an id with a closing note in brackets that decides nothing or says the id is not asserted.
 
 - **Raised at** `malspark.pipeline.validation:technique_line_violation`
 - **Constant** `malspark.pipeline.validation:TECHNIQUE_LINE_UNREAD_CODE`
