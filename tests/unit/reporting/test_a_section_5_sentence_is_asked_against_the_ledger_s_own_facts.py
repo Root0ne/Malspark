@@ -218,8 +218,8 @@ def _qualify(model_words: str, sentence: str = ABSENT, body: str = "") -> Any:
     "model_words",
     [
         # An appended claim, an inserted contradiction, an inserted negation, a
-        # prefixed denial and a flipped claim: each read as the model's choice
-        # to qualify, never as the words that stand.
+        # prefixed denial and a flipped claim: a row resting on a routine no entry lists
+        # is answered in the model's own words, either way, checked as any rewrite (T-736).
         "No environment check is established; 0x5a38 is an environment check [ev_0107].",
         "No environment check is established, which is false: 0x5a38 checks it [ev_0107].",
         "No environment check is not established; 0x5a38 [ev_0107].",
@@ -227,10 +227,11 @@ def _qualify(model_words: str, sentence: str = ABSENT, body: str = "") -> Any:
         "An environment check is established by 0x5a38 [ev_0107].",
     ],
 )
-def test_the_platform_writes_the_qualification_whatever_the_model_wrote(model_words: str) -> None:
+def test_a_rewrite_on_an_unlisted_routine_is_the_model_s_whatever_it_says(model_words: str) -> None:
     body, done = _qualify(model_words)
     gate = "The gate at 0x5a10 returns early [ev_0107]."
-    assert body == f"{gate} No environment check is established; {CLAUSE}."
+    assert body == f"{gate} {model_words}"
+    assert CLAUSE not in body
     assert done.summary["rewritten"] == 1
     assert [r["code"] for r in done.tally.unresolved] == [REWRITTEN_CODE]
 
@@ -242,23 +243,27 @@ def test_the_platform_writes_the_qualification_whatever_the_model_wrote(model_wo
         "Routine 0x5a10 is an environment check [ev_0107].",
     ],
 )
-def test_a_sentence_naming_the_routine_is_qualified_in_the_platform_s_words(
+def test_a_sentence_naming_the_routine_is_rewritten_in_the_model_s_words(
     model_words: str,
 ) -> None:
     sentence = "Routine 0x5a38 performs no check."
     body, done = _qualify(
         model_words, sentence, f"The gate at 0x5a10 returns early [ev_0107]. {sentence}"
     )
-    assert body.endswith(f"Routine 0x5a38 performs no check; {CLAUSE}.")
+    assert body.endswith(model_words) and CLAUSE not in body
     assert done.summary["rewritten"] == 1
 
 
-def test_an_unlisted_routine_qualifies_no_passage_that_names_neither_it_nor_its_caller() -> None:
-    # The model's words name the routine and keep the sentence's: the passage
-    # still names neither it nor its caller.
+def test_an_unlisted_routine_appends_no_clause_where_the_passage_names_neither() -> None:
+    # The model's words name the routine and cite the entry its fact cites: checked as any
+    # rewrite, they stand; the platform appends nothing (T-736).
+    words = "No environment check is established; 0x5a38 was not examined [ev_0107]."
+    body, done = _qualify(words, body=f"Nothing in the listing probes the host [ev_0107]. {ABSENT}")
+    assert body.endswith(words) and CLAUSE not in body
+    assert done.summary["rewritten"] == 1
+    # Words citing nothing pass no check, and nothing is appended to the sentence.
     body, done = _qualify(
-        "No environment check is established; 0x5a38 was not examined [ev_0107].",
-        body=f"Nothing in the listing probes the host [ev_0107]. {ABSENT}",
+        "anything", body=f"Nothing in the listing probes the host [ev_0107]. {ABSENT}"
     )
     assert body.endswith(ABSENT)
     assert done.tally.by_code[REWRITE_UNGROUNDED_CODE] == 2
@@ -557,7 +562,7 @@ def test_a_bound_value_in_the_platform_s_clause_cites_nothing_and_is_no_token(
     assert body.startswith(f'{GATED} The mutex name is not established; the code passes "qx')
 
 
-def test_only_the_facts_that_ground_the_sentence_add_their_clause() -> None:
+def test_no_unlisted_routine_s_fact_adds_its_clause_to_a_refused_rewrite() -> None:
     # A second unlisted routine, named in the background only: neither the
     # sentence nor its section 5 passage names it or its caller.
     report = _report()
@@ -578,9 +583,10 @@ def test_only_the_facts_that_ground_the_sentence_add_their_clause() -> None:
     done = _ask(report, _Reporter({"sentences": [row]}), ledger)
     body = report.technical_analysis.evasion_antiforensics.body
     gate = "The gate at 0x5a10 returns early [ev_0107]."
-    assert body == f"{gate} No environment check is established; {CLAUSE}."
+    # The model's words pass no check: the sentence stands, no fact's clause added (T-736).
+    assert body == f"{gate} {ABSENT}"
     assert "0x9c40" not in body
-    assert done.summary["rewritten"] == 1
+    assert done.summary["rewritten"] == 0
 
 
 def test_a_sentence_already_carrying_the_fact_s_clause_is_not_qualified_again() -> None:
@@ -604,10 +610,12 @@ def test_a_sentence_already_carrying_the_fact_s_clause_is_not_qualified_again() 
         f"The gate at 0x5a10 returns early [ev_0107].\n\n{ABSENT}",
     ],
 )
-def test_an_absence_is_qualified_on_a_routine_its_passage_names_anywhere(body: str) -> None:
+def test_an_absence_is_not_qualified_on_a_routine_its_passage_names_anywhere(body: str) -> None:
+    # A row resting on a routine no entry lists is the model's to word: words that pass no
+    # check leave the sentence as written, the platform's clause not appended (T-736).
     out, done = _qualify("anything", body=body)
-    assert out == body.replace(ABSENT, f"No environment check is established; {CLAUSE}.")
-    assert done.summary["rewritten"] == 1
+    assert out == body
+    assert done.summary["rewritten"] == 0
 
 
 @pytest.mark.parametrize(
@@ -625,13 +633,14 @@ def test_an_absence_is_qualified_on_a_routine_its_passage_names_anywhere(body: s
         "That caller trace is not in the ledger.",
     ],
 )
-def test_an_absence_the_code_read_leaves_unsettled_is_qualified_on_a_routine(
+def test_an_absence_the_code_read_leaves_unsettled_is_not_qualified_on_a_routine(
     sentence: str,
 ) -> None:
     body = f"The gate at 0x5a10 returns early [ev_0107]. {sentence}"
     out, done = _qualify("anything", sentence, body)
-    assert out == body.replace(sentence, f"{sentence[:-1]}; {CLAUSE}.")
-    assert done.summary["rewritten"] == 1
+    # The model's to word; words that pass no check leave it as written (T-736).
+    assert out == body
+    assert done.summary["rewritten"] == 0
 
 
 @pytest.mark.parametrize(
