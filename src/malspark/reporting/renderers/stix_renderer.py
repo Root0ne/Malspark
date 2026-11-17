@@ -764,7 +764,7 @@ def _judge_indicator_unpublished(
         key = (kind, _value_key(kind, row.value))
         if publishes(row.published) or key not in answers:
             answers[key] = str(row.published or "")
-    for value in rule_values(indicator.pattern or ""):
+    for value in asserted_values(indicator.pattern or ""):
         answer = answers.get((value.kind, _value_key(value.kind, value.value)))
         if publishes(answer):
             continue
@@ -794,7 +794,20 @@ def _judge_indicator_unpublished(
             "this run may publish what the pattern matches. It is not in the exported bundle "
             "and is unchanged in the judge's own bundle.",
         )
+    # Only conditions (``!=``, ``<``, ``>``): what a thing is not, or a bound,
+    # names no value the sample has, and no indicator of it.
+    if not asserted_values(indicator.pattern or "") and rule_values(indicator.pattern or ""):
+        return (UNPUBLISHED_VALUE_CODE, asserts_no_value_sentence(named))
     return None
+
+
+def asserts_no_value_sentence(named: str) -> str:
+    """Why a judge indicator of conditions alone is not exported, the reason first."""
+    return (
+        f"the judge's indicator {named!r} asserts no value: each of its comparisons says what a "
+        "value is not or bounds it, and names no value of the sample. It is not in the exported "
+        "bundle and is unchanged in the judge's own bundle."
+    )
 
 
 class ExtendedSTIXRenderer:
@@ -1160,7 +1173,7 @@ class ExtendedSTIXRenderer:
             (value.kind, _value_key(value.kind, value.value))
             for obj in objects
             if isinstance(obj, Indicator)
-            for value in pattern_values(obj.pattern or "")
+            for value in asserted_values(obj.pattern or "")
         }
         for row, made in late:
             key = (str(row.kind or ""), _value_key(str(row.kind or ""), row.value))
@@ -2038,7 +2051,7 @@ def _with_record_evidence(
             wanted = _evidence_refs(
                 [
                     eid
-                    for value in rule_values(obj.pattern or "")
+                    for value in asserted_values(obj.pattern or "")
                     for eid in (value_evidence or {}).get(
                         (value.kind, _value_key(value.kind, value.value)), ()
                     )
@@ -5017,19 +5030,23 @@ def judge_value_answer(
 def names_one_value(pattern: str) -> bool:
     """Whether a judge's pattern names one value and no other, as the judge's list always read it.
 
-    The pattern holds exactly one comparison, a file's name paired with its
-    directory counted as one (:func:`_paired_directory`), and the pattern
-    reader reads a value from it. So ``[file:name = 'x']`` names one value,
-    and so does ``[file:name = 'x' AND file:parent_directory_ref.path = 'd']``;
-    a pattern with any second comparison does not, whatever that comparison
-    is: a value beside a comparison that names no value (``file:size > 10``),
-    beside a digest (quoted or not), beside a ``MATCHES`` or ``LIKE``, beside
-    a property its object does not have, or joined to a value of another kind,
-    by ``AND`` or by ``OR``, each counts two and names no one value.
+    The pattern holds exactly one comparison the comparison reader reads
+    (:func:`read_comparisons`), a file's name paired with its directory
+    counted as one (:func:`_paired_directory`), and that comparison asserts a
+    value (:func:`asserted_values`: an ``=``, or an ``IN`` of one member). So
+    ``[file:name = 'x']`` names one value, and so does ``[file:name = 'x' AND
+    file:parent_directory_ref.path = 'd']``. A comparison with an unquoted
+    number (``file:size > 10``) is no comparison the reader reads, so
+    ``[file:name = 'x' AND file:size > 10]`` names one value too. Any second
+    comparison it reads makes two, whatever it is: a digest (quoted), a
+    ``MATCHES`` or ``LIKE``, a ``!=``, ``<`` or ``>`` on a quoted value, a
+    property its object does not have, a second member of an ``IN`` list, or a
+    value of another kind, by ``AND`` or by ``OR``: such a pattern names no one
+    value. A pattern of one condition alone (``!=``) asserts none.
     """
     comparisons = read_comparisons(pattern)
     paired = _paired_directory(pattern, comparisons) is not None
-    return len(comparisons) - paired == 1 and bool(pattern_values(pattern))
+    return len(comparisons) - paired == 1 and bool(asserted_values(pattern))
 
 
 def export_accepts(pattern: str) -> bool:
@@ -5079,7 +5096,7 @@ def judge_values_given_a_row(
             given.add(key)  # (ii), or a record stored before the patterns were
         elif any(
             export_accepts(p)
-            and all(_published((v.kind, _value_key(v.kind, v.value))) for v in rule_values(p))
+            and all(_published((v.kind, _value_key(v.kind, v.value))) for v in asserted_values(p))
             for p in named
         ):
             given.add(key)  # (i)
@@ -5234,7 +5251,7 @@ def _carried_judge_record(
             return True, (types[0] if types else None)
         for pattern, claimed in zip(patterns, types, strict=False):
             if export_accepts(pattern) and all(
-                (v.kind, _value_key(v.kind, v.value)) in published for v in rule_values(pattern)
+                (v.kind, _value_key(v.kind, v.value)) in published for v in asserted_values(pattern)
             ):
                 return True, (claimed or None)
     return False, None
@@ -5291,16 +5308,29 @@ def pattern_values(pattern: str) -> list[ExportedValue]:
     return _compared_values(pattern, lambda operator: operator == "=")
 
 
+def asserted_values(pattern: str) -> list[ExportedValue]:
+    """What a pattern asserts: the operand of each ``=`` and each member of an ``IN`` list.
+
+    The one reading of the values an indicator names, read by the judge's
+    record (:func:`exported_indicator_values`), the export's lookup of a judge
+    indicator, the rows the judge's naming gives, the keep, the lifting of the
+    shape question and the types. The operand of any other comparison
+    (``!=``, ``<``, ``>``, ``LIKE``, ``MATCHES``) is a condition, not a value
+    the indicator names: it gets no row, is asked nothing, and neither
+    carries nor blocks an indicator.
+    """
+    return _compared_values(pattern, lambda operator: operator == "=" or operator.startswith("in"))
+
+
 def rule_values(pattern: str) -> list[ExportedValue]:
     """Every value a pattern names over a kind the rule answers, whatever the operator.
 
-    :func:`pattern_values` reads ``=`` alone, which is what the IOC table and
-    ``/iocs`` list. This reads what the export asks the rule about: every
-    quoted operand of an operator that compares with a value — ``=``, ``!=``,
-    ``<``, ``>``, ``<=``, ``>=`` and each member of ``IN`` — and never a shape
-    (``LIKE``, ``MATCHES``, ``ISSUBSET``, ``ISSUPERSET``), which names no value.
-    An ``IN`` list, a ``<`` or a ``!=`` used to reach the export with nothing
-    asked, so a value the rule refused as ``=`` was published inside one.
+    Every quoted operand of an operator that compares with a value — ``=``,
+    ``!=``, ``<``, ``>``, ``<=``, ``>=`` and each member of ``IN`` — and never
+    a shape (``LIKE``, ``MATCHES``, ``ISSUBSET``, ``ISSUPERSET``). What an
+    indicator asserts is :func:`asserted_values`; this tells an indicator of
+    conditions alone, which asserts none, from one that compares nothing the
+    rule answers, and is what the judge's question lists.
     """
     return _compared_values(pattern, _endpoint_is_readable)
 
@@ -5417,7 +5447,7 @@ def exported_indicator_values(bundle: Any) -> list[ExportedValue]:
 
     The one reader of the judge's values: the report builder stores what it
     reads of the judge's own bundle (``MalwareReport.judge_indicators``). Each
-    value the pattern reader reads (:func:`pattern_values`), whatever the
+    value the indicator asserts (:func:`asserted_values`), whatever the
     pattern's shape (one comparison, several joined, a value beside a digest)
     and whether or not the export accepts the pattern, with the pattern of
     every indicator naming it and the first type each claims. Two facts are
@@ -5436,7 +5466,7 @@ def exported_indicator_values(bundle: Any) -> list[ExportedValue]:
             continue
         pattern = str(obj.get("pattern") or "")
         claimed = next((str(t) for t in obj.get("indicator_types") or [] if t), "")
-        for value in pattern_values(pattern):
+        for value in asserted_values(pattern):
             key = (value.kind, value.value.lower())
             held = found.get(key, value)
             if pattern in held.indicator_patterns:
@@ -6198,7 +6228,7 @@ def _with_the_publish_reason(objects: list[Any], rows: Sequence[Any]) -> list[An
             out.append(obj)
             continue
         said: list[str] = []
-        for value in rule_values(obj.pattern or ""):
+        for value in asserted_values(obj.pattern or ""):
             answer = answers.get((value.kind, _value_key(value.kind, value.value)))
             if answer:
                 why = answer.split(":", 1)[1].strip() if ":" in answer else answer
@@ -6254,7 +6284,7 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
         if isinstance(obj, Indicator):
             marks = stated_marks(
                 mark
-                for value in rule_values(obj.pattern or "")
+                for value in asserted_values(obj.pattern or "")
                 for mark in by_value.get((value.kind, _value_key(value.kind, value.value)), ())
             )
         elif (
