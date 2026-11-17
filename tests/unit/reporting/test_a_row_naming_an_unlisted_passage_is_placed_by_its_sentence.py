@@ -200,3 +200,33 @@ def test_a_row_placed_in_the_first_answer_stands_where_the_retry_leaves_it_out()
     assert done.tally.retries == 1
     assert report.intro_background == f"{FIRST} {_PLAIN}"
     assert done.summary["rewritten"] == 1
+
+
+@pytest.mark.parametrize(
+    "limitations",
+    [FIRST, "The gate writes no file [ev_0107]."],
+    ids=["once in another passage", "in no other passage"],
+)
+def test_a_sentence_one_passage_writes_twice_places_no_row(limitations: str) -> None:
+    # The introduction writes the sentence twice: it holds it, though not once, so no one
+    # passage holds it exactly once and the row is refused, every passage as written.
+    background = f"{FIRST} {FIRST}"
+    row = {
+        **_row(FIRST, "drop", [], reason="the lines shown say otherwise"),
+        "passage": "held.introduction",
+    }
+    report = _report(limitations, background=background)
+    ledger = _ledger()
+    passages = passages_of(report, entries=ledger)
+    found = [
+        (v.code, v.path)
+        for v in agreement_violations({"sentences": [row]}, passages, [str(e.id) for e in ledger])
+    ]
+    assert (UNKNOWN_PASSAGE_CODE, "sentences.0.passage") in found
+    _counts, records = apply_rows({"sentences": [row]}, passages)
+    assert not [v for v in records if v.code == PLACED_BY_SENTENCE_CODE]
+    report = _report(limitations, background=background)
+    done = _ask(report, _Reporter({"sentences": [row]}, {"sentences": [row]}))
+    assert PLACED_BY_SENTENCE_CODE not in done.tally.by_code
+    assert report.intro_background == background
+    assert report.technical_analysis.analyst_limitations.body == limitations
