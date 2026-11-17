@@ -73,6 +73,14 @@ from malspark.reporting.renderers.stix_renderer import (
 from malspark.schemas.stix_models import Bundle
 from malspark.schemas.stix_pattern import read_comparisons
 
+
+def asserted(pattern: str) -> list[Any]:
+    """What a pattern asserts: the operand of each ``=`` and each member of an ``IN`` list."""
+    from malspark.reporting.renderers.stix_renderer import _compared_values
+
+    return _compared_values(pattern, lambda op: op == "=" or op.startswith("in"))
+
+
 SHA256 = "a" * 64
 MD5 = "c" * 32
 SHAPE_REFUSALS = (NOT_A_FILE_SHAPE, COMPILE_ARTIFACT_PATH, CLASS_REFERENCE_PATH)
@@ -89,6 +97,9 @@ PLACES = {
     "domain": ("nowhere", "sweep", "network"),
 }
 VERDICTS = [(v, c) for v in ("Malware", "Suspicious", "Benign") for c in (0.9, None)]
+# A second value of each kind a second source holds, and one nothing holds.
+OTHER = {"path": "C:\\ProgramData\\b.dat", "domain": "b-c2.example.net"}
+NOWHERE = {"path": "C:\\ProgramData\\nowhere.dat", "domain": "nowhere-c2.example.net"}
 
 
 def _esc(value: str) -> str:
@@ -117,6 +128,7 @@ def _shapes(kind: str, value: str) -> dict[str, list[str]]:
     digest = f"file:hashes.MD5 = '{MD5}'"
     same_object = kind == "path"
     object_type = "file" if same_object else "domain-name"
+    prop = "name" if same_object else "value"
     # A pattern the export declines whole: one comparison the grammar refuses (a
     # stray backslash in a quoted value) where the value holds a backslash, else
     # a property its object type does not have.
@@ -147,6 +159,14 @@ def _shapes(kind: str, value: str) -> dict[str, list[str]]:
         "declined-first": [declined, f"[{one}]"],
         "declined-second": [f"[{one}]", declined],
         "declined-only": [declined],
+        # Listed values: each member of an IN list is a value the indicator names.
+        "in-both": [f"[{object_type}:{prop} IN ('{_esc(value)}', '{_esc(OTHER[kind])}')]"],
+        "in-one-unpublished": [
+            f"[{object_type}:{prop} IN ('{_esc(value)}', '{_esc(NOWHERE[kind])}')]"
+        ],
+        # A condition, not a value: what the thing is not.
+        "neq-alone": [f"[{object_type}:{prop} != '{_esc(value)}']"],
+        "eq-beside-neq": [f"[{one} AND {object_type}:{prop} != '{_esc(NOWHERE[kind])}']"],
     }
 
 
@@ -158,7 +178,10 @@ def _report(
         fields["static"] = StaticAnalysis(interesting_strings=[StringIOC(kind=kind, value=value)])
     if place in ("second-source", "sweep-second-source"):
         fields["dynamic"] = DynamicBehavior(
-            process_tree=[{"pid": 1, "name": "s.exe", "command_line": f"s.exe {value}"}]
+            process_tree=[
+                {"pid": 1, "name": "s.exe", "command_line": f"s.exe {value}"},
+                {"pid": 2, "name": "s.exe", "command_line": f"s.exe {OTHER[kind]}"},
+            ]
         )
     if place == "host-row":
         fields["dynamic"] = DynamicBehavior(
@@ -196,7 +219,7 @@ def _bundle_values(bundle: dict[str, Any]) -> dict[tuple[str, str], list[list[st
     for obj in bundle["objects"]:
         if obj.get("type") != "indicator":
             continue
-        for found in pattern_values(str(obj.get("pattern") or "")):
+        for found in asserted(str(obj.get("pattern") or "")):
             out.setdefault(_key(found.kind, found.value), []).append(obj["indicator_types"])
     return out
 
@@ -247,7 +270,10 @@ def test_the_judges_values_hold_every_property(
 
     carried = _bundle_values(bundle)
     for pattern in patterns:
-        values = [_key(v.kind, v.value) for v in pattern_values(pattern)]
+        if not asserted(pattern) and rule_values(pattern):
+            # (b) a pattern of conditions alone asserts no value: never carried.
+            assert pattern not in carried_patterns, f"(b) carried, asserting nothing: {pattern}"
+        values = [_key(v.kind, v.value) for v in asserted(pattern)]
         if all(v[1] in sample for v in values):
             continue  # names only the sample: folded into the sample's own indicator
         if pattern in carried_patterns:
@@ -260,9 +286,13 @@ def test_the_judges_values_hold_every_property(
         # (b) declined only for a reason true of it.
         if pattern_problem(pattern) is not None:
             continue
+        if not asserted(pattern) and rule_values(pattern):
+            # Only conditions: it asserts no value, and says so.
+            assert any("asserts no value" in why for why in declines), f"(b) {declines}"
+            continue
         refused = [
             v
-            for v in rule_values(pattern)
+            for v in asserted(pattern)
             if not publishes(getattr(by_key.get(_key(v.kind, v.value)), "published", None))
         ]
         assert refused, f"(b) {pattern} declined with every value published"
@@ -284,7 +314,7 @@ def test_the_judges_values_hold_every_property(
             _key(v.kind, v.value) == _key(kind, value)
             for p in patterns
             if pattern_problem(p) is None
-            for v in pattern_values(p)
+            for v in asserted(p)
         )
         if named:
             assert not any(str(after).startswith(f"no: {why}") for why in SHAPE_REFUSALS), (
@@ -341,7 +371,7 @@ def test_the_judges_values_hold_every_property(
             return (
                 pattern_problem(pattern) is None
                 and not re.search(r"\b(MATCHES|LIKE)\b", pattern)
-                and all(_key(v.kind, v.value) in published_keys_ for v in rule_values(pattern))
+                and all(_key(v.kind, v.value) in published_keys_ for v in asserted(pattern))
             )
 
         def _one_value(pattern: str) -> bool:
@@ -349,12 +379,10 @@ def test_the_judges_values_hold_every_property(
             # single comparison, a file's name with its directory counted as one.
             comparisons = read_comparisons(pattern)
             paired = any(c.prop == "parent_directory_ref.path" for c in comparisons)
-            return len(comparisons) - paired == 1 and bool(pattern_values(pattern))
+            return len(comparisons) - paired == 1 and bool(asserted(pattern))
 
         naming = [
-            p
-            for p in patterns
-            if _key(kind, value) in {_key(v.kind, v.value) for v in pattern_values(p)}
+            p for p in patterns if _key(kind, value) in {_key(v.kind, v.value) for v in asserted(p)}
         ]
         gives = any(_one_value(p) or _carried(p) for p in naming)
         assert (_key(kind, value) in by_key) == gives, f"(g) row {_key(kind, value) in by_key}"
@@ -364,8 +392,7 @@ def test_the_judges_values_hold_every_property(
                 o["pattern"]
                 for o in bundle["objects"]
                 if o.get("type") == "indicator"
-                and _key(kind, value)
-                in {_key(v.kind, v.value) for v in pattern_values(o["pattern"])}
+                and _key(kind, value) in {_key(v.kind, v.value) for v in asserted(o["pattern"])}
                 and o["pattern"] not in judge_spellings
             ]
             assert minted == [], f"(g) minted for a judge row: {minted}"
@@ -383,7 +410,7 @@ def test_the_judges_values_hold_every_property(
 
 
 def test_the_net_is_as_wide_as_it_says() -> None:
-    assert len(CASES) == sum(len(PLACES[k]) for k, _v in VALUES.values()) * 12 * len(VERDICTS)
+    assert len(CASES) == sum(len(PLACES[k]) for k, _v in VALUES.values()) * 16 * len(VERDICTS)
 
 
 def test_an_unquoted_hash_key_is_read_as_no_value_as_today() -> None:

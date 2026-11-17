@@ -262,7 +262,7 @@ class TestOneDecision:
 
 
 class TestEveryOperatorIsAskedTheRule:
-    """An ``IN`` list, a ``!=`` or a ``>`` carried the values ``=`` was refused."""
+    """An ``IN`` list, a ``!=`` or a ``>`` is declined as ``=`` is when the rule refuses it."""
 
     @pytest.mark.parametrize(
         "pattern",
@@ -282,8 +282,16 @@ class TestEveryOperatorIsAskedTheRule:
 
         assert pattern not in str(exported)
         assert UNPUBLISHED_VALUE_CODE in [code for code, _why in renderer.declined]
-        # The table and the feed read ``=`` alone and list nothing from it.
-        assert not report.judge_indicators
+        # Each member of an ``IN`` list is a value the judge asserts and is listed
+        # with the rule's answer; a ``!=`` or a ``>`` asserts none and lists nothing.
+        listed = [indicator.value for indicator in report.judge_indicators]
+        if " IN " in pattern:
+            assert listed
+            refused = [value for value in listed if value != OBSERVED]
+            assert refused
+            assert not any(publishes(_row(report, value).published) for value in refused)
+        else:
+            assert not listed
 
     def test_an_in_list_of_values_the_rule_publishes_is_carried(self) -> None:
         pattern = f"[domain-name:value IN ('{OBSERVED}')]"
@@ -988,3 +996,34 @@ def test_a_shape_beside_a_value_the_export_declines_gives_no_row() -> None:
     assert "relaymark" not in str(
         [o.get("pattern") for o in exported["objects"] if o.get("type") == "indicator"]
     )
+
+
+@pytest.mark.parametrize("confidence", [0.9, None])
+def test_a_host_row_a_declined_judge_indicator_names_keeps_the_platform_s_type(
+    confidence: float | None,
+) -> None:
+    """A Run key the judge names beside a ``MATCHES`` it is not carried for lends no type."""
+    from malspark.reporting.models import PersistenceMechanism
+
+    key = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\relay"
+    escaped = key.replace("\\", "\\\\")
+    judge = _judge(
+        f"[windows-registry-key:key = '{escaped}' OR windows-registry-key:key MATCHES '^HKCU']"
+    )
+    report = _report(
+        judge,
+        overall_confidence=confidence,
+        persistence=[PersistenceMechanism(kind="registry_run", target=key, payload="relay.exe")],
+    )
+    report.verdict = "Suspicious"
+    report.judge_indicators = _recorded(judge)
+    exported, _renderer = _export(report, judge)
+
+    row = _row(report, key)
+    assert (row.source, publishes(row.published)) == ("persistence", True), row.published
+    assert row.indicator_type == "anomalous-activity"
+    assert [
+        o["indicator_types"]
+        for o in exported["objects"]
+        if o.get("type") == "indicator" and "CurrentVersion" in str(o.get("pattern"))
+    ] == [["anomalous-activity"]]
