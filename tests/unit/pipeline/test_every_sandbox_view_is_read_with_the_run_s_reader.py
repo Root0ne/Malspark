@@ -36,7 +36,7 @@ from tests.unit.providers.test_the_dropped_files_view_keeps_each_row_s_path_orig
 
 SRC = Path(sandbox_tools.__file__).resolve().parents[1]
 # Every module that may read a view: the platform's and the API's.
-ROOTS = (SRC, SRC.parents[2] / "apps" / "api" / "app")
+ROOTS = (SRC, SRC.parents[1] / "apps" / "api" / "app")
 _MODULE = "sandbox_tools"
 # What no module but the entry point's own may take from it: a view by its
 # function, and the table of views.
@@ -151,6 +151,10 @@ class TestOneEntryPoint:
     )
     def test_the_guard_finds_a_view_read_by_any_name(self, source: str) -> None:
         assert view_reads(source) != []
+
+    def test_the_guard_reads_the_api_too(self) -> None:
+        api = [root for root in ROOTS if root.parts[-3:] == ("apps", "api", "app")]
+        assert api and any(api[0].rglob("*.py"))
 
     def test_the_guard_passes_the_entry_point(self) -> None:
         source = (

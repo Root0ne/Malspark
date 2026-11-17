@@ -88,3 +88,13 @@ def test_the_record_whose_method_is_printed_gives_its_own_user_agent() -> None:
     row = urls["http://c.example.com/n"]
 
     assert (row.method, row.user_agent) == ("POST", AGENT)
+
+
+def test_an_agent_of_a_later_record_is_not_joined_to_the_printed_method() -> None:
+    urls = _urls(
+        {"host": "c.example.com", "uri": "/k", "method": "GET"},
+        {"host": "c.example.com", "uri": "/k", "user_agent": AGENT},
+    )
+    row = urls["http://c.example.com/k"]
+
+    assert (row.method, row.user_agent) == ("GET", None)
