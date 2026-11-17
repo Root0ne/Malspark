@@ -1408,14 +1408,26 @@ def _with_the_judge_s_values(
     same one, asked of the same source. A run once exported two C2 names the
     judge read out of decoded strings while this table listed four hashes.
     """
-    from malspark.reporting.renderers.stix_renderer import judge_indicator_rows
+    from malspark.reporting.ledger_projection import value_key
+    from malspark.reporting.renderers.stix_renderer import (
+        judge_indicator_rows,
+        judge_values_given_a_row,
+    )
 
     judged = judge_indicator_rows(report)
     if not judged:
         return rows
     out = list(rows)
+    held = {
+        (row.kind or "", value_key(row.kind or "", row.value)): str(row.published or "")
+        for row in out
+    }
+    given = judge_values_given_a_row(judged, held)
     for item, answer in judged:
         wanted = item.value.strip().lower()
+        if (item.kind, value_key(item.kind, item.value)) not in given:
+            # Named only jointly, by an indicator the export does not carry.
+            continue
         same = [
             index
             for index, row in enumerate(out)

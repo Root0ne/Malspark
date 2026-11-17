@@ -5014,13 +5014,43 @@ def judge_value_answer(
     )
 
 
-def _named_by_an_accepted_pattern(item: Any) -> bool:
-    """Whether a judge value is named by an indicator whose pattern the export accepts.
+def judge_values_given_a_row(
+    judged: Sequence[tuple[Any, str]], held: Mapping[tuple[str, str], str]
+) -> set[tuple[str, str]]:
+    """The ``(kind, key)`` of each judge value the judge's naming gives a row.
 
-    A value recorded before the patterns were is read as it was exported.
+    ``judged`` is each recorded value with the rule's answer for it
+    (:func:`judge_indicator_rows`); ``held`` the answer of every row the table
+    already holds. For a value nobody else holds, a row is given where (ii) an
+    indicator names it and no other value, whether or not the export carries
+    it (the judge's statement about the value itself, published by the
+    evidence rule), or where (i) the export carries an indicator naming it: no
+    pattern problem, and every value it names has a published row, one the
+    table holds or one this gives. An indicator joining several values the
+    export does not carry gives none (iii). A value's answer does not depend
+    on which rows exist, so whether an indicator is carried is read in one
+    pass and needs no fixpoint. A value recorded before the patterns were is
+    given its row, as it was.
     """
-    patterns = list(_field(item, "indicator_patterns") or [])
-    return not patterns or any(pattern_problem(p) is None for p in patterns)
+    answers = {(str(i.kind), _value_key(str(i.kind), i.value)): a for i, a in judged}
+
+    def _published(key: tuple[str, str]) -> bool:
+        # A row the table holds, else the row a carried indicator would give.
+        return publishes(held[key]) if key in held else publishes(answers.get(key))
+
+    given: set[tuple[str, str]] = set()
+    for item, _answer in judged:
+        key = (str(item.kind), _value_key(str(item.kind), item.value))
+        named = list(_field(item, "indicator_patterns") or [])
+        if not named or any(len(pattern_values(p)) == 1 for p in named):
+            given.add(key)  # (ii), or a record stored before the patterns were
+        elif any(
+            pattern_problem(p) is None
+            and all(_published((v.kind, _value_key(v.kind, v.value))) for v in rule_values(p))
+            for p in named
+        ):
+            given.add(key)  # (i)
+    return given
 
 
 def judge_indicator_rows(report: Any, corpus: Any = None) -> list[tuple[Any, str]]:
@@ -5030,13 +5060,7 @@ def judge_indicator_rows(report: Any, corpus: Any = None) -> list[tuple[Any, str
     export asks before it carries a judge indicator, so the three surfaces
     read one decision.
     """
-    # A value only a declined indicator names is the judge's naming, not a row:
-    # only an indicator whose pattern the export accepts gives one.
-    rows = [
-        row
-        for row in getattr(report, "judge_indicators", None) or []
-        if _named_by_an_accepted_pattern(row)
-    ]
+    rows = list(getattr(report, "judge_indicators", None) or [])
     if not rows:
         return []
     corroborating = _corroborating_values(report, corpus)
@@ -5118,10 +5142,11 @@ def table_row_record(
         return LISTED_ROLE, None
     # The table's published values, which decide which judge indicators the
     # export carries: given by the caller that holds the whole table.
-    carried, judged = _carried_judge_record(row, report, table_published or frozenset())
-    if str(_field(row, "source") or "") == "judge" and carried:
+    _carried, judged = _carried_judge_record(row, report, table_published or frozenset())
+    if str(_field(row, "source") or "") == "judge":
         # The judge's own indicator carries it, under the judge's type; one the
-        # export declines leaves it to the platform, like any published row.
+        # export declines leaves it with no object and no type: the platform
+        # mints none for a judge's row.
         return INDICATOR_ROLE, judged
     if _host_row(row) and judged:
         # A host value the judge's own indicator names, where the export carries
@@ -5371,10 +5396,10 @@ def exported_indicator_values(bundle: Any) -> list[ExportedValue]:
     read off it. The judge NAMES every value it holds: naming keeps a sandbox
     row and lifts the shape question of a row of the string sweep. The export
     CARRIES an indicator with no pattern problem (:func:`pattern_problem`)
-    whose every value has a published row: only such an indicator gives a row
-    for a value nobody else holds (:func:`judge_indicator_rows`), is exported,
+    whose every value has a published row: only such an indicator is exported
     and lends its type (:func:`carried_judge_type`); a declined one lends
-    nothing, whichever order it comes in. It decides nothing.
+    nothing, whichever order it comes in. Which values nobody else holds get a
+    row is :func:`judge_values_given_a_row`'s. It decides nothing.
     """
     objects = (bundle or {}).get("objects") if isinstance(bundle, dict) else None
     found: dict[tuple[str, str], ExportedValue] = {}
@@ -5571,19 +5596,17 @@ def _row_indicators(
     The first list is written before the judge's own indicators, the network
     rows first in the network block's order; the second, each with its row,
     after them (:func:`_host_row`). A row only the judge's indicator records
-    (source ``judge``) is the judge's to write where the export carries one of
-    its indicators naming it (:func:`judge_carries`); one whose every such
-    indicator the export declines is minted like any published row.
+    (source ``judge``) is the judge's to write: its own indicator carries it,
+    and where the export declines it there is no object (the stated case).
     """
     early: list[tuple[int, int, Indicator]] = []
     late: list[tuple[Any, Indicator]] = []
-    published = published_keys(rows)
     for position, row in enumerate(rows):
         if (
             row.role != INDICATOR_ROLE
             or not row.indicator_type
             or not publishes(row.published)
-            or (row.source == "judge" and judge_carries(row, report, published))
+            or row.source == "judge"
             or _lifted_by_the_judge(row, report)
         ):
             continue
