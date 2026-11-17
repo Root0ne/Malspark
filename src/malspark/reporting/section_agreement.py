@@ -6918,10 +6918,11 @@ def _placed(
     payload: Any, by_id: dict[str, Passage], sentences_of: Callable[[Passage], _Sentences]
 ) -> Any:
     """``payload`` with each row naming a passage no list writes placed by the sentence it
-    copies, where that sentence stands whole in exactly one passage a row may answer (a
-    passage written without the code or a section 5 passage, not one shown as a source only),
-    the passage it named kept under :data:`_PLACED_FROM`; every other row as it is. A sentence
-    standing in two passages, or in none, places nothing (T-736). One pass over the rows."""
+    copies, where exactly one passage a row may answer (a passage written without the code or
+    a section 5 passage, not one shown as a source only) holds that sentence at all, and holds
+    it whole and once, the passage it named kept under :data:`_PLACED_FROM`; every other row as
+    it is. A sentence standing in two passages, in none, or twice in one places nothing
+    (T-736). One pass over the rows."""
     rows = payload.get("sentences") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return payload
@@ -6939,13 +6940,21 @@ def _placed(
             and (_form(named) not in by_id)
             and sentence.strip()
         ):
-            standing = [
+            # Every passage holding the sentence at all, once or more: a passage writing it
+            # twice holds it, and leaves the row unplaced.
+            holding = [
                 p
                 for p in answerable
-                if _answered_span(sentences_of(p), sentence, row.get("decision")) is not None
+                if sentences_of(p).every(sentence)
+                or _answered_span(sentences_of(p), sentence, row.get("decision")) is not None
             ]
-            if len(standing) == 1:
-                row = {**row, "passage": standing[0].id, _PLACED_FROM: named}
+            if (
+                len(holding) == 1
+                and len(sentences_of(holding[0]).every(sentence)) <= 1
+                and _answered_span(sentences_of(holding[0]), sentence, row.get("decision"))
+                is not None
+            ):
+                row = {**row, "passage": holding[0].id, _PLACED_FROM: named}
         out.append(row)
     return {**payload, "sentences": out}
 
