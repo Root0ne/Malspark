@@ -8592,6 +8592,12 @@ def _qualify_unread_left(
     return out
 
 
+def _rows_of(payload: Any) -> list[Any]:
+    """The rows of an answer as it stands, fitting the schema or not."""
+    raw = payload.get("sentences") if isinstance(payload, dict) else None
+    return raw if isinstance(raw, list) else []
+
+
 def _merged_rows(
     first: Any,
     last: Any,
@@ -8748,9 +8754,18 @@ async def _ask(
         # but for a sentence the ledger's lines hold, whose refused row stays its last
         # answer: no answer for it passed, and it is left out as refused (T-600).
         parsed = _merged_rows(answered[0], parsed, lambda row: _sound(row) or _held(row), _where)
-        answered[0] = parsed
+        # Kept for a retry, a whole-field keep or drop is its rows sentence by sentence, so a
+        # retry answering one sentence leaves the others their first answer (T-719).
+        answered[0] = {**parsed, "sentences": [r for row in _rows_of(parsed) for r in _apart(row)]}
         checked[0] = _platform_rewrites(parsed, by_id)
         return checked[0]
+
+    def _apart(row: Any) -> list[Any]:
+        found = _span(row) if isinstance(row, dict) else None
+        if found is None:
+            return [row]
+        units = located_in[found[0].id].units(found[1])
+        return [row] if len(units) < 2 else [{**row, "sentence": unit[2]} for unit in units]
 
     located_in: dict[str, _Sentences] = {}
 

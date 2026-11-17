@@ -154,3 +154,26 @@ def test_a_whole_field_row_a_retry_leaves_unanswered_stays_as_its_sentences_woul
     assert whole == apart
     assert whole[0] == BODY
     assert "its last answer, a keep, was refused" in whole[1][0]
+
+
+def test_a_retry_answering_one_sentence_keeps_the_whole_field_row_for_the_others() -> None:
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        _ask,
+        _Reporter,
+    )
+
+    text = f"{BODY} {_UNKNOWN}"
+
+    def row(sentence: str) -> dict[str, Any]:
+        return {"passage": "introduction", "sentence": sentence, **ANSWERS["keep"]}
+
+    def ended(first: list[str]) -> tuple[str, list[str]]:
+        report = _report(FIRST, background=text)
+        retry = {"sentences": [row(BODY)]}
+        done = _ask(report, _Reporter({"sentences": [row(s) for s in first]}, retry))
+        records = [r["message"] for r in done.tally.unresolved if r["code"] == "agreement.dropped"]
+        return report.intro_background, records
+
+    whole, apart = ended([text]), ended([BODY, _UNKNOWN])
+    assert whole == apart
+    assert "its last answer, a keep, was refused" in whole[1][0]
