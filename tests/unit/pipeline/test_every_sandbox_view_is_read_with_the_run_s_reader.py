@@ -35,6 +35,71 @@ from tests.unit.providers.test_the_dropped_files_view_keeps_each_row_s_path_orig
 )
 
 SRC = Path(sandbox_tools.__file__).resolve().parents[1]
+# Every module that may read a view: the platform's and the API's.
+ROOTS = (SRC, SRC.parents[2] / "apps" / "api" / "app")
+_MODULE = "sandbox_tools"
+# What no module but the entry point's own may take from it: a view by its
+# function, and the table of views.
+_TAKEN = frozenset(set(sandbox_tools.DETONATION_READERS) - {sandbox_tools.ITEMS_TOOL}) | {
+    "_VIEWS",
+    "_UNDECLARED_VIEWS",
+}
+
+
+def _names_the_module(name: str) -> bool:
+    return name == _MODULE or name.endswith(f".{_MODULE}")
+
+
+def _dotted(node: ast.AST) -> str:
+    """``a.b.c`` for a name or a chain of attributes; ``""`` for anything else."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        head = _dotted(node.value)
+        return f"{head}.{node.attr}" if head else ""
+    return ""
+
+
+def view_reads(source: str) -> list[str]:
+    """Where ``source`` takes a view or the views table from the entry point's module.
+
+    Under any name: an import of a view or of the table from it, under any
+    alias; an attribute of the module, however it was imported or named; any
+    ``getattr`` on the module. Each as ``line name``.
+    """
+    tree = ast.parse(source)
+    aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if _names_the_module(alias.name):
+                    aliases.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == _MODULE:
+                    aliases.add(alias.asname or alias.name)
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and _names_the_module(node.module or ""):
+            found += [
+                f"{node.lineno} {a.name}" for a in node.names if a.name in _TAKEN or a.name == "*"
+            ]
+        elif isinstance(node, ast.Attribute) and node.attr in _TAKEN:
+            head = _dotted(node.value)
+            if head in aliases or _names_the_module(head):
+                found.append(f"{node.lineno} {node.attr}")
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and node.args
+        ):
+            head = _dotted(node.args[0])
+            if head in aliases or _names_the_module(head):
+                found.append(f"{node.lineno} getattr")
+    return found
+
+
 PACK_VIEWS = (
     "sandbox_processes",
     "sandbox_network",
@@ -54,25 +119,46 @@ class TestOneEntryPoint:
             read_view("sandbox_dropped_files", _document())  # type: ignore[call-arg]
 
     def test_no_module_reads_a_view_but_through_the_entry_point(self) -> None:
-        views = set(sandbox_tools.DETONATION_READERS) - {sandbox_tools.ITEMS_TOOL}
         found: list[str] = []
-        for path in sorted(SRC.rglob("*.py")):
-            if path == Path(sandbox_tools.__file__).resolve():
-                continue
-            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-                # A view taken from the module, by its attribute or by its import.
-                names = (
-                    [node.attr]
-                    if isinstance(node, ast.Attribute)
-                    and isinstance(node.value, ast.Name)
-                    and node.value.id == "sandbox_tools"
-                    else [alias.name for alias in node.names]
-                    if isinstance(node, ast.ImportFrom)
-                    and (node.module or "").endswith("sandbox_tools")
-                    else []
-                )
-                found += [f"{path.relative_to(SRC)}:{node.lineno} {n}" for n in names if n in views]  # type: ignore[attr-defined]
+        for root in ROOTS:
+            for path in sorted(root.rglob("*.py")):
+                if path.resolve() == Path(sandbox_tools.__file__).resolve():
+                    continue
+                found += [
+                    f"{path.relative_to(root.parent)}:{where}"
+                    for where in view_reads(path.read_text(encoding="utf-8"))
+                ]
         assert found == []
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            # The module under another name, a view taken from it.
+            "import malspark.providers.sandbox_tools as st\nst.sandbox_processes(doc)\n",
+            # A view imported under another name.
+            "from malspark.providers.sandbox_tools import sandbox_dropped_files as d\n",
+            # A view taken from the module by ``getattr``.
+            "from malspark.providers import sandbox_tools\n"
+            "getattr(sandbox_tools, 'sandbox_network')(doc)\n",
+            # The views table imported.
+            "from malspark.providers.sandbox_tools import _VIEWS\n",
+            # The module under another name, the views table taken from it.
+            "from malspark.providers import sandbox_tools as tools\ntools._VIEWS['x']\n",
+            # Any ``getattr`` on the module, whatever it names.
+            "import malspark.providers.sandbox_tools\n"
+            "getattr(malspark.providers.sandbox_tools, name)\n",
+        ],
+    )
+    def test_the_guard_finds_a_view_read_by_any_name(self, source: str) -> None:
+        assert view_reads(source) != []
+
+    def test_the_guard_passes_the_entry_point(self) -> None:
+        source = (
+            "from malspark.providers import sandbox_tools as st\n"
+            "from malspark.providers.sandbox_tools import read_view, network_view\n"
+            "st.read_view('sandbox_processes', doc, None)\n"
+        )
+        assert view_reads(source) == []
 
     @pytest.mark.parametrize(
         "tool", sorted(set(sandbox_tools.DETONATION_READERS) - {sandbox_tools.ITEMS_TOOL})
