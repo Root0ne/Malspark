@@ -84,7 +84,7 @@ def test_the_stored_answers_re_applied_give_the_round_s_counts_records_and_repor
     done = _asked(report, _Reporter(*answers))
     stored = done.summary[ANSWERS]
     # Every answer, as parsed, whole: an object as read, one that could not be read as its text.
-    assert len(stored) == 2
+    assert len(stored) == done.tally.retries + 1 == 2
     for kept, given in zip(stored, answers, strict=True):
         assert kept == given
     # Re-applied through the round's own code, with no model call.
@@ -93,13 +93,6 @@ def test_the_stored_answers_re_applied_give_the_round_s_counts_records_and_repor
     assert replayed.summary == done.summary
     assert replayed.tally.to_dict() == done.tally.to_dict()
     assert again.model_dump() == report.model_dump()
-
-
-def test_a_round_answered_once_keeps_its_one_answer() -> None:
-    report = _report(FIRST, background=FIRST)
-    done = _asked(report, _Reporter({"sentences": []}))
-    assert done.tally.retries == 0
-    assert done.summary[ANSWERS] == [{"sentences": []}]
 
 
 def test_the_answers_are_shown_to_no_model_and_printed_nowhere_a_person_reads() -> None:

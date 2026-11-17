@@ -207,7 +207,10 @@ than it is the model's to say: code picks none. A sentence left out on it is cou
 is left out and recorded with the row's sources, its reason and the sentence whole
 (``JUDGE_LEFT_OUT_CODE``). The decision starts no question of its own, and nothing changes it.
 A refusal of the round's last answer is recorded with the sentence its row was about, saying
-no turn was left (:func:`_no_turn_left`).
+no turn was left (:func:`_no_turn_left`). Every answer of the round, the first and the
+retry's, is kept as parsed and whole in the round's record in the run summary (``answers``),
+shown to no model and printed in no report, so the round's own code re-applies a stored run's
+answers with no model call (:class:`StoredAnswers`, T-736).
 
 Every step is one pass over the passages and the answer's rows.
 """
@@ -8725,6 +8728,8 @@ async def _ask(
     answer_read = [""]
 
     answered: list[Any] = [None]
+    # Every answer of the round, first and retry, as parsed: the run's record keeps them.
+    answers: list[Any] = []
     # The answer the checks last read, whose rows the findings shown name by their place.
     checked: list[Any] = [None]
     # Every finding the round was asked about, each row's named by the sentence the row
@@ -8735,6 +8740,9 @@ async def _ask(
     def _parse(answer: Any) -> Any:
         answer_read[0] = structured_answer_text(answer, _message_text)
         parsed = safe_parse_json(answer_read[0])
+        # Kept whole for the run's record, as parsed, one that could not be read as its text,
+        # so the round can be re-applied with no model call (:class:`StoredAnswers`, T-736).
+        answers.append(parsed if isinstance(parsed, (dict, list)) else answer_read[0])
         # Shape only: a bare list of rows is the object the schema names.
         if isinstance(parsed, list):
             parsed = {"sentences": parsed}
@@ -8894,6 +8902,7 @@ async def _ask(
         if failed
         else {p.id: text_digest(p.text) for p in passages if p.verbatim and not p.source_only}
     )
+    summary[ANSWERS] = answers
     logger.info(
         "section agreement: %d passage(s) asked about; %d sentence(s) listed, %d rewritten, "
         "%d kept, %d listed for reading, %d not applied, %d left out, %d qualified on the "
@@ -8982,6 +8991,28 @@ def _no_turn_left(violations: Sequence[Violation], payload: Any) -> list[Violati
 # them (T-613).
 VERBATIM_SHOWN = "verbatim_shown"
 VERBATIM_UNSEEN = "verbatim_unseen"
+# Every answer of the round, the first and each retry, as parsed and whole: an object as read,
+# one that could not be read as the text it was read from. Shown to no model and printed in no
+# report: the round's own code re-applies them (:class:`StoredAnswers`, T-736).
+ANSWERS = "answers"
+
+
+class StoredAnswers:
+    """A reporter that answers the round with the answers a run's record keeps (:data:`ANSWERS`),
+    in order, so the round's own code re-applies them with no model call; with none left, an
+    answer of no rows. Says nothing it could not do (``degradations``)."""
+
+    def __init__(self, answers: Sequence[Any]) -> None:
+        self.answers = list(answers)
+        self.degradations: list[str] = []
+
+    async def ask(self, turns: list[BaseMessage], *, call: str, what: str) -> BaseMessage:
+        import json
+
+        from langchain_core.messages import AIMessage
+
+        answer = self.answers.pop(0) if self.answers else {"sentences": []}
+        return AIMessage(content=answer if isinstance(answer, str) else json.dumps(answer))
 
 
 def _shown_none() -> dict[str, Any]:
