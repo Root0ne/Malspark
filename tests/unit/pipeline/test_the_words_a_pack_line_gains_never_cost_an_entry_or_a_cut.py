@@ -155,6 +155,17 @@ class TestTheWordsTakeWhatRoomIsLeft:
         assert ledger_projection.NO_FLOW_ROW not in block
         assert len(block) <= room
 
+    def test_a_line_whose_words_do_not_fit_stays_as_laid_out(self) -> None:
+        bare = _laid_out(0)
+        links_line = next(line for line in _worded(0).split("\n") if line.startswith("[ev_0015]"))
+        bare_links = next(line for line in bare.split("\n") if line.startswith("[ev_0015]"))
+        room = len(bare) + len(links_line) - len(bare_links) - 1
+        block = _worded(room)
+        assert bare_links in block.split("\n")
+        # The capture line after it takes what the room holds.
+        assert f"; {ledger_projection.SAMPLE_TREE_FLOW}" in block
+        assert len(block) <= room
+
     def test_the_capture_line_takes_its_words_conversation_by_conversation(self) -> None:
         whole = _worded(0)
         room = len(whole) - 40
@@ -175,3 +186,22 @@ class TestTheWordsTakeWhatRoomIsLeft:
         assert ledger_projection.NO_FLOW_ROW not in cut
         assert ledger_projection.SAMPLE_TREE_FLOW not in cut
         _same_layout(block, _laid_out(room), room)
+
+
+class TestThePackRecordReadsTheLayout:
+    def test_the_pass_entries_unsaid_are_those_of_the_bare_layout(self) -> None:
+        from tests.unit.pipeline.test_deobfuscation_passes_in_the_pack import _synthetic_pack
+
+        def _pack(links: dict[str, Any]) -> list[Any]:
+            rows = [*_synthetic_pack(), _entry(bc.TOOL, links, 15)]
+            return triage_pack.pack_entries([row.model_dump(mode="json") for row in rows])
+
+        worded, bare = _pack(_links()), _pack(_bare_links(_links()))
+        differs = 0
+        for room in range(3_000, 40_000, 997):
+            want = [e.id for e in triage_pack.pack_unsaid(bare, room)]
+            assert [e.id for e in triage_pack.pack_unsaid(worded, room)] == want, room
+            # The record is of the pack as rendered: what it shows or counts
+            # and what it records cover every pass entry alike.
+            differs += want != [e.id for e in triage_pack.pack_unsaid(worded, 0)]
+        assert differs

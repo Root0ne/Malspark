@@ -5636,13 +5636,11 @@ def _behaviour_code(data: dict[str, Any], max_chars: int | None = None) -> str:
     room = _WORDS_ROOM.get()
     if room is None:
         return _fit(_line, shown, max_chars)
-    # Laid out without its words; they are added whole where the room the
-    # pack leaves them holds them, and not on a line cut to a room.
-    bare = _fit(partial(_line, with_words=False), shown, max_chars)
-    if room <= 0 or max_chars is not None:
-        return bare
-    worded = _fit(_line, shown, None)
-    return worded if len(worded) - len(bare) <= room else bare
+    # Laid out without its words; with room left for them, the line has them
+    # all, and the pack keeps it only where they fit (``_with_words``).
+    if room <= 0:
+        return _fit(partial(_line, with_words=False), shown, max_chars)
+    return _fit(_line, shown, max_chars)
 
 
 # ---------------------------------------------------------------------------
