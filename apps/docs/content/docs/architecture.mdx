@@ -5925,22 +5925,34 @@ is assembled from what the run gathered rather than recomputed beside it:
   indicator, and its row carries the judge's type where the export carries
   the judge's indicator; one it declines lends no type). A judge indicator is
   carried only when each value it names has a published row; the decline
-  quotes the row's answer. The judge's values are read one way
-  (`stix_renderer.exported_indicator_values`): every value the pattern reader
-  reads of every judge indicator, whatever the pattern's shape — one
-  comparison, several joined, a value beside a digest — and whether or not the
-  export accepts it. Two facts are read off that record. The judge names every
+  quotes the row's answer. What an indicator asserts is read one way
+  (`stix_renderer.asserted_values`): the operand of each `=` and each member
+  of an `IN` list is a value; the operand of a `!=`, `<`, `>`, `LIKE` or
+  `MATCHES` is a condition, which gets no row, is asked nothing, and neither
+  carries nor blocks the indicator. Beside an asserted value a condition
+  changes nothing of how that value is read; an indicator that asserts no
+  value (conditions only) is declined with a reason saying so. The judge's
+  values are recorded off that reading
+  (`stix_renderer.exported_indicator_values`): every value every judge
+  indicator asserts, whatever the pattern's shape — one comparison, several
+  joined, a value beside a digest — and whether or not the export accepts it.
+  Two facts are read off that record. The judge names every
   value it holds: naming keeps a sandbox row and lifts the shape question of a
   row of the string sweep, as before. The export carries an indicator with no
   pattern problem whose every value has a published row; only such an
   indicator is exported and lends its type, and a declined one lends none. A
   value nobody else holds gets a row where a carried indicator names it, or
   where an indicator names it and no other value — a single comparison, a
-  file's name paired with its directory counted as one — carried or not; that
-  row is published by the evidence rule. A pattern with a second comparison
-  of any kind (a comparison that names no value, a digest, a shape, a value
-  of another kind, by `AND` or by `OR`) names no one value. An indicator joining several values the
-  export does not carry gives none of them a row. The platform mints no
+  file's name paired with its directory counted as one, or an `IN` list of
+  one member — carried or not; that row is published by the evidence rule
+  (`stix_renderer.names_one_value`). A comparison with an unquoted number
+  (`file:size > 10`) is not one the comparison reader reads, so a value beside
+  it still names one value. Any second comparison it reads makes two —
+  a condition on a quoted value (`!=`, `<`, `>`, `LIKE`, `MATCHES`), a digest,
+  a property its object does not have, a second member of an `IN` list, a
+  value of another kind, by `AND` or by `OR` — and such a pattern names no one
+  value. An indicator joining several values the export does not carry gives
+  none of them a row. The platform mints no
   indicator for a judge's row: a published one whose indicator the export
   declines has no object. The shape questions a path the file's strings hold
   is asked are the rule's: a toolchain's own path, a bundled runtime's class
