@@ -18,12 +18,12 @@ This module states those links and nothing else.
   carry is named with its ``no:`` sentence, and the items of a section that
   held no value under the fields read are counted. A network value is linked
   only where the sandbox attributes it to the sample's process tree
-  (``schemas.sandbox_report.SAMPLE_TREE_KEY``); where a row names a process
-  the report does not list, the link says so with the process as the row
-  names it, in the publish rule's words (``ledger_projection.traffic_maker``,
-  ``stix_renderer.made_by_reason``); where no row says, the link is marked
-  "process not attributed"; a value every row of which the sandbox attributes
-  to another listed process is not linked, and is counted.
+  (``schemas.sandbox_report.SAMPLE_TREE_KEY``); where the publish rule puts
+  the value's traffic on a process the report does not list, the link says so
+  in the rule's words, with the process as the rows name it (the rule's own
+  decision, ``stix_renderer.unlisted_reasons``); where no row says otherwise,
+  the link is marked "process not attributed"; a value every row of which the
+  sandbox attributes to another listed process is not linked, and is counted.
   An HTTP request's path is joined with the request's own host (and scheme,
   where the row states one); a path with no host is a path, never a URL.
 * **The match is exact**, after the platform's own normalisation for the
@@ -166,9 +166,11 @@ class Observed:
     # attributes to the sample's tree, any row that does not say, any row of
     # another process.
     tree: set[bool | None] = field(default_factory=set, repr=False, compare=False)
-    # The processes the report does not list that rows of the value name, each
-    # once, as the row names it (``procid N``).
-    unlisted: dict[str, None] = field(default_factory=dict, repr=False, compare=False)
+    # The publish rule's sentence where it puts the value's traffic on a
+    # process the report does not list (``stix_renderer.unlisted_reasons``).
+    unlisted: str = field(default="", repr=False, compare=False)
+    # The network rows the value was observed in, as the sandbox wrote them.
+    records: list[Mapping[str, Any]] = field(default_factory=list, repr=False, compare=False)
     # Whether a process row it was observed in is where the sandbox started
     # the submitted file from (``sandbox_report.STAGED_KEY``).
     staged: bool = field(default=False, repr=False, compare=False)
@@ -183,19 +185,17 @@ class Observed:
     def attribution(self) -> str | None:
         """``SAMPLE_TREE``, the unlisted processes, ``NOT_ATTRIBUTED``, ``""`` or ``None``.
 
-        A row of the sample's tree decides; else a row naming a process the
-        report does not list states whose the value is, which a row naming no
-        process does not unsay; ``""`` is other listed processes only, and
-        ``None`` no network rows.
+        A row of the sample's tree decides; else the publish rule's sentence
+        where it puts the value's traffic on a process the report does not
+        list (its decision, not this reading's); ``""`` is other listed
+        processes only, and ``None`` no network rows.
         """
-        if not self.tree and not self.unlisted:
+        if not self.tree:
             return None
         if True in self.tree:
             return SAMPLE_TREE
         if self.unlisted:
-            from malspark.reporting.renderers.stix_renderer import made_by_reason
-
-            return made_by_reason({"unlisted": list(self.unlisted)})
+            return self.unlisted
         if None in self.tree:
             return NOT_ATTRIBUTED
         return ""
@@ -382,22 +382,51 @@ def _sample_tree(item: Mapping[str, Any]) -> bool | None:
     return stated if isinstance(stated, bool) else None
 
 
-def _unlisted(item: Mapping[str, Any]) -> list[str]:
-    """The processes the report does not list that a network row names, as the row names them.
+def _publish_rule_unlisted(
+    report: Mapping[str, Any], normalised_by: Sequence[str] | None, found: Iterable[Observed]
+) -> None:
+    """Give each network value the publish rule puts on an unlisted process the rule's sentence.
 
-    Read by the one reading of a traffic record's process
-    (``ledger_projection.traffic_makers``): only where every answer the row
-    gives names such a process; ``[]`` for any other row.
+    The rule's own decision over the report's network block, read with the
+    run's reader as the report's block is
+    (``ledger_projection.network_from_sandbox_report``,
+    ``stix_renderer.unlisted_reasons``): one decision for the link line, its
+    table and the capture line, whatever rows of the value name no process. A
+    value the block keys no row for (a request's path, a user agent) takes
+    the rule's reading of a request's records, over the rows that hold it
+    (``ledger_projection.records_made_by``). Read only where a network value
+    has no row of the sample's tree.
     """
-    from malspark.reporting.ledger_projection import traffic_makers
+    asked = [one for one in found if one.tree and True not in one.tree]
+    if not asked:
+        return
+    from malspark.reporting.ledger_projection import (
+        network_from_sandbox_report,
+        records_made_by,
+        value_key,
+    )
+    from malspark.reporting.renderers.stix_renderer import unlisted_reason, unlisted_reasons
 
-    fields = item.get("fields")
-    if not isinstance(fields, dict):
-        return []
-    answers = traffic_makers(fields)
-    if not answers or not all(isinstance(a, tuple) and a[0] == "unlisted" for a in answers):
-        return []
-    return [a[1] for a in answers if isinstance(a, tuple)]
+    network = network_from_sandbox_report(
+        report if isinstance(report, dict) else dict(report), normalised_by
+    )
+    said = unlisted_reasons(network)
+    keyed = {
+        (kind, value_key(kind, getattr(row, named)))
+        for kind, rows, named in (
+            ("ip", network.ips if network else [], "address"),
+            ("domain", network.domains if network else [], "fqdn"),
+            ("url", network.urls if network else [], "url"),
+        )
+        for row in rows
+        if row.source == "sandbox"
+    }
+    for one in asked:
+        key = (one.kind, value_key(one.kind, one.value))
+        if key in keyed:
+            one.unlisted = said.get(key, "")
+        else:
+            one.unlisted = unlisted_reason("url", records_made_by(one.records))
 
 
 @dataclass
@@ -447,14 +476,13 @@ def observed_values(
                 if position in staged:
                     held.staged = True
                 if section_name == "network":
-                    stated = _sample_tree(item)
-                    unlisted = _unlisted(item) if stated is None else []
-                    if unlisted:
-                        held.unlisted.update(dict.fromkeys(unlisted))
-                    else:
-                        held.tree.add(stated)
+                    held.tree.add(_sample_tree(item))
+                    fields = item.get("fields")
+                    if isinstance(fields, Mapping):
+                        held.records.append(fields)
             if not read:
                 no_value[section_name] = no_value.get(section_name, 0) + 1
+    _publish_rule_unlisted(report, normalised_by, found.values())
     values = [one for one in found.values() if one.attribution != ""]
     return ObservedValues(values, absent, no_value, len(found) - len(values))
 

@@ -145,6 +145,24 @@ def traffic_maker(row: Any) -> bool | tuple[str, str] | None:
     return None
 
 
+def records_made_by(rows: Iterable[Any]) -> NetworkURL:
+    """A request row whose process facts are those ``rows`` state, read as a URL's records are.
+
+    The publish rule's reading of the records of one request's traffic
+    (:class:`_MakerTally`): the sample's when any record is the tree's,
+    another lineage's only when every record names a process. For a value the
+    network block keys no row for (a request's path, a user agent), read off
+    the records that hold it.
+    """
+    tally = _MakerTally()
+    for row in rows:
+        for answer in traffic_makers(row):
+            tally.add(answer)
+    held = NetworkURL(url="", source="sandbox")
+    tally.state(held)
+    return held
+
+
 def traffic_makers(row: Any) -> list[bool | tuple[str, str] | None]:
     """Each answer a traffic record gives (:func:`traffic_maker`).
 

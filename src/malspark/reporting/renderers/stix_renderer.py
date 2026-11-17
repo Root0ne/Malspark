@@ -3783,6 +3783,16 @@ def address_flow_reason(row: Any) -> str:
     report does not list, a script host naming the launcher, or that it does
     not say which process made them. The AS fact is the caller's.
     """
+    return _address_flow(row)[1]
+
+
+def _address_flow(row: Any) -> tuple[str, str]:
+    """:func:`address_flow_reason`'s decision, as the ``MADE_BY_WHOM`` kind it names, and sentence.
+
+    The kind is ``""`` where the sentence names no process of
+    :data:`MADE_BY_WHOM`'s (the flows' process unsaid, or outside the tree).
+    """
+    decided = ""
     why = (
         FLOW_OUTSIDE_THE_TREE if _field(row, "sample_process_tree") is False else UNATTRIBUTED_FLOW
     )
@@ -3794,10 +3804,13 @@ def address_flow_reason(row: Any) -> str:
     marked_only = [str(p) for p in (_field(row, "marked_only_processes") or []) if str(p)]
     file_only = [str(p) for p in (_field(row, "file_only_processes") or []) if str(p)]
     if _field(row, "sample_process_tree") is None and (marked_only or file_only):
-        why = disputed_flow_reason(marked_only, file_only, _field(row, "marked_by"))
+        decided, why = (
+            "disputed",
+            disputed_flow_reason(marked_only, file_only, _field(row, "marked_by")),
+        )
     unlisted = [str(p) for p in (_field(row, "unlisted_processes") or []) if str(p)]
     if _field(row, "sample_process_tree") is None and unlisted and not (marked_only or file_only):
-        why = made_by_reason({"unlisted": unlisted})
+        decided, why = "unlisted", made_by_reason({"unlisted": unlisted})
     # The report names the process: a script host naming the launcher
     # whose attribution it does not establish. The decision is the
     # unattributed one; the reason names the host.
@@ -3807,8 +3820,58 @@ def address_flow_reason(row: Any) -> str:
         and unsettled
         and not (marked_only or file_only or unlisted)
     ):
-        why = made_by_reason({"launcher_unsettled": unsettled})
-    return why
+        decided, why = "launcher_unsettled", made_by_reason({"launcher_unsettled": unsettled})
+    return decided, why
+
+
+def unlisted_reasons(network: Any) -> dict[tuple[str, str], str]:
+    """``{(kind, key): sentence}``: each sandbox row the publish rule says an unlisted process made.
+
+    The publish rule's own decision and words, for every row of a network
+    block (``ledger_projection.network_from_ledger``) whose traffic it puts on
+    a process the report does not list: an address by its reason
+    (:func:`address_flow_reason`), a name or a URL by the processes its
+    records name (``made_by``) where every one of them is such a process.
+    Keyed as the rule keys a value (``ledger_projection.value_key``); a row of
+    the sample's tree, or of any other reason, is not in it.
+    """
+    out: dict[tuple[str, str], str] = {}
+    if network is None:
+        return out
+    for kind, rows, named in (
+        ("ip", _field(network, "ips"), "address"),
+        ("domain", _field(network, "domains"), "fqdn"),
+        ("url", _field(network, "urls"), "url"),
+    ):
+        for row in rows or []:
+            why = unlisted_reason(kind, row)
+            if why:
+                out.setdefault((kind, _value_key(kind, _field(row, named))), why)
+    return out
+
+
+def unlisted_reason(kind: str, row: Any) -> str:
+    """The publish rule's sentence where it puts one sandbox row's traffic on an unlisted process.
+
+    ``""`` for any other row. An address (``kind`` ``ip``) by its reason
+    (:func:`address_flow_reason`); a name's or a request's row by the
+    processes its records name (``made_by``), only where every one is such a
+    process.
+    """
+    if _field(row, "source") != "sandbox" or _field(row, "sample_process_tree") is True:
+        return ""
+    if kind == "ip":
+        decided, why = _address_flow(row)
+        return why if decided == "unlisted" else ""
+    made = _field(row, "made_by")
+    others = [one for one in MADE_BY_WHOM if one != "unlisted"]
+    if (
+        _field(row, "sample_process_tree") is False
+        and _field(made, "unlisted")
+        and not any(_field(made, other) for other in others)
+    ):
+        return made_by_reason(made)
+    return ""
 
 
 def _parses_as_an_address(text: str) -> bool:
