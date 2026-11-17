@@ -10,7 +10,11 @@ value a claim quotes. A row or a value not marked reads as it did. Offline.
 
 from __future__ import annotations
 
+import asyncio
+import json
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 from malspark.analysis import behaviour_code as bc
 from malspark.pipeline.triage_pack import render_pack
@@ -129,3 +133,69 @@ class TestTheComposerFacts:
         )
         assert shown == composer._bundle_text("execution_flow", bundle, entries)
         assert STAGED_WORDS not in shown
+
+
+class _RawLLM:
+    """A model that answers a section's question with an empty table and keeps what it was sent."""
+
+    def __init__(self) -> None:
+        self.sent: list[Any] = []
+
+    def with_structured_output(self, schema: type, **_: Any) -> Any:  # pragma: no cover
+        raise RuntimeError("structured output is unavailable")
+
+    async def ainvoke(self, messages: Any) -> Any:
+        self.sent.append(list(messages))
+        return SimpleNamespace(content=json.dumps({"steps": []}))
+
+
+def _section_prompt(claim: str) -> str:
+    """The question the composer's own section prompt builder sends for the execution flow."""
+    report, ledger = _report()
+    llm = _RawLLM()
+    comp = composer.ReportComposer(llm=llm, per_section_timeout=5)  # type: ignore[arg-type]
+    comp._citable = ["ev_0001"]
+    comp._report = report
+    comp._entries = EntryTexts.from_ledger(ledger)
+    bundle = {"claims": [{"claim": claim, "evidence_ref": "ev_0001"}]}
+    with (
+        patch("malspark.reporting.composer.bundle_for", return_value=bundle),
+        patch(
+            "malspark.reporting.composer.structured_output_supported_for_llm", return_value=False
+        ),
+    ):
+        asyncio.run(
+            comp._author(
+                "execution_flow",
+                report,
+                None,
+                composer._FlowOut,
+                composer._INSTRUCTIONS["execution_flow"],
+            )
+        )
+    return str(llm.sent[0][-1].content)
+
+
+class TestTheComposerSectionPrompt:
+    def test_the_question_sent_shows_the_words_beside_the_quoted_path(self) -> None:
+        sent = _section_prompt(f'It runs from "{STAGED}".')
+        assert f"({STAGED_WORDS}) is in ev_0001" in sent
+
+    def test_the_question_sent_for_another_value_carries_no_words(self) -> None:
+        sent = _section_prompt(f'It starts "{CHILD}".')
+        assert f"({STAGED_WORDS}) is in" not in sent
+
+
+class TestTheStartMatcher:
+    def test_the_command_line_with_arguments_is_matched_as_written(self) -> None:
+        report, _ledger = _report()
+        assert report.dynamic is not None
+        node = report.dynamic.process_tree[0]
+        node.command_line = f'"{STAGED}" -k netsvcs /quiet'
+        started = evidence_bundles.sandbox_start_matcher(report)
+        assert started is not None
+        assert started(f'"{STAGED}" -k netsvcs /quiet')
+        assert started(f'  "{STAGED}" -k netsvcs /quiet ')
+        assert started(STAGED)
+        assert not started(f'"{STAGED}" -k other')
+        assert not started(f"{CHILD} -k netsvcs /quiet")
