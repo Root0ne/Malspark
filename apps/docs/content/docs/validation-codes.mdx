@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**135 codes in 12 families:** [agreement](#agreement) 20 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 21 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**136 codes in 12 families:** [agreement](#agreement) 21 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 21 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -108,18 +108,18 @@ A sentence the answer left out on a passage of the judge's decision, the one end
 
 ### `agreement.keep_unquoted`
 
-A kept closing sentence, or a kept held absence of the body, whose row quotes no words of a source it names that state the same (two, or all where fewer, of the words of what it denies something of, read before its negation, and what a denied item is; an absence on words stating one, of the body as of a closing section, a body absence's on a negated clause holding what it denies something of, so a quote of the passage stating what an absence denies backs no keep of it; never one shorter than `absence_answers.QUOTE_FLOOR`, refused as such; one standing in a named passage written without the code, and in no source a keep rests on, is told so, "only" there where no other named passage holds it), or that names no source while a shown one speaks of it (the rows of an entry it cites among them). The refusal of a body absence names the sources that speak of it, which a rewrite of a section 5 one may rest on, and offers a keep on the words of each that state the same absence. Still so after the retry, a closing sentence is left out and recorded (`DROPPED_CODE`), but where only those two word tests refuse a quote of a section 5 passage, whose one sentence holding it may then stand in its place (`KEPT_IN_SOURCE_WORDS_CODE`, T-705); a body absence stands, recorded (`HELD_KEPT_CODE`).
+A kept closing sentence, or a kept held absence of the body, whose row quotes no words of a source it names that state the same (two, or all where fewer, of the words of what it denies something of, read before its negation, and what a denied item is; an absence on words stating one, of the body as of a closing section, a body absence's on a negated clause holding what it denies something of, so a quote of the passage stating what an absence denies backs no keep of it; never one shorter than `absence_answers.QUOTE_FLOOR`, refused as such; one standing in a named passage written without the code, and in no source a keep rests on, is told so, "only" there where no other named passage holds it), or that names no source while a shown one speaks of it (the rows of an entry it cites among them). The refusal of a body absence names the sources that speak of it, which a rewrite of a section 5 one may rest on, and offers a keep on the words of each that state the same absence. Still so after the retry, a closing sentence is left out and recorded (`DROPPED_CODE`), but where only those two word tests refuse a quote standing whole in one sentence of a section 5 passage: the sentence then stands as written (`KEPT_ON_ITS_QUOTE_CODE`, T-736); a body absence stands, recorded (`HELD_KEPT_CODE`).
 
 - **Raised at** `malspark.reporting.section_agreement:_answer_violations`
 - **Constant** `malspark.reporting.section_agreement:KEEP_UNQUOTED_CODE`
 - **Docs** none
 
-### `agreement.kept_in_source_words`
+### `agreement.kept_on_its_quote`
 
-A sentence of the conclusion or the limitations, of a record's value cell or of a capability bullet, kept on a quote that stands word for word in a section 5 passage it names, the body the code's reading backs, and that the checks refused only on the words of what the sentence denies something of (the words before its negation, what a denied item is), still so after the retry: the one sentence of that passage holding the whole quote, in whole words, stands in its place, whole with its own citations, recorded with what stood, whole, and counted (`replaced`) (T-705). Only a sentence that reads as prose wherever it is printed is moved: none with a list marker, a table bar or a heading, none opening as no sentence opens, and none opening on a word that points to the sentences before it ("It", "Its", "They", "Their", "These", "This", "Those", "Such", "Which"). A quote no one sentence of a section 5 passage it names holds (one running across two, one standing only in a fact or a debate round, which the report does not print), one whose sentence the round itself leaves out or changes, or one whose sentence the passage already prints, leaves the sentence out as before (`DROPPED_CODE`).
+A sentence of the conclusion or the limitations, of a record's value cell or of a capability bullet, kept on a quote that stands whole, in whole words, in one sentence of a section 5 passage it names, the body the code's reading backs, and that the checks refused only on the words of what the sentence denies something of (the words before its negation, what a denied item is), still so after the retry: the composer's sentence stands as written, recorded with the source and the quote, and counted (`kept_on_quote`); the source's sentence is not moved (T-736). A quote no one sentence of a section 5 passage it names holds (one running across two, one standing only in a fact or a debate round, which the report does not print), or one whose sentence the round itself leaves out or changes, leaves the sentence out as before (`DROPPED_CODE`).
 
-- **Raised at** `malspark.reporting.section_agreement:_kept_in_source_words`
-- **Constant** `malspark.reporting.section_agreement:KEPT_IN_SOURCE_WORDS_CODE`
+- **Raised at** `malspark.reporting.section_agreement:_kept_on_its_quote`
+- **Constant** `malspark.reporting.section_agreement:KEPT_ON_ITS_QUOTE_CODE`
 - **Docs** [Report](/docs/concepts/report/)
 
 ### `agreement.listed`
@@ -129,6 +129,14 @@ A sentence of a passage shown for reading only (a section 5 passage, a row of th
 - **Raised at** `malspark.reporting.section_agreement:_flagged_out._record`, `malspark.reporting.section_agreement:apply_rows`
 - **Constant** `malspark.reporting.section_agreement:LISTED_CODE`
 - **Docs** none
+
+### `agreement.placed_by_sentence`
+
+A row of the answer naming a passage no list of the question writes, whose sentence stands whole in exactly one passage a row may answer: placed there by its text, checked and ended as any row naming that passage, and recorded with the passage it named and its sentence. A sentence standing in two passages, or in none, leaves the row refused as naming an unknown passage (`UNKNOWN_PASSAGE_CODE`) (T-736).
+
+- **Raised at** `malspark.reporting.section_agreement:_placed_records`
+- **Constant** `malspark.reporting.section_agreement:PLACED_BY_SENTENCE_CODE`
+- **Docs** [Report](/docs/concepts/report/)
 
 ### `agreement.qualified`
 
