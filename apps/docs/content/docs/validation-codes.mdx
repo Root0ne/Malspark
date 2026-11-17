@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**134 codes in 12 families:** [agreement](#agreement) 19 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 21 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**135 codes in 12 families:** [agreement](#agreement) 20 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 21 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -97,6 +97,14 @@ A held sentence (any sentence of the conclusion or the limitations, of a record'
 - **Raised at** `malspark.reporting.section_agreement:_held_unlisted`
 - **Constant** `malspark.reporting.section_agreement:HELD_UNLISTED_CODE`
 - **Docs** none
+
+### `agreement.judge_left_out`
+
+A sentence the answer left out on a passage of the judge's decision, the one end a row naming one may give, whatever else it names: recorded with the row's sources, the reason and the sentence whole, and counted where it is left out as a `DROPPED_CODE` sentence is (T-717).
+
+- **Raised at** `malspark.reporting.section_agreement:apply_rows`
+- **Constant** `malspark.reporting.section_agreement:JUDGE_LEFT_OUT_CODE`
+- **Docs** [Architecture](/docs/architecture/)
 
 ### `agreement.keep_unquoted`
 
@@ -182,7 +190,7 @@ A row's sentence does not stand in its passage as copied.
 
 A row names a passage the round was not shown as one it may answer for.
 
-- **Raised at** `malspark.reporting.section_agreement:_answer_violations`, `malspark.reporting.section_agreement:_row_violations`
+- **Raised at** `malspark.reporting.section_agreement:_answer_violations`, `malspark.reporting.section_agreement:_judge_refusal`, `malspark.reporting.section_agreement:_row_violations`
 - **Constant** `malspark.reporting.section_agreement:UNKNOWN_PASSAGE_CODE`
 - **Docs** none
 
@@ -190,7 +198,7 @@ A row names a passage the round was not shown as one it may answer for.
 
 A row names a source the round was not shown, or answers a section 5 passage with a source that is not a platform fact (a held absence of section 5 rests a rewrite on any source that speaks of it too, a passage written without the code where it names an address the sentence's passage names and a fact holds).
 
-- **Raised at** `malspark.reporting.section_agreement:_answer_violations`, `malspark.reporting.section_agreement:_row_violations`
+- **Raised at** `malspark.reporting.section_agreement:_answer_violations`, `malspark.reporting.section_agreement:_judge_refusal`, `malspark.reporting.section_agreement:_row_violations`
 - **Constant** `malspark.reporting.section_agreement:UNKNOWN_SOURCE_CODE`
 - **Docs** none
 

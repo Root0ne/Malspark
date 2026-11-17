@@ -208,6 +208,7 @@ VALIDATION_ANSWER_KEYS: tuple[str, ...] = (
     "unparsed_answers",
     "discarded_retry_answers",
     "retry_drops",
+    "claims_unread_replaced",
     "retry_withdrawals",
 )
 

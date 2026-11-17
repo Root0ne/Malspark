@@ -189,10 +189,24 @@ def judge_and_findings_note(agents: list[str]) -> str:
 JUDGE_UNCONFIRMED_TECHNIQUE_MARKER = "not confirmed by the judge"
 
 
+# How the capability matrix's row of a technique the judge dropped when asked opens.
+JUDGE_DROPPED_MARKER = "the judge dropped it"
+
+
 def judge_dropped_reason(reason: str) -> str:
     """Why a technique the judge dropped when asked is not published, in its own words."""
     said = str(reason or "").strip()
-    return f"the judge dropped it ({said})" if said else "the judge dropped it"
+    return f"{JUDGE_DROPPED_MARKER} ({said})" if said else JUDGE_DROPPED_MARKER
+
+
+def is_judge_dropped(not_published: str) -> bool:
+    """Whether a matrix row's ``not_published`` is :func:`judge_dropped_reason`'s: the
+    record of a technique the judge dropped, with the check's finding it was asked after where
+    one was (``reporting.judge_decision``, T-717)."""
+    said = str(not_published or "").strip()
+    return said == JUDGE_DROPPED_MARKER or said.startswith(
+        (f"{JUDGE_DROPPED_MARKER} (", f"{JUDGE_DROPPED_MARKER}, ")
+    )
 
 
 def judge_kept_note(reason: str) -> str:
@@ -696,6 +710,9 @@ class AgentISR(BaseModel):
     # answer in force: a retry or a later round that replaced this answer
     # carries its own.
     _claims_unread_reason: str = PrivateAttr(default="")
+    # The claims that read began, read and left unread, beside the reason, or
+    # ``None`` where the reason is not the reader's own count.
+    _claims_unread_counts: tuple[int, int, int] | None = PrivateAttr(default=None)
     # The claim headings this answer wrote under its DISPUTES section beside
     # its own claims read: a peer's claims quoted, or its own written in the
     # wrong place. The validation turn asks once which.
@@ -786,9 +803,17 @@ class AgentISR(BaseModel):
         """Why claims this answer began are not in its findings, or ``""``."""
         return self._claims_unread_reason
 
-    def note_claims_unread(self, reason: str) -> None:
-        """Record why claims this answer began are not in its findings."""
+    @property
+    def claims_unread_counts(self) -> tuple[int, int, int] | None:
+        """The claims begun, read and unread of the read the reason states, or ``None``."""
+        return self._claims_unread_counts
+
+    def note_claims_unread(self, reason: str, counts: tuple[int, int, int] | None = None) -> None:
+        """Record why claims this answer began are not in its findings, and, from the
+        reader, how many it began, read and left unread (kept as they were when not given)."""
         self._claims_unread_reason = str(reason or "")
+        if counts is not None:
+            self._claims_unread_counts = (int(counts[0]), int(counts[1]), int(counts[2]))
 
     @property
     def claims_under_disputes(self) -> int:

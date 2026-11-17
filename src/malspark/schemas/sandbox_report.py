@@ -949,6 +949,28 @@ def _basename(path: str) -> str:
     return re.split(r"[\\/]", path.strip().strip('"').strip("'"))[-1].lower()
 
 
+# A command line's word: a span in double quotes whole, else a run between
+# spaces and commas.
+_COMMAND_WORD_RE = re.compile(r'"[^"]*"|[^\s,"]+')
+# A path that names a file: its last component a name and an extension.
+FILE_NAME_END_RE = re.compile(r"[^\\/.]\.[A-Za-z][A-Za-z0-9]{0,3}$")
+
+
+def command_line_paths(command_line: Any) -> list[str]:
+    """Each path a command line may name, in order, without its quotes.
+
+    Its first word and every comma- or space-separated one after it
+    (``rundll32.exe <dll>,#1`` runs the DLL); a path in double quotes is one
+    word, spaces and all (``"C:\\Program Files\\x.exe" /s``).
+    """
+    out = []
+    for token in _COMMAND_WORD_RE.findall(str(command_line or "")):
+        cleaned = token.strip().strip('"').strip("'")
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
 def _named_files(proc: dict[str, Any]) -> set[str]:
     """The file names a process record runs: its image, and each path its command line names.
 

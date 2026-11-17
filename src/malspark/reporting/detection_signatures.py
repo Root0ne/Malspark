@@ -57,6 +57,7 @@ from malspark.reporting.models import (
     RuleClause,
     SampleString,
     SandboxSignature,
+    ValueLeftOut,
 )
 from malspark.utils.marked_cut import marked_cut
 
@@ -1101,48 +1102,23 @@ def _build_sigma(report: MalwareReport) -> list[DetectionRule]:
     in ``create_stream_hash``; a scheduled task in the Security log's event
     4698; a service in the System log's event 7045; a named pipe in
     ``pipe_created``. A mutex no Windows log records gets none, and a generic
-    name never forms a selection. With no value left to select on there is no
-    Sigma draft, and the report says why (:func:`drafts_not_built`).
+    name never forms a selection. Every selection holds only values that stand
+    alone (:func:`selection_specific`). With no value left to select on there
+    is no Sigma draft, and the report says why (:func:`drafts_not_built`).
     """
-    registry_targets, persistence_images, observed = _sigma_values(report)
-    rules: list[DetectionRule] = []
-    if registry_targets or persistence_images:
-        selections: dict[str, dict[str, Any]] = {}
-        sources: list[str] = []
-        if registry_targets:
-            selections["selection_registry"] = {
-                "TargetObject|contains": registry_targets,
-            }
-            sources.extend(f"registry:{p}" for p in registry_targets[:5])
-        if persistence_images:
-            selections["selection_persistence"] = {
-                "Image|endswith": persistence_images,
-            }
-            sources.extend(f"persistence:{p}" for p in persistence_images[:5])
-        category = "registry_event" if registry_targets else "process_creation"
-        rules.append(
-            _sigma_rule(
-                report,
-                "",
-                {"product": "windows", "category": category},
-                selections,
-                sources,
-                signatures=_collect_signature_names(report),
-                observed=observed,
-            )
+    return [
+        _sigma_rule(
+            report,
+            draft.suffix,
+            draft.logsource,
+            draft.selections,
+            draft.sources,
+            signatures=None if draft.suffix else _collect_signature_names(report),
+            observed=draft.observed,
+            left_out=draft.left_out,
         )
-    for draft in _stated_drafts(report)[0]:
-        rules.append(
-            _sigma_rule(
-                report,
-                draft.suffix,
-                draft.logsource,
-                draft.selections,
-                draft.sources,
-                observed=draft.observed,
-            )
-        )
-    return rules
+        for draft in _sigma_drafts(report)[0]
+    ]
 
 
 def _sigma_rule(
@@ -1154,12 +1130,15 @@ def _sigma_rule(
     *,
     signatures: list[str] | None = None,
     observed: list[str] | None = None,
+    left_out: list[tuple[str, str]] | None = None,
 ) -> DetectionRule:
     """One Sigma draft over one log source; ``suffix`` names a draft after the first.
 
     ``observed`` names each selected value only a further detonation observed,
     with the detonation and its launch; the description says them after
     everything else it says, and YAML sets them as it sets any text.
+    ``left_out`` is each value narrowing took out of the draft, with why: kept
+    on the record and not printed.
     """
     sha256 = report.identity.hashes.sha256
     family = _rule_name_seed(report)
@@ -1167,6 +1146,8 @@ def _sigma_rule(
     seed = sha256 + (f":{suffix}" if suffix else "")
     rule_id = str(uuid.UUID(bytes=hashlib.sha256(seed.encode()).digest()[:16]))
 
+    # The techniques that name a value selected, read before it is escaped.
+    tags = _sigma_tags(report, _selected_values(selections))
     # Every value is matched as the literal it is: Sigma's wildcards escaped.
     selections = {
         name: {
@@ -1183,8 +1164,6 @@ def _sigma_rule(
     }
     selection_keys = [key for key in selections if key.startswith("selection_")]
     condition = "1 of selection_*" if len(selection_keys) > 1 else selection_keys[0]
-
-    tags = _sigma_tags(report)
     # The report's sample lookups that declare they apply to the Sigma draft
     # (``reporting.reference_urls``' ``sigma``; the shipped VirusTotal lookup).
     lookups = [ref.url for ref in report.references if ref.sigma]
@@ -1204,7 +1183,7 @@ def _sigma_rule(
         "detection": {**selections, "condition": condition},
         "falsepositives": ["Legitimate software installers", "Unknown"],
         "level": "high",
-        "tags": tags,
+        **({"tags": tags} if tags else {}),
     }
 
     body = yaml.safe_dump(rule_dict, sort_keys=False, default_flow_style=False)
@@ -1216,6 +1195,7 @@ def _sigma_rule(
         body=body,
         source_evidence=sources,
         compile_error=compile_error,
+        values_left_out=[ValueLeftOut(value=value, why=why) for value, why in left_out or []],
     )
 
 
@@ -1237,9 +1217,14 @@ def sigma_literal(value: str) -> str:
     return "".join(out)
 
 
+# Each selected value as shown, with the marks of every row reducing to it,
+# by its selection and its value folded to lower case.
+_Held = dict[tuple[str, str], tuple[str, list[ObservedIn]]]
+
+
 @dataclass(frozen=True)
-class _StatedDraft:
-    """One Sigma draft over the values the analysis states of the kinds one log records."""
+class _SigmaDraft:
+    """One Sigma draft over the values of the kinds one log records."""
 
     suffix: str
     logsource: dict[str, str]
@@ -1248,6 +1233,15 @@ class _StatedDraft:
     # ``<value>: observed in detonation 2, …`` for each selected value only a
     # further detonation observed (:func:`_later_only`).
     observed: list[str] = field(default_factory=list)
+    # Each selected value's source line, as ``sources`` holds it, and what it
+    # was read from (:data:`_Held`), by its selection and folded value.
+    picked: dict[tuple[str, str], str] = field(default_factory=dict)
+    held: _Held = field(default_factory=dict)
+    # Each value narrowing took out of the draft, with why (:func:`selection_specific`).
+    left_out: list[tuple[str, str]] = field(default_factory=list)
+    # The form a selected value was named in where it is not the value
+    # itself, by its selection and folded value: what a reason is true of.
+    stated: dict[tuple[str, str], str] = field(default_factory=dict)
 
 
 # Each draft's name suffix, the words its title carries, and its log source.
@@ -1303,9 +1297,11 @@ def _stated_value(kind: str, value: str) -> str:
     from malspark.reporting.stated_host_values import past_known_folders
 
     text = value.strip()
+    if kind in ("path", "folder"):
+        text = _without_long_prefix(text)
     if kind == "path":
         tail = past_known_folders(text)
-        return "\\" + tail if tail else ""
+        return _printed_path(text, "\\" + tail) if tail else ""
     if kind == "folder":
         tail = past_known_folders(text).strip("\\")
         return f"\\{tail}\\" if tail else ""
@@ -1321,18 +1317,67 @@ def _stated_value(kind: str, value: str) -> str:
     return text
 
 
-def _stated_drafts(report: MalwareReport) -> tuple[list[_StatedDraft], int]:
+# A long path's prefix (``\\?\``, and ``\\?\UNC\`` before a share's server),
+# which Windows reads off the path it opens and a log does not write.
+_LONG_PATH_RE = re.compile(r"^\\\\\?\\(UNC\\)?", re.IGNORECASE)
+
+
+def _without_long_prefix(text: str) -> str:
+    """``text`` without a long path's prefix: a drive's path as written, a share's from its
+    server."""
+    match = _LONG_PATH_RE.match(text)
+    return text[match.end() :] if match else text
+
+
+def _printed_path(text: str, shortened: str) -> str:
+    """``shortened``, or where the catalogue calls it every host's, the path past its drive
+    and the user's own name.
+
+    ``shortened`` is a path cut to what a log writes the same on every host
+    (past its known folders, or its file name alone); where that form is a
+    name Windows ships (``\\cmd.exe`` of ``%APPDATA%\\cmd.exe``), selected
+    alone it matches Windows' own file. The folders the path states then
+    stay, past the drive and the user's own name (``Users\\<name>``; a
+    profile folder the catalogue knows, ``Users\\Public``, is no user's
+    name), and past an environment name, a folder the catalogue does not say
+    which of a host's it stands for. What is left may still be the name
+    alone, which :func:`selection_specific` then takes out. A path the
+    catalogue calls Windows' own as it is stated (``%SystemRoot%\\System32\\
+    cmd.exe``) has nothing stripped: it is ``shortened``, which
+    :func:`selection_specific` takes out with the catalogue's reason.
+    """
+    from malspark.reporting.stated_host_values import benign_catalogue
+
+    if _not_specific("selection_file", text) or not _why_not_specific(
+        "selection_file", "|contains", shortened, text
+    ):
+        return shortened
+    catalogue = benign_catalogue()
+    parts = [part for part in text.strip().strip("\"'").replace("/", "\\").split("\\") if part]
+    if parts and re.fullmatch(r"[A-Za-z]:", parts[0]):
+        parts = parts[1:]
+    if (
+        len(parts) > 2
+        and parts[0].lower() == "users"
+        and parts[1].lower() not in catalogue.known_folders
+    ):
+        parts = parts[2:]
+    while parts and parts[0].lower() in catalogue.environment_folders:
+        parts = parts[1:]
+    return "\\" + "\\".join(parts) if parts else shortened
+
+
+def _stated_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int]:
     """The drafts over the stated values, and how many generic names were left out of them.
 
-    A draft names each selected value only further detonations observed
-    (:func:`_observed_values`), read over every row that reduces to it.
+    Each draft holds, for each selected value, every row that reduces to it
+    (``held``), which the value's further detonations are read over once the
+    draft is narrowed (:func:`_sigma_drafts`).
     """
     from malspark.reporting.ledger_projection import marks_of
 
-    drafts: dict[str, _StatedDraft] = {}
+    drafts: dict[str, _SigmaDraft] = {}
     seen: set[tuple[str, str]] = set()
-    # Each selected value, by draft: as shown, with the marks of every row reducing to it.
-    reduced: dict[str, dict[tuple[str, str], tuple[str, list[ObservedIn]]]] = {}
     generic = 0
     for row in _stated_rows(report):
         kind = str(row.kind or "")
@@ -1347,13 +1392,13 @@ def _stated_drafts(report: MalwareReport) -> tuple[list[_StatedDraft], int]:
         if not value:
             continue
         if (selection, value.lower()) in seen:
-            held = reduced.get(suffix, {}).get((selection, value.lower()))
+            held = drafts[suffix].held.get((selection, value.lower()))
             if held is not None:
                 held[1].extend(marks_of(row))
             continue
         draft = drafts.get(suffix)
         if draft is None:
-            draft = _StatedDraft(suffix, dict(_STATED_LOGSOURCES[suffix]), {}, [])
+            draft = _SigmaDraft(suffix, dict(_STATED_LOGSOURCES[suffix]), {}, [])
             drafts[suffix] = draft
         event = _STATED_EVENT_IDS.get(suffix)
         values = draft.selections.setdefault(
@@ -1364,9 +1409,8 @@ def _stated_drafts(report: MalwareReport) -> tuple[list[_StatedDraft], int]:
         seen.add((selection, value.lower()))
         values.append(value)
         draft.sources.append(f"{kind}:{row.value}")
-        reduced.setdefault(suffix, {})[(selection, value.lower())] = (row.value, marks_of(row))
-    for suffix, draft in drafts.items():
-        draft.observed.extend(_observed_values(reduced.get(suffix, {}).values()))
+        draft.picked[(selection, value.lower())] = draft.sources[-1]
+        draft.held[(selection, value.lower())] = (row.value, marks_of(row))
     return [drafts[s] for s in _STATED_TITLES if s in drafts], generic
 
 
@@ -1473,19 +1517,25 @@ def _collect_registry_targets(report: MalwareReport, admitted: frozenset[str]) -
     out: list[str] = []
     seen: set[str] = set()
 
-    def _add(key: str) -> None:
-        form = _registry_form(key)
-        if not form or form in seen or form not in admitted:
+    def _add(key: str, name: str = "") -> None:
+        if not _admitted_value(key, admitted):
             return
-        seen.add(form)
         # Without its hive: Sysmon logs a user hive as ``HKU\\<SID>\\...``, so
         # a selection naming ``HKCU`` would match no event; the key with a
         # leading separator matches every hive and SID it is written under.
-        out.append("\\" + _hiveless_key(key))
+        target = "\\" + _hiveless_key(key) + (f"\\{name}" if name else "")
+        if target.lower() in seen:
+            return
+        seen.add(target.lower())
+        out.append(target)
 
     if report.dynamic is not None:
         for reg in report.dynamic.registry_mods:
-            _add(_registry_full_path(reg))
+            # A value written under a key every installation has is the
+            # sample's by its name alone (an autorun under the Run key): the
+            # event's target is the key and the value's name.
+            named = _written_under_a_common_key(reg)
+            _add(_registry_full_path(reg), (reg.value_name or "") if named else "")
     for mech in report.persistence:
         if mech.kind in _REGISTRY_PERSISTENCE_KINDS:
             _add(mech.target)
@@ -1507,15 +1557,33 @@ _REGISTRY_PERSISTENCE_KINDS = frozenset(
 )
 
 
+def _common_key(key: str) -> bool:
+    """Whether the catalogue calls a registry key one every installation has (``benign_reason``)."""
+    from malspark.reporting.stated_host_values import benign_reason
+
+    kind = _selection_kind("selection_registry")
+    return kind is not None and bool(benign_reason(kind, key))
+
+
+def _written_under_a_common_key(reg: RegistryMod) -> bool:
+    """Whether a sandbox's record is a write under a key every installation has."""
+    return reg.operation in ("create", "modify") and _common_key(_registry_full_path(reg))
+
+
 def _persistence_image_source(mech: PersistenceMechanism, admitted: frozenset[str]) -> str:
     """The admitted value an image is read from: the payload, else a target that is a file.
 
-    The payload is what runs (``models.PersistenceMechanism``). A registry
-    key is where it is registered, and a key's last component selected as an
-    image matches no process event; so a registry target, by its kind or by
-    its hive, is never one.
+    The payload is what runs (``models.PersistenceMechanism``): admitted on its
+    own row, or as the data registered under an admitted key every
+    installation has: that data is what makes the record the sample's. A
+    registry key is where it is registered, and a key's last component
+    selected as an image matches no process event; so a registry target, by
+    its kind or by its hive, is never one.
     """
-    if mech.payload and _admitted_value(mech.payload, admitted):
+    if mech.payload and (
+        _admitted_value(mech.payload, admitted)
+        or (_admitted_value(mech.target, admitted) and _common_key(mech.target))
+    ):
         return mech.payload
     target = mech.target or ""
     if (
@@ -1528,34 +1596,225 @@ def _persistence_image_source(mech: PersistenceMechanism, admitted: frozenset[st
     return ""
 
 
+# A program's file name in a path or a command line.
+_IMAGE_RE = re.compile(r"([^\\/]+\.(?:exe|dll|bat|ps1|vbs|js))", re.IGNORECASE)
+
+
+def _named_paths(data: str) -> list[str]:
+    """Each program and file path a persistence payload or a value's data names, in order.
+
+    Read by :func:`data_words`: each word that names a file, never a URL nor
+    a switch.
+    """
+    from malspark.schemas.sandbox_report import FILE_NAME_END_RE
+
+    return [
+        word
+        for word in data_words(data)
+        if "://" not in word
+        and not word.startswith(("-", "/"))
+        and FILE_NAME_END_RE.search(word) is not None
+    ]
+
+
+# What a rooted path begins with: a drive, an environment name, a share.
+_ROOTED_RE = re.compile(r"[A-Za-z]:[\\/]|%[^%\s]+%|\\\\")
+# A run of characters between white space.
+_SPACED_RE = re.compile(r"\S+")
+
+
+def data_words(data: str) -> list[str]:
+    """The words of a payload or a written value's data, each path whole, without its quotes.
+
+    The rule drafter's own reading: the words the reader of a command line
+    gives (``sandbox_report.command_line_paths``, a quoted path whole), with
+    an unquoted program whose path holds a space read as one word
+    (:func:`_unquoted_program`). The sandbox's check of which process runs
+    the submitted file reads a command line its own way.
+    """
+    from malspark.schemas.sandbox_report import command_line_paths
+
+    text = str(data or "").lstrip()
+    program = _unquoted_program(text)
+    return ([program] if program else []) + command_line_paths(text[len(program) :])
+
+
+def _unquoted_program(text: str) -> str:
+    """The program an unquoted command line names where a space is in its path, or ``""``.
+
+    Where the first word begins a rooted path (a drive, an environment name,
+    ``\\\\``), the words are joined by the spaces between them until one ends
+    in a file name (before a comma, which ends a rundll32-style entry): that
+    run is the program. The first word stands alone (``""``, the line read
+    word by word) where it names a file itself, at a quote, at a switch
+    (``/…``, ``-…``), at a word that begins another rooted path, and where
+    the words so far with the loader's default extension (``.exe``) end in a
+    program Windows ships (``%windir%\\system32\\cmd /c x.bat``, asked of
+    the catalogue); and where no word ends in a file name.
+    """
+    from malspark.reporting.stated_host_values import ENDSWITH, shipped_match
+    from malspark.schemas.sandbox_report import FILE_NAME_END_RE
+
+    if not _ROOTED_RE.match(text):
+        return ""
+    for match in _SPACED_RE.finditer(text):
+        word = match.group(0)
+        if '"' in word or (
+            match.start() and (word.startswith(("/", "-")) or _ROOTED_RE.match(word))
+        ):
+            return ""
+        head = word.partition(",")[0]
+        if FILE_NAME_END_RE.search(head):
+            return text[: match.start() + len(head)] if match.start() else ""
+        name = re.split(r"[\\/]", text[: match.start() + len(head)])[-1]
+        if shipped_match("path", ENDSWITH, f"\\{name}.exe"):
+            return ""
+    return ""
+
+
+def _file_value(word: str, *, rooted: bool) -> str:
+    """What an event writes a path the data names as: its file name, after a separator where
+    the data writes it under a folder or ``rooted``; past its drive and the user's own name
+    where that name alone is one Windows ships (:func:`_printed_path`)."""
+    text = _without_long_prefix(word)
+    name = re.split(r"[\\/]", text)[-1]
+    return _printed_path(text, ("\\" if rooted or name != text else "") + name)
+
+
+def _written_data(report: MalwareReport, admitted: frozenset[str]) -> list[str]:
+    """The data a sandbox recorded written under an admitted key every installation has:
+    the payload such a write registers."""
+    if report.dynamic is None:
+        return []
+    return [
+        reg.new_value
+        for reg in report.dynamic.registry_mods
+        if reg.new_value
+        and _admitted_value(_registry_full_path(reg), admitted)
+        and _written_under_a_common_key(reg)
+    ]
+
+
+@dataclass
+class _Registered:
+    """What persistence registers, as each log source's draft selects it.
+
+    Each program, as the process's image ends with it and as the data holds
+    it (``""`` for a target that is a file, which no data holds), and each
+    further path, as the data holds it; with the form each was named in.
+    """
+
+    images: list[tuple[str, str, str]] = field(default_factory=list)
+    paths: list[tuple[str, str]] = field(default_factory=list)
+
+    def image(self, image: str, held: str, word: str) -> None:
+        self.images.append((image, held, word))
+
+    def path(self, held: str, word: str) -> None:
+        self.paths.append((held, word))
+
+    def selections(
+        self, category: str
+    ) -> tuple[dict[str, dict[str, Any]], dict[tuple[str, str], str], list[tuple[str, str]]]:
+        """The selections of the first draft over ``category``, the form each value was named
+        in (by its selection and folded value), and each value no field of it holds.
+
+        A process creation records the program as its ``Image`` and the data
+        it runs as its ``CommandLine``. A registry event's ``Image`` is the
+        process that wrote the value, never the program the value names: a
+        program read from the data is selected where the event records the
+        data (``Details``), and a program no data holds is in no field of it.
+        """
+        named: dict[tuple[str, str], str] = {}
+        images: list[str] = []
+        held: list[str] = []
+        unheld: list[tuple[str, str]] = []
+
+        def _put(selection: str, into: list[str], value: str, word: str) -> None:
+            if (selection, value.lower()) not in named:
+                named[(selection, value.lower())] = word
+                into.append(value)
+
+        for image, data, word in self.images:
+            if category == "process_creation":
+                _put("selection_persistence", images, image, word)
+            elif data:
+                _put("selection_payload", held, data, word)
+            else:
+                unheld.append((image, NO_FIELD_REASON))
+        for data, word in self.paths:
+            _put("selection_payload", held, data, word)
+        selections: dict[str, dict[str, Any]] = {}
+        if images:
+            selections["selection_persistence"] = {"Image|endswith": images}
+        if held:
+            selections["selection_payload"] = {_PAYLOAD_FIELDS[category]: held}
+        return selections, named, unheld
+
+
+# Why a program is left out of a registry event's draft that no data holds.
+NO_FIELD_REASON = (
+    "no field of a registry event holds it: the event's Image is the process that wrote "
+    "the value, not the program it registers"
+)
+
+
 def _collect_persistence_images(
-    persistence: list[PersistenceMechanism], admitted: frozenset[str]
-) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
+    persistence: list[PersistenceMechanism],
+    admitted: frozenset[str],
+    written: tuple[str, ...] = (),
+) -> _Registered:
+    """The images and the further paths a draft selects from what persistence registers.
+
+    The data (a payload, a written value's data) is read for every path it
+    names (:func:`_named_paths`), each asked with its folder: a first word
+    that names a program of the sample's own is the process's image and all
+    the data says; a program Windows ships is never selected alone, and each
+    further path the data names is selected in the field that records the
+    data (:func:`_sigma_drafts`). Data naming no file selects nothing. A
+    target that is a file is its file name.
+    """
+    out = _Registered()
+    texts: list[tuple[str, bool]] = []
     for mech in persistence:
-        target = _persistence_image_source(mech, admitted)
-        if not target:
+        text = _persistence_image_source(mech, admitted)
+        if text:
+            texts.append((text, text == mech.payload))
+    texts.extend((data, True) for data in written)
+    for text, data in texts:
+        if not data:
+            # Pull a trailing executable name if present.
+            match = _IMAGE_RE.search(text)
+            image = (
+                "\\" + match.group(1)
+                if match
+                else text
+                if text.startswith("\\")
+                else "\\" + text.lstrip("/").split("/")[-1]
+            )
+            out.image(image, "", text)
             continue
-        # Pull a trailing executable name if present.
-        match = re.search(r"([^\\/]+\.(?:exe|dll|bat|ps1|vbs|js))", target, re.IGNORECASE)
-        if match:
-            image = "\\" + match.group(1)
-        else:
-            image = target if target.startswith("\\") else "\\" + target.lstrip("/").split("/")[-1]
-        if image.lower() in seen:
-            continue
-        seen.add(image.lower())
-        out.append(image)
+        words = data_words(text)
+        files = _named_paths(text)
+        if files and words[0] == files[0] and _IMAGE_RE.fullmatch(re.split(r"[\\/]", files[0])[-1]):
+            image = _file_value(files[0], rooted=True)
+            out.image(image, _file_value(files[0], rooted=False), files[0])
+            if not _why_not_specific("selection_persistence", "Image|endswith", image, files[0]):
+                continue
+            files = files[1:]
+        for word in files:
+            out.path(_file_value(word, rooted=False), word)
     return out
 
 
-def _sigma_values(report: MalwareReport) -> tuple[list[str], list[str], list[str]]:
-    """The registry keys and the images a Sigma draft selects on, each admitted and whole.
+def _sigma_values(report: MalwareReport) -> tuple[list[str], _Registered, _Held]:
+    """The registry keys, and the images and paths persistence registers, a Sigma draft
+    selects on, each admitted and whole.
 
-    Third, each selected key only a further detonation observed, with its
-    detonation and launch (:func:`_observed_values`): a key the sandbox's or
-    a persistence record of the job's own detonation gives is the job's own.
+    Third, each selected key with the marks of every record of it
+    (:data:`_Held`), which the keys only a further detonation observed are read
+    from (:func:`_observed_values`): a key the sandbox's or a persistence
+    record of the job's own detonation gives is the job's own.
     """
     from malspark.reporting.ledger_projection import FIRST_DETONATION, marks_of
 
@@ -1583,9 +1842,297 @@ def _sigma_values(report: MalwareReport) -> tuple[list[str], list[str], list[str
             observed[target.lower()] = (row.value, marks_of(row))
     return (
         targets,
-        _collect_persistence_images(report.persistence, admitted),
-        _observed_values(observed.values()),
+        _collect_persistence_images(
+            report.persistence, admitted, tuple(_written_data(report, admitted))
+        ),
+        {("selection_registry", key): held for key, held in observed.items()},
     )
+
+
+def selection_specific(
+    selections: dict[str, dict[str, Any]],
+    asked: dict[tuple[str, str], str] | None = None,
+) -> tuple[dict[str, dict[str, Any]], list[tuple[str, str]]]:
+    """A draft's selections narrowed to the values that stand alone, and each value left out.
+
+    Each selection of a draft can match alone (its condition is the one
+    selection, or ``1 of`` them), so each selected value is held to two tests,
+    whatever recorded it, a sandbox included (:func:`_why_not_specific`). A
+    value the platform's catalogue calls every Windows host's
+    (``stated_host_values.benign_reason``), asked of the value as it is
+    printed, is taken out; the reason given is true of the value as it was
+    stated, which ``asked`` names (by selection and folded value). Last, a
+    value some path or key Windows ships matches under the field's own
+    operator (``stated_host_values.shipped_match``) is taken out: it fires on
+    every host. A path matched by ``contains`` that names no folder is taken
+    out (:data:`NO_FOLDER_REASON`). Then containment, read with case and separators folded
+    (:func:`_contained`): a value matched by ``contains`` that another
+    selected value lies under (a folder and a file in it, a key and its
+    subkey) matches everything that value matches and more; a ``contains``
+    value whose trailing components another ``contains`` value is
+    (``\\Software\\Classes\\CLSID\\{x}`` beside ``\\CLSID\\{x}``) is the same
+    object spelled longer, which the shorter matches in every spelling; and a
+    value selected already is said twice. Each is taken out for the other. A
+    selection left with no value is taken out. Second, each value taken out
+    with why, in the order met: the catalogue's reason, the name's, the shipped path's, or one of
+    :data:`CONTAINMENT_REASONS`. The builder and the sentence saying why no
+    draft was built read this one decision.
+    """
+    left_out: list[tuple[str, str]] = []
+    placed: list[tuple[str, str, str]] = []
+    for name, selection in selections.items():
+        for field_name, values in selection.items():
+            for value in values if isinstance(values, list) else []:
+                stated = str((asked or {}).get((name, value.lower()), value))
+                why = _why_not_specific(name, field_name, value, stated) or _no_folder(
+                    name, field_name, value
+                )
+                if why:
+                    left_out.append((value, why))
+                else:
+                    placed.append((name, field_name, value))
+    kept: dict[str, dict[str, Any]] = {}
+    for at, (name, field_name, value) in enumerate(placed):
+        why = _contained(placed, at)
+        if why:
+            left_out.append((value, why))
+            continue
+        selection = kept.setdefault(
+            name, {k: v for k, v in selections[name].items() if not isinstance(v, list)}
+        )
+        selection.setdefault(field_name, []).append(value)
+    return kept, left_out
+
+
+def _not_specific(selection: str, value: str) -> str:
+    """Why the catalogue calls a value of ``selection`` every Windows host's, or ``""``."""
+    from malspark.reporting.stated_host_values import benign_reason
+
+    kind = _selection_kind(selection)
+    return benign_reason(kind, value) if kind is not None else ""
+
+
+def _why_not_specific(selection: str, field_name: str, value: str, stated: str) -> str:
+    """Why a value printed in ``field_name`` of ``selection`` does not stand alone, or ``""``.
+
+    First the catalogue, asked of the printed value; its reason is true of
+    the value as it was stated (``stated``): the catalogue's own where the
+    stated value is every host's, else, for a path printed as a name Windows
+    ships alone, :data:`NAME_ALONE_REASON`. Then the last check, asked of the
+    value as it is printed and the way the rule matches it
+    (``stated_host_values.shipped_match``): a value some path or key Windows
+    ships matches under the field's operator fires on every host, and its
+    reason says that (:data:`_SHIPPED_REASON`).
+    """
+    from malspark.reporting.stated_host_values import benign_reason, shipped_match
+
+    kind = _selection_kind(selection)
+    if kind is None:
+        return ""
+    why = benign_reason(kind, value)
+    if why and kind.shape == "path":
+        why = benign_reason(kind, stated) or NAME_ALONE_REASON
+    if why:
+        # The catalogue names the printed value itself: the same fact, said
+        # in its own words.
+        return why
+    operator = field_name.partition("|")[2]
+    if shipped_match(kind.shape, operator, value):
+        return _SHIPPED_REASON[kind.shape == "key"][operator]
+    return ""
+
+
+def _no_folder(selection: str, field_name: str, value: str) -> str:
+    """:data:`NO_FOLDER_REASON` for a path matched by ``contains`` that names no folder, or
+    ``""``."""
+    kind = _selection_kind(selection)
+    if (
+        kind is not None
+        and kind.shape != "key"
+        and field_name.endswith("|contains")
+        and not re.search(r"[\\/]", value)
+    ):
+        return NO_FOLDER_REASON
+    return ""
+
+
+# Why a path matched by ``contains`` is left out that names no folder: the
+# name alone is found inside every longer name that ends with it.
+NO_FOLDER_REASON = (
+    "it names no folder, and a name alone matched anywhere is found inside longer names"
+)
+
+
+# Why a value is left out that a path Windows ships (a key every installation
+# has) matches under the selection's operator, by whether it is a key and by
+# the operator.
+_SHIPPED_REASON = {
+    False: {
+        "endswith": "a path Windows ships on every host ends with it",
+        "contains": "a path Windows ships on every host holds it",
+        "": "it is a path Windows ships on every host",
+    },
+    True: {
+        "endswith": "a registry key every Windows installation has ends with it",
+        "contains": "a registry key every Windows installation has holds it",
+        "": "it is a registry key every Windows installation has",
+    },
+}
+
+
+# Why a path is taken out whose printed form is a name Windows ships alone,
+# while the path as stated is not one of Windows' own.
+NAME_ALONE_REASON = (
+    "its name alone is a file Windows ships, and the folder it was stated in is written "
+    "differently on each host"
+)
+
+
+# Why a value is taken out for another selected value of its draft.
+CONTAINMENT_REASONS = (
+    "a selected value lies under it, so it matches everything that value matches and more",
+    "a selected value is its trailing part, which matches it in every spelling",
+    "it is selected already",
+)
+
+
+def _folded(value: str) -> str:
+    """A selected value as containment reads it: lower case, ``\\`` for ``/``, one leading
+    ``\\`` and no trailing one, so a value holds another only as whole components."""
+    return "\\" + value.lower().replace("/", "\\").strip("\\")
+
+
+def _contained(placed: list[tuple[str, str, str]], at: int) -> str:
+    """Why the value at ``at`` is taken out for another selected value, or ``""``."""
+    folded = _folded(placed[at][2])
+    contains = placed[at][1].endswith("|contains")
+    for other, (_, field_name, value) in enumerate(placed):
+        if other == at:
+            continue
+        text = _folded(value)
+        if text == folded:
+            if other < at:
+                return CONTAINMENT_REASONS[2]
+            continue
+        if not contains:
+            continue
+        if folded + "\\" in text:
+            return CONTAINMENT_REASONS[0]
+        if field_name.endswith("|contains") and folded.endswith(text):
+            return CONTAINMENT_REASONS[1]
+    return ""
+
+
+# How many values of each selection the first draft names as its sources.
+_FIRST_DRAFT_SOURCES = 5
+# The IOC-table kind each selection's values are read as, by the selection's name.
+_SELECTION_KINDS = {
+    "selection_registry": "registry",
+    "selection_persistence": "path",
+    "selection_payload": "path",
+    **{selection: kind for kind, (_, selection, _) in _STATED_FIELDS.items()},
+}
+
+
+def _selection_kind(selection: str) -> Any:
+    """The vocabulary kind a selection's values are read as, or ``None``: its first of that kind."""
+    from malspark.reporting.stated_host_values import host_kinds
+
+    table_kind = _SELECTION_KINDS.get(selection)
+    return next((k for k in host_kinds().values() if k.table_kind == table_kind), None)
+
+
+def _sigma_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, list[str]]:
+    """Every Sigma draft the run's values give, each narrowed (:func:`selection_specific`).
+
+    First the draft over registry keys, images and the paths persistence's
+    data names (``registry_event``, else ``process_creation`` when no key is
+    left), each value in a field its log source has for it
+    (:meth:`_Registered.selections`), and a value no field of it holds left
+    out with why; then one per log source of the stated
+    values (:func:`_stated_drafts`); a draft left with no selection is not
+    one; a draft built keeps each value left out of it, with why
+    (``left_out``). Second, how many generic names were left out; third, why
+    each value was left out, which is read only when no draft is built: every
+    value left out then is one the catalogue's question took out, since
+    containment always keeps the narrower value.
+    """
+    registry_targets, registered, held = _sigma_values(report)
+
+    def _first(category: str) -> tuple[_SigmaDraft, list[tuple[str, str]]]:
+        selections: dict[str, dict[str, Any]] = {}
+        if registry_targets:
+            selections["selection_registry"] = {"TargetObject|contains": registry_targets}
+        persistence, named, unheld = registered.selections(category)
+        selections.update(persistence)
+        picked = {("selection_registry", p.lower()): f"registry:{p}" for p in registry_targets}
+        for name, selection in persistence.items():
+            for values in selection.values():
+                picked.update({(name, p.lower()): f"persistence:{p}" for p in values})
+        logsource = {"product": "windows", "category": category}
+        draft = _SigmaDraft("", logsource, selections, [], picked=picked, held=held, stated=named)
+        return draft, unheld
+
+    # A registry event while a key is left to select on, else a process
+    # creation (:meth:`_Registered.selections`).
+    first, unheld = _first("registry_event")
+    if not registry_targets or "selection_registry" not in _narrowed(first)[0]:
+        first, unheld = _first("process_creation")
+    stated, generic = _stated_drafts(report)
+    drafts: list[_SigmaDraft] = []
+    reasons: list[str] = []
+    for draft in [first, *stated] if first.selections else stated:
+        selections, left_out = _narrowed(draft)
+        if not draft.suffix:
+            left_out = [*left_out, *unheld]
+        reasons.extend(why for _, why in left_out)
+        if not selections:
+            continue
+        kept = {
+            (name, value.lower())
+            for name, selection in selections.items()
+            for values in selection.values()
+            if isinstance(values, list)
+            for value in values
+        }
+        logsource = draft.logsource
+        # The first draft names its first five values of each selection.
+        most = _MAX_STATED_VALUES if draft.suffix else _FIRST_DRAFT_SOURCES
+        named: dict[str, int] = {}
+        sources: list[str] = []
+        for key, line in draft.picked.items():
+            if key in kept and named.get(key[0], 0) < most:
+                named[key[0]] = named.get(key[0], 0) + 1
+                sources.append(line)
+        drafts.append(
+            _SigmaDraft(
+                draft.suffix,
+                logsource,
+                selections,
+                sources,
+                _observed_values(held for key, held in draft.held.items() if key in kept),
+                left_out=left_out,
+            )
+        )
+    return drafts, generic, reasons
+
+
+def _narrowed(draft: _SigmaDraft) -> tuple[dict[str, dict[str, Any]], list[tuple[str, str]]]:
+    """A draft's selections narrowed (:func:`selection_specific`), each value asked as it was
+    named."""
+    return selection_specific(
+        draft.selections,
+        {**{key: shown for key, (shown, _) in draft.held.items()}, **draft.stated},
+    )
+
+
+# The field each log source of the first draft records persistence's data
+# in: a registry event writes the value's data, a process creation the
+# command line it runs.
+_PAYLOAD_FIELDS = {
+    "registry_event": "Details|contains",
+    "process_creation": "CommandLine|contains",
+}
 
 
 def _observed_values(held: Iterable[tuple[str, list[ObservedIn]]]) -> list[str]:
@@ -1618,6 +2165,11 @@ _SIGMA_GENERIC_LEFT_OUT = (
     "; {count} the analysis states {are} a name ordinary software also uses, which is never "
     "selected on alone"
 )
+# The clause for the values the catalogue's question took out
+# (:func:`selection_specific`), with each reason once.
+_SIGMA_EVERY_HOST_LEFT_OUT = (
+    "; {count} a sandbox watched or the run publishes {are} never selected on: {reasons}"
+)
 _SIGMA_SIGNATURES_SELECT_NOTHING = (
     "; the {count} the sandbox recorded {are} its reading of what it saw, a field of no log, "
     "so a rule selecting on {them} would match no event"
@@ -1640,15 +2192,20 @@ def drafts_not_built(report: MalwareReport, rules: list[DetectionRule]) -> list[
         return []
     if any(rule.kind == "sigma" for rule in rules):
         return []
-    registry_targets, persistence_images, _ = _sigma_values(report)
-    stated, generic = _stated_drafts(report)
-    if registry_targets or persistence_images or stated:
+    drafts, generic, every_host = _sigma_drafts(report)
+    if drafts:
         return [DraftNotBuilt(kind="sigma", why=_SIGMA_DRAFT_RAISED)]
     why = _SIGMA_NOTHING_TO_SELECT
     if generic:
         why += _SIGMA_GENERIC_LEFT_OUT.format(
             count="the value" if generic == 1 else f"the {generic} values",
             are="is" if generic == 1 else "are each",
+        )
+    if every_host:
+        why += _SIGMA_EVERY_HOST_LEFT_OUT.format(
+            count="the value" if len(every_host) == 1 else f"the {len(every_host)} values",
+            are="is" if len(every_host) == 1 else "are",
+            reasons=" and ".join(dict.fromkeys(every_host)),
         )
     count = len(_collect_signature_names(report))
     if count:
@@ -1703,13 +2260,58 @@ def _collect_signature_names(report: MalwareReport) -> list[str]:
     return out
 
 
-def _sigma_tags(report: MalwareReport) -> list[str]:
+def _selected_values(selections: dict[str, dict[str, Any]]) -> list[str]:
+    """Every value a draft's selections select on, in order."""
+    return [
+        value
+        for selection in selections.values()
+        for values in selection.values()
+        if isinstance(values, list)
+        for value in values
+    ]
+
+
+def _sigma_tags(report: MalwareReport, selected: list[str]) -> list[str]:
+    """The ATT&CK tags of a draft: the techniques that name a value it selects, and their tactics.
+
+    A technique is tagged only where its own statement, its evidence quotes
+    and roots, names a value the draft selects, whole and delimited at both
+    ends in any spelling a run's text writes it in
+    (``stated_host_values.delimited_in``); a stream's name also after the
+    colon that ends its file's name. A tactic is tagged only for a technique
+    kept, from a cell the report published. A draft no technique names has no
+    tag.
+    """
+    from malspark.reporting.stated_host_values import delimited_in, encodings
+
+    names = list(
+        dict.fromkeys(
+            (form, value.startswith(":"))
+            for value in selected
+            if (bare := value.strip().lower().strip("\\").lstrip(":"))
+            for form in encodings(bare)
+        )
+    )
+
+    def _names(text: str) -> bool:
+        # A code mark is read as the quote it is.
+        lowered = text.lower().replace("`", "'")
+        return any(
+            delimited_in(form, lowered)
+            or (stream and delimited_in(form, lowered, after_colon=True))
+            for form, stream in names
+        )
+
     tags: list[str] = []
     seen: set[str] = set()
+    kept: set[str] = set()
     for mapping in report.ttp_mappings:
         tid = mapping.technique_id
-        if not tid:
+        if not tid or not any(
+            _names(text) for text in [*mapping.evidence_quotes, *mapping.evidence_roots]
+        ):
             continue
+        kept.add(tid.lower())
         tag = f"attack.{tid.lower()}"
         if tag not in seen:
             seen.add(tag)
@@ -1717,7 +2319,7 @@ def _sigma_tags(report: MalwareReport) -> list[str]:
     for cell in report.capability_matrix:
         # A cell the report did not publish (an id the catalogue lacks, or one
         # the sample cannot host) is no tactic a deployed rule should claim.
-        if cell.not_published:
+        if cell.not_published or cell.technique_id.lower() not in kept:
             continue
         name = cell.tactic_name.lower().replace(" ", "_").replace("&", "and")
         tag = f"attack.{name}" if name else ""
