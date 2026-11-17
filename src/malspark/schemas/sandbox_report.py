@@ -1535,7 +1535,9 @@ def written_during_the_run(document: Any, reading: Reading | None) -> list[str] 
     collected file's guest paths and names (:func:`_dropped_paths`, and each
     field the reader declares holds a guest path), a file-write operation's
     path. ``None`` where none of those parts is in the document at all: the
-    record does not say what was written, which is not that nothing was.
+    record does not say what was written, which is not that nothing was. With
+    no reader every part is read, and a part counts only where it is not
+    empty, since a composed document lays out every part, empty or not.
     """
     from malspark.schemas.sandbox_document import place
 
@@ -1550,7 +1552,9 @@ def written_during_the_run(document: Any, reading: Reading | None) -> list[str] 
             rows = document.get("dropped_files")
         if not isinstance(rows, list):
             continue
-        held = True
+        # With no reader, a part a composed document lays out empty states
+        # nothing: only a part that shows a write says writes are recorded.
+        held = held or reading is not None or bool(rows)
         for row in rows:
             if isinstance(row, Mapping):
                 out.extend(_dropped_paths(row))

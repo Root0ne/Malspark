@@ -176,8 +176,9 @@ class TestTheCapeFamilyIsReadByItsOwnIds:
     def test_a_row_is_read_one_way_whatever_reader_is_named(self, reader: str) -> None:
         # The id, the parent and the image of a process row are the document's
         # one reading of a row: a read that names no reader reads them alike.
+        # The record shows a write of another path, so it records file writes.
         procs = [(1, 99, STAGED, "1"), (2, 1, STAGED, "2"), (3, 2, COPY, "3")]
-        assert _marked(_cape(reader, procs), read_by=None) == [0]
+        assert _marked(_cape(reader, procs, writes=(SVCHOST,)), read_by=None) == [0]
 
     def test_the_image_path_is_compared_with_a_written_path(self, reader: str) -> None:
         # A file of the submitted name written in another folder is not the
@@ -321,3 +322,56 @@ class TestTheWrittenPathsAreReadWhereTheReaderDeclares:
         from malspark.schemas.sandbox_report import written_during_the_run
 
         assert written_during_the_run(self._document(), None) == [COPY]
+
+
+def _any_marked(document: dict[str, Any], reader: Any) -> bool:
+    """Whether the process view marks anything; a document that lists no process has no rows."""
+    answer = read_view("sandbox_processes", document, reader)
+    rows = answer.get("processes") or []
+    return STAGED_NOTE_KEY in answer or any(row.get(STAGED_KEY) for row in rows)
+
+
+class TestARecordReadWithNoReaderStatesTheWritesItShows:
+    """With no reader, a write part counts as held only where it is not empty: a
+    composed document lays every part out, so an empty one says nothing written."""
+
+    def test_a_document_read_from_its_overview_only_marks_nothing(self) -> None:
+        from malspark.schemas.sandbox_report import written_during_the_run
+
+        overview = {"sample": {"id": "s1", "target": NAME, "sha256": DIGEST}}
+        report = required_reader("triage").read(overview, provider="lab", task_id="s1")
+        document = sandbox_document(report)
+        assert written_during_the_run(document, None) is None
+        assert not _any_marked(document, None)
+        assert not _any_marked(document, ("lab", "triage", "overview"))
+
+    def test_a_document_of_the_reader_for_unread_shapes_marks_nothing(self) -> None:
+        from malspark.schemas.sandbox_report import written_during_the_run
+
+        payload = {"blob": {"k": 1}, "processes": [{"pid": 1}]}
+        document = sandbox_document(required_reader("unread").read(payload, provider="lab"))
+        assert written_during_the_run(document, None) is None
+        assert not _any_marked(document, None)
+
+    @pytest.mark.parametrize("reader", CAPE_FAMILY)
+    def test_a_document_that_shows_no_write_marks_nothing(self, reader: str) -> None:
+        procs = [(1, 99, STAGED, "1")]
+        assert _marked(_cape(reader, procs, writes=None, collected=False), read_by=None) == []
+        assert _marked(_cape(reader, procs), read_by=None) == []
+
+    def test_a_task_document_whose_parts_are_laid_out_empty_marks_nothing(self) -> None:
+        procs = [(1, 56, STAGED, "100")]
+        assert _marked(_triage({"behavioral1": procs}), read_by=None) == []
+        assert _marked(_generic([(1, 99, STAGED, "")]), read_by=None) == []
+
+    @pytest.mark.parametrize("reader", CAPE_FAMILY)
+    def test_a_write_of_another_path_still_marks_the_root(self, reader: str) -> None:
+        procs = [(1, 99, STAGED, "1"), (2, 1, STAGED, "2"), (3, 2, COPY, "3")]
+        assert _marked(_cape(reader, procs, writes=(SVCHOST,)), read_by=None) == [0]
+        assert _marked(_cape(reader, procs, dropped=(SVCHOST,)), read_by=None) == [0]
+
+    @pytest.mark.parametrize("reader", CAPE_FAMILY)
+    def test_the_copy_shown_written_marks_nothing(self, reader: str) -> None:
+        procs = [(1, 99, RANDOM, "1"), (3, 77, SVCHOST, "2"), (4, 3, COPY, "3")]
+        assert _marked(_cape(reader, procs, writes=(COPY,)), read_by=None) == []
+        assert _marked(_cape(reader, procs, dropped=(COPY,)), read_by=None) == []
