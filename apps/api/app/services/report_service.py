@@ -4,13 +4,14 @@ import asyncio
 import re
 import string
 import uuid
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from arq import ArqRedis
 from malspark.reporting.builder import ioc_table
 from malspark.reporting.detection_signatures import analyst_print_gate, rule_standing
 from malspark.reporting.models import ConsolidatedIOC, DetectionRule
-from malspark.reporting.renderers.stix_renderer import SAMPLE_DIGESTS, publishes, yes_because
+from malspark.reporting.renderers.stix_renderer import SAMPLE_DIGESTS, publishes, stated_verdict
 from malspark.reporting.run_diff import RunRecord, diff_runs
 from malspark.schemas.stix_models import tlp_name, with_current_property_names
 from sqlalchemy import select
@@ -119,24 +120,19 @@ def _network_rows(mr: dict) -> dict[tuple[str, str], dict]:
 
 
 def _identity_rows(mr: dict) -> list[ConsolidatedIOC]:
-    """The sample's own digests as the IOC table lists them, read from the stored identity."""
+    """The sample's own digests as the IOC table lists them, read from the stored identity.
+
+    Built by the table's own rule (``builder.identity_rows``) under the verdict
+    the report states, each with its role and type (``builder.with_record``).
+    """
+    from malspark.reporting.builder import identity_rows, with_record
+
     identity = mr.get("identity")
     hashes = identity.get("hashes") if isinstance(identity, dict) else None
     if not isinstance(hashes, dict):
         return []
-    return [
-        ConsolidatedIOC(
-            type=label,
-            kind="hash",
-            value=str(hashes[field]).strip(),
-            source="identity",
-            context="the sample",
-            description="the sample",
-            published=yes_because("identity"),
-        )
-        for label, field in SAMPLE_DIGESTS
-        if str(hashes.get(field) or "").strip()
-    ]
+    held = SimpleNamespace(**{field: hashes.get(field) for _label, field in SAMPLE_DIGESTS})
+    return with_record(identity_rows(held, stated_verdict(mr)), mr)
 
 
 # The kinds a feed another system reads carries only when asked for by name: a
@@ -195,6 +191,10 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
                 "source": row.source,
                 "published": publishes(row.published),
                 "publish_answer": row.published,
+                # What the row is and the type an export carries it under, as
+                # the table records them (``ConsolidatedIOC``).
+                "role": row.role,
+                "indicator_type": row.indicator_type,
                 "recovered_by": row.recovered_by or None,
                 "evidence_ids": list(row.evidence_ids),
                 "tlp": tlp,

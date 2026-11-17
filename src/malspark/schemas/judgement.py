@@ -48,12 +48,61 @@ MALWARE_VERDICT, SUSPICIOUS_VERDICT, BENIGN_VERDICT = VERDICT_VALUES
 # Here beside the vocabulary it is keyed on, so the two cannot drift. A verdict
 # this table does not name is ``unknown``, which is the vocabulary's own word
 # for a claim nobody is making.
-INDICATOR_TYPE_BY_VERDICT: dict[str, str] = {
-    "Malware": "malicious-activity",
-    "Suspicious": "anomalous-activity",
-    "Benign": "benign",
-}
 UNKNOWN_INDICATOR_TYPE = "unknown"
+ANOMALOUS_ACTIVITY = "anomalous-activity"
+BENIGN_INDICATOR_TYPE = "benign"
+
+# Why a Benign verdict withholds a value as an indicator: the existing words of
+# the rule, and the similarity digests' own (they also match other files).
+BENIGN_WITHHOLDS = "the verdict is Benign, which publishes no malicious indicator"
+BENIGN_WITHHOLDS_SIMILARITY = "the verdict is Benign; a similarity digest also matches other files"
+
+
+@dataclass(frozen=True)
+class VerdictPublication:
+    """What one verdict publishes of each class of value, and in which word.
+
+    ``sample_digests`` is the type of the sample's own digests (SHA-256, SHA-1,
+    MD5, SHA-512), which every verdict publishes as the sample's identity.
+    ``similarity_digests`` is the type of its imphash, ssdeep and TLSH, or
+    ``None`` when the verdict withholds them, with ``similarity_withheld`` as
+    the reason. ``others_withheld`` is the reason every other value is withheld
+    as an indicator, or ``""`` when the evidence rule alone decides it.
+    """
+
+    sample_digests: str
+    similarity_digests: str | None
+    similarity_withheld: str = ""
+    others_withheld: str = ""
+
+
+# The one declared table of what each verdict publishes, read by the one
+# publish rule (``stix_renderer.publish_answer``) and nowhere else. A file's
+# own digest is never typed as activity under Benign, and a similarity digest,
+# which matches files that are not the sample, is never typed ``benign``.
+PUBLICATION_BY_VERDICT: dict[str, VerdictPublication] = {
+    MALWARE_VERDICT: VerdictPublication("malicious-activity", ANOMALOUS_ACTIVITY),
+    SUSPICIOUS_VERDICT: VerdictPublication(ANOMALOUS_ACTIVITY, ANOMALOUS_ACTIVITY),
+    BENIGN_VERDICT: VerdictPublication(
+        BENIGN_INDICATOR_TYPE,
+        None,
+        similarity_withheld=BENIGN_WITHHOLDS_SIMILARITY,
+        others_withheld=BENIGN_WITHHOLDS,
+    ),
+}
+# A verdict the judge stated with no confidence, or none this table names.
+NOT_STATED_PUBLICATION = VerdictPublication(UNKNOWN_INDICATOR_TYPE, ANOMALOUS_ACTIVITY)
+
+
+def publication_for(verdict: Any) -> VerdictPublication:
+    """What ``verdict`` publishes (:data:`PUBLICATION_BY_VERDICT`); not stated for any other."""
+    return PUBLICATION_BY_VERDICT.get(str(verdict or "").strip(), NOT_STATED_PUBLICATION)
+
+
+# The sample's own indicator's word per verdict, read off the one table.
+INDICATOR_TYPE_BY_VERDICT: dict[str, str] = {
+    verdict: publication.sample_digests for verdict, publication in PUBLICATION_BY_VERDICT.items()
+}
 
 # Every value ``indicator-type-ov`` defines. The conformance test reads it; so
 # does anything that wants to check an indicator this project emits against the

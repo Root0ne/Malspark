@@ -191,6 +191,16 @@ class RunEvidenceCorpus:
         pages = self.pages_of(entry_id)
         return f"{whole}\n{pages}" if whole and pages else whole or pages
 
+    def parts_of_entry(self, entry_id: str) -> tuple[str, ...]:
+        """What the model read of one entry as the texts it was handed: the answer, then each
+        page, lower-cased; none it does not hold. :meth:`text_of_entry` joins these."""
+        key = str(entry_id or "").strip()
+        prefix = f"{key}@"
+        with self._lock:
+            answer = self._texts.get(key, "")
+            pages = [text for name, text in self._texts.items() if name.startswith(prefix)]
+        return tuple(part for part in (answer, *pages) if part)
+
     def tool_of(self, entry_id: str) -> str:
         """Which tool answered this entry, or ``""``.
 
@@ -250,6 +260,18 @@ def read_of_entry(corpus: object, entry_id: str) -> str:
     """
     reader = getattr(corpus, "text_of_entry", None) or getattr(corpus, "text_for")  # noqa: B009
     return str(reader(entry_id) or "")
+
+
+def read_parts_of_entry(corpus: object, entry_id: str) -> tuple[str, ...]:
+    """What the model read of one entry per ``corpus``, as the texts it was handed.
+
+    A corpus that keeps no parts gives what :func:`read_of_entry` reads, as one.
+    """
+    reader = getattr(corpus, "parts_of_entry", None)
+    if reader is not None:
+        return tuple(str(part) for part in reader(entry_id) if part)
+    whole = read_of_entry(corpus, entry_id)
+    return (whole,) if whole else ()
 
 
 def state_of(corpus: object | None) -> CorpusState:

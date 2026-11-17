@@ -15,8 +15,35 @@ from typing import Any
 
 from malspark.reporting.ledger_projection import network_from_ledger
 from malspark.reporting.models import NetworkDomain, NetworkIOCs
-from malspark.reporting.renderers.stix_renderer import _indicator_for_domain, publishes
+from malspark.reporting.renderers.stix_renderer import publishes
 from malspark.schemas.evidence import build_entry
+
+
+def _indicator_for_domain(domain: NetworkDomain) -> dict[str, Any] | None:
+    """The exported indicator for one name of the network block, or ``None``.
+
+    Rendered from a report whose network block holds the name alone: the
+    export carries what the report's IOC table publishes.
+    """
+    from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity
+    from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer, indicator_pattern
+
+    report = MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
+        verdict="Malware",
+        overall_confidence=0.9,
+        network=NetworkIOCs(domains=[domain]),
+    )
+    wanted = indicator_pattern("domain", domain.fqdn)
+    bundle = ExtendedSTIXRenderer().render(report).model_dump(mode="json", exclude_none=True)
+    return next(
+        (
+            obj
+            for obj in bundle["objects"]
+            if obj.get("type") == "indicator" and obj.get("pattern") == wanted
+        ),
+        None,
+    )
 
 
 def _entry(seq: int, tool: str, payload: dict[str, object]) -> object:
@@ -81,7 +108,7 @@ class TestWhichDomainsBecomeIndicators:
     def test_a_sandbox_name_is_published(self) -> None:
         indicator = _indicator_for_domain(NetworkDomain(fqdn="evil.com", source="sandbox"))
         assert indicator is not None
-        assert indicator.pattern == "[domain-name:value = 'evil.com']"
+        assert indicator["pattern"] == "[domain-name:value = 'evil.com']"
 
     def test_a_string_derived_name_a_provider_calls_malicious_is_published(self) -> None:
         """A reputation hit is the second source the rule asks for."""
@@ -100,7 +127,7 @@ class TestWhichDomainsBecomeIndicators:
 class TestNoStringDerivedDomainReachesTheBundle:
     """The gate has to be on every path that mints a domain indicator.
 
-    Gating `_indicator_for_domain` alone left the other one open: the same
+    Gating the network block's names alone left the other one open: the same
     rows also reach `static.interesting_strings`, and the renderer turns those
     into `[domain-name:value = …]` indicators of their own. A bundle rendered
     from a string sweep beside one sandbox resolution still shipped the
@@ -248,11 +275,10 @@ class TestATorAddressCorroboratesItself:
 
     def test_the_indicator_says_why_it_was_let_through(self) -> None:
         from malspark.reporting.models import NetworkDomain
-        from malspark.reporting.renderers.stix_renderer import _indicator_for_domain
 
         indicator = _indicator_for_domain(NetworkDomain(fqdn=_a_v3_onion(), source="strings"))
         assert indicator is not None
-        assert "hidden service" in (indicator.description or "").lower()
+        assert "hidden service" in str(indicator.get("description") or "").lower()
 
     def test_it_is_still_labelled_a_string_and_never_looked_up(self) -> None:
         from malspark.enrichment.orchestrator import _is_public_fqdn
@@ -275,22 +301,20 @@ class TestTheMachineReadableSurfacesSayItToo:
 
 
 class TestAnIndicatorWithNothingToSaySaysNothing:
-    def test_a_domain_with_no_reason_carries_no_description_key(self) -> None:
-        """An empty description is noise in a published bundle, and the key
-        was absent before there was anything to put in it."""
+    def test_a_domain_with_no_reason_says_only_why_it_is_published(self) -> None:
+        """An empty description is noise in a published bundle: the publish
+        reason is the whole of it."""
         from malspark.reporting.models import NetworkDomain
-        from malspark.reporting.renderers.stix_renderer import _indicator_for_domain
+        from malspark.reporting.renderers.stix_renderer import PUBLISHED_BECAUSE
 
         indicator = _indicator_for_domain(NetworkDomain(fqdn="c2.evil.tld", source="sandbox"))
         assert indicator is not None
-        assert indicator.description is None
-        assert "description" not in indicator.model_dump(exclude_none=True)
+        assert str(indicator["description"]).startswith(f"{PUBLISHED_BECAUSE}: ")
 
     def test_a_domain_with_a_reason_still_carries_it(self) -> None:
         from malspark.reporting.models import NetworkDomain
-        from malspark.reporting.renderers.stix_renderer import _indicator_for_domain
 
         domain = NetworkDomain(fqdn="c2.evil.tld", source="sandbox", reason="Newly registered")
         indicator = _indicator_for_domain(domain)
         assert indicator is not None
-        assert indicator.description == "Newly registered"
+        assert str(indicator["description"]).startswith("Newly registered ")

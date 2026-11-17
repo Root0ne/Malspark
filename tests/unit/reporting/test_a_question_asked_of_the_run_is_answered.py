@@ -543,6 +543,8 @@ class TestTheReport:
         # build came to record how each entry stands to a value taken from the
         # file's text (``second_source_reads``) and the run summary to count
         # what only an undeclared tool confirmed (T-704); the Markdown did not.
+        # The dump re-pinned when each IOC row came to carry its role and the
+        # type an export carries it under (T-716); the Markdown did not.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the
