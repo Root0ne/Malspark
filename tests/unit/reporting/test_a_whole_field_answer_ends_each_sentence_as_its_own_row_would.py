@@ -177,3 +177,24 @@ def test_a_retry_answering_one_sentence_keeps_the_whole_field_row_for_the_others
     whole, apart = ended([text]), ended([BODY, _UNKNOWN])
     assert whole == apart
     assert "its last answer, a keep, was refused" in whole[1][0]
+
+
+def test_a_whole_field_retry_answers_every_sentence_its_first_rows_answered() -> None:
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        _ask,
+        _Reporter,
+    )
+
+    text = f"{BODY} {_UNKNOWN}"
+
+    def row(sentence: str) -> dict[str, Any]:
+        return {"passage": "introduction", "sentence": sentence, **ANSWERS["keep"]}
+
+    def refusals(retry: list[str]) -> list[str]:
+        report = _report(FIRST, background=text)
+        first = {"sentences": [row(BODY), row(_UNKNOWN)]}
+        done = _ask(report, _Reporter(first, {"sentences": [row(s) for s in retry]}))
+        return sorted(r["code"] for r in done.tally.unresolved)
+
+    # The retry answers both sentences, whole or apart: no first-answer row stands beside it.
+    assert refusals([text]) == refusals([BODY, _UNKNOWN])

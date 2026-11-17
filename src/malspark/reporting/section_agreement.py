@@ -8603,6 +8603,7 @@ def _merged_rows(
     last: Any,
     sound: Callable[[Any], bool] = bool,
     where: Callable[[Any], tuple[str, str]] | None = None,
+    apart: Callable[[Any], list[Any]] | None = None,
 ) -> Any:
     """The retry's rows, with each sound row of the first answer the retry leaves out.
 
@@ -8611,8 +8612,9 @@ def _merged_rows(
     answering a sentence the ledger's lines hold, :func:`apply_rows`) are kept, the retry's row
     winning for the same passage and sentence: where it stands in the passage
     (``where``, the place :class:`_Sentences` locates it at, so the same sentence
-    copied with its escapes read back is one), else its words. Either answer that
-    is no object stands for none.
+    copied with its escapes read back is one), else its words; a row copying a whole
+    field answers each of its sentences (``apart``, T-719). Either answer that is no
+    object stands for none.
     """
 
     def _key(row: Any) -> tuple[str, str]:
@@ -8626,7 +8628,12 @@ def _merged_rows(
         return last
     if not isinstance(after, list):
         return first
-    seen = {_key(row) for row in after if isinstance(row, dict)}
+    seen = {
+        _key(one)
+        for row in after
+        if isinstance(row, dict)
+        for one in (apart(row) if apart is not None else [row])
+    }
     kept = [row for row in before if isinstance(row, dict) and _key(row) not in seen and sound(row)]
     return {**last, "sentences": [*after, *kept]}
 
@@ -8753,7 +8760,9 @@ async def _ask(
         # that passed every check; one that did not is the retry's to fix or leave,
         # but for a sentence the ledger's lines hold, whose refused row stays its last
         # answer: no answer for it passed, and it is left out as refused (T-600).
-        parsed = _merged_rows(answered[0], parsed, lambda row: _sound(row) or _held(row), _where)
+        parsed = _merged_rows(
+            answered[0], parsed, lambda row: _sound(row) or _held(row), _where, _apart
+        )
         # Kept for a retry, a whole-field keep or drop is its rows sentence by sentence, so a
         # retry answering one sentence leaves the others their first answer (T-719).
         answered[0] = {**parsed, "sentences": [r for row in _rows_of(parsed) for r in _apart(row)]}
