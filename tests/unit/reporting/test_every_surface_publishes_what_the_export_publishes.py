@@ -1027,3 +1027,48 @@ def test_a_host_row_a_declined_judge_indicator_names_keeps_the_platform_s_type(
         for o in exported["objects"]
         if o.get("type") == "indicator" and "CurrentVersion" in str(o.get("pattern"))
     ] == [["anomalous-activity"]]
+
+
+@pytest.mark.parametrize(
+    ("pattern", "one"),
+    [
+        ("[file:name = 'x.exe']", True),
+        ("[file:name IN ('x.exe')]", True),
+        ("[file:name = 'x.exe' AND file:size > 10]", True),
+        ("[file:name IN ('x.exe', 'y.exe')]", False),
+        ("[file:name = 'x.exe' AND file:name != 'y.exe']", False),
+        ("[file:name != 'x.exe']", False),
+        ("[file:name > 'x.exe']", False),
+    ],
+)
+def test_one_value_is_one_comparison_that_asserts_it(pattern: str, one: bool) -> None:
+    from malspark.reporting.renderers.stix_renderer import names_one_value
+
+    assert names_one_value(pattern) is one
+
+
+@pytest.mark.parametrize("confidence", [0.9, None])
+def test_a_host_value_a_carried_in_list_names_is_that_indicator(confidence: float | None) -> None:
+    """Each member of a carried ``IN`` list is the judge's indicator; none is minted again."""
+    second = "C:\\ProgramData\\b.dat"
+    members = ", ".join(f"'{v.replace(chr(92), chr(92) * 2)}'" for v in (_RELAY, second))
+    judge = _judge(f"[file:name IN ({members})]")
+    report = _report(
+        judge,
+        overall_confidence=confidence,
+        dynamic=DynamicBehavior(
+            process_tree=[{"pid": 1, "name": f"{SHA256}.exe"}],
+            file_operations=[
+                {"operation": "write", "path": _RELAY, "pid": 1},
+                {"operation": "write", "path": second, "pid": 1},
+            ],
+        ),
+    )
+    report.judge_indicators = _recorded(judge)
+    exported, _renderer = _export(report, judge)
+
+    assert [name for name, _pattern, _types in _indicators_of(exported)] == ["judge indicator 0"]
+    for value in (_RELAY, second):
+        row = _row(report, value)
+        assert (row.source, publishes(row.published)) == ("sandbox", True), row.published
+        assert row.indicator_type == "malicious-activity"
