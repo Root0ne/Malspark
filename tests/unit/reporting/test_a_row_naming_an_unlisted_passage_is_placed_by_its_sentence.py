@@ -253,3 +253,30 @@ def test_a_row_the_schema_refuses_is_neither_placed_nor_recorded(bad: dict[str, 
     unanswered = _background()
     _ask(unanswered, _Reporter({"sentences": []}, {"sentences": []}))
     assert report.model_dump() == unanswered.model_dump()
+
+
+def test_a_passage_holding_the_sentence_twice_by_its_words_places_no_row() -> None:
+    # The second copy differs only in its white space: the same sentence by its words, so
+    # the passage holds it twice, and the row is refused though one copy stands exactly.
+    background = f"{FIRST} {FIRST.replace(' ', '  ', 1)}"
+    row = {
+        **_row(FIRST, "drop", [], reason="the lines shown say otherwise"),
+        "passage": "held.introduction",
+    }
+    passages = passages_of(_report("The gate writes no file [ev_0107].", background=background))
+    found = [(v.code, v.path) for v in agreement_violations({"sentences": [row]}, passages)]
+    assert (UNKNOWN_PASSAGE_CODE, "sentences.0.passage") in found
+    _counts, records = apply_rows({"sentences": [row]}, passages)
+    assert not [v for v in records if v.code == PLACED_BY_SENTENCE_CODE]
+
+
+def test_a_copy_one_passage_holds_only_by_its_words_places_no_row() -> None:
+    # The row's copy differs from the passage's sentence in its white space: the passage holds
+    # it by its words, but no row naming that passage answers it, so none is placed there.
+    row = {
+        **_row(_UNKNOWN.replace(" ", "  ", 1), "drop", [], reason="x"),
+        "passage": "held.introduction",
+    }
+    _report_, _counts, records, found = _applied({"sentences": [row]})
+    assert (UNKNOWN_PASSAGE_CODE, "sentences.0.passage") in found
+    assert not [v for v in records if v.code == PLACED_BY_SENTENCE_CODE]
