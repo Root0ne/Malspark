@@ -105,6 +105,17 @@ class TestWhatTheRecordCannotSay:
         rows = _pack({"offset": 0, "limit": 2})
         assert ledger_projection.NO_SANDBOX_ROW not in rows[NO_ROW]
 
+    def test_a_further_detonation_s_capture_is_not_read_against_the_job_s_rows(self) -> None:
+        later = {**_capture(TREE, NO_ROW), "detonation": "d2", "launched_with": "a second launch"}
+        entries = [_entry("sandbox_network", _flows(), 13), _entry("pcap_summary", later, 30)]
+        # The pack and the heads a question shows render every entry in one view.
+        for shown in (
+            triage_pack.render_pack(entries, 0),
+            *triage_pack.pack_row_heads(entries).values(),
+        ):
+            assert ledger_projection.NO_SANDBOX_ROW not in shown
+            assert ledger_projection.SAMPLE_TREE_FLOW not in shown
+
     def test_without_a_network_view_the_line_is_as_it_was(self) -> None:
         alone = triage_pack._pack_line(
             _entry("pcap_summary", _capture(TREE, UNLISTED, NO_ROW, SILENT), 17)

@@ -3750,37 +3750,7 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
             # The sample's own observation: who listed it is stated, and the
             # sandbox rule decides.
             return kept_kwargs(report, kind, key, row)
-        why = (
-            FLOW_OUTSIDE_THE_TREE
-            if _field(row, "sample_process_tree") is False
-            else UNATTRIBUTED_FLOW
-        )
-        # The process the report says made the flows, by name: the reason a
-        # reader can check against the process table.
-        made_by = [str(p) for p in (_field(row, "outside_processes") or []) if str(p)]
-        if made_by and _field(row, "sample_process_tree") is False:
-            why += f" ({', '.join(made_by)})"
-        marked_only = [str(p) for p in (_field(row, "marked_only_processes") or []) if str(p)]
-        file_only = [str(p) for p in (_field(row, "file_only_processes") or []) if str(p)]
-        if _field(row, "sample_process_tree") is None and (marked_only or file_only):
-            why = disputed_flow_reason(marked_only, file_only, _field(row, "marked_by"))
-        unlisted = [str(p) for p in (_field(row, "unlisted_processes") or []) if str(p)]
-        if (
-            _field(row, "sample_process_tree") is None
-            and unlisted
-            and not (marked_only or file_only)
-        ):
-            why = made_by_reason({"unlisted": unlisted})
-        # The report names the process: a script host naming the launcher
-        # whose attribution it does not establish. The decision is the
-        # unattributed one; the reason names the host.
-        unsettled = [str(p) for p in (_field(row, "launcher_unsettled_processes") or []) if str(p)]
-        if (
-            _field(row, "sample_process_tree") is None
-            and unsettled
-            and not (marked_only or file_only or unlisted)
-        ):
-            why = made_by_reason({"launcher_unsettled": unsettled})
+        why = address_flow_reason(row)
         if _field(row, "asn"):
             why += f"; AS {_field(row, 'asn')}"
     else:
@@ -3802,6 +3772,43 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
     return _the_judge_s_keep(
         report, kind, key, {"unattributed": why, **kept_kwargs(report, kind, key, row)}, what=what
     )
+
+
+def address_flow_reason(row: Any) -> str:
+    """Why no flow of the sample's process tree is recorded to a sandbox address row, by its facts.
+
+    The one sentence of what the sandbox's records say of the process behind
+    an address none of whose flows the tree made: the processes outside the
+    tree it names, the processes its two lineage facts dispute, those the
+    report does not list, a script host naming the launcher, or that it does
+    not say which process made them. The AS fact is the caller's.
+    """
+    why = (
+        FLOW_OUTSIDE_THE_TREE if _field(row, "sample_process_tree") is False else UNATTRIBUTED_FLOW
+    )
+    # The process the report says made the flows, by name: the reason a
+    # reader can check against the process table.
+    made_by = [str(p) for p in (_field(row, "outside_processes") or []) if str(p)]
+    if made_by and _field(row, "sample_process_tree") is False:
+        why += f" ({', '.join(made_by)})"
+    marked_only = [str(p) for p in (_field(row, "marked_only_processes") or []) if str(p)]
+    file_only = [str(p) for p in (_field(row, "file_only_processes") or []) if str(p)]
+    if _field(row, "sample_process_tree") is None and (marked_only or file_only):
+        why = disputed_flow_reason(marked_only, file_only, _field(row, "marked_by"))
+    unlisted = [str(p) for p in (_field(row, "unlisted_processes") or []) if str(p)]
+    if _field(row, "sample_process_tree") is None and unlisted and not (marked_only or file_only):
+        why = made_by_reason({"unlisted": unlisted})
+    # The report names the process: a script host naming the launcher
+    # whose attribution it does not establish. The decision is the
+    # unattributed one; the reason names the host.
+    unsettled = [str(p) for p in (_field(row, "launcher_unsettled_processes") or []) if str(p)]
+    if (
+        _field(row, "sample_process_tree") is None
+        and unsettled
+        and not (marked_only or file_only or unlisted)
+    ):
+        why = made_by_reason({"launcher_unsettled": unsettled})
+    return why
 
 
 def _parses_as_an_address(text: str) -> bool:

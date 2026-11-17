@@ -29,7 +29,7 @@ import bisect
 import hashlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -2721,6 +2721,46 @@ def network_from_sandbox_report(
         source="sandbox",
     )
     return network_from_ledger([entry], normalised_by=normalised_by)
+
+
+# What the capture line says of a conversation's remote address beside it
+# (:func:`address_flow_facts`): a flow of the sample's process tree reached it,
+# or no row of the sandbox's network view holds it. Any other address takes
+# the publish rule's sentence (``stix_renderer.address_flow_reason``).
+SAMPLE_TREE_FLOW = "the sandbox attributes a flow to it to the sample's process tree"
+NO_SANDBOX_ROW = "no row of the sandbox's network view holds it"
+
+
+def address_flow_facts(ledger: list[LedgerEntry]) -> Callable[[Any], str] | None:
+    """``address -> words``: what the sandbox's rows say of the process behind each address.
+
+    Read from the record only: the ``sandbox_network`` answers of ``ledger``
+    projected as the report's network block is (:func:`network_from_ledger`),
+    each address's row said as the publish rule says it
+    (``stix_renderer.address_flow_reason``), or :data:`SAMPLE_TREE_FLOW`. An
+    address no row holds is :data:`NO_SANDBOX_ROW` only where every answer
+    read is the whole view; a page or a shortened answer says nothing of it.
+    ``None`` where the ledger holds no such answer.
+    """
+    from malspark.reporting.renderers.stix_renderer import address_flow_reason
+
+    reads = _payloads(ledger, "sandbox_network")
+    if not reads:
+        return None
+    whole = all(is_whole for _data, is_whole in _ledger_views(reads))
+    network = network_from_ledger([entry for entry, _data in reads])
+    rows = {ip.address: ip for ip in (network.ips if network else []) if ip.source == "sandbox"}
+
+    def _fact(address: Any) -> str:
+        key = address_key(address)
+        row = rows.get(key) if key else None
+        if row is None:
+            return NO_SANDBOX_ROW if whole and key else ""
+        if row.sample_process_tree is True:
+            return SAMPLE_TREE_FLOW
+        return address_flow_reason(row)
+
+    return _fact
 
 
 def _fold_url_host(url: str) -> str:

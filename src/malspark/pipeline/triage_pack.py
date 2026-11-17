@@ -3623,10 +3623,14 @@ class _View:
     decoders: list[str] = field(default_factory=list)
     before: dict[str, tuple[int, int]] = field(default_factory=dict)
     labels: dict[str, str] = field(default_factory=dict)
+    entries: Sequence[LedgerEntry] = ()
+    # What the sandbox's rows say of each address, read once on first use.
+    _flows: Callable[[Any], str] | None = field(default=None, repr=False)
+    _flows_read: bool = False
 
     @classmethod
     def of(cls, entries: Sequence[LedgerEntry]) -> _View:
-        view = cls()
+        view = cls(entries=entries)
         seen_rules: set[str] = set()
         seen_decoders: set[str] = set()
         for entry in entries:
@@ -3641,6 +3645,15 @@ class _View:
                 seen_decoders.add(name)
                 view.decoders.append(name)
         return view
+
+    def flow_facts(self) -> Callable[[Any], str] | None:
+        """What the entries' sandbox rows say of each address (``address_flow_facts``)."""
+        if not self._flows_read:
+            from malspark.reporting.ledger_projection import address_flow_facts
+
+            self._flows = address_flow_facts(list(self.entries))
+            self._flows_read = True
+        return self._flows
 
     def counts(self) -> tuple[int, int]:
         current = _CURRENT.get()
@@ -4902,6 +4915,15 @@ def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
         else "none detected"
     )
 
+    # What the sandbox's rows in view say of each remote address: the record's
+    # facts beside the conversation, nothing where the pack holds no such rows.
+    # The rows read are the job's own detonation's, so a further detonation's
+    # capture is not read against them.
+    view = _IN_VIEW.get()
+    current = _CURRENT.get()
+    later = current is not None and later_detonation_of(current) is not None
+    flows = view.flow_facts() if view is not None and conversations and not later else None
+
     def _line(shown: int) -> str:
         if not conversations:
             return f"{head}; no external conversations{tail}"
@@ -4915,7 +4937,7 @@ def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
             )
         )
         # Each line holds commas and semicolons of its own: the rows are parted by a bar.
-        rows = " | ".join(conversation_line(row) for row in conversations[:shown])
+        rows = " | ".join(_conversation(row, flows) for row in conversations[:shown])
         return f"{head}; {said}" + (f": {rows}" if shown else "") + tail
 
     whole = _line(len(conversations))
@@ -4932,6 +4954,13 @@ def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
             high = middle - 1
     line = _line(low)
     return line if len(line) <= max_chars else ""
+
+
+def _conversation(row: dict[str, Any], flows: Callable[[Any], str] | None) -> str:
+    """One conversation as every surface writes it, then what the sandbox's rows say of its peer."""
+    line = conversation_line(row)
+    said = flows(row.get("dst")) if flows is not None else ""
+    return f"{line}; {said}" if said else line
 
 
 # The decoded-strings line. The pack is one block every agent reads, bounded
