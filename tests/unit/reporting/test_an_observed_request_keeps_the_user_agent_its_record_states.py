@@ -66,3 +66,25 @@ def test_a_request_that_records_none_states_none() -> None:
 
 def test_a_url_read_from_the_file_states_no_user_agent() -> None:
     assert _urls({"host": "plain.example.org", "uri": "/"})[READ_ONLY].user_agent is None
+
+
+def test_the_method_and_the_user_agent_come_from_one_record() -> None:
+    # The row prints the first record's method; that record states no agent,
+    # so none is printed: another request's agent is not joined to it.
+    urls = _urls(
+        {"host": "c.example.com", "uri": "/m", "method": "GET"},
+        {"host": "c.example.com", "uri": "/m", "method": "POST", "user_agent": AGENT},
+    )
+    row = urls["http://c.example.com/m"]
+
+    assert (row.method, row.user_agent) == ("GET", None)
+
+
+def test_the_record_whose_method_is_printed_gives_its_own_user_agent() -> None:
+    urls = _urls(
+        {"host": "c.example.com", "uri": "/n", "user_agent": "Other/1.0"},
+        {"host": "c.example.com", "uri": "/n", "method": "POST", "user_agent": AGENT},
+    )
+    row = urls["http://c.example.com/n"]
+
+    assert (row.method, row.user_agent) == ("POST", AGENT)
