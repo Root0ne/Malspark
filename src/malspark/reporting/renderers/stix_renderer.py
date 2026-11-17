@@ -5014,6 +5014,39 @@ def judge_value_answer(
     )
 
 
+def names_one_value(pattern: str) -> bool:
+    """Whether a judge's pattern names one value and no other, as the judge's list always read it.
+
+    The pattern holds exactly one comparison, a file's name paired with its
+    directory counted as one (:func:`_paired_directory`), and the pattern
+    reader reads a value from it. So ``[file:name = 'x']`` names one value,
+    and so does ``[file:name = 'x' AND file:parent_directory_ref.path = 'd']``;
+    a pattern with any second comparison does not, whatever that comparison
+    is: a value beside a comparison that names no value (``file:size > 10``),
+    beside a digest (quoted or not), beside a ``MATCHES`` or ``LIKE``, beside
+    a property its object does not have, or joined to a value of another kind,
+    by ``AND`` or by ``OR``, each counts two and names no one value.
+    """
+    comparisons = read_comparisons(pattern)
+    paired = _paired_directory(pattern, comparisons) is not None
+    return len(comparisons) - paired == 1 and bool(pattern_values(pattern))
+
+
+def export_accepts(pattern: str) -> bool:
+    """Whether the export accepts a judge's pattern before asking its values.
+
+    No pattern problem (:func:`pattern_problem`), and no comparison of a kind
+    the rule answers written as a shape (``MATCHES``, ``LIKE``, a range), which
+    the export declines as it does a refused value (:func:`_judge_indicator_unpublished`).
+    """
+    if pattern_problem(pattern) is not None:
+        return False
+    return not any(
+        _exported_kind(c)[0] and not _endpoint_is_readable(c.operator)
+        for c in read_comparisons(pattern)
+    )
+
+
 def judge_values_given_a_row(
     judged: Sequence[tuple[Any, str]], held: Mapping[tuple[str, str], str]
 ) -> set[tuple[str, str]]:
@@ -5022,12 +5055,12 @@ def judge_values_given_a_row(
     ``judged`` is each recorded value with the rule's answer for it
     (:func:`judge_indicator_rows`); ``held`` the answer of every row the table
     already holds. For a value nobody else holds, a row is given where (ii) an
-    indicator names it and no other value, whether or not the export carries
-    it (the judge's statement about the value itself, published by the
-    evidence rule), or where (i) the export carries an indicator naming it: no
-    pattern problem, and every value it names has a published row, one the
-    table holds or one this gives. An indicator joining several values the
-    export does not carry gives none (iii). A value's answer does not depend
+    indicator names it and no other value (:func:`names_one_value`), whether
+    or not the export carries it (the judge's statement about the value
+    itself, published by the evidence rule), or where (i) the export carries
+    an indicator naming it: one it accepts (:func:`export_accepts`) whose
+    every value has a published row, one the table holds or one this gives.
+    Any other indicator gives none (iii). A value's answer does not depend
     on which rows exist, so whether an indicator is carried is read in one
     pass and needs no fixpoint. A value recorded before the patterns were is
     given its row, as it was.
@@ -5042,10 +5075,10 @@ def judge_values_given_a_row(
     for item, _answer in judged:
         key = (str(item.kind), _value_key(str(item.kind), item.value))
         named = list(_field(item, "indicator_patterns") or [])
-        if not named or any(len(pattern_values(p)) == 1 for p in named):
+        if not named or any(names_one_value(p) for p in named):
             given.add(key)  # (ii), or a record stored before the patterns were
         elif any(
-            pattern_problem(p) is None
+            export_accepts(p)
             and all(_published((v.kind, _value_key(v.kind, v.value))) for v in rule_values(p))
             for p in named
         ):
@@ -5200,7 +5233,7 @@ def _carried_judge_record(
         if not patterns:
             return True, (types[0] if types else None)
         for pattern, claimed in zip(patterns, types, strict=False):
-            if pattern_problem(pattern) is None and all(
+            if export_accepts(pattern) and all(
                 (v.kind, _value_key(v.kind, v.value)) in published for v in rule_values(pattern)
             ):
                 return True, (claimed or None)
@@ -5210,11 +5243,6 @@ def _carried_judge_record(
 def carried_judge_type(row: Any, report: Any, published: frozenset[tuple[str, str]]) -> str | None:
     """The type of the first judge indicator naming the row's value the export carries, or None."""
     return _carried_judge_record(row, report, published)[1]
-
-
-def judge_carries(row: Any, report: Any, published: frozenset[tuple[str, str]]) -> bool:
-    """Whether the export carries a judge indicator naming the row's value."""
-    return _carried_judge_record(row, report, published)[0]
 
 
 # What one comparison of an exported pattern names, as the IOC table's kind.
