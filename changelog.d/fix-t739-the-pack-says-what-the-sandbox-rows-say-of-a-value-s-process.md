@@ -1,0 +1,3 @@
+### Fixed
+
+- **The pack says what the sandbox's rows say of a value's process (T-739).** A behaviour link whose network rows name a process the report does not list says so, with the process as the rows name it in the publish rule's words, and is never marked "process not attributed"; a row of the sample's tree still decides, and a value whose rows name no process is still not attributed. The capture line states, per conversation, what the pack's own network view says of the remote address, read as the report's network block reads it: the processes its rows name, a flow of the sample's process tree, or that no row of the view holds the address, said only where the view was read whole. A pack with no network view, and a further detonation's capture, add nothing.
