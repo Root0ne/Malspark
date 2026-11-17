@@ -43,6 +43,7 @@ def _cape(
     dropped: tuple[str, ...] = (),
     writes: tuple[str, ...] | None = (),
     collected: bool = True,
+    name: str = NAME,
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     rows = []
     for pid, ppid, image, start in procs:
@@ -60,7 +61,7 @@ def _cape(
     if writes is not None:
         behavior["summary"] = {"write_files": list(writes)}
     raw: dict[str, Any] = {
-        "target": {"category": "file", "file": {"name": NAME, "sha256": DIGEST}},
+        "target": {"category": "file", "file": {"name": name, "sha256": DIGEST}},
         "behavior": behavior,
     }
     if collected:
@@ -77,6 +78,7 @@ def _triage(
     *,
     dumped: tuple[str, ...] = (),
     sample_marked: tuple[tuple[str, int], ...] = (),
+    name: str = NAME,
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     reports: dict[str, dict[str, Any]] = {}
     for task, procs in tasks.items():
@@ -92,7 +94,7 @@ def _triage(
         reports[task] = {"processes": rows}
     first = next(iter(reports.values()))
     first["dumped"] = [{"name": p.rsplit("\\", 1)[-1], "path": p} for p in dumped]
-    overview = {"sample": {"id": "s1", "target": NAME, "sha256": DIGEST}}
+    overview = {"sample": {"id": "s1", "target": name, "sha256": DIGEST}}
     report = required_reader("triage").read(
         overview, provider="lab", task_id="s1", task_reports=reports
     )
@@ -180,19 +182,58 @@ class TestATriageTaskMarksAtMostOneRow:
         assert _marked(_triage({"behavioral1": procs})) == [2]
 
 
-class TestTheSandbox_sOwnMarkBoundsIt:
-    def test_a_row_without_the_mark_is_never_marked_where_another_has_it(self) -> None:
-        procs = [(1, 56, STAGED, "100"), (2, 1, "C:\\Windows\\System32\\cmd.exe", "120")]
-        tasks = {"behavioral1": procs, "behavioral2": [(1, 81, STAGED, "700")]}
-        built = _triage(tasks, sample_marked=(("behavioral1", 2),))
-        # Task one carries the mark on its child, so its root is not marked;
-        # task two carries none, so its root is.
-        assert _marked(built) == [2]
+class TestTheSandbox_sOwnMarkIsNotRead:
+    """The stored series runs' shape: the sandbox marks the sample's children or the
+    desktop's processes, never the process it started; that process is the place."""
 
-    def test_a_row_with_the_mark_is_marked(self) -> None:
+    def test_the_root_is_marked_where_the_sandbox_marks_its_child_or_the_desktop(self) -> None:
+        defrag = "C:\\Windows\\system32\\defrag.exe"
+        tasks = {
+            "behavioral1": [(85, 56, STAGED, "141"), (87, 85, defrag, "563")],
+            "behavioral2": [
+                (88, 81, STAGED, "719"),
+                (94, 29, "C:\\Windows\\system32\\sihost.exe", "418328"),
+                (96, 94, "C:\\Windows\\explorer.exe", "419687"),
+            ],
+        }
+        marks = (("behavioral1", 87), ("behavioral2", 94), ("behavioral2", 96))
+        assert _marked(_triage(tasks, sample_marked=marks)) == [0, 2]
+
+    def test_a_row_the_sandbox_marks_is_read_as_any_other(self) -> None:
         procs = [(1, 56, STAGED, "100"), (2, 1, "C:\\Windows\\System32\\cmd.exe", "120")]
         built = _triage({"behavioral1": procs}, sample_marked=(("behavioral1", 1),))
         assert _marked(built) == [0]
+
+
+SYSTEM_SVCHOST = "C:\\Windows\\System32\\svchost.exe"
+STAGED_SVCHOST = f"{TEMP}svchost.exe"
+
+
+class TestAPathTheSystemShipsIsNoCandidate:
+    """A file submitted under the name of a program the system has."""
+
+    def test_triage_marks_the_submitted_file_s_path_never_the_system_s(self) -> None:
+        procs = [(5, 77, SYSTEM_SVCHOST, "50"), (1, 56, STAGED_SVCHOST, "100")]
+        assert _marked(_triage({"behavioral1": procs}, name="svchost.exe")) == [1]
+
+    @pytest.mark.parametrize("reader", CAPE_FAMILY)
+    def test_a_bare_name_the_system_ships_cannot_be_told(self, reader: str) -> None:
+        # This family lists a process by its bare name: the system's svchost
+        # and the submitted one read alike, so neither is marked.
+        procs = [(5, 77, SYSTEM_SVCHOST, "1"), (1, 56, STAGED_SVCHOST, "2")]
+        assert _marked(_cape(reader, procs, name="svchost.exe")) == []
+
+    def test_only_the_system_s_own_process_marks_nothing(self) -> None:
+        procs = [(5, 77, SYSTEM_SVCHOST, "50")]
+        assert _marked(_triage({"behavioral1": procs}, name="svchost.exe")) == []
+
+    def test_a_shipped_name_run_from_a_path_the_system_does_not_ship_is_marked(self) -> None:
+        desktop = "C:\\Users\\u\\Desktop\\notepad.exe"
+        assert _marked(_triage({"behavioral1": [(1, 56, desktop, "10")]}, name="notepad.exe")) == [
+            0
+        ]
+        cape = _cape("cape2", [(1, 56, f"{TEMP}{DIGEST}.exe", "1")])
+        assert _marked(cape) == [0]
 
 
 class TestAMappedReport:

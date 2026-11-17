@@ -1357,6 +1357,7 @@ def started_by_the_sandbox(
     file_name: str = "",
     sha256: str = "",
     written: Callable[[], list[str] | None] | None = None,
+    shipped: Callable[[str], bool] | None = None,
 ) -> list[Any]:
     """The listed process whose image is the submitted file as the sandbox started it, per task.
 
@@ -1378,8 +1379,13 @@ def started_by_the_sandbox(
       states no id, or the parent's number names more than one process of the
       task (``schemas.process_identity``), the parent cannot be told, and
       nothing of that task is marked;
-    * where a process of the task carries the sandbox's own mark of the
-      sample's processes (``marked``), a process without it is not marked;
+    * a process whose image is a path the system itself ships (``shipped``,
+      asked of the image as :func:`_image_path` writes it: the caller reads
+      the platform's catalogue of shipped paths) is no candidate; an image
+      that states no folder and whose name the system ships cannot be told
+      and is no candidate either. The sandbox's own mark of the sample's
+      processes is not read: it stands on the sample's children and the
+      desktop's processes, not on the process the sandbox started;
     * a path the report shows written during the run (``written``, the paths
       :func:`written_during_the_run` reads, read once and only where a
       process qualifies) is the sample's doing and never this: an image that
@@ -1413,8 +1419,8 @@ def started_by_the_sandbox(
                 qualifying.append((node, _image_path(name)))
         if not qualifying or not _parents_told(qualifying, held, task, ProcessIdentities()):
             continue
-        if any(_node_field(node, "marked") is True for node in _listed(held)):
-            qualifying = [(n, p) for n, p in qualifying if _node_field(n, "marked") is True]
+        if shipped is not None:
+            qualifying = [(node, path) for node, path in qualifying if not shipped(path)]
         if not qualifying:
             continue
         if paths is None:
@@ -1457,16 +1463,13 @@ PROCESS_ID_FIELDS: tuple[str, ...] = ("pid",)
 PROCESS_PARENT_FIELDS: tuple[str, ...] = ("ppid", "parent_id")
 
 
-def process_lineage(
-    processes: list[Any], reading: Reading | None, marked: Callable[[Any], bool]
-) -> list[dict[str, Any]]:
+def process_lineage(processes: list[Any], reading: Reading | None) -> list[dict[str, Any]]:
     """The report's processes as :func:`started_by_the_sandbox` reads them, one per row, in order.
 
     Each row's id and parent's id where its reader declares them
     (``Reading.process_id_fields``, ``process_parent_fields``), every
     declared field read, then the generic names; its image, command line,
-    task and stated start; ``marked`` where ``marked(row)`` says the sandbox
-    marks it as the sample's. A row that is not a mapping is ``{}``.
+    task and stated start. A row that is not a mapping is ``{}``.
     """
     ids = (*(reading.process_id_fields if reading else ()), *PROCESS_ID_FIELDS)
     parents = (*(reading.process_parent_fields if reading else ()), *PROCESS_PARENT_FIELDS)
@@ -1486,7 +1489,6 @@ def process_lineage(
                 if isinstance(extra, Mapping)
                 else "",
                 "first_seen": proc.get("first_seen"),
-                "marked": marked(proc),
             }
         )
     return out

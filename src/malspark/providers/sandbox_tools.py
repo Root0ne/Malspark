@@ -321,11 +321,14 @@ def sandbox_processes(
     # whichever page is asked for, and the row of the same process marked.
     built = [_process_row(proc, launched) if isinstance(proc, dict) else None for proc in processes]
     reading = _reading(normalised_by)
-    lineage = process_lineage(processes, reading, lambda proc: _is_marked(proc, launched))
+    lineage = process_lineage(processes, reading)
     named = {
         id(node)
         for node in started_by_the_sandbox(
-            lineage, *_submitted(report), written=lambda: written_during_the_run(report, reading)
+            lineage,
+            *_submitted(report),
+            written=lambda: written_during_the_run(report, reading),
+            shipped=_the_system_ships,
         )
     }
     staged = {id(row) for row, node in zip(built, lineage, strict=True) if id(node) in named}
@@ -343,6 +346,20 @@ def sandbox_processes(
     if any(STAGED_KEY in row for row in rows):
         answer = {STAGED_NOTE_KEY: STAGED_NOTE, **answer}
     return answer
+
+
+def _the_system_ships(path: str) -> bool:
+    """Whether the system itself ships ``path``, asked of the platform's one catalogue.
+
+    The catalogue's own reading (``reporting.stated_host_values.shipped_match``):
+    a path with a folder is asked whole; a bare name, which cannot be told
+    from a program of that name, is asked as the end of a shipped path.
+    """
+    from malspark.reporting.stated_host_values import ENDSWITH, WHOLE, shipped_match
+
+    if "\\" in path or "/" in path:
+        return bool(shipped_match("path", WHOLE, path))
+    return bool(path) and bool(shipped_match("path", ENDSWITH, "\\" + path))
 
 
 def _submitted(report: dict[str, Any]) -> tuple[str, str]:
