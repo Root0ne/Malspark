@@ -2,16 +2,21 @@
 
 A row that names a process the report does not list (``process_not_listed``)
 states a fact: the traffic is another process's, one the sandbox does not
-follow. The link line and its table say so, with the process as the rows name
-it, and never "process not attributed" for a value whose rows state that fact.
-A row of the sample's tree still decides, and a value whose rows name no
-process at all is still not attributed.
+follow. Whether a value's traffic is such a process's is the publish rule's
+decision (``stix_renderer.unlisted_reasons``), read over the report's network
+block, not a second precedence of the links' own: where the rule puts it on
+an unlisted process, the link line and its table say so in the rule's words,
+and never "process not attributed"; where a row of the value names no process
+and the rule says the report does not say, the link is not attributed, as the
+capture line and the rule say. A row of the sample's tree still decides, and
+the publish rule's own sentences are unchanged.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from tests.unit.analysis.test_observed_behaviour_is_linked_to_code import (
     _entry,
     _link,
@@ -21,7 +26,10 @@ from tests.unit.analysis.test_observed_behaviour_is_linked_to_code import (
 
 from malspark.analysis import behaviour_code as bc
 from malspark.pipeline.triage_pack import render_pack
+from malspark.providers.sandbox_tools import read_view
+from malspark.reporting import ledger_projection
 from malspark.reporting.ledger_report import BEHAVIOUR_CODE_SECTION, build_sections
+from malspark.reporting.renderers import stix_renderer as sr
 
 ADDRESS = "192.0.2.7"
 HOST = "crl.example.test"
@@ -59,7 +67,9 @@ class TestAProcessTheReportDoesNotList:
         assert f"(net:1; {link['attribution']})" in line
         assert f"net:1 ({link['attribution']})" in cells
 
-    def test_a_row_naming_no_process_beside_them_does_not_make_it_unattributed(self) -> None:
+    def test_a_dns_request_naming_no_process_does_not_unsay_the_request_s_process(
+        self,
+    ) -> None:
         report = _network(
             dns=[{"request": HOST, "type": "A"}],
             http=[{"host": HOST, "uri": "/r.crl", **UNLISTED_ROW}],
@@ -112,3 +122,135 @@ class TestWhatStaysAsItWas:
         answer = bc.link_behaviour_to_code(report, None, _strings_of(ADDRESS))
         assert all(row["value"] != ADDRESS for row in answer["links"])
         assert answer["not_linked"] == {"other processes": 1}
+
+
+def _publish_rule(report: dict[str, Any], address: str) -> str:
+    """The publish rule's sentence for an address of the report's network block."""
+    network = ledger_projection.network_from_sandbox_report(report, None)
+    assert network is not None
+    row = next(ip for ip in network.ips if ip.address == address)
+    return sr.address_flow_reason(row)
+
+
+def _capture_words(report: dict[str, Any], address: str) -> str:
+    """What the capture line says of an address beside the report's network view."""
+    view = read_view("sandbox_network", report, None)
+    entry = _entry("sandbox_network", view, 3)
+    facts = ledger_projection.address_flow_facts([entry], normalised_by=None)
+    assert facts is not None
+    return facts(address)
+
+
+class TestOneDecisionWithThePublishRule:
+    def test_an_unlisted_row_beside_one_naming_none_is_not_attributed_on_both_lines(
+        self,
+    ) -> None:
+        report = _network(tcp=[{"dst": ADDRESS, **UNLISTED_ROW}, {"dst": ADDRESS}])
+        answer = bc.link_behaviour_to_code(report, None, _strings_of(ADDRESS))
+        assert _link(answer, ADDRESS)["attribution"] == bc.NOT_ATTRIBUTED
+        assert _publish_rule(report, ADDRESS) == sr.UNATTRIBUTED_FLOW
+        assert _capture_words(report, ADDRESS) == sr.UNATTRIBUTED_FLOW
+        line, _cells = _line_and_cells(answer)
+        assert UNLISTED_WORDS not in line
+
+    def test_an_unlisted_row_beside_one_of_a_listed_process_is_not_called_unlisted(
+        self,
+    ) -> None:
+        report = _network(
+            tcp=[{"dst": ADDRESS, **UNLISTED_ROW}, {"dst": ADDRESS, "sample_process_tree": False}]
+        )
+        answer = bc.link_behaviour_to_code(report, None, _strings_of(ADDRESS))
+        assert _link(answer, ADDRESS)["attribution"] == bc.NOT_ATTRIBUTED
+        assert _publish_rule(report, ADDRESS) == sr.UNATTRIBUTED_FLOW
+
+    def test_every_row_unlisted_is_worded_as_the_publish_rule_on_both_lines(self) -> None:
+        report = _network(tcp=[{"dst": ADDRESS, **UNLISTED_ROW}])
+        answer = bc.link_behaviour_to_code(report, None, _strings_of(ADDRESS))
+        said = _publish_rule(report, ADDRESS)
+        assert said == sr.made_by_reason({"unlisted": ["procid 46"]})
+        assert _link(answer, ADDRESS)["attribution"] == said
+        assert _capture_words(report, ADDRESS) == said
+
+    def test_a_name_whose_requests_all_name_an_unlisted_process_takes_the_rule_s_words(
+        self,
+    ) -> None:
+        report = _network(http=[{"host": HOST, "uri": "/r.crl", **UNLISTED_ROW}])
+        network = ledger_projection.network_from_sandbox_report(report, None)
+        assert network is not None
+        row = next(d for d in network.domains if d.fqdn == HOST)
+        answer = bc.link_behaviour_to_code(report, None, _strings_of(HOST))
+        assert _link(answer, HOST)["attribution"] == sr.made_by_reason(row.made_by)
+
+    def test_a_request_one_of_two_naming_no_process_is_not_attributed(self) -> None:
+        report = _network(
+            http=[
+                {"host": HOST, "uri": "/r.crl", **UNLISTED_ROW},
+                {"host": HOST, "uri": "/s.crl"},
+            ]
+        )
+        answer = bc.link_behaviour_to_code(report, None, _strings_of(HOST))
+        assert _link(answer, HOST)["attribution"] == bc.NOT_ATTRIBUTED
+
+
+class TestThePublishRuleIsUnchanged:
+    @pytest.mark.parametrize(
+        ("row", "said"),
+        [
+            ({"sample_process_tree": None}, sr.UNATTRIBUTED_FLOW),
+            ({"sample_process_tree": False}, sr.FLOW_OUTSIDE_THE_TREE),
+            (
+                {"sample_process_tree": False, "outside_processes": ["x.exe (procid 7)"]},
+                f"{sr.FLOW_OUTSIDE_THE_TREE} (x.exe (procid 7))",
+            ),
+            (
+                {"sample_process_tree": None, "unlisted_processes": ["procid 46"]},
+                sr.made_by_reason({"unlisted": ["procid 46"]}),
+            ),
+            (
+                {"sample_process_tree": False, "unlisted_processes": ["procid 46"]},
+                sr.FLOW_OUTSIDE_THE_TREE,
+            ),
+            (
+                {
+                    "sample_process_tree": None,
+                    "unlisted_processes": ["procid 46"],
+                    "marked_only_processes": ["m.exe"],
+                },
+                sr.disputed_flow_reason(["m.exe"], []),
+            ),
+            (
+                {"sample_process_tree": None, "launcher_unsettled_processes": ["w.exe"]},
+                sr.made_by_reason({"launcher_unsettled": ["w.exe"]}),
+            ),
+            (
+                {
+                    "sample_process_tree": None,
+                    "launcher_unsettled_processes": ["w.exe"],
+                    "unlisted_processes": ["procid 46"],
+                },
+                sr.made_by_reason({"unlisted": ["procid 46"]}),
+            ),
+        ],
+    )
+    def test_each_reason_is_the_rule_s_sentence(self, row: dict[str, Any], said: str) -> None:
+        assert sr.address_flow_reason(row) == said
+
+    @pytest.mark.parametrize(
+        ("rows", "unlisted"),
+        [
+            ([UNLISTED_ROW], ["procid 46"]),
+            ([UNLISTED_ROW, {}], []),
+            ([UNLISTED_ROW, {"sample_process_tree": False}], []),
+            ([UNLISTED_ROW, {"sample_process_tree": True}], []),
+            ([UNLISTED_ROW, {"platform_process": "36", "process_not_listed": True}], None),
+        ],
+    )
+    def test_the_rule_s_unlisted_decision_over_rows(
+        self, rows: list[dict[str, Any]], unlisted: list[str] | None
+    ) -> None:
+        report = _network(tcp=[{"dst": ADDRESS, **row} for row in rows])
+        network = ledger_projection.network_from_sandbox_report(report, None)
+        assert network is not None
+        (row,) = [ip for ip in network.ips if ip.address == ADDRESS]
+        expected = ["procid 46", "procid 36"] if unlisted is None else unlisted
+        assert list(row.unlisted_processes or []) == expected
