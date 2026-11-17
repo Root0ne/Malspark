@@ -88,11 +88,16 @@ _WITHDRAW_LINE_RE = re.compile(r"^" + LINE_PREFIX + r"withdraw\b", re.IGNORECASE
 # 2"): a line that holds both a claim number and a withdrawing word, in either
 # order, is a doubt unless it is one of the forms above. A claim heading's own
 # "CLAIM <n>", on a line the reader reads as a heading, is not that number: the
-# rest of the line is what is read. Any other line is read whole, so
-# "CLAIM 2 is withdrawn." is a doubt. Two searches per line, so a line costs
-# its length.
+# rest of the line is what is read, a clause at a time, and the word withdraws
+# only in the clause that writes the number ("This replaces claim 2, which is
+# dropped"); a sentence end, a semicolon or a bracket ends a clause, so a
+# sentence that describes deleting code and cites a claim in another clause
+# ("sets delete-on-close (0x3a24, claim 15)") describes a claim. Any other line
+# is read whole, so "CLAIM 2 is withdrawn." is a doubt. Two searches per
+# clause, so a line costs its length.
 _WITHDRAW_WORD_RE = re.compile(r"\b(?:withdraw|retract|remov|drop|delet)\w*+", re.IGNORECASE)
 _CLAIM_NUMBER_RE = re.compile(r"\bclaims?+\s*+#?\d", re.IGNORECASE)
+_CLAUSE_END_RE = re.compile(r"[.;()\[\]]")
 # A heading that withdraws its own claim: a withdrawing word in its note
 # ("CLAIM 2 (withdrawn):"), "withdraw" or "retract" in any form anywhere in
 # its sentence ("CLAIM 2: This claim is withdrawn because ..."), which never
@@ -758,9 +763,9 @@ def read_withdrawals(text: str) -> Withdrawals:
     for line in str(text or "").splitlines():
         if _WITHDRAW_LINE_RE.match(line) is None:
             heading = CLAIM_HEAD_RE.match(line)
-            rest = line
+            clauses = [line]
             if heading is not None:
-                rest = line[heading.end() :]
+                clauses = _CLAUSE_END_RE.split(line[heading.end() :])
                 sentence = heading_sentence(line, heading)
                 if (
                     _WITHDRAW_WORD_RE.search(heading.group("note") or "")
@@ -769,7 +774,10 @@ def read_withdrawals(text: str) -> Withdrawals:
                 ):
                     unread += 1
                     continue
-            if _WITHDRAW_WORD_RE.search(rest) and _CLAIM_NUMBER_RE.search(rest):
+            if any(
+                _WITHDRAW_WORD_RE.search(clause) and _CLAIM_NUMBER_RE.search(clause)
+                for clause in clauses
+            ):
                 unread += 1
             continue
         found = _WITHDRAW_CLAIM_RE.match(line)
