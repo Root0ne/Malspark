@@ -1314,9 +1314,60 @@ def section_holds_something(section: Any) -> bool:
     return any(value.strip().lower() not in _EMPTY_VALUES for value in values)
 
 
+def sandbox_started_nodes(report: MalwareReport) -> list[Any]:
+    """The report's process rows the sandbox started the submitted file from, in tree order.
+
+    Each one its row marks so, read by the one helper every surface reads the
+    mark with (``sandbox_report.staged_words``); children included.
+    """
+    from malspark.schemas.sandbox_report import staged_words
+
+    out: list[Any] = []
+    stack = list(reversed(report.dynamic.process_tree if report.dynamic else []))
+    while stack:
+        node = stack.pop()
+        if staged_words(node):
+            out.append(node)
+        stack.extend(reversed(list(node.children or [])))
+    return out
+
+
+def sandbox_start_matcher(report: MalwareReport) -> Callable[[str], bool] | None:
+    """``value -> bool``: whether a value is the image path, or the command line, of a marked row.
+
+    The path compared in the platform's normal form for a path
+    (``dedupe.indicator_fingerprint``), the command line as written; ``None``
+    where the report marks no row.
+    """
+    from malspark.reporting.dedupe import indicator_fingerprint
+
+    nodes = sandbox_started_nodes(report)
+    if not nodes:
+        return None
+    paths = {indicator_fingerprint("path", str(node.name)) for node in nodes if node.name}
+    commands = {str(node.command_line).strip() for node in nodes if node.command_line}
+
+    def _started(value: str) -> bool:
+        text = str(value or "").strip()
+        if not text:
+            return False
+        return text in commands or indicator_fingerprint("path", text) in paths
+
+    return _started
+
+
 def _process_lines(node: Any, depth: int) -> list[str]:
-    """One line per process: pid, name and command line, children indented."""
+    """One line per process: pid, name and command line, children indented.
+
+    The row the sandbox started the submitted file from carries the words
+    every surface writes beside it (``sandbox_report.staged_words``).
+    """
+    from malspark.schemas.sandbox_report import staged_words
+
     line = f"{'  ' * depth}pid {node.pid} {node.name}".rstrip()
+    staged = staged_words(node)
+    if staged:
+        line += f" ({staged})"
     if node.command_line:
         line += f": {node.command_line}"
     out = [line]

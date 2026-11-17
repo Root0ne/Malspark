@@ -5411,6 +5411,10 @@ def _behaviour_item(row: Mapping[str, Any], functions: Any, only: str) -> str:
     attribution = behaviour_code.attribution_words(row)
     if attribution:
         cited = f"{cited}; {attribution}" if cited else attribution
+    # A marked process's command line: the words every surface writes beside its row.
+    staged = staged_words(row)
+    if staged:
+        cited = f"{cited}; {staged}" if cited else staged
     if cited:
         said += f" ({cited})"
     held = [h for h in row.get("held") or [] if isinstance(h, Mapping)]

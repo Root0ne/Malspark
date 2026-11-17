@@ -68,7 +68,7 @@ from malspark.analysis.sandbox_sections import Sections
 from malspark.extractors.network_extractor import host_form
 from malspark.reporting.dedupe import canonical_path, canonical_value, indicator_fingerprint
 from malspark.schemas.sandbox_document import dns_row_name
-from malspark.schemas.sandbox_report import SAMPLE_TREE_KEY
+from malspark.schemas.sandbox_report import SAMPLE_TREE_KEY, STAGED_KEY
 
 TOOL = "behaviour_code_links"
 KIND = "behaviour_code_links"
@@ -169,6 +169,9 @@ class Observed:
     # The processes the report does not list that rows of the value name, each
     # once, as the row names it (``procid N``).
     unlisted: dict[str, None] = field(default_factory=dict, repr=False, compare=False)
+    # Whether a process row it was observed in is where the sandbox started
+    # the submitted file from (``sandbox_report.STAGED_KEY``).
+    staged: bool = field(default=False, repr=False, compare=False)
 
     def observed_in(self, item_id: str) -> None:
         """Add ``item_id`` to ``items`` once, in the order first seen."""
@@ -206,6 +209,8 @@ class Observed:
         }
         if self.attribution:
             row["attribution"] = self.attribution
+        if self.staged:
+            row[STAGED_KEY] = True
         return row
 
 
@@ -427,7 +432,10 @@ def observed_values(
         if section.no:
             absent[section_name] = section.no
             continue
-        for item in sections.items(section_name):
+        # The process rows the sandbox started the submitted file from, by
+        # their place in the list: the one reading every surface asks.
+        staged = _started_positions(report, normalised_by) if section_name == "processes" else ()
+        for position, item in enumerate(sections.items(section_name)):
             read = False
             for kind, value in _values_of(section_name, item):
                 read = True
@@ -436,6 +444,8 @@ def observed_values(
                 if held is None:
                     held = found[key] = Observed(kind, value)
                 held.observed_in(str(item.get("id") or ""))
+                if position in staged:
+                    held.staged = True
                 if section_name == "network":
                     stated = _sample_tree(item)
                     unlisted = _unlisted(item) if stated is None else []
@@ -447,6 +457,17 @@ def observed_values(
                 no_value[section_name] = no_value.get(section_name, 0) + 1
     values = [one for one in found.values() if one.attribution != ""]
     return ObservedValues(values, absent, no_value, len(found) - len(values))
+
+
+def _started_positions(
+    report: Mapping[str, Any], normalised_by: Sequence[str] | None
+) -> frozenset[int]:
+    """The places of the process rows the sandbox started the file from (``sandbox_tools``)."""
+    from malspark.providers.sandbox_tools import sandbox_started_positions
+
+    return sandbox_started_positions(
+        report if isinstance(report, dict) else dict(report), normalised_by
+    )
 
 
 class _SectionOf:
