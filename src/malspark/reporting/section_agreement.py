@@ -288,7 +288,7 @@ from malspark.reporting.models import (
     MalwareReport,
     TechnicalSubsection,
 )
-from malspark.reporting.sentence_ends import SENTENCE_CLOSE, ends_sentence, pieces
+from malspark.reporting.sentence_ends import close_end, ends_sentence, pieces
 from malspark.schemas.evidence import entry_ids_in
 from malspark.utils.sentence_cut import left_out_span
 from malspark.utils.written_forms import pack_escaped, pack_reads
@@ -4264,9 +4264,7 @@ def _sentence_units(text: str) -> tuple[dict[str, list[int]], set[int]]:
         if char in "\n\r":
             stop = at
         elif char in ".!?" and ends_sentence(text, at):
-            after = at + 1
-            while after < length and text[after] in SENTENCE_CLOSE:
-                after += 1
+            after = close_end(text, at)
             stop = after
             at = after - 1
         if stop is not None:

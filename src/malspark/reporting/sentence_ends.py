@@ -7,8 +7,9 @@ so a text the round answers as one sentence is one sentence where the report pri
 (T-719).
 
 A sentence ends at a ``.``, ``!`` or ``?`` that white space or the end of the text
-follows, any closing quote, bracket or emphasis after it read past. A period ends no
-sentence when
+follows, any closing quote or bracket after it read past (:func:`close_end`), and a mark of
+emphasis (``*``, ``_``) only where it closes emphasis opened earlier on the same line: a
+wildcard's ``*.*`` closes nothing. A period ends no sentence when
 
 * it closes a run of two or more single letters each followed by a period ("e.g.",
   "i.e.", "U.S."), or
@@ -26,6 +27,11 @@ import re
 
 # What may close a sentence after its end mark: any closing quote, bracket or emphasis markup.
 SENTENCE_CLOSE = "\"'\u2019\u201d)]*_"
+# The marks of emphasis among them: each closes a sentence only where it closes emphasis.
+_EMPHASIS = "*_"
+# What a mark of emphasis never follows where it opens or closes emphasis: a wildcard, a
+# path, or another mark of the same run.
+_NO_EMPHASIS_AFTER = "*\\/"
 # What may open a word before its letters: an opening quote, bracket, emphasis or code mark.
 _WORD_OPEN = "\"'\u2018\u201c([*_`"
 # A run of single letters each followed by a period ("e.g.", "U.S."): its last period ends
@@ -33,13 +39,41 @@ _WORD_OPEN = "\"'\u2018\u201c([*_`"
 _SINGLE_LETTERS = re.compile(r"(?:[^\W\d_]\.){2,}")
 
 
+def _opens_emphasis(text: str, at: int, mark: str) -> bool:
+    """Whether emphasis by ``mark`` stands open over words on the line before ``text[at]``:
+    an odd count of marks there, each the first of its run and following no ``*``, ``\\`` or
+    ``/``, the last of them followed by a letter or a digit before ``at``."""
+    line = text.rfind("\n", 0, at) + 1
+    opened = []
+    for i in range(line, at):
+        before = text[i - 1] if i > line else ""
+        if text[i] == mark and before != mark and not (before and before in _NO_EMPHASIS_AFTER):
+            opened.append(i)
+    return len(opened) % 2 == 1 and any(c.isalnum() for c in text[opened[-1] : at])
+
+
+def close_end(text: str, at: int) -> int:
+    """Where the closing marks after the end mark at ``text[at]`` end: each closing quote or
+    bracket, and a run of a mark of emphasis where it closes emphasis opened earlier on the
+    line (T-719); else right after the mark."""
+    after = at + 1
+    while after < len(text) and text[after] in SENTENCE_CLOSE:
+        mark = text[after]
+        if mark in _EMPHASIS:
+            if text[after - 1] in _NO_EMPHASIS_AFTER or not _opens_emphasis(text, at, mark):
+                break
+            while after < len(text) and text[after] == mark:
+                after += 1
+            continue
+        after += 1
+    return after
+
+
 def ends_sentence(text: str, at: int) -> bool:
     """Whether the mark at ``text[at]`` ends a sentence, as the module's rule reads it."""
     if text[at : at + 1] not in (".", "!", "?"):
         return False
-    after = at + 1
-    while after < len(text) and text[after] in SENTENCE_CLOSE:
-        after += 1
+    after = close_end(text, at)
     if after < len(text) and not text[after].isspace():
         return False
     if text[at] != ".":
@@ -69,9 +103,7 @@ def pieces(sentence: str) -> list[str]:
     for at, char in enumerate(sentence):
         if char not in ".!?" or ends_sentence(sentence, at):
             continue
-        after = at + 1
-        while after < len(sentence) and sentence[after] in SENTENCE_CLOSE:
-            after += 1
+        after = close_end(sentence, at)
         if after < len(sentence) and sentence[after].isspace():
             out.append(sentence[begin:after].strip())
             begin = after

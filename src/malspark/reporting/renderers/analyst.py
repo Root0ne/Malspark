@@ -95,7 +95,7 @@ from malspark.reporting.renderers.markdown import (
     report_title,
     started_by_the_sample,
 )
-from malspark.reporting.sentence_ends import SENTENCE_CLOSE, ends_sentence
+from malspark.reporting.sentence_ends import SENTENCE_CLOSE, close_end, ends_sentence
 from malspark.reporting.technique_evidence import (
     evidence_words,
     technique_evidence_ids,
@@ -817,6 +817,17 @@ _LINE_OPEN = re.compile(r"[ \t]*[-*+>]?(?:(?<![-*+>])\d+[.)])?[ \t]*")
 _ends_sentence = ends_sentence
 
 
+def _mark_before(text: str, end: int) -> int:
+    """The end mark the closing marks before ``end`` follow, where they reach ``end`` as the
+    rule reads them (``sentence_ends.close_end``), else -1."""
+    mark = end - 1
+    while mark >= 0 and text[mark] in SENTENCE_CLOSE:
+        mark -= 1
+    if mark >= 0 and text[mark] in ".!?" and close_end(text, mark) >= end:
+        return mark
+    return -1
+
+
 def _stands_whole(text: str, start: int, end: int) -> bool:
     """Whether ``text[start:end]`` stands whole in ``text``: a sentence of it, or all of it
     (a table cell's text). It starts the text, a line or a list item, or follows a sentence's
@@ -828,12 +839,12 @@ def _stands_whole(text: str, start: int, end: int) -> bool:
         return False
     head = text[:start].rstrip(" \t*_")
     if not _LINE_OPEN.fullmatch(head[head.rfind("\n") + 1 :]):
-        mark = len(head.rstrip(SENTENCE_CLOSE)) - 1
+        mark = _mark_before(text, len(head))
         if mark < 0 or not _ends_sentence(text, mark):
             return False
-    core = said.rstrip().rstrip(SENTENCE_CLOSE)
-    if core[-1:] in (".", "!", "?"):
-        return _ends_sentence(text, start + len(core) - 1)
+    mark = _mark_before(text, start + len(said.rstrip()))
+    if mark >= start:
+        return _ends_sentence(text, mark)
     cited = _CITED_AFTER.match(text, end)
     after = cited.end() if cited else end
     rest = text[after:].lstrip(" \t")

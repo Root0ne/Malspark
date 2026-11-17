@@ -33,7 +33,7 @@ from malspark.reporting.section_agreement import (
     passages_of,
     whole_code_absences,
 )
-from malspark.reporting.sentence_ends import ends_sentence, pieces
+from malspark.reporting.sentence_ends import close_end, ends_sentence, pieces
 from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (
     _ledger,
     _report,
@@ -201,6 +201,9 @@ _TOKENS = (
     '"quoted."',
     "(aside.)",
     "**bold.**",
+    "*.*",
+    "RDP*\\*.*",
+    "_x",
     "_em._",
     "U.S.",
     "x",
@@ -225,9 +228,7 @@ def _report_ends(text: str) -> set[int]:
     out: set[int] = set()
     for at in range(len(text)):
         if _ends_sentence(text, at):
-            end = at + 1
-            while end < len(text) and text[end] in "\"'’”)]*_":
-                end += 1
+            end = close_end(text, at)
             if text[end:].strip():
                 out.add(end)
     return out
@@ -314,3 +315,42 @@ def test_a_whole_field_answer_lists_every_sentence_of_it() -> None:
     keep = {**_row(TWO, "keep", [], reason="no source speaks of the key"), "passage": CELL_ID}
     _counts, found = _answered(report, [keep, _beside()])
     assert "agreement.held_unlisted" not in {v.code for v in found}
+
+
+@pytest.mark.parametrize(
+    ("text", "units"),
+    [
+        # A wildcard's mark after a period closes no emphasis: one sentence.
+        (
+            "It deletes C:\\Windows\\Prefetch\\*.* and C:\\Logs\\RDP*\\*.* and more. "
+            "Then it exits.",
+            [
+                "It deletes C:\\Windows\\Prefetch\\*.* and C:\\Logs\\RDP*\\*.* and more.",
+                "Then it exits.",
+            ],
+        ),
+        ("It reads *.* first. Then it exits.", ["It reads *.* first.", "Then it exits."]),
+        # A heading in emphasis and the sentence after it: two.
+        ("**Static view.** The table holds five.", ["**Static view.**", "The table holds five."]),
+        ("_Static view._ The table holds five.", ["_Static view._", "The table holds five."]),
+        ('It says "done." Then it exits.', ['It says "done."', "Then it exits."]),
+        (
+            "It says \u201cdone.\u201d Then it exits.",
+            ["It says \u201cdone.\u201d", "Then it exits."],
+        ),
+    ],
+)
+def test_a_mark_of_emphasis_closes_a_sentence_only_where_it_closes_emphasis(
+    text: str, units: list[str]
+) -> None:
+    assert _units(text) == units
+
+
+def test_the_stored_wildcard_sentence_is_one_unit() -> None:
+    said = (
+        "The sample constructs cmd /C del /f /q commands for C:\\Windows\\Prefetch\\*.*, "
+        "%SystemRoot%\\System32\\LogFiles\\RDP*\\*.* and C:\\ProgramData\\Microsoft\\"
+        "Windows Defender\\Support\\*.*, which delete execution and remote-session evidence; "
+        "execution was not observed."
+    )
+    assert _units(said) == [said]
