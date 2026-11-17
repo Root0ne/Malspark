@@ -130,6 +130,12 @@ def _shapes(kind: str, value: str) -> dict[str, list[str]]:
         "or-digest": [f"[{one} OR {digest}]" if same_object else f"[{one}] OR [{digest}]"],
         "beside-no-value": [f"[{one} AND file:size > 10]" if same_object else f"[{one}]"],
         "two-kinds": [f"[{one}] OR [domain-name:value = 'other-c2.example.org']"],
+        # Beside the sample's own digest, its key quoted, so both are values read.
+        "and-own-digest": [
+            f"[{one} AND file:hashes.'MD5' = '{MD5}']"
+            if same_object
+            else f"[{one}] AND [file:hashes.'MD5' = '{MD5}']"
+        ],
         "two-kinds-joined": [f"[{one}] AND [domain-name:value = 'other-c2.example.org']"],
         "cased": [f"[{_comparison(kind, value.upper())}]"],
         "declined-first": [declined, f"[{one}]"],
@@ -314,6 +320,15 @@ def test_the_judges_values_hold_every_property(
     # (g) a value nobody else holds: a row exactly where the judge's naming gives one.
     if place in ("nowhere", "second-source"):
         published_keys_ = {_key(str(r.kind or ""), r.value) for r in rows if publishes(r.published)}
+        # The value's own answer, whether or not this case gives it a row: as a
+        # one-value indicator naming it alone would have it answered.
+        alone = {"type": "bundle", "objects": [_indicator(0, f"[{_comparison(kind, value)}]")]}
+        own = {
+            _key(str(r.kind or ""), r.value): r.published
+            for r in ioc_table(_report(kind, value, place, verdict, confidence, alone))
+        }.get(_key(kind, value))
+        if publishes(own):
+            published_keys_.add(_key(kind, value))
 
         def _carried(pattern: str) -> bool:
             return pattern_problem(pattern) is None and all(
@@ -352,7 +367,7 @@ def test_the_judges_values_hold_every_property(
 
 
 def test_the_net_is_as_wide_as_it_says() -> None:
-    assert len(CASES) == sum(len(PLACES[k]) for k, _v in VALUES.values()) * 10 * len(VERDICTS)
+    assert len(CASES) == sum(len(PLACES[k]) for k, _v in VALUES.values()) * 11 * len(VERDICTS)
 
 
 def test_an_unquoted_hash_key_is_read_as_no_value_as_today() -> None:
