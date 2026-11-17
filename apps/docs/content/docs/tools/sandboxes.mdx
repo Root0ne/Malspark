@@ -89,12 +89,16 @@ a configuration or host-identifier row stating that path from process rows
 alone is asked about once with the fact (`report.sandbox_start_path_as_value`);
 its writer keeps, rewrites or drops it.
 
-A network value a sandbox row names a process the report does not list for
-(`process_not_listed`) is said to be that process's in the behaviour links,
-never `process not attributed`, and the pack's capture line says per
-conversation what the network view's rows say of the remote address: the
-process they name, a flow of the sample's process tree, or that no row holds
-the address (only where the view was read whole).
+A network value the publish rule puts on a process the report does not list
+(`process_not_listed`) is said to be that process's in the behaviour links, in
+the rule's words, never `process not attributed`; the links take the rule's
+decision, so a value whose rows also include one naming no process reads as
+the rule reads it. The pack's capture line says per conversation what the
+flow rows of the pack's network view say of the remote address: the process
+they name, a flow of the sample's process tree, or that no flow row holds the
+address. The words are computed for the line with the run's reader, never
+stored on the capture entry; a view not read whole says nothing of any
+address, and the words never cost a conversation the line would show.
 
 Nothing a reader reads is dropped: a field of a process or a signature that no
 part names is kept on the row under `extra`, and a block with no part of its

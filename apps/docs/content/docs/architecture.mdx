@@ -1139,13 +1139,16 @@ scheme into the URL, and a path with neither is a `url path`, never a URL; a
 registry key is read with no IOC-table suffix taken off (`Vendor App (x86)` is
 a key name), and every key that maps to a hiveless held path is linked. A
 network value is linked only where the sandbox attributes a row of it to the
-sample's process tree (`sample_process_tree`); a value a row of which names a
-process the report does not list (`process_not_listed`) says so with the
-process as the row names it, in the publish rule's words (read through
-`ledger_projection.traffic_makers`), and is never marked `process not
-attributed`; a value no row attributes is marked `process not attributed`, and
-one every row of which belongs to another listed process is not linked and is
-counted. The command line of the process the sandbox started the submitted
+sample's process tree (`sample_process_tree`); whether a value's traffic is a
+process's the report does not list (`process_not_listed`) is the publish
+rule's decision, read over the report's network block with the run's reader
+(`stix_renderer.unlisted_reasons`; a request's path or a user agent, which the
+block keys no row for, by the rule's reading of a request's records,
+`ledger_projection.records_made_by`): such a value says so in the rule's words,
+with the process as the rows name it, and is never marked `process not
+attributed`; a value no row attributes, or whose rows the rule does not put on
+one unlisted process, is marked `process not attributed`, and one every row of
+which belongs to another listed process is not linked and is counted. The command line of the process the sandbox started the submitted
 file from carries the mark's words beside its items, in the pack line and the
 report's table, read by the one reading the process view asks
 (`sandbox_tools.sandbox_started_positions`, `sandbox_report.staged_words`). Items of a section with no value under
@@ -5935,19 +5938,24 @@ is assembled from what the run gathered rather than recomputed beside it:
   and a public address that sent to the peer is named with what it sent. A
   conversation with no internal end says so, and a record stored before the
   ends were named prints the peer's share as the peer's and keeps every other
-  line its writer stored. The pack's capture line adds to each conversation
-  what the sandbox's rows say of its remote address, from the record only:
-  when the pack records the capture it reads its own network view entry with
-  the run's reader, projected as the report's network block is
-  (`ledger_projection.address_flow_facts`), and keeps the words by address
-  beside the capture's answer (`sandbox_rows`,
-  `triage_pack.with_sandbox_rows`); each address said as the
-  publish rule says it (`stix_renderer.address_flow_reason`: the processes it
-  names, those the report does not list, or that it does not say which process
-  made the flows), a flow of the sample's process tree, or that no row of the
-  network view holds the address, said only where every network answer read
-  is the whole view; a pack with no network view adds nothing, and a capture
-  recorded without the words renders as it did. The report's "Capture summary" is printed whole
+  line its writer stored. The capture entry holds the tool's answer and
+  nothing else. Where the pack is written with the run's reader
+  (`triage_pack.pack_block`, `pack_row_heads`), its capture line adds to each
+  conversation what the flow rows of the pack's own network view say of the
+  remote address, from the record only, computed for the line and handed to
+  the capture's renderer (`ledger_projection.address_flow_facts`): the view
+  projected as the report's network block is, the address looked up in its
+  flow rows (`FLOW_ROWS`), and said as the publish rule says it
+  (`stix_renderer.address_flow_reason`: the processes it names, those the
+  report does not list, or that it does not say which process made the
+  flows), as a flow of the sample's process tree, or as "no flow row of the
+  sandbox's network view holds it", whatever a DNS answer or the host list
+  holds. A view not read whole (a page, a bounded or shortened answer, a
+  truncated entry, or any of several answers being one) says nothing of any
+  address; a value that does not parse as an address gets no words. The
+  conversations shown are chosen as without the words, by their own sizes;
+  the words are then added conversation by conversation, in order, while the
+  room lasts. The report's "Capture summary" is printed whole
   when it fits its room (3.3 times a text section's), or when the same rows
   written with the line that gave the peer's share alone would have fitted a
   text section and the whole stays within 10 times one (40,000 characters).
