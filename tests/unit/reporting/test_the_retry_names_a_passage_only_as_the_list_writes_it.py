@@ -125,3 +125,27 @@ def test_the_retry_quotes_a_held_sentence_whole_and_its_record_keeps_the_bounded
     ]
     assert repr(held) not in record["message"]
     assert "…" in record["message"]
+
+
+@pytest.fixture
+def record_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.unit.pipeline.test_record_only_findings_open_no_turn import settings_with
+
+    built = settings_with("record_only")
+    monkeypatch.setattr("malspark.core.config.get_settings", lambda: built)
+
+
+def test_a_held_finding_never_asked_keeps_its_mark_on_the_bounded_record(
+    record_only: None,
+) -> None:
+    # In record-only mode the retry asks only about the answer that could not be read; the
+    # held sentence's finding on the answer after it is recorded not asked, bounded.
+    report = on_names._report(FIRST, background=f"{FIRST} {_LONG_HELD}")
+    done = on_names._ask(report, on_names._Reporter("not an answer", {"sentences": []}))
+    (record,) = [
+        r
+        for r in done.tally.unresolved
+        if r["code"] == HELD_UNLISTED_CODE and _LONG_HELD[:60] in r["message"]
+    ]
+    assert record["asked"] == "false"
+    assert repr(_LONG_HELD) not in record["message"]

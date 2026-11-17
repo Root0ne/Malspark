@@ -134,3 +134,69 @@ def test_a_model_s_own_key_of_the_same_name_places_nothing() -> None:
     report = _background()
     done = _ask(report, _Reporter({"sentences": [row]}, {"sentences": [row]}))
     assert PLACED_BY_SENTENCE_CODE not in done.tally.by_code
+
+
+def test_a_listed_passage_written_in_square_brackets_is_named_not_placed() -> None:
+    row = {**_row(_UNKNOWN, "drop", [], reason="the lines shown say otherwise")}
+    _report_, _counts, records, found = _applied(
+        {"sentences": [{**row, "passage": "[introduction]"}]}
+    )
+    assert UNKNOWN_PASSAGE_CODE not in {code for code, _at in found}
+    assert not [v for v in records if v.code == PLACED_BY_SENTENCE_CODE]
+
+
+def test_a_passage_shown_as_a_source_only_takes_no_placed_row() -> None:
+    import dataclasses
+
+    report = _background()
+    passages = [
+        dataclasses.replace(p, source_only=True) if p.id == "introduction" else p
+        for p in passages_of(report, entries=_ledger())
+    ]
+    row = {**_row(_UNKNOWN, "drop", [], reason="x"), "passage": "held.introduction"}
+    found = [(v.code, v.path) for v in agreement_violations({"sentences": [row]}, passages)]
+    assert (UNKNOWN_PASSAGE_CODE, "sentences.0.passage") in found
+    _counts, records = apply_rows({"sentences": [row]}, passages)
+    assert not [v for v in records if v.code == PLACED_BY_SENTENCE_CODE]
+
+
+def test_a_question_that_got_no_answer_records_no_placement() -> None:
+    row = {**_row(_UNKNOWN, "drop", [], reason="x"), "passage": "held.introduction"}
+    counts, records = apply_rows(
+        {"sentences": [row]}, passages_of(_background(), entries=_ledger()), asked=False
+    )
+    assert counts["sentences"] == 0
+    assert not [v for v in records if v.code == PLACED_BY_SENTENCE_CODE]
+
+
+def test_a_row_placed_in_the_first_answer_and_named_in_the_retry_answers_once() -> None:
+    placed = {
+        **_row(_UNKNOWN, "rewrite", ["ledger.1"], rewrite=_PLAIN),
+        "passage": "held.introduction",
+    }
+    named = {**placed, "passage": "introduction"}
+    # A refused keep of the limitations' sentence opens the retry.
+    refused = {**_row(FIRST, "keep", ["nowhere.1"]), "passage": "limitations"}
+    report = _background()
+    done = _ask(
+        report, _Reporter({"sentences": [refused, placed]}, {"sentences": [refused, named]})
+    )
+    assert done.tally.retries == 1
+    # The retry's row and the first answer's placed row answer one sentence: one row.
+    assert done.summary["sentences"] == 2 and done.summary["not_applied"] == 0
+    assert report.intro_background == f"{FIRST} {_PLAIN}"
+
+
+def test_a_row_placed_in_the_first_answer_stands_where_the_retry_leaves_it_out() -> None:
+    placed = {
+        **_row(_UNKNOWN, "rewrite", ["ledger.1"], rewrite=_PLAIN),
+        "passage": "held.introduction",
+    }
+    refused = {**_row(FIRST, "keep", ["nowhere.1"]), "passage": "limitations"}
+    report = _background()
+    # The retry answers only the row it was asked about: the placed row is the first
+    # answer's sound row, kept as any is.
+    done = _ask(report, _Reporter({"sentences": [refused, placed]}, {"sentences": [refused]}))
+    assert done.tally.retries == 1
+    assert report.intro_background == f"{FIRST} {_PLAIN}"
+    assert done.summary["rewritten"] == 1
