@@ -951,3 +951,40 @@ def test_a_joint_judge_indicator_the_export_declines_gives_no_row(joint: str) ->
     misp = build_misp_attributes(report, build_consolidated_iocs(report), owner="r")
     assert not any(a["value"] == _RELAY for a in misp)
     assert _indicators_of(exported) == []
+
+
+def test_a_file_named_with_its_directory_is_one_value_carried_or_not() -> None:
+    """A file's name paired with its directory counts as one comparison (ii)."""
+    # Single backslashes in the directory: the grammar refuses the pattern.
+    judge = _judge(
+        "[file:name = 'relay.dat' AND file:parent_directory_ref.path = 'C:\\ProgramData']"
+    )
+    report = _report(
+        judge,
+        overall_confidence=0.9,
+        dynamic=DynamicBehavior(
+            process_tree=[{"pid": 1, "name": "s.exe", "command_line": f"s.exe {_RELAY}"}]
+        ),
+    )
+    report.judge_indicators = _recorded(judge)
+
+    assert _row(report, _RELAY).published == "yes: a second source in this run records it"
+
+
+def test_a_shape_beside_a_value_the_export_declines_gives_no_row() -> None:
+    """A ``LIKE`` beside the value: the export declines the indicator, and it names no one value."""
+    judge = _judge("[mutex:name = 'relaymark' OR mutex:name LIKE '%relay%']")
+    report = _report(
+        judge,
+        overall_confidence=0.9,
+        dynamic=DynamicBehavior(
+            process_tree=[{"pid": 1, "name": "s.exe", "command_line": "relaymark"}]
+        ),
+    )
+    report.judge_indicators = _recorded(judge)
+    exported, renderer = _export(report, judge)
+
+    assert [r for r in build_consolidated_iocs(report) if r.value == "relaymark"] == []
+    assert "relaymark" not in str(
+        [o.get("pattern") for o in exported["objects"] if o.get("type") == "indicator"]
+    )
