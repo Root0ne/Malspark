@@ -199,3 +199,39 @@ class TestAMappedReport:
     def test_the_root_is_marked_and_a_written_copy_is_not(self) -> None:
         procs = [(1, 99, STAGED, ""), (3, 77, SVCHOST, ""), (4, 3, COPY, "")]
         assert _marked(_generic(procs, dropped=(COPY,))) == [0]
+
+
+class TestAParentTheListingNamesTwice:
+    def test_a_parent_number_two_processes_carry_marks_nothing(self) -> None:
+        # Two processes of the task carry the number the qualifying process
+        # names as its parent: which started it cannot be told.
+        procs = [(1, 99, STAGED, ""), (99, 4, SVCHOST, ""), (99, 5, SVCHOST, "")]
+        assert _marked(_generic(procs)) == []
+        assert _marked(_generic(procs[:2])) == [0]
+
+
+class TestTheWrittenPathsAreReadWhereTheReaderDeclares:
+    def _document(self) -> dict[str, Any]:
+        return {
+            "behavior": {"summary": {"write_files": [COPY]}},
+            "dropped": [{"guestfile": STAGED}],
+        }
+
+    def test_only_the_parts_the_reader_fills_are_read(self) -> None:
+        from malspark.schemas.sandbox_report import Reading, written_during_the_run
+
+        assert written_during_the_run(self._document(), Reading(frozenset({"processes"}))) is None
+        held = written_during_the_run(self._document(), Reading(frozenset({"summary.write_files"})))
+        assert held == [COPY]
+
+    def test_a_declared_guest_path_field_is_read(self) -> None:
+        from malspark.schemas.sandbox_report import Reading, written_during_the_run
+
+        reading = Reading(frozenset({"dropped_files"}), guest_path_fields=("guestfile",))
+        assert written_during_the_run(self._document(), reading) == [STAGED]
+        assert written_during_the_run(self._document(), Reading(frozenset({"dropped_files"}))) == []
+
+    def test_an_undeclared_document_is_read_through_every_part(self) -> None:
+        from malspark.schemas.sandbox_report import written_during_the_run
+
+        assert written_during_the_run(self._document(), None) == [COPY]
