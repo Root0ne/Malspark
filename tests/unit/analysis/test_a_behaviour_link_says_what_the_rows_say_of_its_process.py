@@ -82,6 +82,12 @@ class TestAProcessTheReportDoesNotList:
         assert link["attribution"].count("procid 46") == 1
         assert "procid 36" in link["attribution"]
 
+    def test_a_request_one_of_whose_flows_names_no_process_is_not_called_unlisted(self) -> None:
+        flows = [UNLISTED_ROW, {}]
+        report = _network(http=[{"host": HOST, "uri": "/r.crl", "platform_flows": flows}])
+        link = _link(bc.link_behaviour_to_code(report, None, _strings_of(HOST)), HOST)
+        assert link["attribution"] == bc.NOT_ATTRIBUTED
+
 
 class TestWhatStaysAsItWas:
     def test_a_row_of_the_sample_s_tree_still_decides(self) -> None:
