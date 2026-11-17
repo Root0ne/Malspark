@@ -29,6 +29,7 @@ from malspark.pipeline.triage_pack import render_pack
 from malspark.providers.sandbox_tools import read_view
 from malspark.reporting import ledger_projection
 from malspark.reporting.ledger_report import BEHAVIOUR_CODE_SECTION, build_sections
+from malspark.reporting.models import MalwareReport
 from malspark.reporting.renderers import stix_renderer as sr
 
 ADDRESS = "192.0.2.7"
@@ -190,6 +191,74 @@ class TestOneDecisionWithThePublishRule:
         )
         answer = bc.link_behaviour_to_code(report, None, _strings_of(HOST))
         assert _link(answer, HOST)["attribution"] == bc.NOT_ATTRIBUTED
+
+
+URL = f"http://{ADDRESS}/x"
+PATH = "/x"
+
+
+def _publish_rule_of_the_url(report: dict[str, Any]) -> str | None:
+    """The publish rule's sentence for the request's URL, which its host's row decides."""
+    network = ledger_projection.network_from_sandbox_report(report, None)
+    held = MalwareReport.model_construct(network=network)
+    return sr.sandbox_row_kwargs(held, "url", URL).get("unattributed")
+
+
+class TestAValueAtAnAddressTakesTheAddressRow:
+    """A URL whose host is an address, and a request's path or agent at one, take its row."""
+
+    @pytest.mark.parametrize(
+        ("request_row", "value"),
+        [({"uri": URL}, URL), ({"host": ADDRESS, "uri": PATH}, PATH)],
+        ids=["url", "path"],
+    )
+    def test_an_unlisted_request_to_an_address_not_put_on_it_is_not_attributed(
+        self, request_row: dict[str, Any], value: str
+    ) -> None:
+        report = _network(
+            http=[{**request_row, "dst": ADDRESS, **UNLISTED_ROW}],
+            tcp=[{"dst": ADDRESS, **UNLISTED_ROW}, {"dst": ADDRESS}],
+        )
+        answer = bc.link_behaviour_to_code(report, None, _strings_of(value, ADDRESS))
+        assert _publish_rule_of_the_url(report) == sr.UNATTRIBUTED_FLOW
+        assert _capture_words(report, ADDRESS) == sr.UNATTRIBUTED_FLOW
+        assert _link(answer, value)["attribution"] == bc.NOT_ATTRIBUTED
+        assert _link(answer, ADDRESS)["attribution"] == bc.NOT_ATTRIBUTED
+        line, _cells = _line_and_cells(answer)
+        assert UNLISTED_WORDS not in line
+
+    @pytest.mark.parametrize(
+        ("request_row", "value"),
+        [({"uri": URL}, URL), ({"host": ADDRESS, "uri": PATH}, PATH)],
+        ids=["url", "path"],
+    )
+    def test_a_request_to_an_address_put_on_an_unlisted_process_says_so(
+        self, request_row: dict[str, Any], value: str
+    ) -> None:
+        report = _network(
+            http=[{**request_row, "dst": ADDRESS}], tcp=[{"dst": ADDRESS, **UNLISTED_ROW}]
+        )
+        answer = bc.link_behaviour_to_code(report, None, _strings_of(value, ADDRESS))
+        said = _publish_rule_of_the_url(report)
+        assert said == sr.made_by_reason({"unlisted": ["procid 46"]})
+        assert _capture_words(report, ADDRESS) == said
+        assert _link(answer, value)["attribution"] == said
+        assert _link(answer, ADDRESS)["attribution"] == said
+
+    def test_an_address_with_no_row_puts_nothing_on_an_unlisted_process(self) -> None:
+        report = _network(http=[{"uri": URL, "dst": ADDRESS, **UNLISTED_ROW}])
+        answer = bc.link_behaviour_to_code(report, None, _strings_of(URL, ADDRESS))
+        assert _publish_rule_of_the_url(report) is None
+        assert _link(answer, URL)["attribution"] == bc.NOT_ATTRIBUTED
+        assert _link(answer, ADDRESS)["attribution"] == bc.NOT_ATTRIBUTED
+
+    def test_the_rule_s_decisions_key_the_url_by_its_address_row(self) -> None:
+        report = _network(
+            http=[{"uri": URL, "dst": ADDRESS, **UNLISTED_ROW}],
+            tcp=[{"dst": ADDRESS, **UNLISTED_ROW}, {"dst": ADDRESS}],
+        )
+        network = ledger_projection.network_from_sandbox_report(report, None)
+        assert ("url", URL) not in sr.unlisted_reasons(network)
 
 
 class TestThePublishRuleIsUnchanged:
