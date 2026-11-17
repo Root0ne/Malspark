@@ -4373,6 +4373,11 @@ class _Sentences:
         return inside if len(inside) > 1 else [span]
 
 
+def _with_sentence(row: AgreementRow, sentence: str) -> AgreementRow:
+    """``row`` answering ``sentence`` alone: a whole-field answer read sentence by sentence."""
+    return AgreementRow.model_validate({**row.model_dump(), "sentence": sentence})
+
+
 def _answered_span(
     sentences: _Sentences, sentence: str, decision: Any
 ) -> tuple[int, int, str, int] | None:
@@ -4467,7 +4472,7 @@ def _row_violations(
     out: list[Violation] = []
     for unit in units:
         for violation in _one_row_violations(
-            AgreementRow.model_validate({**row.model_dump(), "sentence": unit[2]}),
+            _with_sentence(row, unit[2]),
             index,
             by_id,
             sentences_of,
@@ -7093,17 +7098,15 @@ def agreement_violations(
             # Its twin passed: the refusal of the judge passages it names is told alone.
             out.extend(told)
         if passage is not None and span is not None:
-            # A copy of the whole field lists each of its sentences (T-719).
-            places = [(passage.id, unit[0]) for unit in _sentences(passage).units(span)]
-            listed.update(places)
-            answering.update((place, row) for place in places)
+            listed.add((passage.id, span[0]))
+            answering[(passage.id, span[0])] = row
             if any(v.code == UNREAD_STANDING_CODE for v in found):
-                unread_told.update(places)
+                unread_told.add((passage.id, span[0]))
             # A rewrite whose own finding names the listing is asked about once.
             if row.decision in ("rewrite", "drop") and (
                 not found or any(v.code == UNREAD_STANDING_CODE for v in found)
             ):
-                rewritten.update(places)
+                rewritten.add((passage.id, span[0]))
     if isinstance(payload, dict):
         out.extend(
             _held_unlisted(
@@ -7116,7 +7119,9 @@ def agreement_violations(
                 unread_told=unread_told,
             )
         )
-    return out
+    # A whole-field answer is read as one row per sentence: a refusal of the row itself is
+    # told once (T-719).
+    return [v for at, v in enumerate(out) if v not in out[:at]]
 
 
 def _unread_standing(
@@ -7737,20 +7742,31 @@ def _checked_rows(
             if row is not named and passage is not None
             else []
         )
-        own = _row_violations(row, index, by_id, sentences_of)
-        rewritten = (
-            _rewrite_violations(row.rewrite, citable, items, entries)
-            if row.decision == "rewrite"
-            else []
-        )
         span = (
             _answered_span(sentences_of(passage), row.sentence, row.decision)
             if passage is not None
             else None
         )
-        if passage is not None and span is not None and not own and not rewritten:
-            passed.update((passage.id, unit[0]) for unit in sentences_of(passage).units(span))
-        checked.append((index, row, passage, own, rewritten, span, told))
+        units = sentences_of(passage).units(span) if passage is not None and span else []
+        # A keep or a drop copying the whole field answers each of its sentences as the same
+        # row answering it alone would, on every path after this one (T-719).
+        answers: list[tuple[AgreementRow, tuple[int, int, str, int] | None]] = [(row, span)]
+        if passage is not None and len(units) > 1:
+            cut = sentences_of(passage)
+            answers = [
+                (answer, _answered_span(cut, answer.sentence, answer.decision))
+                for answer in (_with_sentence(row, unit[2]) for unit in units)
+            ]
+        rewritten = (
+            _rewrite_violations(row.rewrite, citable, items, entries)
+            if row.decision == "rewrite"
+            else []
+        )
+        for answer, at in answers:
+            own = _row_violations(answer, index, by_id, sentences_of)
+            if passage is not None and at is not None and not own and not rewritten:
+                passed.add((passage.id, at[0]))
+            checked.append((index, answer, passage, own, rewritten, at, told))
     return checked, passed
 
 
@@ -7845,22 +7861,14 @@ def apply_rows(
     checked, passed = _checked_rows(rows, by_id, _sentences, citable, items, entries)
     for index, row, passage, own, rewritten, span, _told in checked:
         found = [*own, *rewritten]
-        # Each sentence the row answers: its own, or each of a field it copied whole (T-719).
-        units = _sentences(passage).units(span) if passage is not None and span else []
         if passage is not None and span is not None:
-            answered.update((passage.id, unit[0]) for unit in units)
+            answered.add((passage.id, span[0]))
         counts["sentences"] += 1
         if found and passage is not None and span is not None and (passage.id, span[0]) in passed:
             # Another row's answer passed: this refused one is not applied.
             counts["not_applied"] += 1
             continue
-        held = (
-            next(
-                (said for said in (_ends_on_answer(passage, unit[2]) for unit in units) if said), ""
-            )
-            if passage
-            else ""
-        )
+        held = _ends_on_answer(passage, span[2]) if passage and span else ""
         # Why such a sentence is left out where its answer is refused.
         refused = (
             ("the ledger says otherwise; " if _ledger_says_otherwise(found) else "")
@@ -7888,7 +7896,7 @@ def apply_rows(
             ):
                 # A refused drop, or a refused keep this function would let stand: left out
                 # below, unless the platform's qualification takes the sentence first.
-                unpassed.extend(_refused_units(passage, span, units, (refused, held), found, index))
+                unpassed.append((passage, span, refused, found, f"sentences.{index}"))
                 continue
         if row.decision == "keep":
             standing = span
@@ -7898,7 +7906,7 @@ def apply_rows(
                 passage is not None
                 and not passage.closing
                 and standing is not None
-                and any(unit[2] in passage.absences for unit in units)
+                and standing[2] in passage.absences
             )
             # A section 5 sentence a fact was listed against is recorded as
             # listed, as it was before it could be rewritten.
@@ -7963,7 +7971,7 @@ def apply_rows(
                     passage is not None
                     and (passage.closing or absent)
                     and standing is not None
-                    and any(unit[2] in passage.held for unit in units)
+                    and standing[2] in passage.held
                 ):
                     counts["held_kept"] += 1
                     # A closing sentence kept on a source whose quote passed every
@@ -8113,7 +8121,7 @@ def apply_rows(
             elif refused:
                 # A refused rewrite of a sentence the ledger's lines hold, which would print
                 # as written: left out below, unless the platform's qualification takes it.
-                unpassed.extend(_refused_units(passage, span, units, (refused, held), found, index))
+                unpassed.append((passage, span, refused, found, f"sentences.{index}"))
             else:
                 counts["not_applied"] += 1
             continue
@@ -8210,31 +8218,6 @@ def apply_rows(
         if passage.write is not None:
             passage.write(text)
     return counts, [*listed, *written]
-
-
-def _refused_units(
-    passage: Passage,
-    span: tuple[int, int, str, int],
-    units: Sequence[tuple[int, int, str, int]],
-    why: tuple[str, str],
-    found: Sequence[Violation],
-    index: int,
-) -> list[tuple[Passage, tuple[int, int, str, int], str, Sequence[Violation], str]]:
-    """What a refused answer leaves out (:func:`apply_rows`): its sentence; of a field it copied
-    whole, each sentence of it that ends on the answer (:func:`_ends_on_answer`), each with the
-    refusal and its own end (``why``: the refusal, ending on the end it names), the others
-    standing as a sentence whose refused answer ends on nothing does (T-719)."""
-    refused, held = why
-    path = f"sentences.{index}"
-    if len(units) < 2:
-        return [(passage, span, refused, found, path)]
-    head = refused[: len(refused) - len(held)]
-    out: list[tuple[Passage, tuple[int, int, str, int], str, Sequence[Violation], str]] = []
-    for unit in units:
-        own = _ends_on_answer(passage, unit[2])
-        if own:
-            out.append((passage, unit, head + own, found, path))
-    return out
 
 
 def _moved(
