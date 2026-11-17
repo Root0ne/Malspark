@@ -185,19 +185,19 @@ class Observed:
     def attribution(self) -> str | None:
         """``SAMPLE_TREE``, the unlisted processes, ``NOT_ATTRIBUTED``, ``""`` or ``None``.
 
-        A row of the sample's tree decides; else the publish rule's sentence
-        where it puts the value's traffic on a process the report does not
-        list (its decision, not this reading's); ``""`` is other listed
-        processes only, and ``None`` no network rows.
+        A row of the sample's tree decides; else, where a row does not say,
+        the publish rule's sentence where it puts the value's traffic on a
+        process the report does not list (its decision, not this reading's),
+        in the place of ``NOT_ATTRIBUTED``: the values linked are the same
+        either way. ``""`` is other listed processes only, and ``None`` no
+        network rows.
         """
         if not self.tree:
             return None
         if True in self.tree:
             return SAMPLE_TREE
-        if self.unlisted:
-            return self.unlisted
         if None in self.tree:
-            return NOT_ATTRIBUTED
+            return self.unlisted or NOT_ATTRIBUTED
         return ""
 
     def as_row(self) -> dict[str, Any]:

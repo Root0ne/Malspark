@@ -252,6 +252,18 @@ class TestAValueAtAnAddressTakesTheAddressRow:
         assert _link(answer, URL)["attribution"] == bc.NOT_ATTRIBUTED
         assert _link(answer, ADDRESS)["attribution"] == bc.NOT_ATTRIBUTED
 
+    def test_a_value_only_listed_processes_made_stays_unlinked_whatever_its_address_says(
+        self,
+    ) -> None:
+        report = _network(
+            http=[{"uri": URL, "dst": ADDRESS, "sample_process_tree": False}],
+            tcp=[{"dst": ADDRESS, **UNLISTED_ROW}],
+        )
+        answer = bc.link_behaviour_to_code(report, None, _strings_of(URL, ADDRESS))
+        assert all(row["value"] != URL for row in answer["links"])
+        said = sr.made_by_reason({"unlisted": ["procid 46"]})
+        assert _link(answer, ADDRESS)["attribution"] == said
+
     def test_the_rule_s_decisions_key_the_url_by_its_address_row(self) -> None:
         report = _network(
             http=[{"uri": URL, "dst": ADDRESS, **UNLISTED_ROW}],
