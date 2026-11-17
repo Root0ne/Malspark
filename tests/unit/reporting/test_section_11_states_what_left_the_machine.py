@@ -85,12 +85,13 @@ def _row(section: str) -> str:
 
 def test_section_11_states_each_lookup_host_and_what_kinds_were_sent() -> None:
     row = plain(_row(_section_11(_with(_record([LOOKUP], [SANDBOX, STAGED])))))
+    # Who received it, how many times, and what it was asked: nothing else.
     assert re.search(
-        r"Lookups: lookup(\.|\[\.\])example \(outside this machine\) was asked 4 times "
-        r"\(\+1 answered without a run\)",
+        r"Lookups: lookup(\.|\[\.\])example \(outside this machine\) was asked 4 times: "
+        r"ip 1, hash 2, domain 1\.",
         row,
     )
-    assert "ip 1, hash 2, domain 1" in row
+    assert "answered without a run" not in row and "streamable-http" not in row
 
 
 def test_section_11_states_the_sample_upload_and_its_host() -> None:
@@ -147,15 +148,52 @@ def test_section_11_states_every_kind_the_record_places_outside() -> None:
     }
     row = plain(_row(_section_11(_with(record))))
     # The model requests and the remote tool server, in the block's own words.
-    assert "Model prompts: a model service (outside this machine) received 12 calls" in row
-    assert re.search(r"Tool calls: tool server remote over http at tools(\.|\[\.\])example", row)
+    assert "Model prompts: a model service (outside this machine) received 12 calls." in row
+    # The calls per role stay in the bundle.
+    assert "judge" not in row and "reporter" not in row
+    assert re.search(
+        r"Tool calls: tool server remote at tools(\.|\[\.\])example \(outside this machine\): "
+        r"9 calls\.",
+        row,
+    )
     # A kind whose destination the record cannot tell: named, with its count.
     assert "Sample uploads: 5 calls, destination not recorded." in row
-    assert "Enrichment questions about the report's indicators: count not recorded, " in row
+    assert (
+        "Enrichment questions about the report's indicators: count not recorded, destination "
+        "not recorded." in row
+    )
     assert "Tracing of every prompt and answer: count not recorded, destination not recorded." in (
         row
     )
     assert row.endswith(LEFT_THE_MACHINE_RECORD)
+
+
+def test_hosts_a_kind_may_reach_are_named_as_such() -> None:
+    reach = {
+        "asked": [],
+        "state": "running",
+        "may_reach": [
+            {"hosts": ["rdap.example"], "kinds": ["ip"], "where": "remote", "source": "rdap"},
+            {"hosts": ["intel.example"], "kinds": ["ip"], "where": "remote", "source": "intel"},
+        ],
+    }
+    row = plain(_row(_section_11(_with({**_record([], []), "enrichment": reach}))))
+    assert re.search(
+        r"Enrichment questions about the report's indicators: count not recorded, may reach "
+        r"rdap(\.|\[\.\])example and intel(\.|\[\.\])example\.",
+        row,
+    )
+    assert "destination not recorded" not in row
+
+
+def test_the_row_stays_short() -> None:
+    record = {
+        **_record([LOOKUP], [SANDBOX, STAGED]),
+        "models": [{**MODEL, "configured_for": ["mediator", "summarizer"]}],
+    }
+    row = _row(_section_11(_with(record)))
+    assert "model list" not in row and "mediator" not in row
+    assert len(row) < 500
 
 
 def test_a_record_stated_as_partial_says_so_in_the_row() -> None:
@@ -170,7 +208,9 @@ def test_section_11_disclosure_words_match_the_bundle_block() -> None:
     bundle = MarkdownRenderer(layout=BUNDLE).render(report)
     block = [line[2:] for line in bundle.splitlines() if line.startswith("- ")]
     lookup, upload, untold = re.split(r"(?<=\.) (?=Sample uploads?:)", row)
-    assert lookup in block
+    # The short form of each writer: the block's line opens with the same words.
+    head = lookup.split(": ip ")[0]
+    assert any(line.startswith(head) and line != lookup for line in block)
     assert untold == "Sample uploads: 3 calls, destination not recorded."
     # The submission's sentence opens the bundle's line, its launch arguments after.
     assert any(line.startswith(upload) and line != upload for line in block)
