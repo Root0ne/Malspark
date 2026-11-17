@@ -130,11 +130,19 @@ def _called(node: ast.Call) -> tuple[str, list[ast.expr]]:
     return name, list(node.args)
 
 
-def readers_made_up(source: str) -> list[str]:
-    """Where ``source`` calls a function of :data:`READER_TAKERS` with no reader or ``None``.
+def _says_unstated(node: ast.expr) -> bool:
+    """Whether a reader argument is the pack's "no reader stated" mark, by any qualified name."""
+    return _dotted(node).rsplit(".", 1)[-1].endswith("UNSTATED") or (
+        isinstance(node, ast.Attribute) and node.attr.endswith("UNSTATED")
+    )
 
-    Each as ``line name``: the reader argument left out, or given as a
-    literal ``None``.
+
+def readers_made_up(source: str) -> list[str]:
+    """Where ``source`` calls a function of :data:`READER_TAKERS` with no reader stated.
+
+    Each as ``line name``: the reader argument left out, given as a literal
+    ``None``, or given as the pack's mark of no reader stated (a name ending
+    in ``UNSTATED``).
     """
     found: list[str] = []
     for node in ast.walk(ast.parse(source)):
@@ -152,7 +160,11 @@ def readers_made_up(source: str) -> list[str]:
             k.arg is None for k in node.keywords
         ):
             continue
-        if given is None or (isinstance(given, ast.Constant) and given.value is None):
+        if (
+            given is None
+            or (isinstance(given, ast.Constant) and given.value is None)
+            or _says_unstated(given)
+        ):
             found.append(f"{node.lineno} {name}")
     return found
 
@@ -259,6 +271,9 @@ class TestOneEntryPoint:
             "pack_block(entries, chars)\n",
             "triage_pack.pack_block(entries, chars, normalised_by=None)\n",
             "pack_row_heads(ledger)\n",
+            "pack_block(e, c, normalised_by=UNSTATED)\n",
+            "triage_pack.pack_row_heads(rows, normalised_by=triage_pack.UNSTATED)\n",
+            "pack_row_heads(rows, normalised_by=__import__('m', fromlist=['x']).UNSTATED)\n",
         ],
     )
     def test_the_guard_finds_a_reader_left_out_or_none(self, source: str) -> None:
@@ -409,3 +424,102 @@ class TestThePacksOwnReadsOfAViewAreTheRuns:
         read = self._tools(tmp_path, None)
 
         assert read["lolbin_lookup"].args == {"command_lines": ["rundll32.exe javascript:x"]}
+
+
+# A capture beside a network view, whose one conversation no flow row holds:
+# the capture line's words for it are ``NO_FLOW_ROW``, said only where the
+# pack is written with a reader stated.
+_FLOWED = "198.51.100.1"
+_UNFLOWED = "198.51.100.3"
+_RUN_READER = ("box", "box")
+
+
+def _capture_rows(summary: str = "") -> list[LedgerEntry]:
+    from tests.unit.pipeline.test_the_capture_line_says_what_the_sandbox_rows_say_of_each_address import (  # noqa: E501
+        _capture,
+        _entry,
+    )
+
+    capture = _capture(_FLOWED, _UNFLOWED)
+    if summary:
+        capture["summary"] = summary
+    return [
+        _entry("sandbox_network", {"tcp": [{"dst": _FLOWED, "dport": 80}]}, 13),
+        _entry("pcap_summary", capture, 17),
+    ]
+
+
+def _container(**more: Any) -> Any:
+    from types import SimpleNamespace
+
+    return SimpleNamespace(sandbox_normalised=_RUN_READER, config=None, **more)
+
+
+class TestThePackTextTakesTheRunsReader:
+    @pytest.mark.parametrize("for_reporter", [False, True], ids=["agents", "reporter"])
+    def test_the_capture_line_of_the_pack_text_says_what_the_view_holds(
+        self, for_reporter: bool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.pipeline import nodes
+        from malspark.reporting.ledger_projection import NO_FLOW_ROW
+
+        monkeypatch.setattr(nodes, "upstream_chars", lambda container, reporter=False: 0)
+        monkeypatch.setattr(nodes, "earlier_run_text", lambda container, sha: "")
+        state: Any = {"evidence_ledger": _capture_rows(), "file_hash": "x"}
+
+        text = nodes.pack_text(state, _container(), for_reporter=for_reporter)
+
+        line = next(line for line in text.splitlines() if line.startswith("[ev_0017]"))
+        assert f"; {NO_FLOW_ROW}" in line
+
+
+class TestTheJudgesPackHeadsTakeTheRunsReader:
+    def test_a_head_shown_for_an_entry_shown_whole_says_what_the_view_holds(self) -> None:
+        import asyncio
+        from unittest.mock import MagicMock
+
+        from malspark.agents.judge_agent import PACK_ROW_SHOWN_BELOW, JudgeAgent
+        from malspark.pipeline.triage_pack import PACK_HEADING
+        from malspark.reporting.ledger_projection import NO_FLOW_ROW
+        from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+        from malspark.schemas.stix_models import Bundle
+
+        class _Llm:
+            def __init__(self) -> None:
+                self.calls: list[list[Any]] = []
+
+            async def ainvoke(self, messages: list[Any]) -> Any:
+                self.calls.append(list(messages))
+                return MagicMock(content="[]")
+
+        # The capture's stored output is longer than its row, which is longer
+        # than its head: the row is pointed below, and shows its head.
+        rows = _capture_rows(summary="s" * 6000)
+        facts = f"{PACK_HEADING}\n[ev_0017] pcap: {'r' * 3000}"
+        claim = ClaimEvidence(
+            claim="The sample beacons",
+            evidence_ref="[ev_0017]",
+            confidence=0.6,
+            technique_id="T1071",
+        )
+        isrs = {"network": AgentISR(agent_id="network", domain="network", claims=[claim])}
+        llm = _Llm()
+        judge = JudgeAgent(llm=llm)  # type: ignore[arg-type]
+        judge._container = _container()
+
+        asyncio.run(
+            judge.decide_techniques(
+                Bundle.model_validate({"objects": []}),
+                isrs,
+                reports={"network": "report"},
+                evidence_texts={"ev_0017": rows[1].output},
+                facts_block=facts,
+                run_state="the run state",
+                ledger=rows,
+            )
+        )
+
+        prompt = "\n".join(str(getattr(m, "content", m)) for m in llm.calls[0])
+        line = next(line for line in prompt.splitlines() if line.startswith("[ev_0017] pcap"))
+        assert PACK_ROW_SHOWN_BELOW in line
+        assert f"; {NO_FLOW_ROW}" in line
