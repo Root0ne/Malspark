@@ -100,6 +100,73 @@ def view_reads(source: str) -> list[str]:
     return found
 
 
+# Every function that takes the run's reader and hands it to a view, with
+# where a call states it: the position of the argument, else its keyword. A
+# call states it where it passes that argument, and not as a literal ``None``.
+READER_TAKERS: dict[str, tuple[int | None, str]] = {
+    "read_view": (2, ""),
+    "network_view": (1, ""),
+    "network_from_sandbox_report": (1, "normalised_by"),
+    "network_from_ledger": (None, "normalised_by"),
+    "judge_sandbox_facts": (None, "sandbox_normalised_by"),
+    "MalwareReportBuilder": (None, "sandbox_normalised_by"),
+}
+
+
+def _called(node: ast.Call) -> tuple[str, list[ast.expr]]:
+    """The function a call calls, by its last name, and its positional arguments.
+
+    A ``partial`` of a function is a call of it with the arguments given so far.
+    """
+    name = _dotted(node.func).rsplit(".", 1)[-1]
+    if name == "partial" and node.args:
+        return _dotted(node.args[0]).rsplit(".", 1)[-1], list(node.args[1:])
+    return name, list(node.args)
+
+
+def readers_made_up(source: str) -> list[str]:
+    """Where ``source`` calls a function of :data:`READER_TAKERS` with no reader or ``None``.
+
+    Each as ``line name``: the reader argument left out, or given as a
+    literal ``None``.
+    """
+    found: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        name, args = _called(node)
+        if name not in READER_TAKERS:
+            continue
+        position, keyword = READER_TAKERS[name]
+        given: ast.expr | None = None
+        if position is not None and len(args) > position:
+            given = args[position]
+        given = next((k.value for k in node.keywords if keyword and k.arg == keyword), given)
+        if any(isinstance(a, ast.Starred) for a in args) or any(
+            k.arg is None for k in node.keywords
+        ):
+            continue
+        if given is None or (isinstance(given, ast.Constant) and given.value is None):
+            found.append(f"{node.lineno} {name}")
+    return found
+
+
+def reader_calls(source: str) -> list[tuple[int, str, str]]:
+    """Each call of a function of :data:`READER_TAKERS` in ``source``, with the reader it passes."""
+    out: list[tuple[int, str, str]] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        name, args = _called(node)
+        if name not in READER_TAKERS:
+            continue
+        position, keyword = READER_TAKERS[name]
+        given = args[position] if position is not None and len(args) > position else None
+        given = next((k.value for k in node.keywords if keyword and k.arg == keyword), given)
+        out.append((node.lineno, name, ast.unparse(given) if given is not None else ""))
+    return out
+
+
 PACK_VIEWS = (
     "sandbox_processes",
     "sandbox_network",
@@ -151,6 +218,48 @@ class TestOneEntryPoint:
     )
     def test_the_guard_finds_a_view_read_by_any_name(self, source: str) -> None:
         assert view_reads(source) != []
+
+    def test_no_call_hands_a_view_a_reader_it_made_up(self) -> None:
+        found: list[str] = []
+        for root in ROOTS:
+            for path in sorted(root.rglob("*.py")):
+                if path.resolve() == Path(sandbox_tools.__file__).resolve():
+                    continue
+                found += [
+                    f"{path.relative_to(root.parent)}:{where}"
+                    for where in readers_made_up(path.read_text(encoding="utf-8"))
+                ]
+        assert found == []
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "network_view(report, None)\n",
+            "sandbox_tools.read_view('sandbox_processes', report)\n",
+            "partial(read_view, tool, report)\n",
+            "partial(sandbox_tools.read_view, tool, report, None)\n",
+            "network_from_sandbox_report(report)\n",
+            "network_from_ledger(ledger, isrs, sandbox_report=report)\n",
+            "network_from_ledger(ledger, normalised_by=None)\n",
+            "judge_sandbox_facts(ledger, isrs, report)\n",
+            "MalwareReportBuilder(file_hash=h, sandbox_report=report)\n",
+            "builder.MalwareReportBuilder(sandbox_normalised_by=None)\n",
+        ],
+    )
+    def test_the_guard_finds_a_reader_left_out_or_none(self, source: str) -> None:
+        assert readers_made_up(source) != []
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "network_view(report, normalised_by)\n",
+            "partial(read_view, tool, report, record.normalised_by)\n",
+            "network_from_ledger(ledger, normalised_by=normalised_by_of(container))\n",
+            "MalwareReportBuilder(sandbox_normalised_by=held)\n",
+        ],
+    )
+    def test_the_guard_passes_a_reader_the_run_states(self, source: str) -> None:
+        assert readers_made_up(source) == []
 
     def test_the_guard_reads_the_api_too(self) -> None:
         api = [root for root in ROOTS if root.parts[-3:] == ("apps", "api", "app")]

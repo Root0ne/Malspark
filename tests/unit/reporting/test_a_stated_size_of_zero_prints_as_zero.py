@@ -2,7 +2,8 @@
 
 A written file of no bytes is a fact the record states; "not recorded" said
 it was never stated. The report's measured table and the analyst's both read
-one helper; a size the record does not state is still "not recorded".
+one helper; a size the record does not state is still "not recorded". A size
+is a number, or text that is a number; anything else is no size.
 """
 
 from __future__ import annotations
@@ -19,10 +20,19 @@ from malspark.reporting.renderers.markdown import dropped_size_cell
     [
         (0, "0 bytes"),
         (4096, "4096 bytes"),
-        ("12kB", "12kB bytes"),
+        ("2048", "2048 bytes"),
+        (" 512 ", "512 bytes"),
+        (1.5, "1.5 bytes"),
         (None, "not recorded"),
         ("", "not recorded"),
+        ("   ", "not recorded"),
+        ("12kB", "not recorded"),
+        ([4096], "not recorded"),
+        ({"bytes": 4096}, "not recorded"),
         (False, "not recorded"),
+        (True, "not recorded"),
+        (float("nan"), "not recorded"),
+        ("inf", "not recorded"),
     ],
 )
 def test_the_cell_says_what_the_row_states(size: Any, printed: str) -> None:

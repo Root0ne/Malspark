@@ -98,3 +98,15 @@ def test_an_agent_of_a_later_record_is_not_joined_to_the_printed_method() -> Non
     row = urls["http://c.example.com/k"]
 
     assert (row.method, row.user_agent) == ("GET", None)
+
+
+def test_an_agent_of_an_earlier_record_that_states_no_method_is_not_joined_to_it() -> None:
+    # The first record states an agent and no method; the second states the
+    # method the row prints and no agent: the row prints that record's facts.
+    urls = _urls(
+        {"host": "c.example.com", "uri": "/j", "user_agent": AGENT},
+        {"host": "c.example.com", "uri": "/j", "method": "GET"},
+    )
+    row = urls["http://c.example.com/j"]
+
+    assert (row.method, row.user_agent) == ("GET", None)
