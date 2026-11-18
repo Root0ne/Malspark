@@ -24,6 +24,9 @@ ledger, by the answers' own keys, never by a tool's name:
   routine's listing (:func:`hold_data`), each address a line of it names after a
   data label a source declares (``undeclared_tools.declared_labels``), with the
   routines the index lists it calling that the same line names (T-652).
+* **The strings**: each text a declared row states at a file offset that the file's own
+  section table places outside code (``evidence_roots.placed_texts``), by its offset from
+  the image base, with each file's layout, which reads an address a sentence writes.
 
 An answer's export rows and imports are read only where the answer is about the
 sample: its call read no file the run produced, and the program or path it names,
@@ -169,6 +172,10 @@ class RunNames:
     # naming each data address.
     refs_of: dict[int, DataRef] = field(default_factory=dict)
     data_at: dict[int, dict[int, None]] = field(default_factory=dict)
+    # Each text a strings row states, by its file and its offset from that file's image base,
+    # and each file's layout (``evidence_roots.placed_texts``).
+    strings_at: dict[tuple[str, int], list[Any]] = field(default_factory=dict)
+    layouts: dict[str, Any] = field(default_factory=dict)
 
     # Every routine the index lists called.
     called: frozenset[int] = frozenset()
@@ -412,9 +419,10 @@ def hold_data(
 
 def run_names(entries: Iterable[Any], bases: Sequence[int] = ()) -> RunNames:
     """What the ledger holds by name, read once: the function index's rows (the last index
-    read whole), and each answer's export rows and import names where the answer is about
-    the sample (:func:`_about_the_sample`). ``bases`` are the image
-    bases the run read, which an address is spelled by (``function_map.one_spelling``)."""
+    read whole), each answer's export rows and import names where the answer is about
+    the sample (:func:`_about_the_sample`), and the strings rows placed in each file.
+    ``bases`` are the image bases the run read, which an address is spelled by
+    (``function_map.one_spelling``)."""
     entries = list(entries)
     names = RunNames(bases=tuple(bases))
     held: list[tuple[str, ...]] = []
@@ -428,6 +436,11 @@ def run_names(entries: Iterable[Any], bases: Sequence[int] = ()) -> RunNames:
             held.append(_sample_names(pack_entries(entries)))
         return held[0]
 
+    from malspark.analysis.evidence_roots import placed_texts
+
+    names.layouts, placed = placed_texts(entries)
+    for text in placed:
+        names.strings_at.setdefault((text.file, text.rva), []).append(text)
     found = function_artefacts(entries)
     data = found.index_data
     if isinstance(data, Mapping):

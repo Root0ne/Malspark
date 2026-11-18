@@ -1312,12 +1312,13 @@ def passages_of(
     if held and found is not None:
         # A negated sentence naming an API, an export or a text the run holds is
         # held to what the ledger holds of it, the call lines of the routines calling an
-        # API shown with their slots named, so no keep rests on no source (T-600).
+        # API shown with their slots named, so no keep rests on no source (T-600); a
+        # sentence naming an address a strings row starts at is shown that row (T-749).
         from malspark.reporting.ledger_entities import run_names
 
         names = run_names(held, found.image_bases)
         by_entry = {str(_field(e, "id") or ""): e for e in held}
-        if names.apis or names.exports or names.texts or found.listed:
+        if names.apis or names.exports or names.texts or names.strings_at or found.listed:
             name_facts, _readings = _name_passages(
                 [*coded, *uncoded],
                 names,
@@ -2549,9 +2550,10 @@ _CALL_MARKS = re.compile(r"(?<=[A-Za-z0-9_])\(\s*\)")
 @dataclass(frozen=True)
 class NameReading:
     """A name a negated sentence writes (or, pointing back, the sentence before it writes),
-    which holds the sentence to what the ledger holds of it: ``kind`` is "api", "export"
-    or "text", ``key`` the name as the ledger holds it (an API's lowered name, an export's
-    address in hex, a text lowered), ``shown`` as the sentence writes it."""
+    which holds the sentence to what the ledger holds of it: ``kind`` is "api", "export",
+    "text", "data" or "string", ``key`` the name as the ledger holds it (an API's lowered
+    name, an export's address in hex, a text lowered, a routine and its data addresses, a
+    strings row's offset and file), ``shown`` as the sentence writes it."""
 
     sentence: str
     kind: str
@@ -3188,6 +3190,78 @@ def _text_at_fact(key: str, names: Any) -> _NameFact | None:
     )
 
 
+# An address as a sentence writes it in hex: only such a word is read for a strings row.
+_HEX_WORD = re.compile(r"0x([0-9a-fA-F]+)")
+
+
+def _strings_named(sentence: str, names: Any) -> list[tuple[str, str, str]]:
+    """``(kind, key, shown)`` of each address ``sentence`` writes as a hex word at which a
+    strings row of the ledger starts (``RunNames.strings_at``): read against each file's
+    layout as a virtual address and as an offset from the image base
+    (``Layout.rvas_of``), keyed by that offset and the file, shown as the sentence writes
+    it. One look per address and file."""
+    if not names.strings_at:
+        return []
+    written = {int(m.group(1), 16) for m in _HEX_WORD.finditer(sentence)}
+    out: dict[str, str] = {}
+    for address in dict.fromkeys(_addresses_named(sentence)):
+        if address not in written:
+            continue
+        for file, layout in names.layouts.items():
+            for rva in layout.rvas_of(address):
+                if (file, rva) in names.strings_at:
+                    out.setdefault(f"{rva:x}" + (f":{file}" if file else ""), hex(address))
+    return [("string", key, shown) for key, shown in out.items()]
+
+
+def _denies_something(sentence: str) -> bool:
+    """Whether ``sentence`` denies something a run's code facts may speak of, as
+    :func:`name_readings` reads a sentence: a negated clause, not set in what a run saw."""
+    uncited = _uncited(sentence).strip()
+    return bool(negated_clauses(_CALL_MARKS.sub("", uncited))) and not set_in_a_run(uncited)
+
+
+def _string_fact(key: str, names: Any) -> _NameFact | None:
+    """What the ledger holds at an address a sentence names (``key``: its offset from the
+    image base, and the file where it is not the sample): the texts strings rows state
+    there, each with the entries stating it, and the file offset the row was read at and
+    the section the file's own section table places it in (T-749). Each list a cap cuts
+    counts the rest."""
+    head_key, _, file = key.partition(":")
+    rva = int(head_key, 16)
+    placed = names.strings_at.get((file, rva))
+    layout = names.layouts.get(file)
+    if not placed or layout is None:
+        return None
+    texts: dict[str, dict[str, None]] = {}
+    for row in placed:
+        texts.setdefault(row.text, {})[row.entry] = None
+    shown = list(texts.items())[:_TEXTS_SHOWN]
+    listed = _more(
+        ", ".join(
+            quoted_value(_capped(text)) + f" ({', '.join(sorted(_ids(ids)))})"
+            for text, ids in shown
+        ),
+        len(texts) - len(shown),
+    )
+    first = placed[0]
+    where = f"offset {hex(rva)}" + (f" of {file}" if file else "")
+    head = (
+        f"the ledger holds {'a string' if len(texts) == 1 else 'strings'} at {where}: {listed}, "
+        f"its row read at file offset {hex(first.offset)} in section {first.section}"
+    )
+    said = ", ".join(quoted_value(_sample_text(text)) for text, _ids_of in shown)
+    bases = layout.bases
+    return _NameFact(
+        text=head,
+        qualifier=f"the ledger holds {said} at {where}",
+        cites=_ids([entry for _text, ids in shown for entry in ids]),
+        rows=(head,),
+        values=(*(text for text, _ids_of in shown), hex(rva)),
+        addresses=frozenset({rva, *(rva + base for base in bases[:1] if len(bases) == 1)}),
+    )
+
+
 def _name_passages(
     passages: Sequence[Passage],
     names: Any,
@@ -3204,7 +3278,9 @@ def _name_passages(
     name past it is not shown, its sentences not held on it, and the count is said. A
     sentence held this way is answered as a held absence of the body is (or as every
     closing sentence is): code decides none of them. The data addresses the listings name
-    are read first (:func:`_hold_listed_data`, T-652)."""
+    are read first (:func:`_hold_listed_data`, T-652). An address any sentence writes at
+    which a strings row starts is shown its row (:func:`_string_fact`), a negated sentence
+    held on it (T-749)."""
     _hold_listed_data(names, found, entries)
     listed = {routine.address: routine.listed_in for routine in found.listed}
     # The conclusion and the limitations first, then the fields answered whole (a value
@@ -3237,6 +3313,8 @@ def _name_passages(
             if kind == "export"
             else _text_at_fact(key, names)
             if kind == "data"
+            else _string_fact(key, names)
+            if kind == "string"
             else _text_fact(key, names)
         )
         if built is None or not built.cites:
@@ -3276,6 +3354,15 @@ def _name_passages(
             for reading in found_here:
                 fid = _fact(reading.kind, reading.key, sentence)
                 if fid is not None:
+                    named.setdefault(sentence, []).append(fid)
+            # The strings rows at the addresses it names: shown for any sentence, held on a
+            # negated one only, as a denial of a name is (T-749).
+            strings = [NameReading(sentence, *name) for name in _strings_named(sentence, names)]
+            readings.extend(strings)
+            denies = bool(strings) and _denies_something(sentence)
+            for reading in strings:
+                fid = _fact(reading.kind, reading.key, sentence)
+                if fid is not None and denies:
                     named.setdefault(sentence, []).append(fid)
         if not named:
             continue
