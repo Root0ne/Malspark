@@ -5027,16 +5027,17 @@ def _appendix_heading(letter: str, title: str, voice: str) -> str:
 
 
 def stored_report_id(report: Any) -> Any:
-    """The stored report's id, as the seal the worker writes into the run summary names it.
+    """The stored report's id, as the seal the stored report carries names it.
 
-    ``run_summary["ledger_seal"]["report_id"]``; a report with no seal reads
-    the run summary's own ``report_id``, as it always did (``None`` where it
-    holds none).
+    The worker stores the seal at the top of the report (``report.ledger_seal``);
+    a seal in the run summary is read next, and a report with no seal reads the
+    run summary's own ``report_id``, as it always did (``None`` where it holds
+    none).
     """
     summary = getattr(report, "run_summary", None) or {}
-    seal = summary.get("ledger_seal")
-    if isinstance(seal, dict) and seal.get("report_id"):
-        return seal["report_id"]
+    for seal in (getattr(report, "ledger_seal", None), summary.get("ledger_seal")):
+        if isinstance(seal, dict) and seal.get("report_id"):
+            return seal["report_id"]
     return summary.get("report_id")
 
 
