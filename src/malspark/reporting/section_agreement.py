@@ -6939,11 +6939,12 @@ def _placed(
     copies, where exactly one passage a row may answer (a passage written without the code or
     a section 5 passage, not one shown as a source only) holds any sentence of the copy, or the
     copy as a run of its words, the row answering it there and each sentence it answers there
-    standing there exactly once; the passage it named kept under :data:`_PLACED_FROM`; every
-    other row as it is. A copy of several sentences is so placed only where each of its sentences
-    would be, so a whole copy ends as its sentences given one by one. A sentence standing in
-    two passages, in none, or twice in one places nothing, nor does a row the round's row
-    schema refuses (T-736). One pass over the rows."""
+    standing there exactly once and in no other such passage, as a sentence or as a run of its
+    words; the passage it named kept under :data:`_PLACED_FROM`; every other row as it is. A
+    copy of several sentences is so placed only where each sentence it answers there would be,
+    so a whole copy placed ends as its sentences given one by one. A sentence standing in two
+    passages, in none, or twice in one places nothing, nor does a row the round's row schema
+    refuses (T-736). One pass over the rows."""
     rows = payload.get("sentences") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return payload
@@ -6977,9 +6978,17 @@ def _placed(
                 cut = sentences_of(holding[0])
                 span = _answered_span(cut, sentence, row.get("decision"))
                 # Each sentence the row answers there, as the round reads a whole copy
-                # (:meth:`_Sentences.units`), stands there exactly once.
+                # (:meth:`_Sentences.units`), stands there exactly once, and no other passage
+                # holds it, as a sentence or as a run of its words.
+                units = [unit[2] for unit in cut.units(span)] if span is not None else []
                 if span is not None and all(
-                    len(cut.every(unit[2])) == 1 for unit in cut.units(span)
+                    len(cut.every(unit)) == 1
+                    and not any(
+                        sentences_of(p).every(unit) or _holds_the_run(p.text, unit)
+                        for p in answerable
+                        if p is not holding[0]
+                    )
+                    for unit in units
                 ):
                     row = {**row, "passage": holding[0].id, _PLACED_FROM: named}
         out.append(row)
