@@ -262,6 +262,18 @@ def test_a_category_stated_as_none_takes_no_article() -> None:
     assert ", a nonexistent-class loader," in _conclusion("nonexistent-class loader")
 
 
+def test_a_category_stated_as_none_after_a_colon_prints_in_the_same_form() -> None:
+    said = _conclusion("none: a legitimate archiver")
+    assert ", category: none (a legitimate archiver)" in said
+    assert "none:" not in said
+    report = _report(_ledger())
+    report.malware_category = "none: a legitimate archiver"
+    for layout in (ANALYST, BUNDLE):
+        rendered = MarkdownRenderer(layout=layout).render(report)
+        assert "**Category:** none (a legitimate archiver)" in rendered, layout
+        assert "none:" not in rendered, layout
+
+
 def test_a_trimmed_count_agrees_with_its_own_number() -> None:
     report = _report(_ledger(), build=False)
     report.run_summary["evidence"]["trimmed"] = 1

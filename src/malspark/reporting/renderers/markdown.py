@@ -79,6 +79,7 @@ from malspark.core.undeclared_tools import (
     names_itself,
 )
 from malspark.reporting import tool_kinds
+from malspark.reporting.category_words import category_shown
 from malspark.reporting.dedupe import (
     distinct_processes,
     distinct_signatures,
@@ -790,11 +791,11 @@ class MarkdownRenderer:
                         + ", ".join(_one_line(t) for t in severity.likely_targets),
                     ]
                 )
-        if report.malware_category and str(report.malware_category).lower() != "unknown":
+        if category_shown(report.malware_category):
             lines.extend(
                 [
                     "",
-                    f"**Category:** {_one_line(report.malware_category)} "
+                    f"**Category:** {category_shown(report.malware_category)} "
                     f"_(a behavioural class, not a family)_{ctx.category_mark}",
                 ]
             )
@@ -2033,10 +2034,10 @@ class MarkdownRenderer:
         blocks = [_heading(12, "Attribution and related activity", PER_SUBSECTION)]
         family = [_subheading("12.1", "Family", _family_voice(report)), ""]
         family.append("**Family:** " + _family_words(report))
-        if report.malware_category and str(report.malware_category).lower() != "unknown":
+        if category_shown(report.malware_category):
             family.append("")
             family.append(
-                f"**Category:** {_one_line(report.malware_category)} "
+                f"**Category:** {category_shown(report.malware_category)} "
                 f"_(a behavioural class, not a family)_{ctx.category_mark}"
             )
         blocks.append("\n".join(family))

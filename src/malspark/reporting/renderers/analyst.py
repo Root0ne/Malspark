@@ -810,8 +810,6 @@ def _left_out_rows(count: int, what: str) -> str:
     )
 
 
-# A category the judge states as none ("none", "None: a legitimate tool"): no article.
-_STATED_NONE = re.compile(r"none\b", re.IGNORECASE)
 # Citation brackets right after a flagged text, read past to its end.
 _CITED_AFTER = re.compile(r"(?:[ \t]*\[[^\]\n]*\])*")
 # What may stand on a line before the sentence that opens it: a list item's or a quoted
@@ -1393,8 +1391,9 @@ class _Analyst:
         return family
 
     def _category(self) -> str:
-        category = _one_line(self.report.malware_category).strip()
-        return category if category and category.lower() != "unknown" else ""
+        from malspark.reporting.category_words import category_shown
+
+        return category_shown(self.report.malware_category)
 
     def _subsection(
         self,
@@ -2064,9 +2063,11 @@ class _Analyst:
     def conclusion(self) -> str:
         report = self.report
         lines = [_heading(7, "Conclusion"), ""]
+        from malspark.reporting.category_words import stated_none
+
         said = f"The sample is assessed as {self._verdict()}"
         category = self._category()
-        if _STATED_NONE.match(category):
+        if stated_none(category):
             # A category the judge states as none takes no article: printed as stated (T-719).
             said += f", category: {category}"
         elif category:

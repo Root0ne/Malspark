@@ -688,17 +688,23 @@ class MalwareReportBuilder:
             and not is_benign(report)
             and report.attribution.family_grounded
         )
-        name = family if family_named else report.malware_category
+        # Without a family, the category names the sample unless the judge states it as
+        # none, written as the judge wrote it but for its first letter (``category_words``).
+        from malspark.reporting.category_words import category_name, stated_none
+
+        name = family if family_named else category_name(report.malware_category)
         subtitle = None
-        if report.identity.platform and report.malware_category:
+        if (
+            report.identity.platform
+            and report.malware_category
+            and not stated_none(report.malware_category)
+        ):
             subtitle = f"{report.malware_category} targeting {report.identity.platform.title()}"
 
         return ReportFrontMatter(
             publisher=rc.publisher,
             product_type=rc.product_type,
-            malware_name=(
-                (name if family_named else name.title()) if isinstance(name, str) and name else None
-            ),
+            malware_name=name or None,
             subtitle=subtitle,
             version="1.0",
             report_date=f"{now:%Y-%m-%d}",

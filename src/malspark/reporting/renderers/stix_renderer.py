@@ -1053,7 +1053,11 @@ class ExtendedSTIXRenderer:
         # for a placeholder: "Unknown" is no family to export an object for.
         family = stated_family(report.attribution.family)
         if malware_id is None and not benign:
-            malware_name = family or report.malware_category or "unknown"
+            from malspark.reporting.category_words import stated_none
+
+            # A category the judge states as none names no malware.
+            category = None if stated_none(report.malware_category) else report.malware_category
+            malware_name = family or category or "unknown"
             malware_obj = Malware(
                 name=str(malware_name),
                 description=f"Sample {report.identity.hashes.sha256}",

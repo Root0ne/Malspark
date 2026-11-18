@@ -48,9 +48,25 @@ def _name(
         ("-", "ransomware", "Malware", True, "Ransomware"),
         ("Emotet", "benign", "Benign", True, "Benign"),
         (None, "ransomware", "Malware", True, "Ransomware"),
+        # A category stated as none names nothing, and a name is never recased past its
+        # first letter.
+        (None, "none: a legitimate SSH client build; no malware behaviour", "Benign", True, None),
+        (None, "none", "Benign", True, None),
+        (None, "SSH tunnelling tool", "Suspicious", True, "SSH tunnelling tool"),
     ],
 )
 def test_the_headline_name(
-    family: str | None, category: str, verdict: str, grounded: bool, expected: str
+    family: str | None, category: str, verdict: str, grounded: bool, expected: str | None
 ) -> None:
     assert _name(family, category, verdict=verdict, grounded=grounded) == expected
+
+
+def test_a_category_stated_as_none_gives_no_subtitle() -> None:
+    report = MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64), platform="windows"),
+        verdict="Benign",
+        malware_category="none: a legitimate archiver",
+    )
+    assert _builder()._build_front_matter(report).subtitle is None
+    report.malware_category = "loader"
+    assert _builder()._build_front_matter(report).subtitle == "loader targeting Windows"
