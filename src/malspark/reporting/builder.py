@@ -808,8 +808,8 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
     kind, by the kind as the analysis wrote it; only where no row of the table
     holds its value under any kind, and once per type and value. Each carries
     the record every unpublished row carries (:func:`with_record`): role
-    ``listed``, no indicator type. The table itself is not changed, so §9, the
-    exports and every reader of the table read what they read before; the
+    ``listed``, no indicator type. The table itself holds none of them: §9,
+    the exports and every reader of the table read the table alone, and the
     published rows are the table's alone.
     """
     from malspark.reporting.detonation_marks import entry_marks

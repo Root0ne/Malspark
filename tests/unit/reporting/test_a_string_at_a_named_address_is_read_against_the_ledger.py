@@ -177,7 +177,7 @@ def test_a_keep_on_the_reason_is_refused_where_the_fact_speaks_of_the_absence() 
         keep = {"sentences": [_keep(passage, DENIED)]}
         spoken = agreement_violations(keep, passages_of(report, entries=_ledger()))
         assert KEEP_UNQUOTED_CODE in {v.code for v in spoken}, passage
-        # Without the row the keep on the reason stands, as before.
+        # Without the row no fact speaks of the absence: the keep on the reason stands.
         silent = agreement_violations(keep, passages_of(report, entries=_ledger(layout=False)))
         assert KEEP_UNQUOTED_CODE not in {v.code for v in silent}, passage
 

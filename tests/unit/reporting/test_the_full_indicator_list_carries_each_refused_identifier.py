@@ -1,13 +1,13 @@
 """The full indicator list carries each identifier row the rule refuses, with its refusal.
 
 The report's identifier table prints every host value the analysis states, each with
-the publish rule's answer; the full indicator list (``/iocs?include=all``) held only
-the ones the IOC table publishes, so it said nothing of a refused one. The full list
-(``builder.full_ioc_list``) now lists each refused row after the table's rows,
-unpublished, its answer the refusal, under source ``analysis`` and typed by the rule's
-label or, where the rule has none, by the kind the analysis wrote; only where the list
-holds no row of the same kind and value. The report's IOC table, and every surface that
-reads it, is unchanged; the default list is unchanged.
+the publish rule's answer. The full indicator list (``/iocs?include=all``,
+``builder.full_ioc_list``) lists each refused row after the table's rows, unpublished,
+its answer the refusal, under source ``analysis``, typed by the rule's label or, where
+the rule has none, by the kind the analysis wrote, with the record every unpublished
+row carries (role ``listed``); only where no row of the table holds its value under any
+kind, and once per type and value. The report's IOC table holds none of these rows, so
+every surface that reads it, and the default list, reads the table's rows alone.
 """
 
 from __future__ import annotations
