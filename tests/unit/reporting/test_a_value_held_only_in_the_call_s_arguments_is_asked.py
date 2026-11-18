@@ -156,6 +156,28 @@ class TestTheCheck:
 
             assert _body(sentence, texts) == []
 
+    def test_a_string_in_a_list_is_a_row_of_the_answer_at_any_place(self) -> None:
+        # A list argument's items stand one step below its key; the answer's list
+        # under the same key holds rows, and a row equal to an argument is a match.
+        searched = f"{MATCHED} delete {QUILL}"
+        sentence = f"The string evidence holds 'delete {QUILL}' [ev_0064]."
+        for output in (
+            {"patterns": [searched], "total_matched": 1},
+            {"request": {"patterns": [searched]}, "rows": []},
+        ):
+            texts = EntryTexts.from_ledger(
+                [_entry("ev_0064", "strings", json.dumps(output), args={"patterns": [searched]})]
+            )
+
+            assert _body(sentence, texts) == [], output
+
+    def test_a_root_list_s_string_is_kept_whatever_the_arguments_list(self) -> None:
+        from malspark.pipeline.validation import _without_call_echoes
+
+        searched = f"{MATCHED} delete {QUILL}"
+
+        assert searched in _without_call_echoes(json.dumps([searched]), [searched], [searched])
+
     def test_a_sub_object_repeating_the_arguments_whole_is_an_echo(self) -> None:
         texts = EntryTexts.from_ledger(
             [

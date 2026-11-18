@@ -8335,8 +8335,11 @@ def command_value_violations(payload: Any, compared: Sequence[ComparedValues]) -
 CITATION_WRONG_ENTRY_CODE = "report.citation_wrong_entry"
 # A quoted value that its cited entries hold only inside the echo of their own
 # call's arguments, never in what the answer found (``echoed_argument_citations``):
-# a search answer repeats the pattern it was given. Asked once with the fact; a
-# sentence kept after it is marked where it stands with the entry named.
+# a search answer repeats the pattern it was given. Read for a quoted text value
+# of no indicator's shape (no digest, URL, path or registry key, mailbox, host or
+# file name) and that a text can hold or lack (no short number). Asked once with
+# the fact; a sentence kept after it is marked where it stands with the entry
+# named.
 VALUE_ONLY_IN_CALL_ARGUMENTS_CODE = "report.value_only_in_call_arguments"
 # A recommendation or hunting note that acts on a value this run does not
 # publish. Asked once with the IOC table's own answer; a value kept after it
@@ -10858,7 +10861,7 @@ def _without_call_echoes(text: str, echoes: Collection[str], arguments: Any = No
     it echoes (that value, or its last path component), the path counted from
     the answer's root or from an object under a key that repeats the
     arguments whole (a list's item is a row of the answer, whatever it
-    repeats), a list's items standing one step below the list. The same string at any
+    repeats, and no key path runs through a list). The same string at any
     other place, under the same key name or not, is what the answer holds (a
     match row equal to the pattern it was asked for) and stays. Any other
     text has each echo of three characters or more masked where it stands, as
@@ -10897,8 +10900,8 @@ def _without_call_echoes(text: str, echoes: Collection[str], arguments: Any = No
                         kept[key] = _drop(item, below, keyed=True)
                 return kept
             if isinstance(node, list):
-                below = tuple((*path, _LIST_STEP) for path in at)
-                return [_drop(item, below) for item in node if not _echo(item, below)]
+                # A list's item is a row of the answer: no key path runs through it.
+                return [_drop(item, ()) for item in node]
             return node
 
         return _json.dumps(_drop(parsed, ((),)), ensure_ascii=False, indent=1)
