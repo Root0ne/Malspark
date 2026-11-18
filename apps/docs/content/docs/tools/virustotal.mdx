@@ -85,9 +85,9 @@ its hints say. Neither is ticked unless you tick it.
 run: the `static` and `network` analysts, the judge, and the seeded `triage`,
 `android_static` and `reverser` agents. The analysts' and the seeded agents'
 prompts say: where an entry the agent was given already holds a reputation
-answer for a value, it cites that entry by its evidence id; it looks a value up
-only when no entry it was given holds one; and a reputation label is one source,
-not the verdict. The triage pack makes one reputation lookup
+answer for a value, it cites that entry by its evidence id rather than asking
+again; a lookup adds what no entry it was given holds; and a reputation label is
+one source, not the verdict. The triage pack makes one reputation lookup
 on the sample's sha256 through it when it is enabled, before the threat-intel
 sidecar's (rank 20). A job lists
 the server before its run when nothing is kept of it, so that order and the

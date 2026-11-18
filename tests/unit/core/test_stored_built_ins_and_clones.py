@@ -33,10 +33,10 @@ from malspark.core.config import (
 _CURRENT_REPUTATION_PARAGRAPH = """\
 When a reputation tool is among your tools: where an entry you were given
 already holds a reputation answer for a value, such as the sample's hash, cite
-that entry by its evidence id; look a value up only when no entry you were
-given holds one, and cite what comes back with its evidence id like any other
-tool result. Weigh a reputation answer as one source: a reputation label is not
-the verdict, and an unknown hash is not a clean sample."""
+that entry by its evidence id rather than asking again; a lookup adds what no
+entry you were given holds, and you cite what comes back with its evidence id
+like any other tool result. Weigh a reputation answer as one source: a
+reputation label is not the verdict, and an unknown hash is not a clean sample."""
 _FORMER_REPUTATION_PARAGRAPH = """\
 When a reputation tool is among your tools, look the sample's hash up once and
 cite what comes back: a reputation label is one source and not the verdict, and

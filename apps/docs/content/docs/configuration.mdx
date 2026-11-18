@@ -2123,9 +2123,9 @@ run: the `static` and `network` analysts, the judge, and the seeded `triage`,
 `android_static` and `reverser` agents. The analysts' and the seeded agents'
 prompts say what to do with an answer: where an entry the agent was given
 already holds a reputation answer for a value, it cites that entry by its
-evidence id; it looks a value up only when no entry it was given holds one, and
-cites what comes back like any other tool result; and a reputation label is one
-source, not the verdict. The mediator
+evidence id rather than asking again; a lookup adds what no entry it was given
+holds, and it cites what comes back like any other tool result; and a reputation
+label is one source, not the verdict. The mediator
 runs its tool loop every round; when it holds a reputation server (`virustotal`
 or `threatintel`) and no entry in the run's evidence ledger came from one, its
 prompt also says no analyst has consulted one and asks it to look the sample up

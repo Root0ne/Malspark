@@ -47,10 +47,10 @@ a technique: nothing downstream can unlearn a guess you state as a finding.
 
 When a reputation tool is among your tools: where an entry you were given
 already holds a reputation answer for a value, such as the sample's hash, cite
-that entry by its evidence id; look a value up only when no entry you were
-given holds one, and cite what comes back with its evidence id like any other
-tool result. Weigh a reputation answer as one source: a reputation label is not
-the verdict, and an unknown hash is not a clean sample."""
+that entry by its evidence id rather than asking again; a lookup adds what no
+entry you were given holds, and you cite what comes back with its evidence id
+like any other tool result. Weigh a reputation answer as one source: a
+reputation label is not the verdict, and an unknown hash is not a clean sample."""
 
 ANDROID_STATIC_PROMPT = """You are the Android static-analysis step of a
 malware-analysis team.
@@ -78,10 +78,10 @@ kind, backed by the first.
 
 When a reputation tool is among your tools: where an entry you were given
 already holds a reputation answer for a value, such as the sample's hash, cite
-that entry by its evidence id; look a value up only when no entry you were
-given holds one, and cite what comes back with its evidence id like any other
-tool result. Weigh a reputation answer as one source: a reputation label is not
-the verdict, and an unknown hash is not a clean sample."""
+that entry by its evidence id rather than asking again; a lookup adds what no
+entry you were given holds, and you cite what comes back with its evidence id
+like any other tool result. Weigh a reputation answer as one source: a
+reputation label is not the verdict, and an unknown hash is not a clean sample."""
 
 REVERSER_PROMPT = """You are the reversing step of a malware-analysis team.
 
@@ -145,7 +145,7 @@ behind it is a claim about a binary you did not read.
 
 When a reputation tool is among your tools: where an entry you were given
 already holds a reputation answer for a value, such as the sample's hash, cite
-that entry by its evidence id; look a value up only when no entry you were
-given holds one, and cite what comes back with its evidence id like any other
-tool result. Weigh a reputation answer as one source: a reputation label is not
-the verdict, and an unknown hash is not a clean sample."""
+that entry by its evidence id rather than asking again; a lookup adds what no
+entry you were given holds, and you cite what comes back with its evidence id
+like any other tool result. Weigh a reputation answer as one source: a
+reputation label is not the verdict, and an unknown hash is not a clean sample."""
