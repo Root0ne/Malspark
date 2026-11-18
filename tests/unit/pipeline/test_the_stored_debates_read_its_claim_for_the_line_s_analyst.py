@@ -1,19 +1,17 @@
 """The stored debates' claim readings, pinned: "its claim N" is read for the line's analyst.
 
-haiku11's round-4 mediation blocked on a line that set the qu1cksc0pe
-analyst's "Claim 27" against "its claim 40" and wrote "claim 27" again. Dev
-read "claim 40" and the repeated "claim 27" for no analyst, so withdraw-by-rule
-could not act on the line and the run logged two "reads no analyst" warnings.
-Both are now read for that analyst, and nothing is left unplaced.
+A stored round-4 blocking line sets the qu1cksc0pe analyst's "Claim 27"
+against "its claim 40" and writes "claim 27" again: both are read for that
+analyst, and nothing is left unplaced.
 
-Every claim reading of every stored mediation of haiku7 to haiku11 is pinned
+Every claim reading the revision merge makes of every stored mediation of
+the runs in ``STORED`` is pinned
 (``tests/fixtures/debate/stored_mediation_readings.json``): the claims each
 line names, the references left unplaced and the analysts each mediation asks.
-Against origin/dev the one difference is haiku11's round-4 line 1, and no
-mediation asks other analysts than before. A bare "claim N" later on a line
-whose field names one analyst is read for that analyst as well, and asks no
-other analysts either. Local runs only: skipped where the
-stored runs are not on the machine.
+A later bare "claim N" on a line whose field names one analyst is read for
+that analyst only by a ruling at the round limit, so the merge's reading
+pinned here leaves it as a number no analyst is read for. Local runs only:
+skipped where the stored runs are not on the machine.
 """
 
 from __future__ import annotations

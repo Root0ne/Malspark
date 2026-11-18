@@ -272,8 +272,8 @@ class TestTheRulingsAreWrittenOntoTheClaims:
         # A bare "claim N" later on a line whose field names one analyst is
         # that analyst's, judged by the whole line's ids and addresses.
         line = (
-            "[analysts: NETWORK ANALYST] Round-4 claim 2 cites the wrong entry for the names. "
-            "[blocking: wrong entry.]"
+            "[analysts: NETWORK ANALYST] The names are read wrongly: claim 2 cites the wrong "
+            "entry for them. [blocking: wrong entry.]"
         )
 
         out = mark_claims([line], {1: Ruling(1, True, "r")}, _isrs(), NAMES, 5)

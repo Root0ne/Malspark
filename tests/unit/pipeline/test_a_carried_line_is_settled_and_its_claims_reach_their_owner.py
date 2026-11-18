@@ -75,8 +75,10 @@ LINE = (
     "same revision) says slot 0x10d80 in the 0x1030 loop writes the exit code. ev_0056 prints "
     "the call with one argument. [blocking: restate it as unresolved]"
 )
-# The same line with a field that names one analyst: the later bare number is
-# that analyst's, read by the whole line (no owner is looked for).
+# The same line with a field that names one analyst: for a ruling at the
+# round limit the later bare number is that analyst's, read by the whole line
+# (no owner is looked for); the merge reads it as a number no analyst is read
+# for.
 ONE_ANALYST_LINE = (
     "[analysts: STATIC ANALYST] Claim 1 (and claim 2 of the same revision) says slot 0x10d80 "
     "in the 0x1030 loop writes the exit code. ev_0056 prints the call with one argument. "
@@ -133,13 +135,18 @@ class TestAClaimNumberReachesItsOwner:
         )
         assert references.owned == ()
 
-    def test_on_a_one_analyst_line_the_number_is_the_analyst_s_and_no_owner_is_read(
-        self,
-    ) -> None:
-        references = read_claim_references([ONE_ANALYST_LINE], NAMES, _owners())
+    def test_on_a_one_analyst_line_the_number_is_the_analyst_s_for_a_ruling(self) -> None:
+        references = read_claim_references([ONE_ANALYST_LINE], NAMES, _owners(), whole_line=True)
 
         assert references.named == {"static": {1: [(1, True)], 2: [(1, True)]}}
         assert references.owned == ()
+        assert references.unplaced == ()
+
+    def test_on_a_one_analyst_line_the_merge_reads_the_number_for_its_owner(self) -> None:
+        references = read_claim_references([ONE_ANALYST_LINE], NAMES, _owners())
+
+        assert references.named == {"static": {1: [(1, True)], 2: [(1, False)]}}
+        assert references.owned == (OwnedClaim(1, True, "static", 2, 1),)
         assert references.unplaced == ()
 
     def test_the_owner_whose_claim_alone_shares_an_address_is_read_and_never_blocks(

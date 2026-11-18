@@ -313,10 +313,12 @@ class TestANumberNoAnalystIsNamedForIsUnplaced:
         assert refs.unplaced_for("all_tools_reverser_ghidra") == (said,)
         assert refs.unplaced_for("static") == ()
 
-    def test_on_a_one_analyst_line_a_later_possessive_number_is_the_analyst_s(self) -> None:
+    def test_on_a_one_analyst_line_a_later_possessive_number_is_the_analyst_s_for_a_ruling(
+        self,
+    ) -> None:
         line = f"{REVERSER} The reverser's own claim 45 says X. {BLOCKS}"
 
-        refs = read_claim_references([line], PARTICIPANTS)
+        refs = read_claim_references([line], PARTICIPANTS, whole_line=True)
 
         assert refs.named == {"all_tools_reverser_ghidra": {45: [(1, True)]}}
         assert refs.unplaced == ()

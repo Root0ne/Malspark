@@ -23,18 +23,6 @@
      ]
     },
     "all_tools_reverser_ghidra": {
-     "24": [
-      [
-       4,
-       true
-      ]
-     ],
-     "25": [
-      [
-       4,
-       true
-      ]
-     ],
      "3": [
       [
        3,
@@ -76,7 +64,16 @@
     "all_tools_qu1cksc0pe",
     "all_tools_reverser_ghidra"
    ],
-   "unplaced": []
+   "unplaced": [
+    [
+     4,
+     [
+      "all_tools_reverser_ghidra"
+     ],
+     "claims 24-25",
+     "the platform reads no analyst for it"
+    ]
+   ]
   },
   "M2": {
    "named": {
@@ -205,12 +202,6 @@
       [
        7,
        false
-      ]
-     ],
-     "6": [
-      [
-       1,
-       true
       ]
      ]
     },
@@ -350,7 +341,16 @@
    "revise": [
     "all_tools_qu1cksc0pe"
    ],
-   "unplaced": []
+   "unplaced": [
+    [
+     1,
+     [
+      "all_tools_qu1cksc0pe"
+     ],
+     "claim 6",
+     "the platform reads no analyst for it"
+    ]
+   ]
   },
   "M4": {
    "named": {
@@ -380,12 +380,6 @@
       ]
      ],
      "35": [
-      [
-       1,
-       true
-      ]
-     ],
-     "6": [
       [
        1,
        true
@@ -472,7 +466,16 @@
    "revise": [
     "all_tools_qu1cksc0pe"
    ],
-   "unplaced": []
+   "unplaced": [
+    [
+     1,
+     [
+      "all_tools_qu1cksc0pe"
+     ],
+     "claim 6",
+     "the platform reads no analyst for it"
+    ]
+   ]
   },
   "M5": {
    "named": {
@@ -788,12 +791,6 @@
        1,
        false
       ]
-     ],
-     "20": [
-      [
-       1,
-       false
-      ]
      ]
     }
    },
@@ -820,12 +817,6 @@
     },
     "all_tools_reverser_ghidra": {
      "1": [
-      [
-       4,
-       false
-      ]
-     ],
-     "20": [
       [
        4,
        false
@@ -885,12 +876,6 @@
     },
     "all_tools_reverser_ghidra": {
      "1": [
-      [
-       4,
-       false
-      ]
-     ],
-     "20": [
       [
        4,
        false
@@ -1475,12 +1460,6 @@
      ]
     },
     "triage": {
-     "12": [
-      [
-       4,
-       false
-      ]
-     ],
      "4": [
       [
        5,
