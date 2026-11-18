@@ -96,6 +96,7 @@ from malspark.reporting.renderers.markdown import (
     not_started_by_the_sample_line,
     report_title,
     started_by_the_sample,
+    stored_report_id,
 )
 from malspark.reporting.sentence_ends import SENTENCE_CLOSE, close_end, ends_sentence
 from malspark.reporting.technique_evidence import (
@@ -2322,7 +2323,7 @@ class _Analyst:
                     "",
                 ]
             )
-        rid = _one_line((report.run_summary or {}).get("report_id") or "{report_id}")
+        rid = _one_line(stored_report_id(report) or "{report_id}")
         lines.extend(
             [
                 "Network values are defanged for reading. A value with the publish rule's answer "

@@ -1860,7 +1860,7 @@ class MarkdownRenderer:
                 lines.append(_row(*cells))
             lines.append("")
         lines.extend(_enrichment_not_asked_lines(report))
-        rid = _one_line((report.run_summary or {}).get("report_id") or "{report_id}")
+        rid = _one_line(stored_report_id(report) or "{report_id}")
         lines.append(
             "Network values are defanged for reading. The STIX 2.1 bundle "
             f"({_code_span(f'/reports/{rid}/stix')}) and the machine-readable list "
@@ -5020,6 +5020,20 @@ QUESTIONS_NOTE = (
 def _appendix_heading(letter: str, title: str, voice: str) -> str:
     """An appendix's H2, lettered, with its voice tag."""
     return f"## Appendix {letter}. {_one_line(title)} · _{voice}_"
+
+
+def stored_report_id(report: Any) -> Any:
+    """The stored report's id, as the seal the worker writes into the run summary names it.
+
+    ``run_summary["ledger_seal"]["report_id"]``; a report with no seal reads
+    the run summary's own ``report_id``, as it always did (``None`` where it
+    holds none).
+    """
+    summary = getattr(report, "run_summary", None) or {}
+    seal = summary.get("ledger_seal")
+    if isinstance(seal, dict) and seal.get("report_id"):
+        return seal["report_id"]
+    return summary.get("report_id")
 
 
 def _ledger_seal_lines(report: Any) -> list[str]:

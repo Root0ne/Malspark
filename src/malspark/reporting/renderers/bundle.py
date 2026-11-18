@@ -33,6 +33,7 @@ from malspark.reporting.renderers.markdown import (
     _appendix_heading,
     _item,
     report_title,
+    stored_report_id,
 )
 
 if TYPE_CHECKING:
@@ -129,13 +130,12 @@ def bundle_json(report: MalwareReport) -> str:
     from malspark.reporting.renderers.markdown import MarkdownRenderer
 
     markdown, notes = MarkdownRenderer(layout=BUNDLE).render_with_notes(report)
-    summary = report.run_summary or {}
     document: dict[str, Any] = {
         "format": FORMAT,
         "report": {
             "title": report_title(report),
             "sha256": report.identity.hashes.sha256,
-            "report_id": summary.get("report_id"),
+            "report_id": stored_report_id(report),
             "generated_at": report.generated_at.isoformat(),
         },
         "notes": [
