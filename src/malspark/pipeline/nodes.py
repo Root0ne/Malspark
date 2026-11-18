@@ -2991,18 +2991,26 @@ def pack_text(
     if for_reporter:
         chars = min(chars, upstream_chars(container, reporter=True))
     entries = pack_entries(state.get("evidence_ledger") or [])
+    # The run's reader: the capture line says what the pack's network view,
+    # read with it, says of each conversation's address.
+    normalised_by = _normalised_by_of(container)
     if for_reporter:
-        return pack_block(entries, chars)
+        return pack_block(entries, chars, normalised_by=normalised_by)
     # An earlier run on this sample, after the pack, as hypotheses: the agents
     # check it; the report states only what this run found. The two share the
     # one bound, the earlier run taken off the pack's room with its break (a
     # bound of 0 or less is none, and the pack's smallest room is 1).
     earlier = earlier_run_text(container, str(state.get("file_hash") or ""))
     if not earlier:
-        return pack_block(entries, chars)
+        return pack_block(entries, chars, normalised_by=normalised_by)
     # The earlier run shares the job's own room; a further detonation's lines
     # keep a room of the whole bound (``triage_pack.render_pack``).
-    pack = pack_block(entries, chars if chars <= 0 else max(1, chars - len(earlier) - 2), chars)
+    pack = pack_block(
+        entries,
+        chars if chars <= 0 else max(1, chars - len(earlier) - 2),
+        chars,
+        normalised_by=normalised_by,
+    )
     return "\n\n".join(part for part in (pack, earlier) if part)
 
 

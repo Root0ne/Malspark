@@ -122,6 +122,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from functools import partial
 from pathlib import Path
 from typing import Any, cast
@@ -3303,12 +3304,102 @@ def render_pack(entries: list[LedgerEntry], max_chars: int, later_chars: int | N
     (``d2/proc:9``, :func:`_marked_line`). ``later_chars`` is that room where
     the caller sizes it apart (``nodes.pack_text`` takes the earlier run's
     block off the job's own room only); ``max_chars`` where it does not.
+
+    Within a bound, the job's own lines are laid out at the sizes they have
+    without the words a line gains from the rest of the pack (the capture
+    line's words on each conversation's address, the code-links line's on a
+    value's process and on the start path: :data:`_WORDS_ROOM`): the entries
+    shown, the trailer's count and every cut are that layout's. Each line the
+    layout shows whole then takes its words in what room the block leaves
+    (:func:`_with_words`). A later detonation's lines take none.
     """
     first, later = _by_detonation(entries)
     if later:
         own = render_pack(first, max_chars)
-        rest = _later_lines(later, max_chars if later_chars is None else later_chars)
+        # A later detonation's lines carry none of the words, at any room.
+        token = _WORDS_ROOM.set(0)
+        try:
+            rest = _later_lines(later, max_chars if later_chars is None else later_chars)
+        finally:
+            _WORDS_ROOM.reset(token)
         return "\n".join(part for part in (own, rest) if part)
+    if max_chars <= 0 or _WORDS_ROOM.get() is not None:
+        return _own_block(entries, max_chars)
+    with _laid_out(max_chars):
+        laid = _own_block(entries, max_chars)
+    return _with_words(laid, entries, max_chars)
+
+
+# The room a line's words may take: the capture line's on each conversation's
+# address and the code-links line's on a value's process and on the start
+# path. ``None`` is every word (a pack with no bound, a head, a line rendered
+# alone); ``0`` is none, the size a bounded pack is laid out at.
+_WORDS_ROOM: ContextVar[int | None] = ContextVar("pack_words_room", default=None)
+# The renderers whose lines gain such words.
+_WORDED_RENDERERS = frozenset({"capture_summary", "behaviour_code"})
+
+
+def _with_words(laid: str, entries: list[LedgerEntry], max_chars: int) -> str:
+    """``laid`` with each line it shows whole given its words, in order, within ``max_chars``.
+
+    A line is shown whole where it is its entry's line at the whole detail
+    laid out without words; a line cut to a room, at a lower detail or left
+    out stays as laid out. Each such line takes the words that fit what the
+    block leaves (the capture line's conversation by conversation, the
+    code-links line's all or none); a line whose words do not fit stays as
+    laid out. Only the lines of :data:`_WORDED_RENDERERS` are read again.
+    """
+    left = max_chars - len(laid)
+    if left <= 0:
+        return laid
+    by_id: dict[str, LedgerEntry] = {}
+    for one in entries:
+        if _shown(one)[0] in _WORDED_RENDERERS:
+            by_id.setdefault(str(one.id), one)
+    if not by_id:
+        return laid
+    lines = laid.split("\n")
+    with _viewing(entries):
+        for at, line in enumerate(lines):
+            found = _LINE_ID.match(line)
+            entry = by_id.get(found.group(1)) if found is not None else None
+            if entry is None or line != _line_at(entry, 0):
+                continue
+            worded = _line_at(entry, left)
+            grown = len(worded) - len(line)
+            if 0 < grown <= left:
+                lines[at] = worded
+                left -= grown
+            if left <= 0:
+                break
+    return "\n".join(lines)
+
+
+def _line_at(entry: LedgerEntry, words_room: int) -> str:
+    """``entry``'s line at the whole detail, its words within ``words_room``."""
+    detail, room = _DETAIL.set(WHOLE), _WORDS_ROOM.set(words_room)
+    try:
+        return _pack_line(entry)
+    finally:
+        _WORDS_ROOM.reset(room)
+        _DETAIL.reset(detail)
+
+
+@contextmanager
+def _laid_out(max_chars: int) -> Iterator[None]:
+    """Render at the sizes a pack of ``max_chars`` is laid out at: no words, within a bound."""
+    if max_chars <= 0 or _WORDS_ROOM.get() is not None:
+        yield
+        return
+    token = _WORDS_ROOM.set(0)
+    try:
+        yield
+    finally:
+        _WORDS_ROOM.reset(token)
+
+
+def _own_block(entries: list[LedgerEntry], max_chars: int) -> str:
+    """The job's own lines within ``max_chars``, ending with the unread rows' count."""
     unread = unread_rows_sentence(entries)
     if not unread:
         return _render_entries(entries, max_chars)
@@ -3802,7 +3893,8 @@ def pack_unsaid(entries: list[LedgerEntry], max_chars: int) -> list[LedgerEntry]
     Read in the room ``render_pack`` gives the entries (``_entries_room``).
     """
     max_chars = _entries_room(entries, max_chars)
-    with _viewing(entries):
+    # Read at the sizes the pack is laid out at (``render_pack``).
+    with _viewing(entries), _laid_out(max_chars):
         if any(_is_index(entry) for entry in entries):
             return _with_index(entries, max_chars)[1]
         if max_chars <= 0 or not any(_is_pass(entry) for entry in entries):
@@ -4089,15 +4181,69 @@ def _within_room(entry: LedgerEntry, room: int) -> str | None:
     return line if body and len(line) <= room else None
 
 
-def pack_block(entries: list[LedgerEntry], max_chars: int, later_chars: int | None = None) -> str:
+class _Unstated(Enum):
+    """No reader stated: a pack rendered outside a run (a test, a replay of one line)."""
+
+    READER = "unstated"
+
+
+UNSTATED = _Unstated.READER
+
+
+def pack_block(
+    entries: list[LedgerEntry],
+    max_chars: int,
+    later_chars: int | None = None,
+    *,
+    normalised_by: Sequence[str] | None | _Unstated = UNSTATED,
+) -> str:
     """The heading and the rendered pack, or ``""`` when there is no pack.
 
     ``later_chars`` is the room of a further detonation's lines where it is
-    not ``max_chars`` (:func:`render_pack`).
+    not ``max_chars`` (:func:`render_pack`). ``normalised_by`` is the run's
+    reader of its sandbox report: with it, the capture line says what the
+    pack's network view says of each conversation's address
+    (:func:`_addresses_read`); a pack rendered with no reader stated says
+    nothing of them.
     """
     if not entries and not unread_rows_sentence(entries):
         return ""
-    return f"{PACK_HEADING}\n{render_pack(entries, max_chars, later_chars)}"
+    with _addresses_read(entries, normalised_by):
+        return f"{PACK_HEADING}\n{render_pack(entries, max_chars, later_chars)}"
+
+
+# What the pack's network view says of each address, while a pack rendered
+# with the run's reader is written (:func:`_addresses_read`); ``None`` outside.
+_ADDRESS_FACTS: ContextVar[Callable[[Any], str] | None] = ContextVar(
+    "pack_address_facts", default=None
+)
+
+
+@contextmanager
+def _addresses_read(
+    entries: Sequence[LedgerEntry], normalised_by: Sequence[str] | None | _Unstated
+) -> Iterator[None]:
+    """Render with what the pack's own network view says of each address, read with the reader.
+
+    The words are computed where the pack line is written, from the pack's
+    entries only (``ledger_projection.address_flow_facts``) with the run's
+    reader ``normalised_by``, and handed to the capture's renderer
+    (:func:`_pcap`); no entry holds them. With no reader stated, or where the
+    entries hold no whole network view, there are none.
+    """
+    from malspark.reporting.ledger_projection import address_flow_facts
+
+    facts: Callable[[Any], str] | None = None
+    if not isinstance(normalised_by, _Unstated):
+        try:
+            facts = address_flow_facts(list(entries), normalised_by=normalised_by)
+        except Exception as exc:  # noqa: BLE001 — the words must never cost the block
+            logger.warning("pack: the network view's rows could not be read (%s).", exc)
+    token = _ADDRESS_FACTS.set(facts)
+    try:
+        yield
+    finally:
+        _ADDRESS_FACTS.reset(token)
 
 
 def _pack_line(entry: LedgerEntry) -> str:
@@ -4871,10 +5017,19 @@ def _sandbox_sections(data: dict[str, Any]) -> str:
 # pack's own room (``_within_room``), and then says how many it shows.
 
 
-def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
+def _pcap(
+    data: dict[str, Any],
+    max_chars: int | None = None,
+    facts: Callable[[Any], str] | None = None,
+) -> str:
     """The capture's facts on one line, the conversations cut to ``max_chars``, the cut said.
 
-    ``None`` is no cut. ``""`` when not even the counts fit.
+    ``None`` is no cut. ``""`` when not even the counts fit. ``facts`` says
+    what the pack's network view says of an address
+    (``ledger_projection.address_flow_facts``): its words follow each
+    conversation they say something of, as room allows after the
+    conversations are chosen, and within the room the pack leaves its words
+    (:data:`_WORDS_ROOM`).
     """
     if data.get("empty"):
         return "empty capture"
@@ -4902,7 +5057,11 @@ def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
         else "none detected"
     )
 
-    def _line(shown: int) -> str:
+    # What the pack's network view says of each conversation's remote
+    # address, as the pack being written read it (:func:`_addresses_read`).
+    words = [facts(row.get("dst")) if facts is not None else "" for row in conversations]
+
+    def _line(shown: int, worded: int = 0) -> str:
         if not conversations:
             return f"{head}; no external conversations{tail}"
         total = len(conversations)
@@ -4915,23 +5074,46 @@ def _pcap(data: dict[str, Any], max_chars: int | None = None) -> str:
             )
         )
         # Each line holds commas and semicolons of its own: the rows are parted by a bar.
-        rows = " | ".join(conversation_line(row) for row in conversations[:shown])
+        rows = " | ".join(
+            _worded(conversation_line(row), words[index] if index < worded else "")
+            for index, row in enumerate(conversations[:shown])
+        )
         return f"{head}; {said}" + (f": {rows}" if shown else "") + tail
 
-    whole = _line(len(conversations))
-    if max_chars is None or len(whole) <= max_chars:
-        return whole
-    # The most conversations that fit, found by halving rather than by
-    # dropping one at a time: a capture can hold thousands of them.
-    low, high = 0, len(conversations)
-    while low < high:
-        middle = (low + high + 1) // 2
-        if len(_line(middle)) <= max_chars:
-            low = middle
-        else:
-            high = middle - 1
+    # The conversations are chosen without the words, by their own sizes: the
+    # words never cost a conversation.
+    low = len(conversations)
     line = _line(low)
-    return line if len(line) <= max_chars else ""
+    if max_chars is not None and len(line) > max_chars:
+        # The most that fit, found by halving rather than by dropping one at
+        # a time: a capture can hold thousands.
+        low, high = 0, len(conversations)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if len(_line(middle)) <= max_chars:
+                low = middle
+            else:
+                high = middle - 1
+        line = _line(low)
+        if len(line) > max_chars:
+            return ""
+    # Then the words, conversation by conversation in order, while room remains.
+    left = _WORDS_ROOM.get()
+    if max_chars is not None:
+        left = max_chars - len(line) if left is None else min(left, max_chars - len(line))
+    worded = 0
+    for said in words[:low]:
+        extra = len(_worded("", said))
+        if left is not None and extra > left:
+            break
+        left = None if left is None else left - extra
+        worded += 1
+    return _line(low, worded) if worded else line
+
+
+def _worded(line: str, said: str) -> str:
+    """A conversation's line, then what the sandbox's rows say of its peer, where they say it."""
+    return f"{line}; {said}" if said else line
 
 
 # The decoded-strings line. The pack is one block every agent reads, bounded
@@ -5370,8 +5552,15 @@ def _behaviour_holding(holding: Mapping[str, Any], functions: Any) -> str:
     return f"{place} in {behaviour_code.function_words(holding, functions)}"
 
 
-def _behaviour_item(row: Mapping[str, Any], functions: Any, only: str) -> str:
-    """``mutex "X" (mutex:1) held at …; …``, or ``… observed only``."""
+def _behaviour_item(
+    row: Mapping[str, Any], functions: Any, only: str, *, with_words: bool = True
+) -> str:
+    """``mutex "X" (mutex:1) held at …; …``, or ``… observed only``.
+
+    Without its words (``with_words``) the item is laid out as it is sized: the publish
+    rule's words on its process said as "process not attributed", the start
+    path's words unsaid.
+    """
     items = [str(i) for i in row.get("items") or []]
     head = _detail().list_head
     shown = items if head is None else items[:head]
@@ -5379,9 +5568,15 @@ def _behaviour_item(row: Mapping[str, Any], functions: Any, only: str) -> str:
         f" +{len(items) - len(shown)} more" if len(shown) < len(items) else ""
     )
     said = f"{row.get('kind')} {_quoted(str(row.get('value') or ''))}"
-    attribution = row.get("attribution")
-    if attribution == behaviour_code.NOT_ATTRIBUTED:
-        cited = f"{cited}; {attribution}" if cited else str(attribution)
+    attribution = behaviour_code.attribution_words(row)
+    if attribution and not with_words:
+        attribution = behaviour_code.NOT_ATTRIBUTED
+    if attribution:
+        cited = f"{cited}; {attribution}" if cited else attribution
+    # A marked process's command line: the words every surface writes beside its row.
+    staged = staged_words(row) if with_words else ""
+    if staged:
+        cited = f"{cited}; {staged}" if cited else staged
     if cited:
         said += f" ({cited})"
     held = [h for h in row.get("held") or [] if isinstance(h, Mapping)]
@@ -5430,17 +5625,26 @@ def _behaviour_code(data: dict[str, Any], max_chars: int | None = None) -> str:
         f"{whence}" + (f"; {missing}" if missing else "") + f"; {BEHAVIOUR_CODE_PROVENANCE}"
     )
 
-    def _line(shown: int) -> str:
+    def _line(shown: int, with_words: bool = True) -> str:
         said = (
             f"all {_n(total)} shown"
             if shown >= total
             else PASS_ROOM_SENTENCE.format(shown=_n(shown), total=_n(total))
         )
-        items = "; ".join(_behaviour_item(row, functions, only) for row in rows[:shown])
+        items = "; ".join(
+            _behaviour_item(row, functions, only, with_words=with_words) for row in rows[:shown]
+        )
         return f"{head}; {said}" + (f": {items}" if shown else "")
 
     strings_shown = _detail().strings_shown
     shown = total if strings_shown is None else min(total, strings_shown)
+    room = _WORDS_ROOM.get()
+    if room is None:
+        return _fit(_line, shown, max_chars)
+    # Laid out without its words; with room left for them, the line has them
+    # all, and the pack keeps it only where they fit (``_with_words``).
+    if room <= 0:
+        return _fit(partial(_line, with_words=False), shown, max_chars)
     return _fit(_line, shown, max_chars)
 
 
@@ -6361,7 +6565,7 @@ _RENDERERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "sandbox_channels": _sandbox_channels,
     "sandbox_sections": _sandbox_sections,
     "sandbox_status": lambda data: str(data.get("statement") or ""),
-    "capture_summary": _pcap,
+    "capture_summary": lambda data: _pcap(data, facts=_ADDRESS_FACTS.get()),
     "function_matches": _function_matches,
     "emulated_strings": _decoded_strings,
     "api_hash_resolution": _resolved_hashes,
@@ -6378,7 +6582,7 @@ _RENDERERS: dict[str, Callable[[dict[str, Any]], str]] = {
 # its heaviest conversations.
 _SHORTER_RENDERERS: dict[str, Callable[[dict[str, Any], int], str]] = {
     "emulated_strings": lambda data, room: _decoded_strings(data, max_chars=room),
-    "capture_summary": lambda data, room: _pcap(data, max_chars=room),
+    "capture_summary": lambda data, room: _pcap(data, max_chars=room, facts=_ADDRESS_FACTS.get()),
     "api_hash_resolution": lambda data, room: _resolved_hashes(data, max_chars=room),
     "decoded_blobs": lambda data, room: _decoded_blobs(data, max_chars=room),
     "crypto_constants": lambda data, room: _constant_sets(data, max_chars=room),
@@ -6395,7 +6599,9 @@ _SHORTER_RENDERERS: dict[str, Callable[[dict[str, Any], int], str]] = {
 _HEAD_DETAIL = PackDetail(list_head=0, strings_shown=0, labels_shown=0)
 
 
-def pack_row_heads(rows: Any) -> dict[str, str]:
+def pack_row_heads(
+    rows: Any, *, normalised_by: Sequence[str] | None | _Unstated = UNSTATED
+) -> dict[str, str]:
     """Each pack entry's line with none of its listed items, by lower-cased id.
 
     The line's own renderer decides what an item is, so the head keeps every
@@ -6403,12 +6609,13 @@ def pack_row_heads(rows: Any) -> dict[str, str]:
     entry's whole output elsewhere shows this head in the pack in place of the
     full line (``judge_agent.pack_rows_shown_below``). Rendered with the
     entries of the pack as the full pack is, so a line naming another tool
-    names it the same way. Linear in the entries.
+    names it the same way, and with the run's reader ``normalised_by`` as
+    :func:`pack_block` is. Linear in the entries.
     """
     entries = pack_entries(rows)
     if not entries:
         return {}
-    with _viewing(entries):
+    with _viewing(entries), _addresses_read(entries, normalised_by):
         lines = _render_lines(list(entries), _HEAD_DETAIL)
     # A later detonation's line says so, its ids qualified, as in the pack.
     return {

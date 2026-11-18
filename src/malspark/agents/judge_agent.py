@@ -5355,9 +5355,12 @@ class JudgeAgent(BudgetMeter):
         heads: dict[str, str] = {}
         if whole and ledger:
             from malspark.pipeline.triage_pack import pack_row_heads
+            from malspark.providers.sandbox_tools import normalised_by_of
 
             try:
-                heads = pack_row_heads(ledger)
+                heads = pack_row_heads(
+                    ledger, normalised_by=normalised_by_of(getattr(self, "_container", None))
+                )
             except Exception as exc:  # noqa: BLE001 — no head, the row stays whole
                 self.logger.debug("Technique question: pack row heads not read (%s).", exc)
         pointed = pack_rows_shown_below(facts_block, whole, heads)

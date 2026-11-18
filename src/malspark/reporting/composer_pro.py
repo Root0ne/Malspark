@@ -1960,8 +1960,11 @@ def identifying_values(values: Sequence[str]) -> list[str]:
 
 def held_text(report: MalwareReport) -> str:
     """What the report holds before the composer runs, but for the prose the summary replaces."""
+    from malspark.reporting.section_agreement import without_stored_answers
+
     # The composer's own fields are left out too, so a replay over a stored
-    # report reads what the round read before any section was written.
+    # report reads what the round read before any section was written; and the
+    # agreement round's stored answers, a model's words no value stands in.
     dumped = report.model_dump(
         mode="json",
         exclude={
@@ -1973,4 +1976,5 @@ def held_text(report: MalwareReport) -> str:
             "c2_channels",
         },
     )
+    dumped["run_summary"] = without_stored_answers(dumped.get("run_summary"))
     return json.dumps(dumped, ensure_ascii=False)

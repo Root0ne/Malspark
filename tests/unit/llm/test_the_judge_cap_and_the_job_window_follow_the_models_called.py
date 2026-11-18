@@ -396,7 +396,9 @@ class TestTheReporter:
         )
         container = _container(settings)
         cut: list[int] = []
-        monkeypatch.setattr(nodes, "pack_block", lambda _entries, chars: cut.append(chars) or "")
+        monkeypatch.setattr(
+            nodes, "pack_block", lambda _entries, chars, **_: cut.append(chars) or ""
+        )
 
         job = nodes.upstream_chars(container)
         own = nodes.upstream_chars(container, reporter=True)
@@ -418,7 +420,9 @@ class TestTheReporter:
         )
         container = _container(settings)
         cut: list[int] = []
-        monkeypatch.setattr(nodes, "pack_block", lambda _entries, chars: cut.append(chars) or "")
+        monkeypatch.setattr(
+            nodes, "pack_block", lambda _entries, chars, **_: cut.append(chars) or ""
+        )
 
         nodes.pack_text({}, container)
         nodes.pack_text({}, container, for_reporter=True)

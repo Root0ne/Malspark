@@ -18,9 +18,12 @@ This module states those links and nothing else.
   carry is named with its ``no:`` sentence, and the items of a section that
   held no value under the fields read are counted. A network value is linked
   only where the sandbox attributes it to the sample's process tree
-  (``schemas.sandbox_report.SAMPLE_TREE_KEY``); where the row does not say,
-  the link is marked "process not attributed"; a value every row of which
-  the sandbox attributes to another process is not linked, and is counted.
+  (``schemas.sandbox_report.SAMPLE_TREE_KEY``); where the publish rule puts
+  the value's traffic on a process the report does not list, the link says so
+  in the rule's words, with the process as the rows name it (the rule's own
+  decision, ``stix_renderer.unlisted_reasons``); where no row says otherwise,
+  the link is marked "process not attributed"; a value every row of which the
+  sandbox attributes to another listed process is not linked, and is counted.
   An HTTP request's path is joined with the request's own host (and scheme,
   where the row states one); a path with no host is a path, never a URL.
 * **The match is exact**, after the platform's own normalisation for the
@@ -65,7 +68,7 @@ from malspark.analysis.sandbox_sections import Sections
 from malspark.extractors.network_extractor import host_form
 from malspark.reporting.dedupe import canonical_path, canonical_value, indicator_fingerprint
 from malspark.schemas.sandbox_document import dns_row_name
-from malspark.schemas.sandbox_report import SAMPLE_TREE_KEY
+from malspark.schemas.sandbox_report import SAMPLE_TREE_KEY, STAGED_KEY
 
 TOOL = "behaviour_code_links"
 KIND = "behaviour_code_links"
@@ -163,6 +166,14 @@ class Observed:
     # attributes to the sample's tree, any row that does not say, any row of
     # another process.
     tree: set[bool | None] = field(default_factory=set, repr=False, compare=False)
+    # The publish rule's sentence where it puts the value's traffic on a
+    # process the report does not list (``stix_renderer.unlisted_reasons``).
+    unlisted: str = field(default="", repr=False, compare=False)
+    # The network rows the value was observed in, as the sandbox wrote them.
+    records: list[Mapping[str, Any]] = field(default_factory=list, repr=False, compare=False)
+    # Whether a process row it was observed in is where the sandbox started
+    # the submitted file from (``sandbox_report.STAGED_KEY``).
+    staged: bool = field(default=False, repr=False, compare=False)
 
     def observed_in(self, item_id: str) -> None:
         """Add ``item_id`` to ``items`` once, in the order first seen."""
@@ -172,13 +183,21 @@ class Observed:
 
     @property
     def attribution(self) -> str | None:
-        """``SAMPLE_TREE``, ``NOT_ATTRIBUTED``, ``""`` (others only) or ``None`` (no rows)."""
+        """``SAMPLE_TREE``, the unlisted processes, ``NOT_ATTRIBUTED``, ``""`` or ``None``.
+
+        A row of the sample's tree decides; else, where a row does not say,
+        the publish rule's sentence where it puts the value's traffic on a
+        process the report does not list (its decision, not this reading's),
+        in the place of ``NOT_ATTRIBUTED``: the values linked are the same
+        either way. ``""`` is other listed processes only, and ``None`` no
+        network rows.
+        """
         if not self.tree:
             return None
         if True in self.tree:
             return SAMPLE_TREE
         if None in self.tree:
-            return NOT_ATTRIBUTED
+            return self.unlisted or NOT_ATTRIBUTED
         return ""
 
     def as_row(self) -> dict[str, Any]:
@@ -190,6 +209,8 @@ class Observed:
         }
         if self.attribution:
             row["attribution"] = self.attribution
+        if self.staged:
+            row[STAGED_KEY] = True
         return row
 
 
@@ -361,6 +382,80 @@ def _sample_tree(item: Mapping[str, Any]) -> bool | None:
     return stated if isinstance(stated, bool) else None
 
 
+def _publish_rule_unlisted(
+    report: Mapping[str, Any], normalised_by: Sequence[str] | None, found: Iterable[Observed]
+) -> None:
+    """Give each network value the publish rule puts on an unlisted process the rule's sentence.
+
+    The rule's own decision over the report's network block, read with the
+    run's reader as the report's block is
+    (``ledger_projection.network_from_sandbox_report``,
+    ``stix_renderer.unlisted_reasons``): one decision for the link line, its
+    table and the capture line, whatever rows of the value name no process. A
+    value the block keys no row for (a request's path, a user agent) takes
+    the rule's reading of a request's records, over the rows that hold it
+    (``ledger_projection.records_made_by``). An address, a URL whose host is
+    an address and a record of a request to an address take that address's
+    row, as the rule's URL branch does: no request row's own process for
+    them, and no sentence where the block holds no row of the address. A
+    value whose records give more than one sentence, or none for one of
+    them, is put on no unlisted process. Read only where a network value has
+    no row of the sample's tree.
+    """
+    asked = [one for one in found if one.tree and True not in one.tree]
+    if not asked:
+        return
+    from malspark.reporting.ledger_projection import (
+        network_from_sandbox_report,
+        records_made_by,
+        request_address,
+        value_key,
+    )
+    from malspark.reporting.renderers.stix_renderer import (
+        unlisted_reason,
+        unlisted_reasons,
+        url_address,
+    )
+
+    network = network_from_sandbox_report(
+        report if isinstance(report, dict) else dict(report), normalised_by
+    )
+    said = unlisted_reasons(network)
+    keyed = {
+        (kind, value_key(kind, getattr(row, named)))
+        for kind, rows, named in (
+            ("ip", network.ips if network else [], "address"),
+            ("domain", network.domains if network else [], "fqdn"),
+            ("url", network.urls if network else [], "url"),
+        )
+        for row in rows
+        if row.source == "sandbox"
+    }
+
+    def _of_address(address: str) -> str:
+        return said.get(("ip", value_key("ip", address)), "")
+
+    for one in asked:
+        key = (one.kind, value_key(one.kind, one.value))
+        host = url_address(one.value) if one.kind == "url" else ""
+        if one.kind == "ip":
+            # An address as a host writes it (a port, brackets) is read as a
+            # request's host is: the address its row is keyed by.
+            one.unlisted = _of_address(request_address({"host": one.value}) or one.value)
+        elif host:
+            one.unlisted = _of_address(host)
+        elif key in keyed:
+            one.unlisted = said.get(key, "")
+        else:
+            at = [request_address(record) for record in one.records]
+            sentences = [_of_address(address) for address in dict.fromkeys(a for a in at if a)]
+            named = [record for record, address in zip(one.records, at, strict=True) if not address]
+            if named:
+                sentences.append(unlisted_reason("url", records_made_by(named)))
+            agreed = len(set(sentences)) == 1
+            one.unlisted = sentences[0] if agreed else ""
+
+
 @dataclass
 class ObservedValues:
     """Every distinct value the report observed, and what reading it could not use."""
@@ -393,7 +488,10 @@ def observed_values(
         if section.no:
             absent[section_name] = section.no
             continue
-        for item in sections.items(section_name):
+        # The process rows the sandbox started the submitted file from, by
+        # their place in the list: the one reading every surface asks.
+        staged = _started_positions(report, normalised_by) if section_name == "processes" else ()
+        for position, item in enumerate(sections.items(section_name)):
             read = False
             for kind, value in _values_of(section_name, item):
                 read = True
@@ -402,12 +500,27 @@ def observed_values(
                 if held is None:
                     held = found[key] = Observed(kind, value)
                 held.observed_in(str(item.get("id") or ""))
+                if position in staged:
+                    held.staged = True
                 if section_name == "network":
                     held.tree.add(_sample_tree(item))
+                    fields = item.get("fields")
+                    if isinstance(fields, Mapping):
+                        held.records.append(fields)
             if not read:
                 no_value[section_name] = no_value.get(section_name, 0) + 1
+    _publish_rule_unlisted(report, normalised_by, found.values())
     values = [one for one in found.values() if one.attribution != ""]
     return ObservedValues(values, absent, no_value, len(found) - len(values))
+
+
+def _started_positions(
+    report: Mapping[str, Any], normalised_by: Sequence[str] | None
+) -> frozenset[int]:
+    """The places of the process rows the sandbox started the file from (``sandbox_tools``)."""
+    from malspark.providers.sandbox_tools import started_positions
+
+    return started_positions(report if isinstance(report, dict) else dict(report), normalised_by)
 
 
 class _SectionOf:
@@ -776,6 +889,17 @@ def _compared(inputs: StaticInputs) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def attribution_words(row: Mapping[str, Any]) -> str:
+    """What a link row says beside its items of the process behind its value; ``""`` for none.
+
+    Its attribution unless it is the sample's tree, which is the reading's
+    default and goes unsaid: "process not attributed", or the processes the
+    report does not list that its rows name.
+    """
+    said = row.get("attribution")
+    return said if isinstance(said, str) and said != SAMPLE_TREE else ""
 
 
 def compared_words(row: Mapping[str, Any]) -> str:

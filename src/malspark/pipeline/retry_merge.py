@@ -88,9 +88,15 @@ _WITHDRAW_LINE_RE = re.compile(r"^" + LINE_PREFIX + r"withdraw\b", re.IGNORECASE
 # 2"): a line that holds both a claim number and a withdrawing word, in either
 # order, is a doubt unless it is one of the forms above. A claim heading's own
 # "CLAIM <n>", on a line the reader reads as a heading, is not that number: the
-# rest of the line is what is read. Any other line is read whole, so
-# "CLAIM 2 is withdrawn." is a doubt. Two searches per line, so a line costs
-# its length.
+# rest of the line is what is read, a sentence at a time (``_SENTENCE_END_RE``:
+# a bracket, a semicolon and a period inside a token end nothing), and the word
+# is a doubt where its own sentence writes a claim number ("This replaces claim
+# 2 (dropped).") or the sentence right before it does ("Claim 2 was wrong. I
+# remove it."). A deleting sentence with no claim number in it or in the
+# sentence before describes code ("Claim 15 names the file. 0x3a10 opens it.
+# 0x3a24 sets delete-on-close."). Any other line is read whole, so "CLAIM 2 is
+# withdrawn." is a doubt. Each sentence is searched a fixed number of times,
+# so a line costs its length.
 _WITHDRAW_WORD_RE = re.compile(r"\b(?:withdraw|retract|remov|drop|delet)\w*+", re.IGNORECASE)
 _CLAIM_NUMBER_RE = re.compile(r"\bclaims?+\s*+#?\d", re.IGNORECASE)
 # A heading that withdraws its own claim: a withdrawing word in its note
@@ -758,9 +764,9 @@ def read_withdrawals(text: str) -> Withdrawals:
     for line in str(text or "").splitlines():
         if _WITHDRAW_LINE_RE.match(line) is None:
             heading = CLAIM_HEAD_RE.match(line)
-            rest = line
+            sentences = [line]
             if heading is not None:
-                rest = line[heading.end() :]
+                sentences = _SENTENCE_END_RE.split(line[heading.end() :])
                 sentence = heading_sentence(line, heading)
                 if (
                     _WITHDRAW_WORD_RE.search(heading.group("note") or "")
@@ -769,7 +775,11 @@ def read_withdrawals(text: str) -> Withdrawals:
                 ):
                     unread += 1
                     continue
-            if _WITHDRAW_WORD_RE.search(rest) and _CLAIM_NUMBER_RE.search(rest):
+            if any(
+                _WITHDRAW_WORD_RE.search(said)
+                and (_CLAIM_NUMBER_RE.search(said) or _CLAIM_NUMBER_RE.search(before))
+                for before, said in zip(["", *sentences], sentences, strict=False)
+            ):
                 unread += 1
             continue
         found = _WITHDRAW_CLAIM_RE.match(line)

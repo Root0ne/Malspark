@@ -561,20 +561,20 @@ _HELD_UNLISTED = "agreement.held_unlisted"
 _KEEP_UNQUOTED = "agreement.keep_unquoted"
 # origin/dev's codes (7e919a623), not held: no row refuses the keep.
 _UNHELD_DEV_CODES = {
-    "conclusion": [("held.limitations", _HELD_UNLISTED)],
-    "limitations": [("held.conclusion", _HELD_UNLISTED)],
+    "conclusion": [("[limitations]", _HELD_UNLISTED)],
+    "limitations": [("[conclusion]", _HELD_UNLISTED)],
 }
 # origin/dev's codes, held: failed.2 speaks of both sentences.
 _HELD_DEV_CODES = {
     "conclusion": [
         ("sentences.0.sources", _KEEP_UNQUOTED),
-        ("held.limitations", _HELD_UNLISTED),
-        ("held.limitations", _HELD_UNLISTED),
+        ("[limitations]", _HELD_UNLISTED),
+        ("[limitations]", _HELD_UNLISTED),
     ],
     "limitations": [
         ("sentences.0.sources", _KEEP_UNQUOTED),
-        ("held.conclusion", _HELD_UNLISTED),
-        ("held.limitations", _HELD_UNLISTED),
+        ("[conclusion]", _HELD_UNLISTED),
+        ("[limitations]", _HELD_UNLISTED),
     ],
 }
 # origin/dev's refusal of the held conclusion keep, word for word; the row's id there is

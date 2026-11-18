@@ -244,7 +244,7 @@ class TestEveryAgentButTheReportWriterIsShownIt:
         monkeypatch.setattr(
             nodes,
             "pack_block",
-            lambda _entries, chars, later_chars=None: (
+            lambda _entries, chars, later_chars=None, **_: (
                 seen.append(chars) or later.append(later_chars) or ""
             ),
         )

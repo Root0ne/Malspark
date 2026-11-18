@@ -207,7 +207,12 @@ than it is the model's to say: code picks none. A sentence left out on it is cou
 is left out and recorded with the row's sources, its reason and the sentence whole
 (``JUDGE_LEFT_OUT_CODE``). The decision starts no question of its own, and nothing changes it.
 A refusal of the round's last answer is recorded with the sentence its row was about, saying
-no turn was left (:func:`_no_turn_left`).
+no turn was left (:func:`_no_turn_left`). Every answer of the round, the first and the
+retry's, is kept as parsed and whole in the round's record in the run summary (``answers``),
+each text masked as every stored model answer is, with whether the mask changed it
+(``answers_masked``), shown to no model and printed in no report. The round's own code
+re-applies stored answers with no model call (:class:`StoredAnswers`), exactly, and only
+where the mask left every answer of the round unchanged (T-736).
 
 Every step is one pass over the passages and the answer's rows.
 """
@@ -233,7 +238,7 @@ from malspark.agents.tool_fence import (
 )
 from malspark.core.logger import logger
 from malspark.core.spend import SpendCeilingStop
-from malspark.pipeline.events import safe_finding_value
+from malspark.pipeline.events import safe_answer_text, safe_finding_value
 from malspark.pipeline.feedback_mode import feeds_back
 from malspark.pipeline.validation import (
     _BARE_ADDRESS,
@@ -409,26 +414,29 @@ ABSENCE_KEPT_CODE = "agreement.absence_kept"
 # body absence names the sources that speak of it, which a rewrite of a section 5 one may
 # rest on, and offers a keep on the words of each that state the same absence. Still so
 # after the retry, a closing sentence is left out and recorded (``DROPPED_CODE``), but where
-# only those two word tests refuse a quote of a section 5 passage, whose one sentence holding
-# it may then stand in its place (``KEPT_IN_SOURCE_WORDS_CODE``, T-705); a body absence
-# stands, recorded
+# only those two word tests refuse a quote standing whole in one sentence of a section 5
+# passage: the sentence then stands as written (``KEPT_ON_ITS_QUOTE_CODE``, T-736); a body
+# absence stands, recorded
 # (``HELD_KEPT_CODE``).
 KEEP_UNQUOTED_CODE = "agreement.keep_unquoted"
 # A sentence of the conclusion or the limitations, of a record's value cell or of a
-# capability bullet, kept on a quote that stands word for word in a section 5 passage it
-# names, the body the code's reading backs, and that the checks refused only on the words of
-# what the sentence denies something of (the words before its negation, what a denied item
-# is), still so after the retry: the one sentence of that passage holding the whole quote, in
-# whole words, stands in its place, whole with its own citations, recorded with what stood,
-# whole, and counted (``replaced``) (T-705). Only a sentence that reads as prose wherever it
-# is printed is moved: none with a list marker, a table bar or a heading, none opening as no
-# sentence opens, and none opening on a word that points to the sentences before it ("It",
-# "Its", "They", "Their", "These", "This", "Those", "Such", "Which"). A quote no one sentence
-# of a section 5 passage it names holds (one running across two, one standing only in a fact
-# or a debate round, which the report does not print), one whose sentence the round itself
-# leaves out or changes, or one whose sentence the passage already prints, leaves the
+# capability bullet, kept on a quote that stands whole, in whole words, in one sentence of a
+# section 5 passage it names, the body the code's reading backs, and that the checks refused
+# only on the words of what the sentence denies something of (the words before its negation,
+# what a denied item is), still so after the retry: the composer's sentence stands as written,
+# recorded with the source and the quote, and counted (``kept_on_quote``); the source's
+# sentence is not moved (T-736). A quote no one sentence of a section 5 passage it names holds
+# (one running across two, one standing only in a fact or a debate round, which the report
+# does not print), or one whose sentence the round itself leaves out or changes, leaves the
 # sentence out as before (``DROPPED_CODE``).
-KEPT_IN_SOURCE_WORDS_CODE = "agreement.kept_in_source_words"
+KEPT_ON_ITS_QUOTE_CODE = "agreement.kept_on_its_quote"
+# A row of the answer the row schema accepts, naming a passage no list of the question
+# writes, whose copy exactly one passage a row may answer holds, each of its sentences once
+# there and none of them in another passage: placed there by its text, checked and ended as
+# any row naming that passage, and recorded with the passage it named and its sentence. A copy
+# a sentence of which stands in two passages, in none, or twice in one leaves the row refused
+# as naming an unknown passage (``UNKNOWN_PASSAGE_CODE``) (T-736).
+PLACED_BY_SENTENCE_CODE = "agreement.placed_by_sentence"
 # A sentence, or a rewrite, giving failed calls a number the ledger's count
 # does not.
 FAILURE_COUNT_CODE = "agreement.failure_count"
@@ -964,7 +972,7 @@ def passages_of(
     """
     from malspark.reporting.call_bindings import binding_words
     from malspark.reporting.composer import COMPOSED_SECTIONS
-    from malspark.reporting.evidence_bundles import reads_code
+    from malspark.reporting.evidence_bundles import reads_code, sandbox_start_line
     from malspark.reporting.judge_decision import judge_decision
 
     facts: list[Passage] = []
@@ -995,6 +1003,14 @@ def passages_of(
                     + (f" ({_sample_text(bound.parameter)})" if bound.parameter else "")
                 ),
             )
+        )
+
+    # The place the sandbox started the submitted file from, where a row is
+    # marked: one fact, from the one writer (``evidence_bundles.sandbox_start_line``).
+    started = sandbox_start_line(report)
+    if started:
+        facts.append(
+            Passage(id="sandbox_start", label="sandbox start path", text=started, kind=FACT)
         )
 
     ta = report.technical_analysis
@@ -5832,17 +5848,11 @@ def quote_overlap(sentence: str, quote: str, generic: frozenset[str] = frozenset
 
 # The refusals of a quote that read what the sentence denies something of off its words: the
 # words before its negation (:func:`kept_subject`) and what a denied item is
-# (``denied_heads``). A quote standing in a passage the code wrote or checked that fails these
-# alone keeps no closing sentence, but its source's sentence stands in place of it (T-705).
+# (``denied_heads``). A quote standing whole in one sentence of a section 5 passage that fails
+# these alone keeps the closing sentence as written (T-736).
 _QUOTE_TOO_FEW = "shares too few of the words the sentence denies something of"
 _QUOTE_NAMES_NONE = "names none of what the sentence denies something of"
 _SUBJECT_REFUSALS = frozenset({_QUOTE_TOO_FEW, _QUOTE_NAMES_NONE})
-# The opening words of a sentence that point to what the sentences before it name ("Its
-# three hosts…", "Which check ended it…"): such a sentence is never printed in another
-# section, where nothing before it names that (T-705).
-_POINTING_OPENERS = frozenset(
-    {"it", "its", "they", "their", "these", "this", "those", "such", "which"}
-)
 # What a quote shorter than :data:`absence_answers.QUOTE_FLOOR` is refused for, and what the
 # TASK says of every quote once (T-600).
 _QUOTE_SHORT = f"is shorter than {QUOTE_FLOOR} characters, so it quotes nothing"
@@ -6894,6 +6904,127 @@ def _qualified(sentence: str, facts: Sequence[Passage]) -> str:
     return f"{base}; {clauses} {cites}{end}"
 
 
+class _PlacedFrom:
+    """The key of a row placed by its sentence (:func:`_placed`) under which the passage it
+    named is kept: an object, not a text, so no key an answer writes is ever this one, and a
+    row is read the same wherever rows enter (T-736)."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<placed from>"
+
+
+# What a row placed by its sentence carries (:func:`_placed`): the passage it named. Set by
+# the round alone; an answer read from JSON holds text keys only, so it cannot carry it.
+_PLACED_FROM: Any = _PlacedFrom()
+
+
+def _fits_the_schema(row: Any) -> bool:
+    """Whether the round's row schema (:class:`AgreementRow`) accepts ``row``."""
+    try:
+        AgreementRow.model_validate(row)
+    except Exception:  # noqa: BLE001 — the schema check says why
+        return False
+    return True
+
+
+def _holds_the_run(text: str, copy: str) -> bool:
+    """Whether ``text`` holds ``copy`` as a run of whole words, whatever the white space, as
+    copied or with the escapes a quoted value is shown with read back (T-736)."""
+    held = f" {' '.join(text.split())} "
+    return any(
+        f" {words} " in held
+        for words in (" ".join(form.split()) for form in (copy, *pack_reads(copy)))
+        if words
+    )
+
+
+def _placed(
+    payload: Any, by_id: dict[str, Passage], sentences_of: Callable[[Passage], _Sentences]
+) -> Any:
+    """``payload`` with each row naming a passage no list writes placed by the sentence it
+    copies, where exactly one passage a row may answer (a passage written without the code or
+    a section 5 passage, not one shown as a source only) holds any sentence of the copy, or the
+    copy as a run of its words, the row answering it there and each sentence it answers there
+    standing there exactly once and in no other such passage, as a sentence or as a run of its
+    words; the passage it named kept under :data:`_PLACED_FROM`; every other row as it is. A
+    copy of several sentences is so placed only where each sentence it answers there would be,
+    so a whole copy placed ends as its sentences given one by one. A sentence standing in two
+    passages, in none, or twice in one places nothing, nor does a row the round's row schema
+    refuses (T-736). One pass over the rows."""
+    rows = payload.get("sentences") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return payload
+    answerable = [
+        p for p in by_id.values() if p.kind in (CLAIM_LED, SECTION_5) and not p.source_only
+    ]
+    out: list[Any] = []
+    for row in rows:
+        named = row.get("passage") if isinstance(row, dict) else None
+        sentence = str(row.get("sentence") or "") if isinstance(row, dict) else ""
+        if (
+            isinstance(row, dict)
+            and isinstance(named, str)
+            and named.strip()
+            and (_form(named) not in by_id)
+            and sentence.strip()
+            and _fits_the_schema(row)
+        ):
+            # Each sentence of the copy, cut by the one sentence-end rule.
+            pieces = list(_sentence_units(sentence)[0]) or [sentence.strip()]
+            # Every passage holding any of them, once or more, or the copy as a run of its
+            # words: a passage writing one twice holds it, and leaves the row unplaced.
+            holding = [
+                p
+                for p in answerable
+                if any(sentences_of(p).every(piece) for piece in pieces)
+                or _holds_the_run(p.text, sentence)
+                or _answered_span(sentences_of(p), sentence, row.get("decision")) is not None
+            ]
+            if len(holding) == 1:
+                cut = sentences_of(holding[0])
+                span = _answered_span(cut, sentence, row.get("decision"))
+                # Each sentence the row answers there, as the round reads a whole copy
+                # (:meth:`_Sentences.units`), stands there exactly once, and no other passage
+                # holds it, as a sentence or as a run of its words.
+                units = [unit[2] for unit in cut.units(span)] if span is not None else []
+                if span is not None and all(
+                    len(cut.every(unit)) == 1
+                    and not any(
+                        sentences_of(p).every(unit) or _holds_the_run(p.text, unit)
+                        for p in answerable
+                        if p is not holding[0]
+                    )
+                    for unit in units
+                ):
+                    row = {**row, "passage": holding[0].id, _PLACED_FROM: named}
+        out.append(row)
+    return {**payload, "sentences": out}
+
+
+def _placed_records(payload: Any) -> list[Violation]:
+    """The record of each row of ``payload`` the round placed by its sentence (:func:`_placed`):
+    the passage it named, the one it was placed in, and its sentence (T-736)."""
+    rows = payload.get("sentences") if isinstance(payload, dict) else None
+    return [
+        Violation(
+            code=PLACED_BY_SENTENCE_CODE,
+            message=(
+                f"The agreement question places row {safe_finding_value(index + 1)}, which names "
+                f"the passage {safe_finding_value(row[_PLACED_FROM])!r}, not one the question "
+                "lists, by the sentence it copies, which stands whole in "
+                f"{safe_finding_value(row.get('passage'))} alone: "
+                f"{safe_finding_value(row.get('sentence'))!r}."
+            ),
+            path=f"sentences.{index}",
+            answered=True,
+        )
+        for index, row in enumerate(rows if isinstance(rows, list) else [])
+        if isinstance(row, dict) and _PLACED_FROM in row
+    ]
+
+
 def _platform_rewrites(payload: Any, by_id: dict[str, Passage]) -> Any:
     """The payload with each section 5 rewrite resting on a fact written by the platform:
     the sentence unchanged and the facts' clauses (``_qualified``). Every other row as the
@@ -7023,6 +7154,8 @@ def agreement_violations(
     citable: Sequence[str] = (),
     items: Any = None,
     entries: EntryTexts | None = None,
+    *,
+    whole: bool = False,
 ) -> list[Violation]:
     """What is structurally wrong with the answer's rows, as the retry turn shows it.
 
@@ -7031,10 +7164,10 @@ def agreement_violations(
     rewrite on a fact is read as the platform writes it (``_platform_rewrites``).
     A refused row for a sentence another row answers passing every check, its
     rewrite read against ``citable``, ``items`` and ``entries`` (:func:`_checked_rows`),
-    asks nothing more (T-600).
+    asks nothing more (T-600). With ``whole``, a held sentence no row lists is quoted whole, as
+    the retry shows it; without, bounded, as its record keeps it (T-736).
     """
     by_id = {passage.id: passage for passage in passages}
-    payload = _platform_rewrites(payload, by_id)
     cut: dict[str, _Sentences] = {}
 
     def _sentences(passage: Passage) -> _Sentences:
@@ -7042,6 +7175,7 @@ def agreement_violations(
             cut[passage.id] = _cut(passage)
         return cut[passage.id]
 
+    payload = _platform_rewrites(_placed(payload, by_id, _sentences), by_id)
     out: list[Violation] = []
     listed: set[tuple[str, int]] = set()
     rewritten: set[tuple[str, int]] = set()
@@ -7089,18 +7223,26 @@ def agreement_violations(
                 read=bool(rows),
                 answering=answering,
                 unread_told=unread_told,
+                whole=whole,
             )
         )
     return out
 
 
 def _unread_standing(
-    passage: Passage, sentence: str, facts: Sequence[Passage], end: str, rewrite: str = ""
+    passage: Passage,
+    sentence: str,
+    facts: Sequence[Passage],
+    end: str,
+    rewrite: str = "",
+    *,
+    whole: bool = False,
 ) -> Violation:
     """The retry's question on a sentence calling listed code not read, or on its ``rewrite``
     still calling it so: the listing named, a drop offered where it passes (a closing
     passage, a sentence the ledger's lines hold), and ``end``, what becomes of it where the
-    answer refused is its last (:func:`_unread_end`)."""
+    answer refused is its last (:func:`_unread_end`); located at its passage as the list writes
+    it (:func:`_held_at`), the sentence quoted whole with ``whole`` (T-736)."""
     shown = "; ".join(fact.text for fact in facts)
     return Violation(
         code=UNREAD_STANDING_CODE,
@@ -7110,7 +7252,7 @@ def _unread_standing(
                 f"the rewrite {safe_finding_value(rewrite)!r} of "
                 f"{safe_finding_value(sentence)!r} still calls"
                 if rewrite
-                else f"{safe_finding_value(sentence)!r} calls"
+                else f"{safe_finding_value(sentence, whole=whole)!r} calls"
             )
             + " code not read that the ledger lists "
             f"({safe_finding_value(', '.join(f.id for f in facts))}: "
@@ -7120,8 +7262,15 @@ def _unread_standing(
             + (f"; {safe_finding_value(end)}." if end else ".")
             + _EVERY_ROW
         ),
-        path=f"held.{passage.id}",
+        path=_held_at(passage),
     )
+
+
+def _held_at(passage: Passage) -> str:
+    """Where a finding on a held sentence of ``passage`` no row names stands: the passage, as
+    the question's list writes its id, so no token the round would refuse as a passage id is
+    shown (T-736)."""
+    return f"[{passage.id}]"
 
 
 def _held_unlisted(
@@ -7133,8 +7282,10 @@ def _held_unlisted(
     read: bool = True,
     answering: Mapping[tuple[str, int], AgreementRow] | None = None,
     unread_told: set[tuple[str, int]] | None = None,
+    whole: bool = False,
 ) -> list[Violation]:
-    """Each held sentence no row lists, in the passages' order; one whose own clause calls
+    """Each held sentence no row lists, in the passages' order, quoted whole with ``whole``
+    (the retry's question; its record keeps the bounded copy, T-736); one whose own clause calls
     listed code not read and that no row rewrote is asked about with the listing named. One
     the passage writes more than once, which no row can name, is not asked about: a refusal
     the round cannot act on opens no retry, and one the ledger's own lines hold is left out
@@ -7168,7 +7319,11 @@ def _held_unlisted(
                 if facts:
                     row = (answering or {}).get((passage.id, span[0]))
                     asked = _unread_standing(
-                        passage, sentence, facts, _unread_end(passage, sentence, row, by_id)
+                        passage,
+                        sentence,
+                        facts,
+                        _unread_end(passage, sentence, row, by_id),
+                        whole=whole,
                     )
                     # A field answered whole, or a sentence the ledger's lines hold, is told its
                     # end, and what the field is.
@@ -7207,7 +7362,7 @@ def _held_unlisted(
                     code=HELD_UNLISTED_CODE,
                     message=(
                         f"{safe_finding_value(passage.id)} {said}, and no row lists this "
-                        f"sentence: {safe_finding_value(sentence)!r}. List it: "
+                        f"sentence: {safe_finding_value(sentence, whole=whole)!r}. List it: "
                         + (
                             _whole_ends(passage, sentence)
                             if passage.whole
@@ -7224,7 +7379,7 @@ def _held_unlisted(
                         )
                         + _EVERY_ROW
                     ),
-                    path=f"held.{passage.id}",
+                    path=_held_at(passage),
                 )
             )
     return out
@@ -7274,6 +7429,7 @@ def rewrites_violations(
         return cut[passage.id]
 
     out: list[Violation] = []
+    payload = _placed(payload, by_id, _sentences)
     checked, passed = _checked_rows(_rows(payload), by_id, _sentences, citable, items, entries)
     for index, _row, passage, own, rewritten, span, _told in checked:
         if passage is not None and span is not None and (passage.id, span[0]) in passed:
@@ -7794,7 +7950,6 @@ def apply_rows(
     place stores holds it (T-613). Every other answer ends by the rules above.
     """
     by_id = {passage.id: passage for passage in passages}
-    payload = _platform_rewrites(payload, by_id)
     cut: dict[str, _Sentences] = {}
 
     def _sentences(passage: Passage) -> _Sentences:
@@ -7802,6 +7957,7 @@ def apply_rows(
             cut[passage.id] = _cut(passage)
         return cut[passage.id]
 
+    payload = _platform_rewrites(_placed(payload, by_id, _sentences), by_id)
     counts = {
         "passages": sum(1 for passage in passages if _writable(passage)),
         "claim_led_passages": sum(
@@ -7815,14 +7971,17 @@ def apply_rows(
         "dropped": 0,
         "qualified": 0,
         "held_kept": 0,
-        # Closing sentences their source's own sentence stands in place of (T-705).
-        "replaced": 0,
+        # Closing sentences kept as written on a quote standing whole in one sentence of a
+        # section 5 passage, refused only on the words of what they deny something of (T-736).
+        "kept_on_quote": 0,
     }
-    listed: list[Violation] = []
+    # Each row placed by its sentence, recorded so (T-736).
+    listed: list[Violation] = _placed_records(payload) if asked else []
     written: list[Violation] = []
     spans: dict[str, list[tuple[int, int, str]]] = {}
-    # Each closing sentence its source's own sentence may stand in place of, with where its
-    # span stands among the passage's: decided once every other end is in (T-705).
+    # Each closing sentence kept on a quote standing in one sentence of its source, with where
+    # its span stands among the passage's: decided once every other end is in, as the round
+    # may leave that source's sentence out or change it (T-736).
     moved: list[
         tuple[
             Passage,
@@ -7925,9 +8084,10 @@ def apply_rows(
                     continue
                 in_words = _in_source_words(passage, span[2], row, found, by_id)
                 if in_words is not None:
-                    # Refused only on the words of what it denies something of: its source's
-                    # own sentence may stand in its place, which is decided once the round's
-                    # every removal and qualification is in (T-705).
+                    # Refused only on the words of what it denies something of, its quote
+                    # standing in one sentence of its source: it stands as written where the
+                    # round leaves that sentence as it is, decided once the round's every
+                    # removal and qualification is in (T-736).
                     moved.append(
                         (passage, len(taken), f"sentences.{index}", span, row, found, *in_words)
                     )
@@ -8155,7 +8315,7 @@ def apply_rows(
             span = _sentences(passage).span(sentence)
             held = _ends_on_answer(passage, sentence)
             if span is not None and (passage.id, span[0]) not in answered:
-                unpassed.append((passage, span, f"{unanswered}; {held}", (), f"held.{passage.id}"))
+                unpassed.append((passage, span, f"{unanswered}; {held}", (), _held_at(passage)))
             elif span is None:
                 # Written more than once: no row can name it, so it is left out each time.
                 copied = sentence.strip()
@@ -8167,7 +8327,7 @@ def apply_rows(
                             f"it stands more than once in the passage, so no answer could "
                             f"name it; {held}",
                             (),
-                            f"held.{passage.id}",
+                            _held_at(passage),
                         )
                     )
     for passage, span, why, refusals, path in unpassed:
@@ -8214,39 +8374,24 @@ def _moved(
     spans: dict[str, list[tuple[int, int, str]]],
     counts: dict[str, int],
 ) -> Violation:
-    """End a closing sentence its source's own sentence may stand in place of, once every other
-    end of the round is in, and its record (T-705).
+    """End a closing sentence kept on a quote standing in one sentence of its source, once every
+    other end of the round is in, and its record (T-736).
 
-    The source's sentence stands in its place (``KEPT_IN_SOURCE_WORDS_CODE``) unless the round
-    left that sentence out of its passage or changed it there, or it already stands in the
-    closing passage: then the closing sentence is left out, as any refused keep
-    (``DROPPED_CODE``). ``at`` is where its span stands among the passage's in ``spans``."""
+    The sentence stands as written (``KEPT_ON_ITS_QUOTE_CODE``) unless the round left the
+    source's sentence holding the quote out of its passage or changed it there: then it is left
+    out, as any refused keep (``DROPPED_CODE``). ``at`` is where its span stands among the
+    passage's in ``spans``."""
     taken = spans[passage.id]
     starts = _sentence_units(source.text)[0][said][0]
     ends = starts + len(said)
-    changed = any(start < ends and starts < end for start, end, _ in spans.get(source.id, []))
-    others = [t for i, t in enumerate(taken) if i != at]
-    if not changed and not _printed_in(said, passage, others):
-        taken[at] = (span[0], span[1], said)
-        counts["replaced"] += 1
-        return _kept_in_source_words(passage, path, span[2], row, source, said)
+    if not any(start < ends and starts < end for start, end, _ in spans.get(source.id, [])):
+        taken[at] = (span[0], span[1], passage.text[span[0] : span[1]])
+        counts["kept_on_quote"] += 1
+        return _kept_on_its_quote(passage, path, span[2], row, source)
     taken[at] = (*left_out_span(passage.text, span[0], span[1]), "")
     counts["dropped"] += 1
-    why = (
-        f"the sentence of {source.id} holding its quote is left out or changed by this round"
-        if changed
-        # Its source's sentence already stands in the passage: printed once.
-        else f"the sentence of {source.id} holding its quote already stands here"
-    )
+    why = f"the sentence of {source.id} holding its quote is left out or changed by this round"
     return _left_out(passage, path, span[2], why, found)
-
-
-def _printed_in(said: str, passage: Passage, taken: Sequence[tuple[int, int, str]]) -> bool:
-    """Whether ``said`` already stands in the passage, as written or put in by another row."""
-    words = " ".join(said.split())
-    return any(
-        words in " ".join(text.split()) for text in (passage.text, *(t for _a, _b, t in taken))
-    )
 
 
 def _codes_of(found: Sequence[Violation]) -> str:
@@ -8309,8 +8454,8 @@ def _in_source_words(
     found: Sequence[Violation],
     by_id: dict[str, Passage],
 ) -> tuple[Passage, str] | None:
-    """The source and its own words printed in place of a closing sentence the row keeps, or
-    ``None`` (T-705).
+    """The source and its one sentence holding the quote of a closing sentence the row keeps,
+    on which that sentence stands as written, or ``None`` (T-705, T-736).
 
     Only for a keep of a sentence of the conclusion, the limitations, a value cell or a
     capability bullet whose every finding is the quote's refusal (``KEEP_UNQUOTED_CODE``),
@@ -8318,12 +8463,10 @@ def _in_source_words(
     alone (:data:`_SUBJECT_REFUSALS`: too few of the words before its negation, or none of what
     a denied item is): read without those two tests, the quote passes every other. The words
     are the one sentence of a section 5 passage the row names, the body the code's reading
-    backs, that holds the whole quote in whole words (:func:`_holding`), as it writes them,
-    citations included, and only where that sentence can stand in a paragraph, a cell or a
-    bullet (:func:`_stands_alone`). A quote no one such sentence holds (one running across two,
-    or standing in two) gives none, as a fact or a debate round does, which is no text the
-    report prints. A text printed in its writer's own words is never reworded, so gives none
-    either.
+    backs, that holds the whole quote in whole words (:func:`_holding`), as it writes them. No
+    word decides what the sentence refers to: it is not moved. A quote no one such sentence
+    holds (one running across two, or standing in two) gives none, as a fact or a debate round
+    does. A text printed in its writer's own words gives none either.
     """
     if (
         row.decision != "keep"
@@ -8351,7 +8494,7 @@ def _in_source_words(
         if source.kind == SECTION_5
         for said in _holding(source.text, row.quote)
     ]
-    if len(held) != 1 or not _stands_alone(held[0][0].text, held[0][1]):
+    if len(held) != 1:
         return None
     return held[0]
 
@@ -8379,45 +8522,23 @@ def _holding(text: str, quote: str) -> list[str]:
     ]
 
 
-# What opens a line as a list item, a quoted block or a heading, before its first sentence.
-_LINE_MARK = re.compile(r"\s*(?:[-*+>#]+|\d+[.)])\s*")
-# What may close a sentence after its end mark.
-_CLOSERS = "\"')]"
-
-
-def _stands_alone(text: str, said: str) -> bool:
-    """Whether the sentence ``said`` of ``text`` reads as prose wherever it is printed: no list
-    marker, table bar or heading with it, opening as a sentence opens (a capital, a digit or a
-    code span) and ending on its end mark, and opening on no word that points to what the
-    sentences before it name (:data:`_POINTING_OPENERS`); a line break never stands inside one
-    (:func:`_sentence_units`)."""
-    at = _sentence_units(text)[0][said][0]
-    line = text[text.rfind("\n", 0, at) + 1 : at]
-    opener = re.match(r"\W*(\w+)", said)
-    return (
-        not _LINE_MARK.fullmatch(line)
-        and "|" not in said
-        and (said[0].isupper() or said[0].isdigit() or said[0] == "`")
-        and said.rstrip(_CLOSERS)[-1:] in ".!?"
-        and (opener is None or opener.group(1).lower() not in _POINTING_OPENERS)
-    )
-
-
-def _kept_in_source_words(
-    passage: Passage, path: str, sentence: str, row: AgreementRow, source: Passage, said: str
+def _kept_on_its_quote(
+    passage: Passage, path: str, sentence: str, row: AgreementRow, source: Passage
 ) -> Violation:
-    """The record of a closing sentence its source's own words stand in place of (T-705)."""
+    """The record of a closing sentence kept as written on a quote standing whole in one
+    sentence of ``source``, refused only on the words of what it denies something of (T-736)."""
     return Violation(
-        code=KEPT_IN_SOURCE_WORDS_CODE,
+        code=KEPT_ON_ITS_QUOTE_CODE,
         message=(
-            f"The agreement question keeps a sentence of {safe_finding_value(passage.label)} on "
-            f"{safe_finding_value(source.id)}, quoting {safe_finding_value(row.quote)!r}, which "
-            "stands there but was refused on the words of what the sentence denies something "
-            f"of ({KEEP_UNQUOTED_CODE}): the source's own sentence stands in its place: "
-            f"{safe_finding_value(sentence)!r} now reads {safe_finding_value(said)!r}."
+            f"The agreement question keeps a sentence of {safe_finding_value(passage.label)} "
+            f"as written on {safe_finding_value(source.id)}, quoting "
+            f"{safe_finding_value(row.quote)!r}, which stands whole in one sentence there, "
+            "though the keep was refused only on the words of what the sentence denies "
+            f"something of ({KEEP_UNQUOTED_CODE}): {safe_finding_value(sentence)!r} stands as "
+            "written."
         ),
         path=path,
-        stood=safe_finding_value(sentence, whole=True),
+        answered=True,
     )
 
 
@@ -8570,7 +8691,7 @@ def _qualify_unread_left(
                         f"shows: {safe_finding_value(span[2])!r} now reads "
                         f"{safe_finding_value(rewrite)!r}."
                     ),
-                    path=f"held.{passage.id}",
+                    path=_held_at(passage),
                 )
             )
     return out
@@ -8725,6 +8846,10 @@ async def _ask(
     answer_read = [""]
 
     answered: list[Any] = [None]
+    # Every answer of the round, first and retry, as parsed: the run's record keeps them.
+    answers: list[Any] = []
+    # For each kept answer, whether the masking rule changed it (:data:`ANSWERS_MASKED`).
+    masked: list[bool] = []
     # The answer the checks last read, whose rows the findings shown name by their place.
     checked: list[Any] = [None]
     # Every finding the round was asked about, each row's named by the sentence the row
@@ -8735,11 +8860,20 @@ async def _ask(
     def _parse(answer: Any) -> Any:
         answer_read[0] = structured_answer_text(answer, _message_text)
         parsed = safe_parse_json(answer_read[0])
+        # Kept whole for the run's record, as parsed, one that could not be read as its text,
+        # masked as every stored model answer is (:func:`_masked_answer`, T-736).
+        given = parsed if isinstance(parsed, (dict, list)) else answer_read[0]
+        kept = _masked_answer(given)
+        answers.append(kept)
+        # Whether the mask changed it: such an answer is no longer the answer given.
+        masked.append(kept != given)
         # Shape only: a bare list of rows is the object the schema names.
         if isinstance(parsed, list):
             parsed = {"sentences": parsed}
         if not isinstance(parsed, dict):
             return None
+        # A row naming a passage no list writes is placed by its sentence (T-736).
+        parsed = _placed(parsed, by_id, _located)
         # A retry answering only what it was asked keeps the first answer's rows
         # that passed every check; one that did not is the retry's to fix or leave,
         # but for a sentence the ledger's lines hold, whose refused row stays its last
@@ -8761,6 +8895,11 @@ async def _ask(
         return [row] if len(units) < 2 else [{**row, "sentence": unit[2]} for unit in units]
 
     located_in: dict[str, _Sentences] = {}
+
+    def _located(passage: Passage) -> _Sentences:
+        if passage.id not in located_in:
+            located_in[passage.id] = _cut(passage)
+        return located_in[passage.id]
 
     def _span(row: Any) -> tuple[Passage, tuple[int, int, str, int]] | None:
         passage = by_id.get(_form(_field(row, "passage")))
@@ -8834,7 +8973,9 @@ async def _ask(
                 lambda p: schema_violations(
                     AgreementOutput, p, code=SCHEMA_CODE, answer=answer_read[0]
                 ),
-                lambda p: agreement_violations(p, passages, citable, items, evidence_texts),
+                lambda p: agreement_violations(
+                    p, passages, citable, items, evidence_texts, whole=True
+                ),
                 lambda p: rewrites_violations(p, citable, items, evidence_texts, passages),
             ],
             parse=_parse,
@@ -8849,6 +8990,13 @@ async def _ask(
         failed = f"The section agreement question was not answered ({type(exc).__name__})."
         payload, violations, retries = None, [], 0
     tally.retries += retries
+    # The retry quoted each held sentence no row lists whole; its record keeps the bounded copy.
+    violations = _bounded_held(
+        violations,
+        lambda whole: agreement_violations(
+            payload, passages, citable, items, evidence_texts, whole=whole
+        ),
+    )
     # A question that is no finding (a judge refusal told beside a row's own, T-717) is
     # counted and recorded nowhere.
     violations = [v for v in violations if not v.question_only]
@@ -8894,10 +9042,12 @@ async def _ask(
         if failed
         else {p.id: text_digest(p.text) for p in passages if p.verbatim and not p.source_only}
     )
+    summary[ANSWERS] = answers
+    summary[ANSWERS_MASKED] = masked
     logger.info(
         "section agreement: %d passage(s) asked about; %d sentence(s) listed, %d rewritten, "
         "%d kept, %d listed for reading, %d not applied, %d left out, %d qualified on the "
-        "ledger, %d replaced by their source's sentence.",
+        "ledger, %d kept on a quote standing in their source.",
         counts["passages"],
         counts["sentences"],
         counts["rewritten"],
@@ -8906,7 +9056,7 @@ async def _ask(
         counts["not_applied"],
         counts["dropped"],
         counts["qualified"],
-        counts["replaced"],
+        counts["kept_on_quote"],
     )
     return AgreementRound(
         summary=summary, tally=tally, degradations=[*said(), *([failed] if failed else [])]
@@ -8942,6 +9092,28 @@ def _by_place(
         replace(violation, path=f"sentences[{passage}@{place}]{rest}")
         for passage, place in places(rows[int(found.group(1))])
     ]
+
+
+def _bounded_held(
+    violations: Sequence[Violation], checked: Callable[[bool], list[Violation]]
+) -> list[Violation]:
+    """``violations``, each finding on a held sentence no row lists that quotes the sentence
+    whole as the retry showed it (``checked(True)``) given its bounded copy, the one the same
+    check writes for the record (``checked(False)``, in the same order); any other as it is
+    (T-736)."""
+    if not any(v.path == f"[{_form(v.path)}]" for v in violations):
+        return list(violations)
+    bounded = {
+        (shown.code, shown.path, shown.message): kept
+        for shown, kept in zip(checked(True), checked(False), strict=True)
+        if shown.message != kept.message
+    }
+    out: list[Violation] = []
+    for violation in violations:
+        kept = bounded.get((violation.code, violation.path, violation.message))
+        # The record is the check's own bounded finding, asked or not as the loop marked it.
+        out.append(violation if kept is None else replace(kept, asked=violation.asked))
+    return out
 
 
 def _no_turn_left(violations: Sequence[Violation], payload: Any) -> list[Violation]:
@@ -8982,6 +9154,94 @@ def _no_turn_left(violations: Sequence[Violation], payload: Any) -> list[Violati
 # them (T-613).
 VERBATIM_SHOWN = "verbatim_shown"
 VERBATIM_UNSEEN = "verbatim_unseen"
+# Every answer of the round, the first and each retry, as parsed and whole: an object as read,
+# one that could not be read as the text it was read from, each text masked as every stored
+# model answer is (:func:`_masked_answer`). Shown to no model and printed in no report: the
+# round's own code re-applies them (:class:`StoredAnswers`), exactly, and only where the mask
+# left every answer of the round unchanged (T-736).
+ANSWERS = "answers"
+# For each answer of :data:`ANSWERS`, in order, whether the masking rule changed it: such an
+# answer is kept as masked and is not the answer the round was given (T-736).
+ANSWERS_MASKED = "answers_masked"
+
+
+def without_stored_answers(run_summary: Any) -> Any:
+    """``run_summary`` with the agreement round's stored answers (:data:`ANSWERS`) left out, the
+    rest of it as it is: what a value check reads from the run summary as text the report
+    holds never holds a model's answer to this round (T-736)."""
+    if not isinstance(run_summary, Mapping):
+        return run_summary
+    record = run_summary.get("section_agreement")
+    if not isinstance(record, Mapping) or ANSWERS not in record:
+        return run_summary
+    return {
+        **run_summary,
+        "section_agreement": {key: value for key, value in record.items() if key != ANSWERS},
+    }
+
+
+def _masked_answer(value: Any) -> Any:
+    """An answer of the round as the run's record keeps it: each text it holds, a key as a
+    value, masked by the one rule for a whole model answer (``events.safe_answer_text``), its
+    shape as parsed (T-736)."""
+    if isinstance(value, dict):
+        return {safe_answer_text(key): _masked_answer(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_masked_answer(item) for item in value]
+    if isinstance(value, str):
+        return safe_answer_text(value)
+    return value
+
+
+class AnswerChangedByMask(ValueError):
+    """A stored answer of the round the masking rule changed, or one without its flag, asked to
+    be handed back: it is not known to be the answer the round was given, so no answer of the
+    round is re-applied (T-736)."""
+
+
+class StoredAnswers:
+    """A reporter that answers the round with the answers a run's record keeps (:data:`ANSWERS`),
+    in order, so the round's own code re-applies them with no model call; with none left, an
+    answer of no rows. Each answer comes with its flag (:data:`ANSWERS_MASKED`), and answers are
+    handed back only where the mask left every answer of the round unchanged: answers any of
+    which the mask changed, or one without its flag, are refused before the round
+    (:class:`AnswerChangedByMask`), so no round runs part of its way on stored answers.
+    Re-application is exact. Says nothing it could not do (``degradations``)."""
+
+    def __init__(self, answers: Sequence[Any], *, masked: Sequence[bool]) -> None:
+        self.answers = list(answers)
+        self.masked = [bool(flag) for flag in masked]
+        for place in range(len(self.answers)):
+            if place >= len(self.masked):
+                raise AnswerChangedByMask(
+                    f"stored answer {place + 1} of the agreement question carries no flag "
+                    "saying whether the record's masking changed it: no answer of the round "
+                    "is re-applied"
+                )
+            if self.masked[place]:
+                raise AnswerChangedByMask(
+                    f"stored answer {place + 1} of the agreement question was changed by the "
+                    "record's masking: it is not the answer given, and no answer of the round "
+                    "is re-applied"
+                )
+        self.given = 0
+        self.degradations: list[str] = []
+
+    @classmethod
+    def of_record(cls, record: Mapping[str, Any]) -> StoredAnswers:
+        """The answers of the round's record (``section_agreement``), each with its flag;
+        refused before the round where any flag is set or missing."""
+        return cls(record.get(ANSWERS) or [], masked=record.get(ANSWERS_MASKED) or [])
+
+    async def ask(self, turns: list[BaseMessage], *, call: str, what: str) -> BaseMessage:
+        import json
+
+        from langchain_core.messages import AIMessage
+
+        place = self.given
+        self.given += 1
+        answer = self.answers[place] if place < len(self.answers) else {"sentences": []}
+        return AIMessage(content=answer if isinstance(answer, str) else json.dumps(answer))
 
 
 def _shown_none() -> dict[str, Any]:
