@@ -69,7 +69,7 @@ def test_the_report_and_the_narrative_prompt_print_not_given(verdict: str) -> No
     assert "| judge | not given |" in row
     assert "0.00" not in attack
     if verdict == "Benign":
-        # Under Benign the technique is listed in the matrix and not published,
+        # Under Benign the technique is kept with its reason and not published,
         # so the narrative's published techniques hold none.
         assert "(none mapped)" in prompt
     else:

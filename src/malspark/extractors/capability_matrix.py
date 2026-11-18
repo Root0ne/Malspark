@@ -527,12 +527,13 @@ FINDING_ONLY_REASON = (
     "it was named on a finding rather than on a claim, so no check asked what evidence holds it up"
 )
 
-# Why no technique is published under a Benign verdict: a capability the code
-# holds is listed in the matrix, and the verdict says the sample was not seen
-# using it as malware does. The cell keeps every statement, and the judge's own
-# words about the technique follow this reason whole.
+# Why no technique is published under a Benign verdict: a capability named in the
+# run is kept with its reason, and the verdict says the sample was not seen using it
+# as malware does. Worded for every layout, the ones that print no matrix among them.
+# The cell keeps every statement, and the judge's own words about the technique follow
+# this reason whole.
 BENIGN_TECHNIQUE_REASON = (
-    "the verdict is Benign: a capability is listed in the matrix, not published as the "
+    "the verdict is Benign: a capability named in this run is not published as the "
     "sample's behaviour"
 )
 
