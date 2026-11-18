@@ -64,6 +64,7 @@ from malspark.pipeline.feedback_mode import feeds_back
 from malspark.pipeline.validation import (
     CHANNEL_BINDING_CODE,
     KEPT_WITH_A_FINDING,
+    MARKED_IN_PLACE,
     NUMERIC_CONFIDENCE_CODE,
     PROCESS_WORDS_CODE,
     PROSE_SHAPE_CODE,
@@ -3102,8 +3103,18 @@ class ReportComposer:
                     self._tally().retries += sent
                     if not sent or again is payload or again is None:
                         return bool(sent), None
+                    # The answer is replaced: the findings on record are those
+                    # of the answer that stands. The first answer's are taken
+                    # off; each of the standing answer's is recorded, as asked
+                    # where the first answer held it too, as not asked where
+                    # only this answer raises it.
+                    name = section or schema.__name__
+                    self._withdraw_recorded(name, ungrounded)
                     self._record_ungrounded(
-                        section or schema.__name__,
+                        name, [v for v in left if (v.code, v.path, v.message) in recorded]
+                    )
+                    self._record_ungrounded(
+                        name,
                         [
                             replace(v, message=f"{v.message} {ONLY_IN_THE_RETRY}", sentence="")
                             for v in left
@@ -3208,6 +3219,32 @@ class ReportComposer:
             return
         if reason not in self.degradations:
             self.degradations.append(reason)
+
+    def _withdraw_recorded(self, section: str, violations: Sequence[Violation]) -> None:
+        """Take a section's recorded findings off the record: its unresolved rows and the
+        sentences they marked. For an answer another one replaced. Never raises."""
+        if not violations:
+            return
+        try:
+            agent = f"composer:{section}"
+            rows = {(v.code, v.message) for v in violations}
+            tally = self._tally()
+            tally.unresolved[:] = [
+                row
+                for row in tally.unresolved
+                if not (row.get("agent") == agent and (row.get("code"), row.get("message")) in rows)
+            ]
+            marked = {
+                (sentence, v.code)
+                for v in violations
+                if v.code in MARKED_IN_PLACE
+                for sentence in v.quoted
+            }
+            flagged = getattr(getattr(self, "_report", None), "flagged_statements", None)
+            if marked and isinstance(flagged, list):
+                flagged[:] = [row for row in flagged if (row.sentence, row.code) not in marked]
+        except Exception as exc:  # noqa: BLE001 — the record is never worth a report
+            logger.debug("ReportComposer: a replaced answer's findings stayed (%s).", exc)
 
     def _record_ungrounded(
         self, section: str, violations: list[Violation], *, asked: bool = True

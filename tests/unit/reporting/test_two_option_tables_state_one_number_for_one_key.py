@@ -21,6 +21,7 @@ from unittest.mock import patch
 
 from malspark.pipeline.validation import (
     ASKED_BY_VALUE,
+    COMMAND_VALUES_CODE,
     KEPT_WITH_A_FINDING,
     MARKED_IN_PLACE,
     OPTION_NUMBERS_DIFFER_CODE,
@@ -154,7 +155,9 @@ def _commands_answer(description: str) -> str:
     return json.dumps({"commands": [{**COMMAND, "description": description}]})
 
 
-def _compose_both(commands: list[str], flags: list[str]) -> tuple[_RawLLM, MalwareReport, Any]:
+def _compose_both(
+    commands: list[str], flags: list[str], *, command_checks: list[Any] | None = None
+) -> tuple[_RawLLM, MalwareReport, Any]:
     """Both tables written through the manual path by one model, then read together.
 
     The model answers in the order it is asked: the commands table, the flags
@@ -193,7 +196,10 @@ def _compose_both(commands: list[str], flags: list[str]) -> tuple[_RawLLM, Malwa
         ):
             for schema, section in ((_CommandsOut, "commands"), (_CliFlagsOut, "cli_flags")):
                 out = await comp._invoke(
-                    [HumanMessage(content=f"write {section}")], schema, section=section
+                    [HumanMessage(content=f"write {section}")],
+                    schema,
+                    section=section,
+                    validators=command_checks if section == "commands" else None,
                 )
                 _apply(section, out)
             await comp._tables_read_together(ta, _apply)
@@ -282,4 +288,36 @@ class TestTheComposer:
             row
             for row in comp.validation_tally.unresolved
             if row["code"] == OPTION_NUMBERS_DIFFER_CODE
+        ]
+
+    def test_the_findings_on_record_are_those_of_the_answer_that_stands(self) -> None:
+        # The commands section's first answer carries a finding no turn is opened
+        # for; its retry, asked about the other table, replaces that answer with one
+        # the finding does not hold for: the first answer's finding is not left.
+        fixed = "Sets key 0x5c to 4 for -wirelog."
+
+        def _values(payload: Any) -> list[Any]:
+            from malspark.pipeline.validation import Violation
+
+            rows = (payload or {}).get("commands") or []
+            if any(row.get("description") == COMMAND["description"] for row in rows):
+                return [
+                    Violation(
+                        code=COMMAND_VALUES_CODE,
+                        message="The commands row states two values.",
+                        path="commands",
+                        question_only=True,
+                    )
+                ]
+            return []
+
+        llm, _report_, comp = _compose_both(
+            [_commands_answer(COMMAND["description"]), _commands_answer(fixed)],
+            [_flags_answer(FLAG["description"])],
+            command_checks=[_values],
+        )
+
+        assert len(_sent_to(llm, "commands")) == 2
+        assert not [
+            row for row in comp.validation_tally.unresolved if row["code"] == COMMAND_VALUES_CODE
         ]
