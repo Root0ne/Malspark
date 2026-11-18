@@ -439,7 +439,9 @@ def _publish_rule_unlisted(
         key = (one.kind, value_key(one.kind, one.value))
         host = url_address(one.value) if one.kind == "url" else ""
         if one.kind == "ip":
-            one.unlisted = _of_address(one.value)
+            # An address as a host writes it (a port, brackets) is read as a
+            # request's host is: the address its row is keyed by.
+            one.unlisted = _of_address(request_address({"host": one.value}) or one.value)
         elif host:
             one.unlisted = _of_address(host)
         elif key in keyed:
