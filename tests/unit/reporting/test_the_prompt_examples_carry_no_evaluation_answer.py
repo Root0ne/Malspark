@@ -312,6 +312,7 @@ from malspark.reporting.narrative_agent import (
     CLAIMS_IN_FORCE_HEADING,
     EXAMPLE_OBJECT,
     EXPECTED_OBJECT,
+    PublishedAnswers,
     build_prompt_text,
     support_note,
 )
@@ -1622,14 +1623,24 @@ PROMPTS: dict[str, str] = {
         _FLOW_FACTS_REPORT
     ),
     "narrative question about a recommendation naming a value not published": " ".join(
-        v.message
+        f"{v.message} {v.shown}"
+        for answers in (
+            lambda kind, value: "no: x" if kind == "ip" else "",
+            PublishedAnswers(table={}, network=()),
+            PublishedAnswers(table={}, network=("two.example.net", "192.0.2.9")),
+        )
         for v in recommendation_indicator_violations(
             {
                 "defensive_recommendations": [
-                    {"action": "Block 192.0.2.1 and one.example.com.", "detection": "x"}
+                    {
+                        "category": "firewall",
+                        "priority": "P0",
+                        "action": "Block 192.0.2.1 and one.example.com.",
+                        "detection": "x",
+                    }
                 ]
             },
-            lambda kind, value: "no: x" if kind == "ip" else "",
+            answers,
         )
     ),
     "narrative question about a recommendation naming a technique not published": " ".join(

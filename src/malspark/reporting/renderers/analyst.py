@@ -56,6 +56,7 @@ from malspark.reporting.models import (
     TechnicalSubsection,
     outcome_words,
 )
+from malspark.reporting.publish_words import UNPUBLISHED_STATE
 from malspark.reporting.renderers.layout import BUNDLE_HTML, BUNDLE_JSON
 from malspark.reporting.renderers.markdown import (
     _EV_RE,
@@ -871,9 +872,6 @@ _CONFIDENCE_NUMBER = re.compile(
 )
 
 
-# The state the analyst report writes after a value the run does not publish, in
-# its own fixed words: never the model's, never the table's reason (T-555).
-UNPUBLISHED_STATE = "not a published indicator"
 # A bracket that speaks of publication: what the model wrote of a value's publish
 # state, which the platform's own state replaces. Any other bracket ("(UDP 53)")
 # is the model's description of the value, and stays.

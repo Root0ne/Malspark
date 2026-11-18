@@ -23,9 +23,9 @@ familiar to anyone debugging existing agents.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import nullcontext
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -83,6 +83,13 @@ from malspark.reporting.models import (
     KeyFinding,
     MalwareReport,
     confidence_text,
+)
+from malspark.reporting.publish_words import (
+    NETWORK_INDICATOR_KINDS,
+    NO_PUBLISHED_NETWORK,
+    PUBLISHED_NETWORK_LABEL,
+    PUBLISHED_STATE,
+    UNPUBLISHED_STATE,
 )
 from malspark.utils.json_cleaner import safe_parse_json
 
@@ -257,6 +264,8 @@ _SYSTEM_PROMPT_TEMPLATE = (
     "exact observable.\n"
     "   Each entry is a distinct, non-overlapping action; do not duplicate an "
     "action already implied by the narrative prose.\n"
+    "   A recommendation names only values this run publishes: the 'Published network "
+    "indicators' line above lists them.\n"
     "6. The three fields must NOT restate one another — a reader should be able "
     "to read all three with no repeated sentences.\n"
     "7. State facts plainly and write inferences with estimative words ('likely', "
@@ -577,6 +586,17 @@ def findings_lines(
     lines.append("")
 
     # --- Network IOCs (the suspicious ones first) ----------------------
+    # Each value with its publish state from the IOC table, then the network
+    # values the run publishes: what a recommendation is written over.
+    answers = _published_or_none(report)
+
+    def _state(kind: str, value: str) -> str:
+        if answers is None:
+            return ""
+        from malspark.reporting.renderers.stix_renderer import publishes
+
+        return f"; {PUBLISHED_STATE if publishes(answers(kind, value)) else UNPUBLISHED_STATE}"
+
     lines.append("Network IOCs:")
     if report.network:
         domains = [d for d in report.network.domains if d.is_suspicious] + [
@@ -586,13 +606,21 @@ def findings_lines(
         # is shown quoted and escaped, one value on one line.
         for dom in domains:
             reason = dom.reason or "observed"
-            lines.append(f"  - domain: {quoted_value(str(dom.fqdn))} ({reason})")
+            state = _state("domain", str(dom.fqdn))
+            lines.append(f"  - domain: {quoted_value(str(dom.fqdn))} ({reason}{state})")
         for ip in report.network.ips:
             note = ip.reputation.get("_heuristic_reason") if ip.reputation else None
             tag = note or ("suspicious" if ip.is_suspicious else "observed")
-            lines.append(f"  - ip: {ip.address} ({tag})")
+            lines.append(f"  - ip: {ip.address} ({tag}{_state('ip', str(ip.address))})")
     else:
         lines.append("  (no network data)")
+    if answers is not None:
+        published = ", ".join(quoted_value(value) for value in answers.network)
+        lines.append(
+            f"{PUBLISHED_NETWORK_LABEL}: {published}"
+            if published
+            else f"{PUBLISHED_NETWORK_LABEL}: none; {NO_PUBLISHED_NETWORK}."
+        )
     lines.append("")
 
     # --- The place the sandbox started the submitted file from ----------
@@ -661,7 +689,7 @@ def published_technique_ids(report: MalwareReport) -> list[str]:
     )
 
 
-def published_answers(report: MalwareReport, *, rows: list[Any] | None = None) -> Any:
+def published_answers(report: MalwareReport, *, rows: list[Any] | None = None) -> PublishedAnswers:
     """``(kind, value) -> the IOC table's answer`` for a value, ``""`` when no row holds it.
 
     The table the report's §9 prints and ``/iocs`` serves, by their one
@@ -676,10 +704,12 @@ def published_answers(report: MalwareReport, *, rows: list[Any] | None = None) -
     """
     from malspark.reporting.builder import ioc_table
     from malspark.reporting.ledger_projection import value_key
+    from malspark.reporting.renderers.stix_renderer import publishes
 
     if rows is None:
         rows = ioc_table(report, raise_unread=True)
     table: dict[tuple[str, str], str] = {}
+    network: dict[str, None] = {}
     for row in rows:
         kind = str(row.kind or "")
         answer = str(row.published or "")
@@ -687,11 +717,40 @@ def published_answers(report: MalwareReport, *, rows: list[Any] | None = None) -
         # A value with two rows is published when either publishes it.
         if key not in table or answer.startswith("yes"):
             table[key] = answer
+        if kind in NETWORK_INDICATOR_KINDS and publishes(answer):
+            network.setdefault(str(row.value), None)
+    return PublishedAnswers(table=table, network=tuple(network))
 
-    def _answer(kind: str, value: str) -> str:
-        return table.get((kind, value_key(kind, value)), "")
 
-    return _answer
+@dataclass(frozen=True, eq=False)
+class PublishedAnswers:
+    """``(kind, value) -> the IOC table's answer`` (:func:`published_answers`).
+
+    ``network`` is the network values the table publishes, in its order, as
+    the report counts them (``publish_words.NETWORK_INDICATOR_KINDS``): the
+    list a recommendation is to act on.
+    """
+
+    table: Mapping[tuple[str, str], str]
+    network: tuple[str, ...] = ()
+
+    def __call__(self, kind: str, value: str) -> str:
+        from malspark.reporting.ledger_projection import value_key
+
+        return self.table.get((kind, value_key(kind, value)), "")
+
+
+def _published_or_none(report: MalwareReport) -> PublishedAnswers | None:
+    """:func:`published_answers` for the prompt's network block, ``None`` where the table is unread.
+
+    The block then prints each value as it did, with no state and no list:
+    the round's own check reads the table again and ends the round there.
+    """
+    try:
+        return published_answers(report)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("narrative prompt: the IOC table could not be read (%s)", exc)
+        return None
 
 
 class NarrativeAgent:

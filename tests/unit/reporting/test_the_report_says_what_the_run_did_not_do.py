@@ -657,3 +657,16 @@ class TestTheSandboxStatusIsAStatementNotAnObservation:
         )
         run = markdown.split("## Appendix B.", 1)[1]
         assert "- Sandbox: No sandbox ran for this sample" in run
+
+
+def test_an_unpublished_recommendation_s_finding_states_the_fact_alone() -> None:
+    from tests.unit.reporting.test_the_analyst_report_prints_the_findings_and_the_bundle_the_rest import (  # noqa: E501
+        _with_an_unpublished_recommendation,
+    )
+
+    markdown = _render(_with_an_unpublished_recommendation())
+    lines = [one for one in markdown.splitlines() if "narrative.unpublished_indicator" in one]
+
+    assert lines
+    assert any("the P0 firewall recommendation names a value" in one for one in lines)
+    assert not [one for one in lines if "Write it" in one or "Write the recommendation" in one]

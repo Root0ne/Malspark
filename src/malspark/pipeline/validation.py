@@ -8397,7 +8397,12 @@ MARKED_IN_PLACE: frozenset[str] = frozenset(
 # an answer that rewrites the sentence around the same value was asked all the
 # same.
 ASKED_BY_VALUE: frozenset[str] = frozenset(
-    {CITATION_WRONG_ENTRY_CODE, ID_NOT_IN_CITED_ENTRY_CODE, STATED_VALUE_INSIDE_A_TOKEN_CODE}
+    {
+        CITATION_WRONG_ENTRY_CODE,
+        ID_NOT_IN_CITED_ENTRY_CODE,
+        STATED_VALUE_INSIDE_A_TOKEN_CODE,
+        UNPUBLISHED_RECOMMENDATION_CODE,
+    }
 )
 
 
@@ -8773,15 +8778,21 @@ def recommendation_indicator_violations(
     field of a recommendation is read — the action, the rationale and the
     detection the hunting notes print — and each value the table does not
     answer ``yes`` for is named with the table's reason, one question per
-    recommendation. Nothing is removed: what the model answers stands.
+    recommendation. The finding states the fact and names the row by its
+    priority and category, as the report's table prints it; its path keeps
+    the row's place in the answer. The question sent (``shown``) names the
+    network values the run publishes (``answers.network``), or says it
+    publishes none. Nothing is removed: what the model answers stands.
     """
     from malspark.extractors.network_extractor import is_well_known_benign_host
     from malspark.reporting.renderers.stix_renderer import publishes
 
+    shown = _recommendation_list_question(getattr(answers, "network", None))
     out: list[Violation] = []
     for index, (at, row) in enumerate(_placed_rows(payload, "defensive_recommendations")):
         text = " ".join(str(row.get(key) or "") for key in ("action", "rationale", "detection"))
         refused: list[str] = []
+        values: list[str] = []
         named, gated = _values_and_gated(text)
         for kind, value in named:
             answer = str(answers(kind, value) or "")
@@ -8799,22 +8810,56 @@ def recommendation_indicator_violations(
             said = f"{safe_finding_value(value)} ({safe_finding_value(why)})"
             if said not in refused:
                 refused.append(said)
+                values.append(value)
         if not refused:
             continue
         out.append(
             Violation(
                 code=UNPUBLISHED_RECOMMENDATION_CODE,
                 message=(
-                    f"recommendation {safe_finding_value(index + 1)} names a value this run "
-                    "does not publish: "
-                    f"{'; '.join(refused)}. A recommendation acts on the indicators this run "
-                    "publishes. Write it over the published indicators, or without the value."
+                    f"{_recommendation_named(row)} names a value this run does not publish: "
+                    f"{'; '.join(refused)}."
                 ),
                 path=f"defensive_recommendations.{index}",
                 statements=(f"defensive_recommendations.{at}",),
+                values=tuple(dict.fromkeys(values)),
+                shown=shown,
             )
         )
     return out
+
+
+def _recommendation_named(row: Mapping[str, Any]) -> str:
+    """A recommendation as the report's table names it: ``the P2 firewall recommendation``."""
+    words = [
+        safe_finding_value(str(row.get(key) or "").strip().replace("_", " "))
+        for key in ("priority", "category")
+        if str(row.get(key) or "").strip()
+    ]
+    return " ".join(["the", *words, "recommendation"])
+
+
+def _recommendation_list_question(network: Sequence[str] | None) -> str:
+    """What the question about an unpublished recommendation value shows after the finding.
+
+    The network values the run publishes, or that it publishes none; the rule
+    alone where the caller's answers carry no list.
+    """
+    if network is None:
+        return (
+            "A recommendation acts on the indicators this run publishes. Write it over the "
+            "published indicators, or without the value."
+        )
+    if not network:
+        return (
+            "This run publishes no network indicator: write the recommendation without the value."
+        )
+    listed = ", ".join(safe_finding_value(value) for value in network)
+    return (
+        "A recommendation acts on the indicators this run publishes; the network indicators "
+        f"it publishes are: {listed}. Write the recommendation over those, or without the "
+        "value."
+    )
 
 
 def recommendation_technique_violations(

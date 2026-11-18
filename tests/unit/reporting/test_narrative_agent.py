@@ -295,6 +295,63 @@ class TestPromptBuilder:
         assert "top " not in text.lower() and "max " not in text.lower()
 
 
+def _network_report(*, publishes_the_domain: bool = True) -> MalwareReport:
+    from malspark.reporting.models import (
+        FileHashes,
+        NetworkDomain,
+        NetworkIOCs,
+        NetworkIP,
+        SampleIdentity,
+    )
+
+    domains = [NetworkDomain(fqdn="gate.example.com", source="sandbox")]
+    return MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
+        verdict="Malware",
+        network=NetworkIOCs(
+            domains=domains if publishes_the_domain else [],
+            ips=[NetworkIP(address="198.51.100.7", source="sandbox")],
+        ),
+    )
+
+
+class TestARecommendationIsAskedForWithTheListItActsOn:
+    def test_each_network_value_carries_its_publish_state(self) -> None:
+        from malspark.agents.tool_fence import quoted_value
+
+        lines = build_prompt_text(_network_report()).splitlines()
+
+        domain = quoted_value("gate.example.com")
+        assert f"  - domain: {domain} (observed; a published indicator)" in lines
+        assert "  - ip: 198.51.100.7 (observed; not a published indicator)" in lines
+
+    def test_the_values_the_run_publishes_are_listed_after_them(self) -> None:
+        from malspark.agents.tool_fence import quoted_value
+
+        text = build_prompt_text(_network_report())
+
+        assert f"Published network indicators: {quoted_value('gate.example.com')}\n" in text
+        assert text.index("  - ip: 198.51.100.7") < text.index("Published network indicators:")
+
+    def test_a_run_that_publishes_no_network_indicator_says_so(self) -> None:
+        text = build_prompt_text(_network_report(publishes_the_domain=False))
+
+        assert (
+            "Published network indicators: none; this run publishes no network indicator.\n" in text
+        )
+
+    def test_the_rule_on_recommendations_says_once_they_name_only_published_values(
+        self,
+    ) -> None:
+        from malspark.reporting.narrative_agent import _SYSTEM_PROMPT
+
+        rule = (
+            "A recommendation names only values this run publishes: the 'Published network "
+            "indicators' line above lists them."
+        )
+        assert _SYSTEM_PROMPT.count(rule) == 1
+
+
 # ---------------------------------------------------------------------------
 # Agent paths
 # ---------------------------------------------------------------------------

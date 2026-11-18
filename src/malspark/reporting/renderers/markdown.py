@@ -128,6 +128,7 @@ from malspark.reporting.prose_decisions import (
     PUBLISHED_TECHNIQUE_DOUBTED_CODE,
     with_decided_statements,
 )
+from malspark.reporting.publish_words import NETWORK_INDICATOR_KINDS, PUBLISHED_NETWORK_LABEL
 from malspark.reporting.redone_calls import ENTRY_ID
 from malspark.reporting.renderers.layout import ANALYST, BUNDLE, FULL, checked
 from malspark.reporting.renderers.prose_forms import (
@@ -297,7 +298,7 @@ _EV_RE = re.compile(r"\bev_\d+\b")
 _SANDBOX_TOOLS = "markdown._SANDBOX_TOOLS"
 
 # Network indicator kinds, which the IOC section prints in its second table.
-_NETWORK_KINDS = frozenset({"domain", "ip", "url", "user_agent", "ja3", "ja3s", "email", "sni"})
+_NETWORK_KINDS = NETWORK_INDICATOR_KINDS
 
 # The reputation tools a triage pack may call about the sample itself, by
 # their declared kinds.
@@ -674,7 +675,7 @@ class MarkdownRenderer:
         published = sum(
             1 for row in ctx.iocs if row.kind in _NETWORK_KINDS and publishes(row.published)
         )
-        lines.append(_item(f"Published network indicators: {published} _({MEASURED})_"))
+        lines.append(_item(f"{PUBLISHED_NETWORK_LABEL}: {published} _({MEASURED})_"))
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
