@@ -373,3 +373,100 @@ def test_a_whole_copy_of_a_passage_cut_at_its_line_breaks_ends_as_its_sentences(
     whole, split = ended([f"{head} {_T}"]), ended([head, _T])
     assert whole == split
     assert split[1] == 2
+
+
+def _ended(limitations: str, background: str, rows: list[dict[str, Any]]) -> tuple[Any, ...]:
+    report = _report(limitations, background=background)
+    done = _ask(report, _Reporter({"sentences": rows}, {"sentences": rows}))
+    placed = [r for r in done.tally.unresolved if r["code"] == PLACED_BY_SENTENCE_CODE]
+    return (
+        report.intro_background,
+        report.technical_analysis.analyst_limitations.body,
+        done.summary["dropped"],
+    ), bool(placed)
+
+
+def _dropped(sentence: str) -> dict[str, Any]:
+    return {
+        **_row(sentence, "drop", [], reason="the lines shown say otherwise"),
+        "passage": "held.x",
+    }
+
+
+def test_a_copy_its_passage_cuts_at_a_line_another_passage_holds_places_no_row() -> None:
+    # The limitations end a sentence at a line break the one-line copy writes as a space; the
+    # introduction holds that first line as a sentence of its own: the copy's first sentence,
+    # as the row answers it in the limitations, stands in two passages.
+    head = FIRST.removesuffix(" [ev_0107].")
+    limitations, background = f"{head}\nthrough a slot [ev_0107].", f"{head}\n{_X}"
+    whole, placed = _ended(limitations, background, [_dropped(f"{head} through a slot [ev_0107].")])
+    assert not placed
+    assert whole == (background, limitations, 0)
+    split, _placed_ = _ended(
+        limitations, background, [_dropped(head), _dropped("through a slot [ev_0107].")]
+    )
+    assert split == whole
+
+
+def test_a_copy_one_sentence_of_which_another_passage_holds_inside_a_longer_one_is_refused() -> (
+    None
+):
+    # The introduction holds the copy's second sentence as a run of words inside a longer
+    # sentence of its own: the whole copy is refused, every passage as written.
+    second = "QueryHostMode returns zero [ev_0109]."
+    limitations, background = f"{_X} {second}", f"In routine 0x5a10, {second}"
+    whole, placed = _ended(limitations, background, [_dropped(f"{_X} {second}")])
+    assert not placed
+    assert whole == (background, limitations, 0)
+
+
+# Sentences and line fragments a generated passage is made of: some stand in two passages,
+# some only inside a longer sentence, some cut at a line break.
+_POOL = (
+    FIRST,
+    _T,
+    _X,
+    FIRST.removesuffix(" [ev_0107]."),
+    "through a slot [ev_0107].",
+    _T.removesuffix(" to disk [ev_0107]."),
+    "to disk [ev_0107].",
+    f"As noted, {_X.lower()}",
+)
+
+
+def test_every_placed_whole_copy_ends_as_its_sentences_given_one_by_one() -> None:
+    import random
+
+    from malspark.reporting.section_agreement import _Sentences
+
+    rng = random.Random(736)
+
+    def text(parts: int) -> str:
+        return "".join(
+            rng.choice(_POOL) + (rng.choice((" ", "\n")) if at < parts - 1 else "")
+            for at in range(parts)
+        )
+
+    placed_cases = 0
+    for _case in range(200):
+        limitations, background = text(rng.randint(1, 3)), text(rng.randint(0, 3))
+        whole_text = rng.choice((limitations, background)) if background else limitations
+        copy = " ".join(whole_text.split()) if rng.random() < 0.6 else whole_text
+        if rng.random() < 0.7:
+            make = _dropped
+        else:
+
+            def make(s: str) -> dict[str, Any]:
+                return {**_row(s, "keep", ["ledger.1"]), "passage": "held.x"}
+
+        whole, placed = _ended(limitations, background, [make(copy)])
+        if not placed:
+            continue
+        placed_cases += 1
+        cut = _Sentences(whole_text)
+        span = cut.span(copy, whole=True)
+        assert span is not None
+        units = [unit[2] for unit in cut.units(span)]
+        split, _placed_ = _ended(limitations, background, [make(unit) for unit in units])
+        assert split[:2] == whole[:2], (limitations, background, copy)
+    assert placed_cases >= 60, placed_cases
