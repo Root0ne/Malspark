@@ -688,8 +688,8 @@ class MalwareReportBuilder:
             and not is_benign(report)
             and report.attribution.family_grounded
         )
-        # Without a family, the category names the sample unless the judge states it as
-        # none, written as the judge wrote it but for its first letter (``category_words``).
+        # Without a family, the category names the sample, title-cased, unless the judge
+        # states it as none (``category_words``).
         from malspark.reporting.category_words import category_name, stated_none
 
         name = family if family_named else category_name(report.malware_category)

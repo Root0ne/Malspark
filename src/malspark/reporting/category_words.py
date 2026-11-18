@@ -40,9 +40,9 @@ def category_shown(category: Any) -> str:
 
 def category_name(category: Any) -> str | None:
     """The category as a name standing for the sample, or ``None``: none for a category
-    stated as none or not given; any other as the judge wrote it, on one line, its first
-    letter upper case and nothing else recased (a judge's "SSH client" stays "SSH")."""
+    stated as none or not given; any other title-cased ("information stealer" is
+    "Information Stealer")."""
     text = _one_line(category)
     if not text or stated_none(text):
         return None
-    return text[0].upper() + text[1:]
+    return str(category).title()
