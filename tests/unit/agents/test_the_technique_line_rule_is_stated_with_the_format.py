@@ -170,3 +170,73 @@ def test_a_strictly_read_answer_keeps_its_written_text_and_its_retry_merges_by_n
     # A whole-answer retry would leave claim 2 alone; the merge keeps claim 1.
     assert [c.claim for c in isr.claims] == [_MUTEX, _INJECT]
     assert [c.technique_line for c in isr.claims] == [None, None]
+
+
+def _parsed(analyst: _StrictAnalyst, text: str) -> AgentISR:
+    content = analyst._capture_findings(text)
+    return analyst._parsed_isr(analyst._read_claims(content), content, "static")
+
+
+_CLIPBOARD = "The sample reads the clipboard every second."
+
+
+@pytest.mark.parametrize(
+    "retry",
+    [
+        # Claim 2's sentence written under claim 1's number.
+        _numbered(1, _INJECT, "NONE"),
+        # A sentence sharing no value with claim 1, under claim 1's number.
+        _numbered(1, _CLIPBOARD, "NONE") + _numbered(2, _INJECT, "NONE"),
+    ],
+    ids=["renumbered", "another_claim_under_a_held_number"],
+)
+def test_a_retry_whose_numbers_do_not_name_the_claims_is_not_merged_over_them(
+    retry: str,
+) -> None:
+    """A retry merged by claim number replaces a claim only with that claim
+    written again: one whose numbers do not name the claims of the answer it
+    fixes is not merged over them, and the analyst is asked once for its whole
+    corrected answer, which is read as a whole answer."""
+    from malspark.pipeline.retry_merge import merge_retry
+
+    first = _numbered(1, _MUTEX, "NONE") + _numbered(2, _INJECT, _UNREAD)
+    whole = _numbered(1, _MUTEX, "NONE") + _numbered(2, _INJECT, "NONE")
+    analyst = _StrictAnalyst(first, [retry, whole])
+    merge = merge_retry(analyst.analyze_isr("raw data"), _parsed(analyst, retry), retry, asked=[1])
+    assert merge.why
+
+    isr = analyst.safe_analyze_isr("raw data")
+
+    assert len(analyst.seen_turns) == 2
+    assert [c.claim for c in isr.claims] == [_MUTEX, _INJECT]
+    assert [c.technique_line for c in isr.claims] == [None, None]
+
+
+_PEER = "The dynamic analyst saw the loader beacon to a remote host."
+
+
+def test_the_answer_shown_back_is_the_analyst_s_own_text_beside_the_gate_s_note() -> None:
+    """The validation turn shows the analyst its own written answer and nothing
+    else as its turn; the claims the consistency gate set aside are named beside
+    it as set aside."""
+    from malspark.pipeline.validation import gate_removed_note
+
+    first = _numbered(1, _MUTEX, "NONE") + _numbered(2, _INJECT, _UNREAD)
+    analyst = _StrictAnalyst(first, [_numbered(2, _INJECT, "NONE")])
+    analyst.run_state_block = _PEER
+    parsed = analyst.analyze_isr("raw data")
+    gated = parsed.model_copy(update={"claims": parsed.claims[1:]})
+    gated.note_gate_removed([parsed.claims[0].claim])
+    analyst.analyze_isr = lambda data: gated  # type: ignore[method-assign]
+
+    analyst.safe_analyze_isr(f"raw data\n{_PEER}")
+
+    [shown] = _shown(analyst)
+    assert shown.strip() == first.strip()
+    assert _PEER not in shown
+    asked = [
+        str(turn.content) for turn in analyst.seen_turns[0] if getattr(turn, "type", "") == "human"
+    ]
+    assert gate_removed_note([_MUTEX]) in asked[-1]
+    # The written text is the answer's own record, never a field it is stored or sent with.
+    assert "answer_text" not in parsed.model_dump() and "_answer_text" not in parsed.model_dump()
