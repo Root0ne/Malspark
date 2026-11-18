@@ -28,6 +28,20 @@ from malspark.core.config import (
     with_the_role_seed_tools,
 )
 
+# The reputation paragraph the seeded generic prompts end with, and the one
+# they ended with in the release before.
+_CURRENT_REPUTATION_PARAGRAPH = """\
+When a reputation tool is among your tools: where an entry you were given
+already holds a reputation answer for a value, such as the sample's hash, cite
+that entry by its evidence id; look a value up only when no entry you were
+given holds one, and cite what comes back with its evidence id like any other
+tool result. Weigh a reputation answer as one source: a reputation label is not
+the verdict, and an unknown hash is not a clean sample."""
+_FORMER_REPUTATION_PARAGRAPH = """\
+When a reputation tool is among your tools, look the sample's hash up once and
+cite what comes back: a reputation label is one source and not the verdict, and
+an unknown hash is not a clean sample."""
+
 
 def _servers(definition) -> list[str | None]:
     return [ref.server for ref in definition.tools]
@@ -89,16 +103,40 @@ class TestAFormerSeedPromptIsTheSeed:
         assert digest not in FORMER_SEED_PROMPT_DIGESTS.get(key, frozenset())
 
     @pytest.mark.parametrize(
-        "digest",
+        ("key", "digest"),
         [
             # The reverser prompt before it asked for every branch of a dispatcher.
-            "486bffd12746ef38cdd4bcdc94413e03584a5009abb2e4f5bfde6a6d6d3e2875",
+            ("reverser", "486bffd12746ef38cdd4bcdc94413e03584a5009abb2e4f5bfde6a6d6d3e2875"),
             # The reverser prompt before it was handed resolved hashes and decoded strings.
-            "f0add93b08ffd9897fdb84d80f16f8b956681e28c2c3fbce8276f2746c6388b7",
+            ("reverser", "f0add93b08ffd9897fdb84d80f16f8b956681e28c2c3fbce8276f2746c6388b7"),
+            # The prompts before a reputation answer the evidence holds was cited by its entry.
+            ("reverser", "92a7c46822a62261aa3ece79d887a94190135aaa02e49798ba4d5bc27f0b0c40"),
+            ("triage", "43d6e144eb344c175c9b84808e9767e24655d502dec809509e85ed77f9f64518"),
+            ("android_static", "9f672152b854ccae4d96351c91a69e35d426250ac1a9e2de16caaf429a8d4902"),
         ],
     )
-    def test_every_reverser_prompt_a_release_shipped_is_listed(self, digest: str) -> None:
-        assert digest in FORMER_SEED_PROMPT_DIGESTS["reverser"]
+    def test_every_seed_prompt_a_release_shipped_is_listed(self, key: str, digest: str) -> None:
+        assert digest in FORMER_SEED_PROMPT_DIGESTS[key]
+
+    @pytest.mark.parametrize("key", ["reverser", "triage", "android_static"])
+    def test_a_row_holding_the_former_reputation_rule_is_the_seed(self, key: str) -> None:
+        """The seed's prompt with its former reputation paragraph is read as the
+        seed: the row keeps its key and runs the current text."""
+        prompt = {
+            "reverser": prompts.REVERSER_PROMPT,
+            "triage": prompts.TRIAGE_PROMPT,
+            "android_static": prompts.ANDROID_STATIC_PROMPT,
+        }[key]
+        assert _CURRENT_REPUTATION_PARAGRAPH in prompt
+        former = prompt.replace(_CURRENT_REPUTATION_PARAGRAPH, _FORMER_REPUTATION_PARAGRAPH)
+        assert hashlib.sha256(former.encode()).hexdigest() in FORMER_SEED_PROMPT_DIGESTS[key]
+        row = Settings(_env_file=None).agents.definitions[key].model_dump(mode="json")
+        row["prompt"] = former
+
+        cfg = Settings(_env_file=None, agents={"definitions": {key: row}})
+
+        assert f"{key}_custom" not in cfg.agents.definitions
+        assert cfg.agents.definitions[key].prompt == prompt
 
     def test_only_seeded_keys_are_listed(self) -> None:
         seeded = set(Settings(_env_file=None).agents.definitions)
