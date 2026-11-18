@@ -73,8 +73,9 @@ READS_EVIDENCE = "malspark_reads_evidence"
 
 # What the read-again tool's model is told it does. Said once, in its definition.
 READ_EVIDENCE_DESCRIPTION = (
-    "Read again the stored answer of an earlier tool call of this analysis, by the "
-    "evidence id it was filed under (evidence_id, for example ev_0001). For an answer "
+    "Read the stored answer of a tool call by the evidence id it was filed under "
+    "(evidence_id, for example ev_0001): an earlier call of yours, or any entry of the "
+    "run's ledger, such as one your prompt names. For an answer "
     "the conversation shows as [cleared …]: the answer comes back whole under its own "
     "id, as the ledger keeps it, shortened only where the room left for a tool answer "
     "requires. For an answer longer than one read, pass offset (a byte position, 0 for the "
@@ -83,7 +84,10 @@ READ_EVIDENCE_DESCRIPTION = (
 )
 
 # What an id the ledger does not hold is answered with.
-UNKNOWN_EVIDENCE_REMEDIATION = "pass an id a [cleared …] line names, exactly as written"
+UNKNOWN_EVIDENCE_REMEDIATION = (
+    "pass an id the run's ledger holds, exactly as written: one a [cleared …] line, "
+    "your prompt or a tool answer names"
+)
 
 # Why a clear happened, as the event and the log say it.
 CLEARED_FOR_REFUSAL = "refused"
@@ -636,7 +640,7 @@ def read_evidence_tool(
     """The read-again tool: a stored answer by its evidence id, sized like any tool answer.
 
     ``lookup`` answers an id with the output the ledger keeps for it, or
-    ``None`` for an id this analysis never filed; an unknown id is said to be
+    ``None`` for an id it does not hold; an unknown id is said to be
     none ``holds`` (:func:`unknown_evidence_message`). ``sizer`` is the job's
     answer guardrail (``ServerRegistry.answer_sizer``): the answer is measured
     against the room the conversation has and shortened as every tool answer

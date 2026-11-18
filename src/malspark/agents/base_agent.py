@@ -74,6 +74,8 @@ from malspark.agents.technique_facts import (
 from malspark.agents.tool_answer_clearing import (
     CLEARED_FOR_REFUSAL,
     CLEARED_FOR_TIER,
+    THE_RUNS_LEDGER,
+    THIS_ANALYSIS,
     Clearing,
     ToolAnswerClearing,
     read_evidence_tool,
@@ -1194,6 +1196,36 @@ def _stored_copy_of(recorder: Any) -> Callable[[str], Any]:
         return None
 
     return copy
+
+
+def read_again_over(
+    recorder: Any, run_reads: Any = None
+) -> tuple[Callable[[str], str | None], Callable[[str], Any], str]:
+    """What a loop's ``read_evidence`` reads: its own entries first, then the run's ledger.
+
+    ``run_reads`` is the job's ledger outside this loop (``LedgerReads``), or
+    ``None`` to read this loop's entries alone. Returns the stored answer and
+    the stored copy of an id, and whose ids an unknown one is said not to be
+    (:func:`tool_answer_clearing.unknown_evidence_message`). The recorder is
+    given the run's ledger too, so a read of an entry another loop filed is
+    filed as a repeat of that entry, as a read of its own is
+    (``evidence_recorder``, ``EvidenceRecorder.outside``).
+    """
+    own_answer, own_copy = _stored_answer_of(recorder), _stored_copy_of(recorder)
+
+    def answer_of(entry_id: str) -> str | None:
+        found = own_answer(entry_id)
+        if found is None and run_reads is not None:
+            found = run_reads.lookup(entry_id)
+        return found
+
+    def copy_of(entry_id: str) -> Any:
+        if recorder.filed(recorder.holder_of(entry_id)) or run_reads is None:
+            return own_copy(entry_id)
+        return run_reads.stored_copy(entry_id)
+
+    recorder.outside = run_reads
+    return answer_of, copy_of, THIS_ANALYSIS if run_reads is None else THE_RUNS_LEDGER
 
 
 def _loop_binding(loop_model: Any, llm: Any) -> Any | None:
@@ -5703,6 +5735,24 @@ class BudgetMeter:
             self.logger.debug("%s: no answer guardrail for read_evidence (%s).", self.name, exc)
             return None
 
+    def _run_ledger_reads(self) -> Any | None:
+        """``LedgerReads`` over the job's ledger this agent was briefed with, or ``None``.
+
+        The ledger of the state :func:`pipeline.nodes.brief_agent` handed it
+        (``run_state_source``), which is assigned on every brief, so it is
+        always this job's: a loop reads no other job's entries. ``None`` for
+        an agent never briefed, or a ledger with no entry.
+        """
+        source = getattr(self, "run_state_source", None)
+        rows = source.get("evidence_ledger") if isinstance(source, Mapping) else None
+        if not rows:
+            return None
+        from malspark.agents.ledger_reads import LedgerReads
+
+        return LedgerReads(
+            rows, sizer=self._answer_sizer(), spill=getattr(self, "evidence_spill", None)
+        )
+
     def _server_registry(self) -> Any | None:
         """The job's tool-server registry, or None when this agent runs bare."""
         container = getattr(self, "_container", None)
@@ -7110,14 +7160,12 @@ class BaseAnalyst(BudgetMeter, ABC):
         # built again with it (``_offer_read_again``), from public calls only.
         self._offered_after_clear = []
         clearing: ToolAnswerClearing | None = self._tool_answer_clearing()
+        # The loop's own entries first, then the run's ledger: the ids the
+        # analyst's prompt shows (the pack's, an upstream analyst's) are read
+        # as its own are, each filed as a repeat of the entry it reads.
+        answer_of, copy_of, holds = read_again_over(recorder, self._run_ledger_reads())
         read_tool = record_tools(
-            [
-                read_evidence_tool(
-                    _stored_answer_of(recorder),
-                    self._answer_sizer(),
-                    _stored_copy_of(recorder),
-                )
-            ],
+            [read_evidence_tool(answer_of, self._answer_sizer(), copy_of, holds=holds)],
             recorder,
             repeats,
             repairs,

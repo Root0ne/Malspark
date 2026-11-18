@@ -323,14 +323,74 @@ class TestReadAgain:
         # A repeat reads the entry that holds its answer.
         assert tool.invoke({"evidence_id": "EV_0002"}) == "the first answer"
 
-    def test_an_id_it_never_filed_is_a_failure_with_a_remedy(self) -> None:
-        from malspark.agents.base_agent import _stored_answer_of
+    def _run_reads(self) -> Any:
+        """The run's ledger beside the loop: a pack row and an earlier agent's entry."""
+        from malspark.agents.ledger_reads import LedgerReads
 
-        tool = tac.read_evidence_tool(_stored_answer_of(self._recorder()))
+        return LedgerReads(
+            [
+                {"id": "ev_0040", "agent": "pipeline", "tool": "reputation", "output": "pack"},
+                {"id": "ev_0041", "agent": "dynamic", "tool": "processes", "output": "upstream"},
+            ]
+        )
+
+    def _loop_tool(self, recorder: EvidenceRecorder, run_reads: Any) -> Any:
+        from malspark.agents.base_agent import read_again_over
+
+        answer_of, copy_of, holds = read_again_over(recorder, run_reads)
+        return tac.read_evidence_tool(answer_of, None, copy_of, holds=holds)
+
+    def test_an_id_the_run_s_ledger_holds_is_read(self) -> None:
+        tool = self._loop_tool(self._recorder(), self._run_reads())
+
+        # The loop's own entries first, as before; then the run's.
+        assert tool.invoke({"evidence_id": "ev_0001"}) == "the first answer"
+        assert tool.invoke({"evidence_id": "ev_0040"}) == "pack"
+        assert tool.invoke({"evidence_id": "EV_0041"}) == "upstream"
+
+    def test_an_id_no_entry_of_the_run_has_fails_with_a_remedy(self) -> None:
+        tool = self._loop_tool(self._recorder(), self._run_reads())
+
         answer = json.loads(tool.invoke({"evidence_id": "ev_0099"}))
         assert answer["error"]["code"] == "bad_argument"
-        assert answer["error"]["message"] == tac.unknown_evidence_message("ev_0099")
+        assert answer["error"]["message"] == tac.unknown_evidence_message(
+            "ev_0099", tac.THE_RUNS_LEDGER
+        )
         assert answer["error"]["remediation"] == tac.UNKNOWN_EVIDENCE_REMEDIATION
+
+    def test_a_loop_with_no_run_ledger_reads_its_own_entries_and_says_so(self) -> None:
+        tool = self._loop_tool(self._recorder(), None)
+
+        assert tool.invoke({"evidence_id": "ev_0001"}) == "the first answer"
+        answer = json.loads(tool.invoke({"evidence_id": "ev_0040"}))
+        assert answer["error"]["message"] == tac.unknown_evidence_message("ev_0040")
+
+    def test_the_description_and_the_remedy_name_the_run_s_ledger(self) -> None:
+        assert "run's ledger" in tac.READ_EVIDENCE_DESCRIPTION
+        assert "run's ledger" in tac.UNKNOWN_EVIDENCE_REMEDIATION
+
+    def test_a_read_of_another_entry_of_the_run_is_filed_as_a_repeat_of_it(self) -> None:
+        from malspark.agents.evidence_recorder import record_tools
+
+        recorder = self._recorder()
+        (read,) = record_tools([self._loop_tool(recorder, self._run_reads())], recorder)
+
+        shown = read.invoke({"evidence_id": "ev_0040"})
+
+        assert shown.startswith("[ev_0040]\n") and "pack" in shown
+        filed = recorder.entries[-1]
+        assert filed.tool == tac.READ_EVIDENCE_TOOL and filed.repeated_of == "ev_0040"
+        assert filed.output == tac.read_again_note("ev_0040")
+
+    def test_an_analyst_s_run_ledger_is_its_briefed_state_s(self) -> None:
+        agent = _Analyst(llm=_Thinker(seen=[], refused=[]), name="static")
+        assert agent._run_ledger_reads() is None
+
+        agent.run_state_source = {
+            "evidence_ledger": [{"id": "ev_0040", "agent": "pipeline", "output": "pack"}]
+        }
+        reads = agent._run_ledger_reads()
+        assert reads is not None and reads.lookup("ev_0040") == "pack"
 
     def test_it_is_sized_by_the_job_s_guardrail(self) -> None:
         from malspark.agents.base_agent import _stored_answer_of
@@ -713,6 +773,55 @@ def test_the_model_reads_a_cleared_answer_again_under_its_own_id() -> None:
     assert entry.output in str(again.content)
     reread = next(e for e in agent._evidence_entries if e.tool == tac.READ_EVIDENCE_TOOL)
     assert reread.args == {"evidence_id": wanted} and reread.repeated_of == wanted
+
+
+class _PackReader(_Thinker):
+    """A thinker that reads a pack row by its id once the read tool is offered."""
+
+    def _generate(
+        self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any
+    ) -> ChatResult:
+        sent = list(messages)
+        offered = [t["function"]["name"] for t in kwargs.get("tools") or []]
+        asked = any(
+            isinstance(m, AIMessage)
+            and any(c["name"] == tac.READ_EVIDENCE_TOOL for c in m.tool_calls)
+            for m in sent
+        )
+        if tac.READ_EVIDENCE_TOOL in offered and not asked:
+            self.seen.append((sent, offered))
+            turn = AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": tac.READ_EVIDENCE_TOOL, "args": {"evidence_id": "ev_0900"}, "id": "p"}
+                ],
+            )
+            return ChatResult(generations=[ChatGeneration(message=turn)])
+        return super()._generate(messages, stop, run_manager, **kwargs)
+
+
+def test_the_loop_reads_an_entry_of_the_run_it_did_not_file() -> None:
+    model = _PackReader(seen=[], refused=[], calls=8, reasoning=100)
+    agent = _Analyst(llm=model, name="static")
+    agent.logger = logging.getLogger("test.clearing")
+    agent._container = _Container(_window(1_000_000))
+    agent.tools = [_lookup(6_000)]
+    agent.run_state_source = {
+        "evidence_ledger": [
+            {"id": "ev_0900", "agent": "pipeline", "tool": "reputation", "output": "pack row"}
+        ]
+    }
+    cw.record_built_window(model, cw.WindowFact(12_000, cw.DECLARED, "test"))
+    with _settings():
+        agent.execute_tool_loop([("system", "You are a static analyst."), ("human", TASK)])
+    answer = next(
+        sent[-1]
+        for sent, _tools in model.seen
+        if isinstance(sent[-1], ToolMessage) and sent[-1].tool_call_id == "p"
+    )
+    assert str(answer.content).startswith("[ev_0900]\n") and "pack row" in str(answer.content)
+    read = next(e for e in agent._evidence_entries if e.tool == tac.READ_EVIDENCE_TOOL)
+    assert read.repeated_of == "ev_0900"
 
 
 def test_the_window_point_is_the_agent_s_own_window_never_the_job_s() -> None:

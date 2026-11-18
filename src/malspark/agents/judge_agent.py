@@ -49,8 +49,6 @@ from malspark.agents.base_agent import (
     OfferReadAgainFirst,
     _hold_the_turn,
     _message_chars,
-    _stored_answer_of,
-    _stored_copy_of,
     _trim_for_synthesis,
     _turn_key,
     counted_window_tokens,
@@ -62,6 +60,7 @@ from malspark.agents.base_agent import (
     model_held_per_turn,
     note_a_window_that_moved,
     nudge_turns,
+    read_again_over,
     recursion_limit,
     request_chars,
     run_on_agent_loop,
@@ -76,11 +75,7 @@ from malspark.agents.judge_postprocess import (
 )
 from malspark.agents.prompt_fragments import tools_statement
 from malspark.agents.run_evidence_corpus import read_of_entry as _read_of_entry
-from malspark.agents.tool_answer_clearing import (
-    THE_RUNS_LEDGER,
-    THIS_ANALYSIS,
-    read_evidence_tool,
-)
+from malspark.agents.tool_answer_clearing import read_evidence_tool
 from malspark.agents.tool_fence import (
     FENCE_STATEMENT,
     QUOTED_VALUE_STATEMENT,
@@ -3260,31 +3255,10 @@ class JudgeAgent(BudgetMeter):
         clearing = self._tool_answer_clearing()
         # The loop's own answers first, then the run's ledger: an analyst's id
         # reads that analyst's entry, filed as a repeat of it.
-        run_reads = self._run_ledger_reads()
-        own_answer, own_copy = _stored_answer_of(recorder), _stored_copy_of(recorder)
-
-        def _answer_of(entry_id: str) -> str | None:
-            found = own_answer(entry_id)
-            if found is None and run_reads is not None:
-                found = run_reads.lookup(entry_id)
-            return found
-
-        def _copy_of(entry_id: str) -> Any:
-            if recorder.filed(recorder.holder_of(entry_id)) or run_reads is None:
-                return own_copy(entry_id)
-            return run_reads.stored_copy(entry_id)
-
-        recorder.outside = run_reads
+        # An unknown id is none the ledger it reads holds.
+        answer_of, copy_of, holds = read_again_over(recorder, self._run_ledger_reads())
         read_tool = record_tools(
-            [
-                read_evidence_tool(
-                    _answer_of,
-                    self._answer_sizer(),
-                    _copy_of,
-                    # An unknown id is none the ledger it reads holds.
-                    holds=THIS_ANALYSIS if run_reads is None else THE_RUNS_LEDGER,
-                )
-            ],
+            [read_evidence_tool(answer_of, self._answer_sizer(), copy_of, holds=holds)],
             recorder,
             repeats,
             context_budget=room,
