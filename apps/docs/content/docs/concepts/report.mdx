@@ -110,17 +110,20 @@ not asked; in the agreement round a finding counts as asked where the sentence i
 is about was asked about, whatever rows carried it. The agreement round's retry
 names a passage only by its id in square brackets, as the round's list writes it,
 and quotes each sentence it asks about whole; the record keeps a bounded copy. A
-well-formed row naming a passage the list does not write is placed by the
-sentences it copies where exactly one passage a row may answer holds them, each
-of them once, then checked as any row and recorded as placed
+well-formed row naming a passage the list does not write is placed in the one
+passage a row may answer that holds a sentence it copies, where each sentence
+the row answers there stands there once and in no other such passage, as a
+sentence or as a run of its words, then checked as any row and recorded as placed
 (`agreement.placed_by_sentence`); a copy with a sentence standing in two
 passages, in none, or twice in one leaves the row refused. Every answer of the
 round, the first and the retry's, is kept as parsed in the round's record in the
 run summary, masked as every stored model answer is, with whether the mask
 changed it, and shown to no model, printed in no report and read by no value
 check.
-Re-applied through the round, a stored answer the mask left unchanged gives the
-round's ends exactly.
+Stored answers are handed back to the round only where the mask left every
+answer of the round unchanged: a record with any answer the mask changed is
+refused before the round, and re-applied, the answers give the round's ends
+exactly.
 A problem the reporter does not fix stays visible in the run summary, with each
 sentence left out recorded whole.
 
