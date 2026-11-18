@@ -3311,12 +3311,17 @@ def render_pack(entries: list[LedgerEntry], max_chars: int, later_chars: int | N
     value's process and on the start path: :data:`_WORDS_ROOM`): the entries
     shown, the trailer's count and every cut are that layout's. Each line the
     layout shows whole then takes its words in what room the block leaves
-    (:func:`_with_words`).
+    (:func:`_with_words`). A later detonation's lines take none.
     """
     first, later = _by_detonation(entries)
     if later:
         own = render_pack(first, max_chars)
-        rest = _later_lines(later, max_chars if later_chars is None else later_chars)
+        # A later detonation's lines carry none of the words, at any room.
+        token = _WORDS_ROOM.set(0)
+        try:
+            rest = _later_lines(later, max_chars if later_chars is None else later_chars)
+        finally:
+            _WORDS_ROOM.reset(token)
         return "\n".join(part for part in (own, rest) if part)
     if max_chars <= 0 or _WORDS_ROOM.get() is not None:
         return _own_block(entries, max_chars)
