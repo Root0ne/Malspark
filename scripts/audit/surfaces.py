@@ -480,12 +480,13 @@ def _published(value: Any) -> bool | None:
     return None
 
 
-def _identifier_refusals(full: Any) -> dict[str, set[str]]:
-    """Each refusal the identifier rule gives, by the value it refuses.
+def _identifier_refusals(full: Any) -> dict[str, set[tuple[str, str]]]:
+    """Each refusal the identifier rule gives, with the type it gives, by the value it refuses.
 
     The rule's own answers (``stated_host_values.identifier_answers``) on the
-    full report as the model reads it, ``{}`` for a report the model cannot
-    read; an answer that publishes is no refusal.
+    full report as the model reads it, each beside the row's type (the rule's
+    label, or the kind as written where it has none), ``{}`` for a report the
+    model cannot read; an answer that publishes is no refusal.
     """
     from malspark.reporting.models import MalwareReport
     from malspark.reporting.renderers.stix_renderer import one_reading, publishes
@@ -500,7 +501,8 @@ def _identifier_refusals(full: Any) -> dict[str, set[str]]:
     out: dict[str, set[str]] = {}
     for stated, answer in answers:
         if not publishes(answer):
-            out.setdefault(_ioc_key(stated.value), set()).add(answer)
+            label = stated.label or stated.written_kind
+            out.setdefault(_ioc_key(stated.value), set()).add((label, answer))
     return out
 
 
@@ -962,15 +964,15 @@ def check_iocs(
         # The full list carries each identifier row the rule refuses after the
         # table's rows, unpublished under source ``analysis`` and typed
         # (``builder.full_ioc_list``): a row whose answer is the refusal the
-        # identifier rule gives that value.
+        # identifier rule gives that value, typed as the rule types it.
         refusals = _identifier_refusals(full)
         for key in feed.keys() - canon.keys():
             item = feed[key]
             if (
                 item.get("source") == "analysis"
                 and _published(item.get("published")) is False
-                and _text(item.get("type")).strip()
-                and _text(item.get("publish_answer")) in refusals.get(key, ())
+                and (_text(item.get("type")), _text(item.get("publish_answer")))
+                in refusals.get(key, ())
             ):
                 continue
             out.defect(

@@ -235,6 +235,7 @@ def _with_an_identifier(
     published: bool = False,
     answer: str | None = None,
     typed: bool = True,
+    type_: str = "Folder",
 ) -> None:
     full = run["report_full"]
     for cell in full["capability_matrix"]:
@@ -251,7 +252,7 @@ def _with_an_identifier(
         "publish_answer": said,
     }
     if typed:
-        item["type"] = "Folder"
+        item["type"] = type_
     run["iocs_all"]["items"].append(item)
 
 
@@ -267,6 +268,7 @@ def test_a_feed_row_no_identifier_refusal_accounts_for_is_still_an_orphan() -> N
         {"stated": False},
         {"published": True},
         {"typed": False},
+        {"type_": "Mutex"},
         {"answer": "no: a refusal the identifier rule does not give"},
     ):
         run = clean_run()
