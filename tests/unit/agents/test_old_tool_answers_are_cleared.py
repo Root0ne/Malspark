@@ -343,7 +343,7 @@ class TestReadAgain:
     def test_an_id_the_run_s_ledger_holds_is_read(self) -> None:
         tool = self._loop_tool(self._recorder(), self._run_reads())
 
-        # The loop's own entries first, as before; then the run's.
+        # The loop's own entries first, then the run's.
         assert tool.invoke({"evidence_id": "ev_0001"}) == "the first answer"
         assert tool.invoke({"evidence_id": "ev_0040"}) == "pack"
         assert tool.invoke({"evidence_id": "EV_0041"}) == "upstream"
@@ -935,6 +935,29 @@ class TestTheAnalysisOwnEarlierEntriesAreRead:
             "ev_0099", tac.THE_RUNS_LEDGER
         )
         assert answer["error"]["remediation"] == tac.UNKNOWN_EVIDENCE_REMEDIATION
+
+    def test_a_briefed_chunk_with_an_empty_ledger_reads_its_earlier_entries_as_the_run_s(
+        self,
+    ) -> None:
+        agent = _Analyst(llm=_Thinker(seen=[], refused=[]), name="static")
+        wanted = _earlier_chunk(agent, "the first chunk's answer")
+        agent.run_state_source = {"evidence_ledger": []}
+        tool, holds = self._loop_read(agent)
+
+        assert holds == tac.THE_RUNS_LEDGER
+        assert tool.description == tac.READ_EVIDENCE_DESCRIPTION
+        assert tool.invoke({"evidence_id": wanted}) == "the first chunk's answer"
+
+    def test_a_briefed_chunk_with_nothing_to_read_says_it_reads_its_own_calls(self) -> None:
+        agent = _Analyst(llm=_Thinker(seen=[], refused=[]), name="static")
+        agent.run_state_source = {"evidence_ledger": []}
+        tool, holds = self._loop_read(agent)
+
+        assert holds == tac.THIS_ANALYSIS
+        assert tool.description == tac.READ_OWN_EVIDENCE_DESCRIPTION
+        answer = json.loads(tool.invoke({"evidence_id": "ev_0099"}))
+        assert answer["error"]["message"] == tac.unknown_evidence_message("ev_0099")
+        assert answer["error"]["remediation"] == tac.UNKNOWN_OWN_EVIDENCE_REMEDIATION
 
     def test_the_judge_reads_its_mediation_round_s_ledger_alone(self) -> None:
         from malspark.agents.judge_agent import JudgeAgent

@@ -5768,8 +5768,9 @@ class BudgetMeter:
         """What this agent's loop reads again (:func:`read_again_over`), and what it says it reads.
 
         The run's ledger where the agent was briefed with a run state
-        (``run_state_source``); without one, its reads are this analysis's own
-        earlier entries, and its description and remedy say so.
+        (``run_state_source``) and a row stands to read, of the job's ledger
+        or of this analysis's earlier entries; otherwise its reads are this
+        analysis's own entries, and its description and remedy say so.
         """
         briefed = isinstance(getattr(self, "run_state_source", None), Mapping)
         return read_again_over(recorder, self._run_ledger_reads(), briefed=briefed)
