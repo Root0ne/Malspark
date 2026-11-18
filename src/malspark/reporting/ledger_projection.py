@@ -68,7 +68,7 @@ from malspark.reporting.models import (
     TrafficMakers,
 )
 from malspark.schemas.evidence import build_entry, format_entry_id
-from malspark.schemas.sandbox_document import LINEAGE_KEY, pid_of, signature_pids
+from malspark.schemas.sandbox_document import LINEAGE_KEY, joined_url, pid_of, signature_pids
 from malspark.schemas.sandbox_report import (
     FLOW_PROCESS_KEY,
     LINEAGE_DISPUTED_KEY,
@@ -2825,15 +2825,17 @@ def _fold_url_host(url: str) -> str:
 
 
 def _http_url(row: Any, host: str) -> str:
-    """The full URL of an HTTP row, which sandboxes split into host and path."""
+    """The full URL of an HTTP row, which sandboxes split into host and path.
+
+    Joined by the one joiner (``sandbox_document.joined_url``): the scheme
+    the row states, ``http`` where it states none.
+    """
     target = _first_str(row, "url", "uri", "path")
     if not target:
         return ""
     if "://" in target:
         return target
-    if not host:
-        return ""
-    return f"http://{host}{target if target.startswith('/') else '/' + target}"
+    return joined_url(target, host, row if isinstance(row, dict) else {}, default="http")
 
 
 def _first_str(row: Any, *keys: str) -> str:

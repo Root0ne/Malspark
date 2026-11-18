@@ -67,7 +67,7 @@ from urllib.parse import urlsplit
 from malspark.analysis.sandbox_sections import Sections
 from malspark.extractors.network_extractor import host_form
 from malspark.reporting.dedupe import canonical_path, canonical_value, indicator_fingerprint
-from malspark.schemas.sandbox_document import dns_row_name
+from malspark.schemas.sandbox_document import dns_row_name, joined_url
 from malspark.schemas.sandbox_report import SAMPLE_TREE_KEY, STAGED_KEY
 
 TOOL = "behaviour_code_links"
@@ -142,10 +142,7 @@ _HOST_FIELDS = ("host",)
 _ADDRESS_FIELDS = ("dst", "ip", "address")
 _SNI_FIELDS = ("sni", "server_name")
 _USER_AGENT_FIELDS = ("user_agent", "user-agent", "useragent")
-_SCHEME_FIELDS = ("scheme", "protocol")
 _PORT_FIELDS = ("port", "dport")
-# The ports a URL leaves unwritten for its scheme (RFC 3986's default ports).
-_DEFAULT_PORTS = {"http": 80, "https": 443}
 # How the answer's ``absent`` names a sandbox section the report does not carry.
 SANDBOX_ABSENT_PREFIX = "sandbox "
 # The sections read, in the order the answer lists their values.
@@ -318,29 +315,6 @@ def _values_of(section: str, item: Mapping[str, Any]) -> Iterator[tuple[str, str
         yield from _network_values(str(item.get("kind") or ""), lowered, scalar)
 
 
-def _scheme(lowered: Mapping[str, Any]) -> str:
-    """The scheme an HTTP row states: its scheme or protocol field, else its ``encrypted``."""
-    stated = _field(lowered, _SCHEME_FIELDS).strip().lower().removesuffix("://")
-    if stated in _DEFAULT_PORTS:
-        return stated
-    encrypted = lowered.get("encrypted")
-    if isinstance(encrypted, bool):
-        return "https" if encrypted else "http"
-    return ""
-
-
-def _joined_url(path: str, host: str, lowered: Mapping[str, Any]) -> str:
-    """A request's URL from its own host and path, where the row states the scheme; else ``""``."""
-    scheme = _scheme(lowered)
-    if not scheme or not host:
-        return ""
-    port = lowered.get("port")
-    written = host if ":" not in host or host.startswith("[") else f"[{host}]"
-    if isinstance(port, int) and not isinstance(port, bool) and port != _DEFAULT_PORTS[scheme]:
-        written += f":{port}"
-    return f"{scheme}://{written}{path if path.startswith('/') else '/' + path}"
-
-
 def _network_values(
     kind: str, lowered: Mapping[str, Any], scalar: str
 ) -> Iterator[tuple[str, str]]:
@@ -362,7 +336,7 @@ def _network_values(
     elif url:
         # A path the request was made for: a URL only with the request's own
         # host and stated scheme; otherwise a path, never compared as a URL.
-        joined = _joined_url(url, host, lowered)
+        joined = joined_url(url, host, lowered)
         yield ("url", joined) if joined else ("url path", url)
     for named in (host, _field(lowered, _SNI_FIELDS)):
         if named:
