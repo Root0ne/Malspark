@@ -63,6 +63,7 @@ from malspark.agents.prompt_fragments import (
     CLAIM_FORMAT_FRAGMENT,
     CLAIM_FORMAT_WITHOUT_TECHNIQUE_FRAGMENT,
     KEEP_REPLY,
+    TECHNIQUE_LINE_RULE,
 )
 from malspark.agents.technique_facts import (
     STANDING_FACTS_CHARS,
@@ -3819,6 +3820,7 @@ _REVISION_ISR_FRAMING = (
 _REVISION_ISR_FORMAT = (
     "Format your response as structured claims (CLAIM/EVIDENCE/CONFIDENCE/TECHNIQUE)\n"
     "followed by a DISPUTES section listing peer claims you reject.\n"
+    f"{TECHNIQUE_LINE_RULE}\n"
     "Example:\n"
     "CLAIM: ...\nEVIDENCE: ...\nCONFIDENCE: 0.8\nTECHNIQUE: T1071\n---\n"
     "DISPUTES:\n- Static analyst says no C2 strings but PCAP shows beaconing.\n"
@@ -5104,11 +5106,18 @@ class _PriorAnswer:
         # merge of chunks. ``shown`` replaces it where only part of the answer
         # is sent back: an answer that repeated its claims is shown up to the
         # first claim that repeats.
-        self.content = (
-            shown
-            if shown is not None
-            else isr.answer_text or isr.unparsed_answer or isr.to_text_summary()
-        )
+        self.content = shown if shown is not None else answer_shown_back(isr)
+
+
+def answer_shown_back(isr: AgentISR) -> str:
+    """The answer a validation turn shows the analyst as its own: as written, where one wrote it.
+
+    An ISR no single answer produced (a merge of chunks) is shown as its
+    claims summary, with each TECHNIQUE line no id was read from as written:
+    the question about such a line quotes it, and the summary prints only
+    the ids that were read.
+    """
+    return isr.answer_text or isr.unparsed_answer or isr.to_text_summary(technique_lines=True)
 
 
 def alignment_gate(knowledge: Any, cfg_validation: Any, log: Any, name: str) -> Any | None:
@@ -11281,9 +11290,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             def _turns(text: str, prior: str | None = None) -> list[Any]:
                 asked = _with_feedback(
                     messages,
-                    first_answer.answer_text or first_answer.to_text_summary()
-                    if prior is None
-                    else prior,
+                    answer_shown_back(first_answer) if prior is None else prior,
                     # As the turn without the branches is measured: they go first.
                     _left_out(shown),
                     closing=text,
@@ -13121,15 +13128,21 @@ class BaseAnalyst(BudgetMeter, ABC):
             blocks_without_confidence=read.without_confidence,
             confidence_unreadable=read.confidence_unreadable,
         )
-        return self._keep_claims_for_function_map(self._with_claims_read(isr))
+        isr = self._keep_claims_for_function_map(self._with_claims_read(isr))
+        # The answer as written, as the lenient reading records it: the
+        # validation turn shows the analyst this, and its questions quote
+        # lines (an unread TECHNIQUE line) the claims summary does not print.
+        isr.note_answer_text(self._written_answer(content))
+        return isr
 
-    def _text_to_isr(self, text: str, revision_round: int) -> AgentISR:
-        """Convert a free-text report into a minimal AgentISR.
+    def _written_answer(self, text: str) -> str:
+        """``text`` as the model wrote it: its findings block put back, its tool-call markup out.
 
-        The ISR carries the answer it was parsed from as the model wrote it
-        (``AgentISR.answer_text``): the findings block ``_capture_findings``
-        took out of ``text`` is put back, because the validation turn shows the
-        analyst its own answer and the block is part of it.
+        ``_capture_findings`` took the block out of the answer ``text`` is the
+        prose of; it is part of the answer the validation turn shows back.
+        Tool-call markup a model wrote into its answer is not part of it — the
+        parser reads none of it — and replayed into a tool-free turn it would
+        be shown back as something to write again.
         """
         written = text
         last = getattr(self, "_last_written_answer", None)
@@ -13137,11 +13150,17 @@ class BaseAnalyst(BudgetMeter, ABC):
             written = str(last[1])
         # Read once: the next answer's block is its own.
         self._last_written_answer = None
+        return strip_tool_call_scaffolding(written)
+
+    def _text_to_isr(self, text: str, revision_round: int) -> AgentISR:
+        """Convert a free-text report into a minimal AgentISR.
+
+        The ISR carries the answer it was parsed from as the model wrote it
+        (``AgentISR.answer_text``, :meth:`_written_answer`).
+        """
+        written = self._written_answer(text)
         isr = self._keep_claims_for_function_map(self._parse_answer_text(text, revision_round))
-        # Tool-call markup a model wrote into its answer is not part of it —
-        # the parser reads none of it — and replayed into a tool-free turn it
-        # would be shown back as something to write again.
-        isr.note_answer_text(strip_tool_call_scaffolding(written))
+        isr.note_answer_text(written)
         return isr
 
     def _parse_answer_text(self, text: str, revision_round: int) -> AgentISR:

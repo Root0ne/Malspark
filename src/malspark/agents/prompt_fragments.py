@@ -202,6 +202,17 @@ FINDINGS_BLOCK_FRAGMENT = (
 #
 # Each tool result the analyst is shown opens with its id in brackets, so the
 # id is in front of the model when it writes the line.
+#
+# What the TECHNIQUE line holds, in the words the unread-line question uses
+# (``validation.technique_line_violation``): stated where the format is given,
+# so the line is written that way the first time rather than asked about.
+TECHNIQUE_LINE_RULE = (
+    "Write each claim's technique ids alone, several separated by commas, or NONE when "
+    "it claims none. An id the claim does not assert (negated, absent, not supported) is "
+    "left off the line, and the claim sentence says so; a doubt about an id the claim "
+    "does assert is said in the claim and in its CONFIDENCE."
+)
+
 CLAIM_FORMAT_FRAGMENT = (
     "Format each finding as:\n"
     "CLAIM: <claim text>\n"
@@ -210,6 +221,7 @@ CLAIM_FORMAT_FRAGMENT = (
     "CONFIDENCE: <float>\n"
     "TECHNIQUE: <T-ID, several separated by commas, or NONE>\n"
     "---\n"
+    f"{TECHNIQUE_LINE_RULE}\n"
 )
 
 # The same shape for an agent that is not asked for techniques

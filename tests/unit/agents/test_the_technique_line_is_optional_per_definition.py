@@ -31,6 +31,13 @@ from malspark.core.config import (
 )
 from malspark.pipeline.validation import TECHNIQUE_LINE_UNREAD_CODE, parse_violations
 
+# What the TECHNIQUE line holds, stated with each format that asks for it.
+TECHNIQUE_RULE = (
+    "Write each claim's technique ids alone, several separated by commas, or NONE when "
+    "it claims none. An id the claim does not assert (negated, absent, not supported) is "
+    "left off the line, and the claim sentence says so; a doubt about an id the claim "
+    "does assert is said in the claim and in its CONFIDENCE.\n"
+)
 # The ISR instruction and the negotiation round's closing as dev sent them.
 DEV_ISR_INSTRUCTION = (
     "Return a structured list of findings. For each finding state: the claim, "
@@ -42,13 +49,13 @@ DEV_ISR_INSTRUCTION = (
     "for example [ev_0002]>\n"
     "CONFIDENCE: <float>\n"
     "TECHNIQUE: <T-ID, several separated by commas, or NONE>\n"
-    "---\n"
-    "\n"
+    "---\n" + TECHNIQUE_RULE + "\n"
 )
 DEV_REVISION_CLOSING = (
     "Format your response as structured claims (CLAIM/EVIDENCE/CONFIDENCE/TECHNIQUE)\n"
     "followed by a DISPUTES section listing peer claims you reject.\n"
-    "Example:\n"
+    + TECHNIQUE_RULE
+    + "Example:\n"
     "CLAIM: ...\nEVIDENCE: ...\nCONFIDENCE: 0.8\nTECHNIQUE: T1071\n---\n"
     "DISPUTES:\n- Static analyst says no C2 strings but PCAP shows beaconing.\n"
 )
