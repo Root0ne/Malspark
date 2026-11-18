@@ -119,6 +119,23 @@ class TestTheCheck:
 
         assert _body(f"A string search for '{QUILL}' ran [ev_0040].", texts) == []
 
+    def test_a_match_equal_to_the_argument_is_the_answer_s_and_is_not_asked(self) -> None:
+        # The answer found the very text it was asked for: only the leaf under the
+        # call's own argument key is an echo; the match row is what the answer holds.
+        searched = f"{MATCHED} delete {QUILL}"
+        texts = EntryTexts.from_ledger(
+            [
+                _entry(
+                    "ev_0060",
+                    "strings",
+                    json.dumps({"pattern": searched, "strings": [{"text": searched}]}),
+                    args={"pattern": searched},
+                )
+            ]
+        )
+
+        assert _body(f"The string evidence holds 'delete {QUILL}' [ev_0060].", texts) == []
+
     def test_a_value_named_as_absent_is_not_asked(self) -> None:
         sentence = f"The string evidence does not contain '{QUILL}' [ev_0030]."
 

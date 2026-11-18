@@ -10837,7 +10837,9 @@ def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tupl
     longer = False
     for entry_id in holding:
         echoes = _call_echoes(entries, entry_id)
-        rest = _without_call_echoes(entries.text_of(entry_id), echoes)
+        rest = _without_call_echoes(
+            entries.text_of(entry_id), echoes, _call_argument_keys(entries, entry_id)
+        )
         if EntryTexts(texts={entry_id: rest}).holds(entry_id, value, fields=True):
             return ()
         longer = longer or any(
@@ -10848,13 +10850,18 @@ def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tupl
     return tuple(holding) if longer else ()
 
 
-def _without_call_echoes(text: str, echoes: Collection[str]) -> str:
+def _without_call_echoes(
+    text: str, echoes: Collection[str], keys: Collection[str] = frozenset()
+) -> str:
     """An entry's text with what echoes its own call taken out.
 
     Read through its JSON where it is JSON: each string that is, whole, one
-    of ``echoes`` is dropped, as :func:`_held_values` reads one. Any other
-    text has each echo of three characters or more masked where it stands, as
-    written and as a JSON string writes it.
+    of ``echoes`` and stands under one of the call's own argument keys
+    (``keys``, :func:`_call_argument_keys`), itself or as an item of a list
+    there, is dropped; the same string under any other key is what the answer
+    holds (a match row equal to the pattern it was asked for) and stays. Any
+    other text has each echo of three characters or more masked where it
+    stands, as written and as a JSON string writes it.
     """
     import json as _json
 
@@ -10863,15 +10870,21 @@ def _without_call_echoes(text: str, echoes: Collection[str]) -> str:
     except (ValueError, TypeError):
         parsed = None
     if isinstance(parsed, dict | list):
+        argument_keys = {str(key).strip().lower() for key in keys}
 
-        def _echo(node: Any) -> bool:
-            return isinstance(node, str) and node.strip().lower() in echoes
+        def _echo(node: Any, key: Any) -> bool:
+            return (
+                key is not None
+                and str(key).strip().lower() in argument_keys
+                and isinstance(node, str)
+                and node.strip().lower() in echoes
+            )
 
-        def _drop(node: Any) -> Any:
+        def _drop(node: Any, under: Any = None) -> Any:
             if isinstance(node, dict):
-                return {key: _drop(item) for key, item in node.items() if not _echo(item)}
+                return {key: _drop(item, key) for key, item in node.items() if not _echo(item, key)}
             if isinstance(node, list):
-                return [_drop(item) for item in node if not _echo(item)]
+                return [_drop(item, under) for item in node if not _echo(item, under)]
             return node
 
         return _json.dumps(_drop(parsed), ensure_ascii=False, indent=1)
@@ -12510,6 +12523,24 @@ def _call_echoes(entries: EntryTexts, entry_id: str) -> frozenset[str]:
 
     _walk(getattr(entry, "args", None) or {})
     return frozenset(echo.strip().lower() for echo in found if echo.strip())
+
+
+def _call_argument_keys(entries: EntryTexts, entry_id: str) -> frozenset[str]:
+    """The keys of an entry's own call arguments, at any depth: where its answer echoes them."""
+    found: set[str] = set()
+    entry = entries.entries.get(entry_id)
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                found.add(str(key))
+                _walk(value)
+        elif isinstance(node, list | tuple):
+            for item in node:
+                _walk(item)
+
+    _walk(getattr(entry, "args", None) or {})
+    return frozenset(key.strip().lower() for key in found if key.strip())
 
 
 def _name_words(tool: str) -> set[str]:
