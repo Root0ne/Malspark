@@ -416,8 +416,17 @@ def claims_in_force_lines(isr_reports: Any, entries: EntryTexts | None = None) -
 NO_SANDBOX_OBSERVATION = "not observed: this run has no sandbox observation"
 
 
+# Handed to a prompt builder for "read the IOC table here": a caller that has
+# read it for the round hands its answers (``None`` for a table it could not
+# read) instead.
+_UNREAD: Any = object()
+
+
 def build_prompt_text(
-    report: MalwareReport, isr_reports: Any = None, entries: EntryTexts | None = None
+    report: MalwareReport,
+    isr_reports: Any = None,
+    entries: EntryTexts | None = None,
+    answers: Any = _UNREAD,
 ) -> str:
     """Return the human-readable prompt body (used by ``_build_prompt`` and tests).
 
@@ -425,9 +434,10 @@ def build_prompt_text(
     each whole: the model reads all of what the run established. With
     ``isr_reports``, every analyst claim in force too, each whole under its
     label, so the summary and the key findings are written over every claim
-    the run holds.
+    the run holds. ``answers`` is the round's read of the IOC table, read
+    here where none is handed.
     """
-    lines = findings_lines(report, isr_reports, entries)
+    lines = findings_lines(report, isr_reports, entries, answers)
     lines.extend(
         [
             "TASK",
@@ -440,13 +450,17 @@ def build_prompt_text(
 
 
 def findings_lines(
-    report: MalwareReport, isr_reports: Any = None, entries: EntryTexts | None = None
+    report: MalwareReport,
+    isr_reports: Any = None,
+    entries: EntryTexts | None = None,
+    answers: Any = _UNREAD,
 ) -> list[str]:
     """The prompt body's lines before its task: what the run established, each fact whole.
 
     The narrative round's (:func:`build_prompt_text`) and the question
     round's (``reporting.question_round``), so both are written over the
-    same facts.
+    same facts. ``answers`` is the round's read of the IOC table
+    (:func:`_published_or_none`), read here where none is handed.
     """
     lines: list[str] = [
         "DETERMINISTIC FINDINGS",
@@ -589,7 +603,8 @@ def findings_lines(
     # --- Network IOCs (the suspicious ones first) ----------------------
     # Each value with its publish state from the IOC table, then the network
     # values the run publishes: what a recommendation is written over.
-    answers = _published_or_none(report)
+    if answers is _UNREAD:
+        answers = _published_or_none(report)
 
     def _state(kind: str, value: str) -> str:
         if answers is None:
@@ -802,6 +817,10 @@ class NarrativeAgent:
         # of every call of the report stage this agent makes; set by the
         # report node (``agents.ledger_reads``), ``None`` offers none.
         self.ledger_reads: Any = None
+        # The report and its IOC table's answers as the round's size read them
+        # (:meth:`prompt_chars`), taken by the round's own prompt and check
+        # (:meth:`generate`), so one round builds the table once.
+        self._answers_read: tuple[Any, PublishedAnswers | None] | None = None
 
     def attempts(self) -> int:
         """The calls this round may make: its answer and one validation retry,
@@ -946,9 +965,17 @@ class NarrativeAgent:
         isr_reports: Any = None,
         evidence: EntryTexts | None = None,
     ) -> int:
-        """The characters of this round's first prompt, as :meth:`generate` builds it."""
+        """The characters of this round's first prompt, as :meth:`generate` builds it.
+
+        The IOC table's answers it reads are kept for that round's
+        :meth:`generate` of the same report.
+        """
         try:
-            messages = self._build_prompt(report, facts_block, run_state, isr_reports, evidence)
+            answers = _published_or_none(report)
+            self._answers_read = (report, answers)
+            messages = self._build_prompt(
+                report, facts_block, run_state, isr_reports, evidence, answers
+            )
             return sum(len(str(message.content)) for message in messages)
         except Exception:  # noqa: BLE001 — a size is never worth a lost round
             return len(_SYSTEM_PROMPT) + len(facts_block) + len(run_state)
@@ -970,7 +997,11 @@ class NarrativeAgent:
         Both surfaces are wrapped in broad ``except`` so the report node can
         always rely on the fallback narrative.
         """
-        messages = self._build_prompt(report, facts_block, run_state, isr_reports, evidence)
+        # The IOC table's answers this round's size read, where it read them
+        # for this report; else read here. Taken once: a later round reads again.
+        held, self._answers_read = self._answers_read, None
+        table = held[1] if held is not None and held[0] is report else _published_or_none(report)
+        messages = self._build_prompt(report, facts_block, run_state, isr_reports, evidence, table)
         self._note_room(sum(len(str(message.content)) for message in messages))
         # Where the sentences a check leaves standing are recorded, to be
         # marked where they stand.
@@ -994,7 +1025,8 @@ class NarrativeAgent:
                 self.degradations.append(unread)
         # What the run publishes, which is what a recommendation may act on:
         # its indicators and its techniques.
-        answers = published_answers(report)
+        # A table the prompt could not read is read again here, which raises.
+        answers = table if table is not None else published_answers(report)
         published = published_technique_ids(report)
         # The entries a key finding may cite: the ledger's, which the pack's
         # own entries are part of.
@@ -1433,16 +1465,18 @@ class NarrativeAgent:
         run_state: str = "",
         isr_reports: Any = None,
         evidence: EntryTexts | None = None,
+        answers: Any = _UNREAD,
     ) -> list[BaseMessage]:
         """The system turn and the human turn, the two standing blocks leading the human turn.
 
         ``facts_block`` is the triage pack as the analysts and the judge saw
         it and ``run_state`` the run's state block; the summary is written
         over the same facts, with their ids, and knows which stages ran.
+        ``answers`` is the round's read of the IOC table.
         """
         from malspark.pipeline.run_state import with_run_state
 
-        body = build_prompt_text(report, isr_reports, evidence)
+        body = build_prompt_text(report, isr_reports, evidence, answers)
         if facts_block:
             body = f"{facts_block}\n\n{body}"
         if run_state:

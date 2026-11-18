@@ -762,3 +762,24 @@ class TestTheRoundIsSizedFromItsBudget:
         (reason,) = agent.degradations
         assert "prompt (20000 characters) exceeds the 12288" in reason
         assert self._agent(None, cap=4096, window=0).degradations == []
+
+
+class TestTheIocTableIsBuiltOncePerRound:
+    """The round's size, its prompt and its own check read one IOC table."""
+
+    @pytest.mark.asyncio
+    async def test_the_table_is_built_once_for_one_round(self) -> None:
+        from malspark.reporting import builder
+
+        llm = TestTheNarrativeGetsOneTurnToFixItsShape._llm(_valid_narrative().model_dump_json())
+        agent = NarrativeAgent(llm=llm)
+        report = _make_report()
+        expected = build_prompt_text(report)
+
+        with patch.object(builder, "ioc_table", wraps=builder.ioc_table) as spy:
+            agent.prompt_chars(report)
+            out = await agent.generate(report)
+
+        assert out is not None
+        assert spy.call_count == 1
+        assert str(llm.ainvoke.await_args_list[0].args[0][-1].content) == expected
