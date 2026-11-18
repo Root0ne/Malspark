@@ -170,14 +170,19 @@ class TestWhereItIsAsked:
 
         assert CALL_COUNT_DIFFERS_CODE in {row["code"] for row in agent.validation_tally.unresolved}
 
-    def test_an_agreement_rewrite_is_read(self) -> None:
+    def test_an_agreement_rewrite_is_accepted(self) -> None:
+        """Any finding on an agreement rewrite refuses it, and a refused rewrite of a
+        closing sentence leaves the sentence out: the count is not read there."""
         from malspark.reporting.section_agreement import _rewrite_violations
 
         found = _rewrite_violations(
-            "The routine calls FUN_00401900 three times [ev_0095].", ["ev_0095"], None, _texts()
+            "The routine calls FUN_00401900 three times per loop [ev_0095].",
+            ["ev_0095"],
+            None,
+            _texts(),
         )
 
-        assert CALL_COUNT_DIFFERS_CODE in {v.code for v in found}
+        assert found == []
 
     def test_a_question_round_answer_is_read(self) -> None:
         import asyncio

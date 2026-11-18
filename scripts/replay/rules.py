@@ -150,7 +150,6 @@ AGREEMENT_NOT_REPLAYED: dict[str, str] = {
         "citation_violations",
         "wrong_entry_citations",
         "echoed_argument_citations",
-        "call_count_violations",
         "misstated_entry_contents",
         "ledger_absence_contradictions",
     )

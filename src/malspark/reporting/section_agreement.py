@@ -251,7 +251,6 @@ from malspark.pipeline.validation import (
     Violation,
     _NegationReader,
     _read_dashes,
-    call_count_violations,
     citation_violations,
     echoed_argument_citations,
     generic_function_name,
@@ -7507,13 +7506,19 @@ def _rewrite_violations(
     items: Any,
     entries: EntryTexts | None,
 ) -> list[Violation]:
-    """A rewrite read as the report rounds read their prose."""
+    """A rewrite read as the report rounds read their prose.
+
+    Any finding here refuses the rewrite, and a refused rewrite of a closing
+    sentence is left out of its section, so a check whose finding only asks
+    the model what its number counts (``call_count_violations``) is not read
+    here: it is read on the report's sections, the narrative and the question
+    round, where a sentence asked about is kept with its finding.
+    """
     prose = {"rewrite": text}
     return [
         *citation_violations(prose, citable, prose=("rewrite",), items=items),
         *wrong_entry_citations(prose, entries, prose=("rewrite",)),
         *echoed_argument_citations(prose, entries, prose=("rewrite",)),
-        *call_count_violations(prose, entries, prose=("rewrite",)),
         *misstated_entry_contents(prose, entries, prose=("rewrite",)),
         *ledger_absence_contradictions(prose, entries),
     ]
