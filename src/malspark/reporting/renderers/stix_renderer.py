@@ -4811,6 +4811,10 @@ _SOURCE_WORDS = {
 }
 
 
+# What a verdict-withheld answer says of what the evidence held, before it in brackets.
+EVIDENCE_ALONE = "the evidence alone would publish it"
+
+
 def published_because(reason: str) -> str:
     """The publish rule's reason for a row, as a sentence a reader can check."""
     said = str(reason or "").strip()
@@ -4867,9 +4871,9 @@ def publish_answer(
     the export asks it.
 
     A value the evidence would publish and the verdict's table withholds
-    (:func:`withheld_by_the_verdict`) is ``no: <the verdict's reason>; <what it
-    stands on>``: the verdict first, and what the evidence said of it kept
-    after it, the judge's keep among it.
+    (:func:`withheld_by_the_verdict`) is ``no: <the verdict's reason>; the evidence
+    alone would publish it (<what it stands on>)``: the verdict first, and what the
+    evidence said of it kept after it as a clause of its own, the judge's keep among it.
     """
     text = str(value or "").strip()
     from_strings = str(source or "").strip().lower() in ("", "strings")
@@ -4898,7 +4902,7 @@ def publish_answer(
     )
     withheld = withheld_by_the_verdict(verdict, digest)
     if admitted and withheld:
-        return f"no: {withheld}; {published_because(admitted)}"
+        return f"no: {withheld}; {EVIDENCE_ALONE} ({published_because(admitted)})"
     if admitted:
         return yes_because(admitted)
     if stated is not None:

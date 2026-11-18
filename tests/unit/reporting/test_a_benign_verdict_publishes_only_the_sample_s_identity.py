@@ -124,7 +124,10 @@ class TestUnderBenign:
     def test_a_similarity_digest_is_withheld_with_the_verdict_first(self) -> None:
         row = _rows(_report("Benign"))[IMPHASH]
 
-        assert row.published == f"no: {BENIGN_WITHHOLDS_SIMILARITY}; the sample's own digest"
+        assert row.published == (
+            f"no: {BENIGN_WITHHOLDS_SIMILARITY}; the evidence alone would publish it (the "
+            "sample's own digest)"
+        )
         assert (row.role, row.indicator_type) == ("similarity", None)
 
     @pytest.mark.parametrize("value", [OBSERVED, WRITTEN])
@@ -133,9 +136,12 @@ class TestUnderBenign:
         benign = _rows(_report("Benign"))[value]
 
         # The evidence publishes it; the verdict withholds it, and says so first,
-        # with what the evidence said kept after it.
+        # with what the evidence said kept after it, as a clause of its own.
         assert publishes(malware.published)
-        assert benign.published == f"no: {BENIGN_WITHHOLDS}; {malware.published[len('yes: ') :]}"
+        assert benign.published == (
+            f"no: {BENIGN_WITHHOLDS}; the evidence alone would publish it "
+            f"({malware.published[len('yes: ') :]})"
+        )
         assert (benign.role, benign.indicator_type) == ("listed", None)
 
     def test_the_feed_publishes_the_identity_alone_and_lists_the_rest(self) -> None:
