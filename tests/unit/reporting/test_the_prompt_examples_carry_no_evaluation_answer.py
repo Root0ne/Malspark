@@ -239,6 +239,7 @@ from malspark.pipeline.validation import (
     library_only_claims_violation,
     malware_object_violations,
     misstated_entry_contents,
+    option_number_violations,
     persistence_not_observed_violations,
     recommendation_indicator_violations,
     recommendation_technique_violations,
@@ -1737,6 +1738,20 @@ PROMPTS: dict[str, str] = {
                 ]
             ),
             prose=("body",),
+        )
+    ),
+    "composer question about two option tables stating other numbers for one key": " ".join(
+        f"{v.message} {v.shown}"
+        for v in option_number_violations(
+            [
+                {
+                    "id": "-q",
+                    "name": "-q",
+                    "description": "Sets 0x10 to 1 here.",
+                    "evidence_refs": ["ev_0001"],
+                }
+            ],
+            [{"flag": "-q", "description": "Sets 0x10 to 2 here.", "evidence_ref": "ev_0001"}],
         )
     ),
     "judge question about an indicator on a value the sample did not reach": " ".join(

@@ -8381,6 +8381,11 @@ TECHNIQUE_NAME_CODE = "report.technique_name"
 # Asked once, naming the entry and showing what it holds (the routine's code,
 # the object that names the address); a sentence kept after it is recorded.
 ABSENCE_CONTRADICTS_LEDGER_CODE = "report.absence_contradicts_ledger"
+# A commands row and a command-line flags row that name the same option and
+# cite a common entry, and state different numbers for one key
+# (``option_number_violations``). The code cannot tell which row is right: each
+# section is asked once, shown both rows, and a row kept stands with the finding.
+OPTION_NUMBERS_DIFFER_CODE = "report.option_numbers_differ"
 
 # The codes a report round's answer is kept with. A broken shape leaves nothing
 # to print; each of these leaves a printable answer with a finding beside it.
@@ -8452,6 +8457,7 @@ KEPT_WITH_A_FINDING: frozenset[str] = frozenset(
         RULE_MATCH_AS_ACTION_CODE,
         REPEATED_ITEMS_CODE,
         COMMAND_VALUES_CODE,
+        OPTION_NUMBERS_DIFFER_CODE,
         UNPUBLISHED_RECOMMENDATION_CODE,
         UNPUBLISHED_RECOMMENDATION_TECHNIQUE_CODE,
         PERSISTENCE_NOT_OBSERVED_CODE,
@@ -10855,6 +10861,192 @@ def _echoed_label(values: Sequence[str], holding: Sequence[str]) -> str:
         said += f" and {len(values) - _MAX_NAMED_IDS} more"
     asked = "was asked for" if len(holding) == 1 else "were asked for"
     return f"{said} {'is' if len(values) == 1 else 'are'} only in what {', '.join(holding)} {asked}"
+
+
+# A command-line option a table row names: one or two dashes and a name, its
+# case kept (``-t`` and ``-T`` are two options).
+_OPTION_TOKEN_RE = re.compile(r"(?<![\w/-])--?[A-Za-z][\w-]*")
+# A key a row states a number for: a hex constant, a ``CONF_`` name, or an
+# upper-case name with an underscore.
+_SETTING_KEY_RE = re.compile(r"\b0x[0-9a-fA-F]+\b|\bCONF_\w+\b|\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b")
+# The small numbers a row states beside a key, in digits or in words.
+_SMALL_NUMBER_WORDS = {
+    word: number
+    for number, word in enumerate(
+        "zero one two three four five six seven eight nine ten eleven twelve".split()
+    )
+}
+_SMALL_NUMBER_RE = re.compile(
+    r"(?<![\w.])(\d{1,2})(?![\w.])|\b(" + "|".join(_SMALL_NUMBER_WORDS) + r")\b", re.IGNORECASE
+)
+# Where a clause of a row's text ends: a number beside a key is the key's only
+# inside one clause.
+_ROW_CLAUSE_END_RE = re.compile(r"[;,]|\.\s|\band\b|\bwhile\b|\bthen\b")
+# How many words from a key a number may stand and be the key's.
+_KEY_NUMBER_WORDS = 6
+
+
+def option_number_violations(
+    commands: Sequence[Any],
+    flags: Sequence[Any],
+    *,
+    command_fields: Sequence[str] = ("id", "name"),
+    flag_fields: Sequence[str] = ("flag",),
+) -> list[Violation]:
+    """Rows of the two option tables that name one option and state other numbers for one key.
+
+    The commands table and the command-line flags table are written apart and
+    may both list one option. A commands row and a flags row pair when their
+    identity fields (``command_fields``, ``flag_fields``: the composer's
+    ``_ITEM_IDENTITY``) name the same option, its case kept, and the rows cite
+    a common entry. A key both rows state numbers for (a hex constant or a
+    configuration name, with a small number within a few words of it in the
+    same clause) must carry the same numbers in both. Where it does not, one
+    finding goes to each table, its path naming its own row (``commands.<i>``,
+    ``flags.<j>``): the code cannot tell which row is right, so each section is
+    asked once, shown both rows and the common entry, and may correct its own.
+    Nothing is marked or left out.
+    """
+    out: list[Violation] = []
+    command_rows = [_row_mapping(row) for row in commands or ()]
+    flag_rows = [_row_mapping(row) for row in flags or ()]
+    for at, command in enumerate(command_rows):
+        named = _row_options(command, command_fields)
+        if not named:
+            continue
+        command_text = _row_said(command, command_fields)
+        stated = _key_numbers(command_text)
+        for place, flag in enumerate(flag_rows):
+            shared = sorted(named & _row_options(flag, flag_fields))
+            flag_refs = _row_refs(flag)
+            common = [ref for ref in _row_refs(command) if ref in flag_refs]
+            if not shared or not common:
+                continue
+            flag_text = _row_said(flag, flag_fields)
+            other = _key_numbers(flag_text)
+            for key in [key for key in stated if key in other and stated[key] != other[key]]:
+                command_named = _row_identity(command, command_fields)
+                flag_named = _row_identity(flag, flag_fields)
+                options = ", ".join(shared)
+                entries = ", ".join(common)
+                command_numbers = ", ".join(str(number) for number in sorted(stated[key]))
+                flag_numbers = ", ".join(str(number) for number in sorted(other[key]))
+                fact = (
+                    f"commands row {at + 1} ({safe_finding_value(command_named)}) and "
+                    f"command-line flags row {place + 1} ({safe_finding_value(flag_named)}) both "
+                    f"name {safe_finding_value(options)} and cite {safe_finding_value(entries)}, "
+                    f"and state different numbers for {safe_finding_value(key)}: "
+                    f"{safe_finding_value(command_numbers)} in the commands row, "
+                    f"{safe_finding_value(flag_numbers)} in the command-line flags row."
+                )
+                for path, own, theirs, mine, other_text in (
+                    (f"commands.{at}", "commands", "command-line flags", command_text, flag_text),
+                    (f"flags.{place}", "command-line flags", "commands", flag_text, command_text),
+                ):
+                    out.append(
+                        Violation(
+                            code=OPTION_NUMBERS_DIFFER_CODE,
+                            message=fact,
+                            path=path,
+                            subject=shared[0],
+                            values=(key,),
+                            statements=(path,),
+                            shown=(
+                                f"Your {own} row reads: '{safe_finding_value(mine)}'. The "
+                                f"{theirs} row reads: '{safe_finding_value(other_text)}'. Read "
+                                f"{safe_finding_value(entries)} again: where it shows another "
+                                f"number for {safe_finding_value(key)} than your row states, "
+                                "correct your row; where your row is right, keep it as written."
+                            ),
+                        )
+                    )
+    return out
+
+
+def _row_mapping(row: Any) -> dict[str, Any]:
+    """A table row as a mapping: a model's fields, or the row itself."""
+    if isinstance(row, Mapping):
+        return dict(row)
+    dump = getattr(row, "model_dump", None)
+    return dict(dump()) if callable(dump) else {}
+
+
+def _row_options(row: Mapping[str, Any], fields: Sequence[str]) -> set[str]:
+    """The command-line options a row's identity fields name, case kept."""
+    return {
+        match.group(0).rstrip("-")
+        for name in fields
+        for match in _OPTION_TOKEN_RE.finditer(str(row.get(name) or ""))
+    }
+
+
+def _row_refs(row: Mapping[str, Any]) -> list[str]:
+    """The entries a row cites: its citing fields, and the brackets of its text."""
+    refs: list[str] = []
+    for key, value in row.items():
+        if key in _CITING_FIELDS:
+            found = _ids_in(value)
+        elif isinstance(value, str):
+            found = _ids_in(_cited_groups(value))
+        else:
+            continue
+        refs.extend(ref for ref in found if ref not in refs)
+    return refs
+
+
+def _row_identity(row: Mapping[str, Any], fields: Sequence[str]) -> str:
+    """What names a row: its identity fields, the repeats left out, joined."""
+    said = [str(row.get(name) or "").strip() for name in fields]
+    return ": ".join(dict.fromkeys(part for part in said if part)) or "?"
+
+
+def _row_said(row: Mapping[str, Any], fields: Sequence[str]) -> str:
+    """A row's text: its identity fields, then each of its other text fields, as it reads."""
+    head = ": ".join(str(row.get(name) or "").strip() for name in fields if row.get(name))
+    rest = [
+        str(value).strip()
+        for key, value in row.items()
+        if key not in fields
+        and key not in _CITING_FIELDS
+        and isinstance(value, str)
+        and value.strip()
+    ]
+    return ". ".join(part for part in [head, *rest] if part)
+
+
+def _key_numbers(text: str) -> dict[str, frozenset[int]]:
+    """Each key a text states small numbers for, lower-cased, and those numbers.
+
+    A number is a key's when it stands within ``_KEY_NUMBER_WORDS`` words of
+    the key in the same clause and is no key itself.
+    """
+    found: dict[str, set[int]] = {}
+    start = 0
+    clauses: list[str] = []
+    for match in _ROW_CLAUSE_END_RE.finditer(text):
+        clauses.append(text[start : match.start()])
+        start = match.end()
+    clauses.append(text[start:])
+    for clause in clauses:
+        words = clause.split()
+        for at, word in enumerate(words):
+            key = _SETTING_KEY_RE.search(word)
+            if key is None:
+                continue
+            for index in range(max(0, at - _KEY_NUMBER_WORDS), at + _KEY_NUMBER_WORDS + 1):
+                if index == at or index >= len(words):
+                    continue
+                near = words[index]
+                number = _SMALL_NUMBER_RE.search(near)
+                if number is None or _SETTING_KEY_RE.search(near):
+                    continue
+                value = (
+                    int(number.group(1))
+                    if number.group(1)
+                    else _SMALL_NUMBER_WORDS[number.group(2).lower()]
+                )
+                found.setdefault(key.group(0).lower(), set()).add(value)
+    return {key: frozenset(numbers) for key, numbers in found.items()}
 
 
 def cited_row_text(text: str, row: Mapping[str, Any]) -> str:

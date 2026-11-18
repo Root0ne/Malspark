@@ -109,6 +109,7 @@ COMPOSER_CHECKS: tuple[str, ...] = (
     "stated_value_violations",
     "start_path_value_violations",
     "cited_id_violations",
+    "option_number_violations",
     "style_violations",
     "channel_binding_violations",
     "summary_shape_violations",
@@ -2473,6 +2474,21 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
             found.extend(pro.style_violations(payload, names))
         flags = [_flag(f, show_text=run.show_text) for f in found]
         sections[section] = {"codes": _tally(flags), "flags": flags}
+    # The two option tables read together once both are written, as the composer
+    # reads them (``ReportComposer._tables_read_together``): each finding goes to
+    # the section whose row its path names.
+    tables = _stored_at(stored, "technical_analysis") or {}
+    across = v.option_number_violations(
+        list(tables.get("commands") or []),
+        list(tables.get("cli_flags") or []),
+        command_fields=c._ITEM_IDENTITY[c._CommandsOut]["commands"],
+        flag_fields=c._ITEM_IDENTITY[c._CliFlagsOut]["flags"],
+    )
+    for section, (_schema, key) in c._TABLES_READ_TOGETHER.items():
+        mine = [f for f in across if f.path.split(".", 1)[0] == key]
+        if mine and section in sections:
+            sections[section]["flags"].extend(_flag(f, show_text=run.show_text) for f in mine)
+            sections[section]["codes"] = _tally(sections[section]["flags"])
     codes: Counter[str] = Counter()
     for section in sections.values():
         codes.update(section["codes"])

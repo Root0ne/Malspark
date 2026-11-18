@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**138 codes in 12 families:** [agreement](#agreement) 21 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 23 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**139 codes in 12 families:** [agreement](#agreement) 21 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 24 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -663,6 +663,14 @@ No comment names its meaning; the message at `malspark.reporting.composer_pro:st
 
 - **Raised at** `malspark.reporting.composer_pro:style_violations`
 - **Constant** `malspark.pipeline.validation:NUMERIC_CONFIDENCE_CODE`
+- **Docs** none
+
+### `report.option_numbers_differ`
+
+A commands row and a command-line flags row that name the same option and cite a common entry, and state different numbers for one key (`option_number_violations`). The code cannot tell which row is right: each section is asked once, shown both rows, and a row kept stands with the finding.
+
+- **Raised at** `malspark.pipeline.validation:option_number_violations`
+- **Constant** `malspark.pipeline.validation:OPTION_NUMBERS_DIFFER_CODE`
 - **Docs** none
 
 ### `report.persistence_not_observed`
