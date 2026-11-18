@@ -86,6 +86,7 @@ from malspark.agents.tool_fence import (
     json_view,
     needs_fence,
 )
+from malspark.core.confidence_words import confidence_bands
 from malspark.core.config import MEDIATOR_AGENT_KEY, MEDIATOR_AGENT_NAME, get_settings
 from malspark.core.logger import logger
 from malspark.core.spend import AgentCeilingStop, SpendCeilingStop, call_deadline_of
@@ -2076,6 +2077,10 @@ JUDGE_VERDICT_SYSTEM = (
     "the other three you cannot support. A family name MUST cite the evidence "
     "ids it was read from; a family with no evidence ids is a guess, and the "
     "report will say so.\n"
+    "- The report words your ``confidence`` by these bands: "
+    f"{confidence_bands()}. Where your rationale or a note you write puts your "
+    "confidence into words, use the band of the number you give under "
+    "``confidence``.\n"
     + MALWARE_OBJECT_RULE
     + "- The objects illustrate the verdict you stated; they are not a "
     "second way of stating one, and a malware object added as a container for "
