@@ -271,6 +271,37 @@ class TestAValueAtAnAddressTakesTheAddressRow:
         said = sr.made_by_reason({"unlisted": ["procid 46"]})
         assert _link(answer, ADDRESS)["attribution"] == said
 
+    def test_an_address_written_with_a_port_takes_its_address_row(self) -> None:
+        written = f"{ADDRESS}:8080"
+        report = _network(
+            http=[{"host": written, "uri": PATH, "dst": ADDRESS, "user_agent": "Agent/9.9"}],
+            tcp=[{"dst": ADDRESS, **UNLISTED_ROW}],
+        )
+        answer = bc.link_behaviour_to_code(report, None, _strings_of(written, PATH, "Agent/9.9"))
+        said = sr.made_by_reason({"unlisted": ["procid 46"]})
+        assert _capture_words(report, ADDRESS) == said
+        for value in (written, PATH, "Agent/9.9"):
+            assert _link(answer, value)["attribution"] == said, value
+
+    @pytest.mark.parametrize(
+        ("name_row", "expected"),
+        [({}, bc.NOT_ATTRIBUTED), (UNLISTED_ROW, UNLISTED_WORDS)],
+        ids=["the name's request names no process", "both requests name the process"],
+    )
+    def test_a_path_requested_from_an_address_and_a_name_takes_one_decision_of_both(
+        self, name_row: dict[str, Any], expected: str
+    ) -> None:
+        other = "198.51.100.9"
+        report = _network(
+            http=[
+                {"host": ADDRESS, "uri": "/p", "dst": ADDRESS},
+                {"host": "evil.example", "uri": "/p", "dst": other, **name_row},
+            ],
+            tcp=[{"dst": ADDRESS, **UNLISTED_ROW}, {"dst": other}],
+        )
+        answer = bc.link_behaviour_to_code(report, None, _strings_of("/p"))
+        assert _link(answer, "/p")["attribution"].endswith(expected)
+
     def test_the_rule_s_decisions_key_the_url_by_its_address_row(self) -> None:
         report = _network(
             http=[{"uri": URL, "dst": ADDRESS, **UNLISTED_ROW}],
