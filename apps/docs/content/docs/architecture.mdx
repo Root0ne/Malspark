@@ -4659,12 +4659,15 @@ An analyst's tool loop reads the job's ledger too, with the `read_evidence`
 tool it offers from the request that carries its first clear on. A read answers
 an id from the loop's own entries first, then from the job's ledger the agent
 was briefed with (the pack's entries, an upstream analyst's: the ids its prompt
-names), paged as above. A read of an entry another loop filed is filed on the
+names) and from the entries the same analysis filed in its earlier chunks and
+loops, paged as above. A read of an entry the loop did not file is filed on the
 analyst's ledger as a repeat of that entry, so no second citable id exists. An
-id neither holds is said to be none the run's ledger holds. A loop with no job
-ledger to read (an agent never briefed, or briefed with an empty ledger) reads
-its own entries alone: the tool's description offers reads of the loop's own
-earlier calls, and an unknown id is said to be none this analysis filed.
+id none of them holds is said to be none the run's ledger holds. An agent never
+briefed with a run state reads its own entries alone, this loop's and those of
+its earlier chunks and loops: the tool's description offers reads of its own
+earlier calls, and an unknown id is said to be none this analysis filed. A
+briefed agent whose job ledger and earlier entries are both empty is told the
+same.
 
 **An answer wider than the prompt allows.** Before any of that, a tool result
 over that limit meets the output guardrail, which
