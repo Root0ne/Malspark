@@ -90,7 +90,12 @@ def _answer(row: Any, **over: Any) -> str:
 
 
 def _analysis_rows(report: MalwareReport) -> dict[str, Any]:
-    return {row.value: row for row in report.consolidated_iocs if row.source == "analysis"}
+    """The rows the table publishes under source ``analysis``; a refused row is listed only."""
+    return {
+        row.value: row
+        for row in report.consolidated_iocs
+        if row.source == "analysis" and publishes(row.published)
+    }
 
 
 class TestTheRunsRowsThatAreExported:
@@ -353,7 +358,9 @@ class TestTheVocabulary:
         row = HostIdentifier(kind="Folder name", value="Custom_update", evidence_refs=["ev_0021"])
         report = _report([row])
 
-        assert [r.source for r in report.consolidated_iocs] == ["identity"]
+        assert [r.source for r in report.consolidated_iocs if publishes(r.published)] == [
+            "identity"
+        ]
 
     def test_the_identifier_table_prints_each_answer(self) -> None:
         text = MarkdownRenderer().render(

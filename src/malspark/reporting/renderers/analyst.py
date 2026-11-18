@@ -2233,12 +2233,16 @@ class _Analyst:
         export the value.
         """
         from malspark.reporting.renderers.stix_renderer import publishes
+        from malspark.reporting.stated_host_values import refused_identifier_row
 
         report, ctx = self.report, self.ctx
         rows: list[tuple[str, str, str]] = []
         seen: set[str] = set()
         recorded = 0
         for ioc in ctx.iocs:
+            # An identifier row the rule refuses is printed by the identifier rows below.
+            if refused_identifier_row(ioc):
+                continue
             exported = publishes(ioc.published)
             if not exported and str(ioc.source or "") in _OBSERVED_ONLY:
                 recorded += 1
