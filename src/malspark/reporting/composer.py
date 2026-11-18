@@ -2431,9 +2431,12 @@ class ReportComposer:
         entry that state different numbers for one key
         (``option_number_violations``) are asked of each section in its one
         retry, where that retry is unused; the answer it gives stands in place
-        of the one it gave through ``apply``. A section whose retry is spent,
-        or whose answer came by the structured path, is not asked again: what
-        is left is recorded unresolved, marked not asked. Never raises.
+        of the one it gave through ``apply``. The tables are read again before
+        each later section is asked, so a question an earlier section's
+        corrected row settles is not asked of the next. A section whose retry
+        is spent, or whose answer came by the structured path, is not asked
+        again: what is left is recorded unresolved, marked not asked. Never
+        raises.
         """
         tables = {
             section: (_ITEM_IDENTITY[schema][key], key)
@@ -2458,9 +2461,21 @@ class ReportComposer:
         left = getattr(self, "_turn_left", None) or {}
         asked: dict[str, bool] = {}
         for section, (_fields, key) in tables.items():
-            mine = [v for v in found if v.path.split(".", 1)[0] == key]
             ask = left.get(section)
-            if not mine or ask is None:
+            if ask is None:
+                continue
+            if asked:
+                # Read again before each later section is asked: an earlier
+                # section's corrected row may have settled its question.
+                try:
+                    found = _found()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "ReportComposer: the option tables were not read again (%s).", exc
+                    )
+                    break
+            mine = [v for v in found if v.path.split(".", 1)[0] == key]
+            if not mine:
                 continue
             try:
                 sent, out = await asyncio.wait_for(ask(mine), timeout=self._section_timeout())

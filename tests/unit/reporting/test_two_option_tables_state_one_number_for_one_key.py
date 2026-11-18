@@ -263,3 +263,23 @@ class TestTheComposer:
         }
         assert rows["composer:cli_flags"]["asked"] == "false"
         assert rows["composer:commands"].get("asked") != "false"
+
+    def test_a_question_the_first_section_settles_is_not_asked_of_the_second(self) -> None:
+        # The commands section is asked first and corrects its own row to the flags
+        # row's number: the tables agree, and the flags section is asked nothing.
+        fixed = "Sets key 0x5c to 4 for -wirelog."
+        llm, report, comp = _compose_both(
+            [_commands_answer(COMMAND["description"]), _commands_answer(fixed)],
+            [_flags_answer(FLAG["description"])],
+        )
+
+        commands, flags = _sent_to(llm, "commands"), _sent_to(llm, "cli_flags")
+        assert len(commands) == 2 and len(flags) == 1
+        assert len(llm.sent) == 3
+        ta = report.technical_analysis
+        assert ta is not None and ta.commands[0].description == fixed
+        assert not [
+            row
+            for row in comp.validation_tally.unresolved
+            if row["code"] == OPTION_NUMBERS_DIFFER_CODE
+        ]
