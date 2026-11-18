@@ -2120,9 +2120,12 @@ declines.
 
 `virustotal` is referenced by every agent that reads the file or weighs the
 run: the `static` and `network` analysts, the judge, and the seeded `triage`,
-`android_static` and `reverser` agents. Their prompts say what to do with an
-answer — look the hash up once, cite it like any other tool result, and treat
-a reputation label as one source rather than as the verdict. The mediator
+`android_static` and `reverser` agents. The analysts' and the seeded agents'
+prompts say what to do with an answer: where an entry the agent was given
+already holds a reputation answer for a value, it cites that entry by its
+evidence id; it looks a value up only when no entry it was given holds one, and
+cites what comes back like any other tool result; and a reputation label is one
+source, not the verdict. The mediator
 runs its tool loop every round; when it holds a reputation server (`virustotal`
 or `threatintel`) and no entry in the run's evidence ledger came from one, its
 prompt also says no analyst has consulted one and asks it to look the sample up
@@ -3069,7 +3072,7 @@ database keeps nothing) still counts. Each is referenced exactly as an `mcp`
 reference by key: a disabled server gives nothing, and its tick list and
 allow-list narrow what it gives. A server you add is never reached through a
 capability: bind it by its own `agents` list or by an `mcp` reference. The
-built-in agents that look the sample's hash up (`static`, `network`, the judge,
+built-in agents given reputation (`static`, `network`, the judge,
 `triage`, `android_static`, `reverser`) reach reputation this way: with the
 shipped servers that is the threat-intel sidecar and VirusTotal's own server; a
 built-in row stored with the earlier list that named VirusTotal by key loads as
@@ -3521,7 +3524,11 @@ analyst node reports that once as a no-data stage rather than once per source.
 
 Whether an agent is asked for an ATT&CK technique line is its own setting too,
 `agents.definitions.<key>.attck_techniques`, on by default. On is the claim format every analyst is given: each claim ends with
-`TECHNIQUE: <T-ID, several separated by commas, or NONE>`. A `generic` or
+`TECHNIQUE: <T-ID, several separated by commas, or NONE>`, followed by the
+line's rule: the claim's technique ids alone, or NONE when it claims none; an id
+the claim does not assert is left off the line and the claim sentence says so;
+a doubt about an id the claim does assert is said in the claim and its
+CONFIDENCE. The revision format states the same rule. A `generic` or
 `lead` definition whose work is not malware behaviour (a code reviewer, a
 configuration checker, a domain checker) may turn it off. Every text that asks
 the agent for a technique then leaves the request out and asks for the CLAIM,
