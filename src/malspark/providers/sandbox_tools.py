@@ -321,7 +321,7 @@ def sandbox_processes(
     # the whole listing whichever page is asked for, and the row of the same
     # process marked.
     built = [_process_row(proc, launched) if isinstance(proc, dict) else None for proc in processes]
-    marked = sandbox_started_positions(report, normalised_by)
+    marked = started_positions(report, normalised_by)
     staged = {id(row) for position, row in enumerate(built) if position in marked}
     page, meta = _page(built, offset, limit)
     rows: list[dict[str, Any]] = []
@@ -339,7 +339,7 @@ def sandbox_processes(
     return answer
 
 
-def sandbox_started_positions(
+def started_positions(
     report: dict[str, Any] | None, normalised_by: Sequence[str] | None
 ) -> frozenset[int]:
     """The places in the report's process list of the rows the sandbox started the file from.

@@ -518,11 +518,9 @@ def _started_positions(
     report: Mapping[str, Any], normalised_by: Sequence[str] | None
 ) -> frozenset[int]:
     """The places of the process rows the sandbox started the file from (``sandbox_tools``)."""
-    from malspark.providers.sandbox_tools import sandbox_started_positions
+    from malspark.providers.sandbox_tools import started_positions
 
-    return sandbox_started_positions(
-        report if isinstance(report, dict) else dict(report), normalised_by
-    )
+    return started_positions(report if isinstance(report, dict) else dict(report), normalised_by)
 
 
 class _SectionOf:
