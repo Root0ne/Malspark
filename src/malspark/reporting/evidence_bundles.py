@@ -1344,10 +1344,9 @@ def sandbox_start_facts(report: MalwareReport) -> dict[str, str]:
     The one writer of the fact every writer that decides is shown (a
     section's facts, the narrative's facts block, the agreement round's
     facts): the words every surface writes beside the marked row, the rows'
-    pids, and the sentence the process view states (``staged_note``), worded
-    by the number of distinct processes (pid and task) among the marked rows
-    the entry speaks of, where the process view counts its marked rows as
-    listed. A pid marked in more than one task is named
+    pids, and the sentence the process view states (``staged_note``, by
+    the number of marked rows the entry speaks of, as the process view
+    counts them), unchanged. A pid marked in more than one task is named
     with each row's task. One entry per path in the platform's normal form
     for a path, in tree order; ``{}`` where no row is marked.
     """
@@ -1376,9 +1375,9 @@ def sandbox_start_facts(report: MalwareReport) -> dict[str, str]:
         return ", ".join(dict.fromkeys(said))
 
     return {
-        # A row is a process of a task: a process listed twice in one task is one row.
-        path: f"{STAGED_WORDS} ({_named(rows[key])}). "
-        f"{staged_note(len({(node.pid, node.task) for node in rows[key]}))}"
+        # Rows are counted as listed, as the process view counts them: two rows of
+        # one pid may be two tasks' processes where a row carries no task.
+        path: f"{STAGED_WORDS} ({_named(rows[key])}). {staged_note(len(rows[key]))}"
         for key, path in paths.items()
     }
 

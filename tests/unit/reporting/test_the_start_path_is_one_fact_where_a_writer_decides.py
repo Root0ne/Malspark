@@ -69,17 +69,19 @@ class TestTheOneWriter:
             )
         }
 
-    def test_a_process_listed_twice_in_one_task_is_one_marked_row(self) -> None:
+    def test_marked_rows_are_counted_as_listed(self) -> None:
+        # Two marked rows of one pid that carry no task may be two tasks'
+        # processes: the note speaks of the rows listed, as the process view does.
         from malspark.reporting.models import ProcessNode
+        from malspark.schemas.sandbox_report import staged_note
 
         report = _report()
         assert report.dynamic is not None
         report.dynamic.process_tree = [
-            ProcessNode(pid=10, name=STAGED, task="behavioral1", staged_by_sandbox=True)
-            for _ in range(2)
+            ProcessNode(pid=10, name=STAGED, task="", staged_by_sandbox=True) for _ in range(2)
         ]
         assert evidence_bundles.sandbox_start_facts(report) == {
-            STAGED: f"{STAGED_WORDS} (pid 10). {STAGED_NOTE}"
+            STAGED: f"{STAGED_WORDS} (pid 10). {staged_note(2)}"
         }
 
     def test_a_report_with_no_marked_row_has_none(self) -> None:
