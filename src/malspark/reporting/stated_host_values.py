@@ -682,6 +682,8 @@ class StatedHostValue:
     # sandbox's copy of it carries.
     sample_digests: frozenset[str] = frozenset()
     sample_name: str = ""
+    # The kind as the row writes it, which types a row of no vocabulary kind.
+    written_kind: str = ""
 
     @property
     def table_kind(self) -> str:
@@ -714,6 +716,7 @@ def read_stated(item: Any, report: Any = None, *, beyond_rows: bool = False) -> 
         beyond_rows=beyond_rows,
         sample_digests=_sample_digests(report),
         sample_name=_sample_name(report),
+        written_kind=" ".join(str(getattr(item, "kind", "") or "").split()),
     )
 
 
@@ -808,9 +811,7 @@ def identifier_answers(report: Any) -> list[tuple[StatedHostValue, str]]:
 
     The answer is :func:`~malspark.reporting.renderers.stix_renderer.publish_answer`'s,
     asked under source ``analysis``: the IOC table adds a row for each one it
-    publishes and carries each one it refuses with the refusal
-    (:func:`refused_identifier_row`), and the identifier table prints every one
-    beside its row.
+    publishes, and the identifier table prints every one beside its row.
 
     A statement adds a source where the value's other records are only weak
     (the file's strings, an analyst's listing, a sandbox row of the sample's
@@ -845,20 +846,6 @@ def identifier_answers(report: Any) -> list[tuple[StatedHostValue, str]]:
                     answer = refused
         out.append((stated, answer))
     return out
-
-
-def refused_identifier_row(row: Any) -> bool:
-    """Whether an IOC table row is an identifier row the rule refuses.
-
-    The full list carries it under source ``analysis`` with the refusal as its
-    answer; the identifier table prints it, so no indicator table prints it
-    again and no cell that reads the table by value reads it.
-    """
-    from malspark.reporting.renderers.stix_renderer import publishes
-
-    return str(getattr(row, "source", "") or "") == ANALYSIS_SOURCE and not publishes(
-        getattr(row, "published", None)
-    )
 
 
 # What a delimited value may stand between. A strong delimiter at either end:

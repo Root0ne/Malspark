@@ -935,7 +935,19 @@ def check_iocs(
                     ioc["value"],
                     f"published={said} in the feed, {ioc['published']} in the report's IOC table",
                 )
+        # The full list carries each identifier row the rule refuses after the
+        # table's rows, unpublished under source ``analysis``
+        # (``builder.full_ioc_list``): a row the report's identifier table states.
+        ta = _dict(_dict(full).get("technical_analysis"))
+        stated = {_ioc_key(_dict(row).get("value")) for row in _list(ta.get("host_identifiers"))}
         for key in feed.keys() - canon.keys():
+            item = feed[key]
+            if (
+                key in stated
+                and item.get("source") == "analysis"
+                and _published(item.get("published")) is False
+            ):
+                continue
             out.defect(
                 "orphan",
                 "ioc",

@@ -798,6 +798,57 @@ def ioc_table(report: MalwareReport, *, raise_unread: bool = False) -> list[Cons
             return stored
 
 
+def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
+    """The full indicator list an export serves: the IOC table and each refused identifier row.
+
+    The table's rows (:func:`ioc_table`), then each identifier row the rule
+    refuses (``stated_host_values.identifier_answers``) as an unpublished row:
+    its answer the refusal the identifier table prints, under source
+    ``analysis``, typed by the rule's label or, for a row of no vocabulary
+    kind, by the kind as the analysis wrote it; only where the list holds no
+    row of the same kind and value. The table itself is not changed, so §9,
+    the exports and every reader of the table read what they read before; the
+    published rows are the table's alone.
+    """
+    from malspark.reporting.detonation_marks import entry_marks
+    from malspark.reporting.ledger_projection import value_key
+    from malspark.reporting.renderers.stix_renderer import one_reading, publishes
+    from malspark.reporting.stated_host_values import ANALYSIS_SOURCE, identifier_answers
+
+    rows = ioc_table(report)
+    try:
+        with one_reading(report):
+            answers = identifier_answers(report)
+    except Exception:  # noqa: BLE001 — the table is served without them
+        logger.exception("builder: the identifier rows could not be read; the table is listed.")
+        return rows
+    index = {row.id: at for at, row in enumerate(report.evidence_index)}
+    keys = {(row.kind or "", value_key(row.kind or "", row.value)) for row in rows}
+    out = list(rows)
+    for stated, answer in answers:
+        value = str(stated.value or "").strip()
+        kind = stated.table_kind
+        slot = (kind, value_key(kind, value))
+        if publishes(answer) or not value or slot in keys:
+            continue
+        keys.add(slot)
+        held = [*(stated.held_in or ())]
+        out.append(
+            ConsolidatedIOC(
+                type=stated.label or stated.written_kind,
+                kind=kind,
+                value=value,
+                source=ANALYSIS_SOURCE,
+                context="stated by the analysis",
+                description="stated by the analysis",
+                published=answer,
+                evidence_ids=_in_the_index(held, index),
+                observed_in=entry_marks(held, report),
+            )
+        )
+    return out
+
+
 def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
     from malspark.extractors.network_extractor import url_host
     from malspark.reporting.call_bindings import BOUND_SOURCE, binding_context
@@ -1092,16 +1143,14 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
     # every tool row, so a value a tool's row publishes keeps that row; a tool's
     # row of the same kind and value that the rule refused becomes the
     # analysis's row, so every surface reads one answer for it. A row the rule
-    # refuses is printed with its reason in the identifier table; the full list
-    # carries it too, after every other row is placed (below).
+    # refuses is printed with its reason in the identifier table, not here
+    # (``stated_host_values.identifier_answers``).
     from malspark.reporting.ledger_projection import value_key
 
     by_key = {(row.kind or "", value_key(row.kind or "", row.value)): row for row in rows}
     by_type = {(row.type, row.value.strip().lower()): row for row in rows}
-    refused: list[tuple[Any, str]] = []
     for stated, answer in identifier_answers(report):
         if not publishes(answer):
-            refused.append((stated, answer))
             continue
         slot = (stated.table_kind, value_key(stated.table_kind, stated.value))
         held_row = by_key.get(slot)
@@ -1282,7 +1331,6 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
             )
 
     table = _with_the_hosts_of_published_urls(_with_the_judge_s_values(rows, report), report)
-    table = _with_the_refused_identifiers(table, refused, report, index)
     # Which tool recovered each network value the sample hid, and where: the
     # table states it on every row the record holds, whoever recorded the row.
     out: list[ConsolidatedIOC] = []
@@ -1479,55 +1527,6 @@ def _with_the_judge_s_values(
             continue
         last_host = max(
             (index for index, existing in enumerate(out) if not existing.is_network), default=-1
-        )
-        out.insert(last_host + 1, row)
-    return out
-
-
-def _with_the_refused_identifiers(
-    rows: list[ConsolidatedIOC],
-    refused: Iterable[tuple[Any, str]],
-    report: MalwareReport,
-    index: Mapping[str, int],
-) -> list[ConsolidatedIOC]:
-    """The table with each identifier row the rule refuses, its refusal as the answer.
-
-    Under source ``analysis`` (``stated_host_values.refused_identifier_row``),
-    once per value, and only where no row of the same kind and value, or of the
-    same type and value, is held: added after every other row is placed, so no
-    row the table held before is merged into it, and placed after the last
-    host row. The identifier table prints each one; the full list carries it.
-    """
-    from malspark.reporting.detonation_marks import entry_marks
-    from malspark.reporting.ledger_projection import value_key
-    from malspark.reporting.stated_host_values import ANALYSIS_SOURCE
-
-    out = list(rows)
-    keys = {(row.kind or "", value_key(row.kind or "", row.value)) for row in out}
-    types = {(row.type, row.value.strip().lower()) for row in out}
-    for stated, answer in refused:
-        value = str(stated.value or "").strip()
-        kind = str(stated.table_kind or "")
-        slot = (kind, value_key(kind, value))
-        typed = (stated.label, value.lower())
-        if not value or slot in keys or typed in types:
-            continue
-        keys.add(slot)
-        types.add(typed)
-        held = [*(stated.held_in or ())]
-        row = ConsolidatedIOC(
-            type=stated.label,
-            kind=kind,
-            value=value,
-            source=ANALYSIS_SOURCE,
-            context="stated by the analysis",
-            description="stated by the analysis",
-            published=answer,
-            evidence_ids=_in_the_index(held, index),
-            observed_in=entry_marks(held, report),
-        )
-        last_host = max(
-            (at for at, existing in enumerate(out) if not existing.is_network), default=-1
         )
         out.insert(last_host + 1, row)
     return out

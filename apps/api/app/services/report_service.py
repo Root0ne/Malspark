@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from arq import ArqRedis
-from malspark.reporting.builder import ioc_table
+from malspark.reporting.builder import full_ioc_list, ioc_table
 from malspark.reporting.detection_signatures import analyst_print_gate, rule_standing
 from malspark.reporting.models import ConsolidatedIOC, DetectionRule
 from malspark.reporting.renderers.stix_renderer import SAMPLE_DIGESTS, publishes, stated_verdict
@@ -148,6 +148,9 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     rebuilt from the stored report by the current rule), so the feed and the
     table cannot diverge: each row carries the table's kind, source, publish
     answer and recovery note, and ``published`` is that answer's decision.
+    After the table's rows, each identifier row the rule refuses is listed
+    unpublished with its refusal (``builder.full_ioc_list``), so the default
+    list is the table's published rows alone.
     A domain or an address keeps the network block's suspicion flag and
     reason. A stored report the model cannot read serves the rows it stored.
     The sample's own digests, which the router established and no rule
@@ -158,7 +161,7 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     """
     typed = _typed_report(mr)
     if typed is not None:
-        table = ioc_table(typed)
+        table = full_ioc_list(typed)
     else:
         table = []
         for stored in mr.get("consolidated_iocs") or []:

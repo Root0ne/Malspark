@@ -138,7 +138,6 @@ from malspark.reporting.renderers.prose_forms import (
     references_for_render,
     section_reference,
 )
-from malspark.reporting.stated_host_values import refused_identifier_row
 from malspark.reporting.technique_evidence import (
     evidence_words,
     technique_evidence_ids,
@@ -1631,12 +1630,7 @@ class MarkdownRenderer:
                 "values defanged. A network-looking string is not an observed endpoint._"
             )
             lines.append("")
-            # An identifier row the rule refuses is the identifier table's, never a cell here.
-            answers = {
-                (row.kind, row.value.lower()): row.published
-                for row in ctx.iocs
-                if not refused_identifier_row(row)
-            }
+            answers = {(row.kind, row.value.lower()): row.published for row in ctx.iocs}
             lines.append(_row("Value", "Kind", "Notes", "Published"))
             lines.append(_divider(4))
             for ioc in static.interesting_strings[:60]:
@@ -1794,12 +1788,7 @@ class MarkdownRenderer:
 
     def _section_indicators(self, report: MalwareReport, ctx: _Context) -> str:
         lines = [_heading(9, INDICATORS_TITLE, PER_ROW), ""]
-        # An identifier row the rule refuses is printed by the identifier table below.
-        host = [
-            row
-            for row in ctx.iocs
-            if row.kind not in _NETWORK_KINDS and not refused_identifier_row(row)
-        ]
+        host = [row for row in ctx.iocs if row.kind not in _NETWORK_KINDS]
         network = [row for row in ctx.iocs if row.kind in _NETWORK_KINDS]
         ta = report.technical_analysis
         identifiers = list(ta.host_identifiers) if ta is not None else []

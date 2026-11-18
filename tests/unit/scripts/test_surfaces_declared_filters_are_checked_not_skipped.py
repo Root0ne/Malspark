@@ -203,3 +203,29 @@ def test_a_file_the_export_names_in_its_directory_is_the_table_s_one_path() -> N
     }
 
     assert set(surfaces._stix_values(bundle)) == {"c:\\users\\public\\updater.exe", "/tmp/a.so"}
+
+
+def _with_a_refused_identifier(run: dict[str, Any], *, stated: bool, published: bool) -> None:
+    value = "C:\\Users\\Public\\marker.dat"
+    if stated:
+        run["report_full"].setdefault("technical_analysis", {})["host_identifiers"] = [
+            {"kind": "file path", "value": value}
+        ]
+    run["iocs_all"]["items"].append(
+        {"kind": "path", "value": value, "source": "analysis", "published": published}
+    )
+
+
+def test_a_refused_identifier_the_full_list_carries_is_no_orphan() -> None:
+    run = clean_run()
+    _with_a_refused_identifier(run, stated=True, published=False)
+
+    assert defects(surfaces.audit(run, clean_spec())) == []
+
+
+def test_a_feed_row_no_identifier_states_is_still_an_orphan() -> None:
+    for stated, published in ((False, False), (True, True)):
+        run = clean_run()
+        _with_a_refused_identifier(run, stated=stated, published=published)
+
+        assert ("orphan", "ioc", "iocs_all") in defects(surfaces.audit(run, clean_spec()))

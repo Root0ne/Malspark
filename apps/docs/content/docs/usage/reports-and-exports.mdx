@@ -94,7 +94,7 @@ decides what comes back:
 | `include` | What comes back |
 | :-- | :-- |
 | `published` (default) | Only what the platform's publish rule publishes — the rows of the report's IOC table the exported STIX bundle is built from. |
-| `unpublished` | Only the rows it withholds, for a reader who is triaging rather than acting. |
+| `unpublished` | Only the rows it withholds, for a reader who is triaging rather than acting, and each host value the analysis states that the rule refuses, under source `analysis` with its refusal. |
 | `all` | Both. |
 
 Every row carries its `kind`, its `value`, a `source` (`sandbox`, `analyst`,
