@@ -5736,15 +5736,20 @@ class BudgetMeter:
             return None
 
     def _run_ledger_reads(self) -> Any | None:
-        """``LedgerReads`` over the job's ledger this agent was briefed with, or ``None``.
+        """``LedgerReads`` over the job's ledger and this analysis's own earlier entries, or ``None``.
 
         The ledger of the state :func:`pipeline.nodes.brief_agent` handed it
         (``run_state_source``), which is assigned on every brief, so it is
-        always this job's: a loop reads no other job's entries. ``None`` for
-        an agent never briefed, or a ledger with no entry.
+        always this job's: a loop reads no other job's entries. Beside it the
+        entries this analysis filed in its earlier chunks and loops and has
+        not yet handed over (``_evidence_entries``), whose ids the chunk's
+        prompt and the run-state lines name (``earlier_chunks_block``,
+        :func:`current_run_state`); an id both hold is read once, from the
+        ledger. ``None`` when neither holds an entry.
         """
         source = getattr(self, "run_state_source", None)
-        rows = source.get("evidence_ledger") if isinstance(source, Mapping) else None
+        ledger = source.get("evidence_ledger") if isinstance(source, Mapping) else None
+        rows = [*(ledger or ()), *(getattr(self, "_evidence_entries", None) or ())]
         if not rows:
             return None
         from malspark.agents.ledger_reads import LedgerReads
@@ -7160,9 +7165,10 @@ class BaseAnalyst(BudgetMeter, ABC):
         # built again with it (``_offer_read_again``), from public calls only.
         self._offered_after_clear = []
         clearing: ToolAnswerClearing | None = self._tool_answer_clearing()
-        # The loop's own entries first, then the run's ledger: the ids the
-        # analyst's prompt shows (the pack's, an upstream analyst's) are read
-        # as its own are, each filed as a repeat of the entry it reads.
+        # The loop's own entries first, then the run's ledger and this
+        # analysis's earlier entries: the ids the analyst's prompt shows (the
+        # pack's, an upstream analyst's, an earlier chunk's) are read as its
+        # own are, each filed as a repeat of the entry it reads.
         answer_of, copy_of, holds = read_again_over(recorder, self._run_ledger_reads())
         read_tool = record_tools(
             [read_evidence_tool(answer_of, self._answer_sizer(), copy_of, holds=holds)],

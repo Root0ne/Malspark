@@ -801,6 +801,8 @@ def test_the_model_reads_a_cleared_answer_again_under_its_own_id() -> None:
 class _PackReader(_Thinker):
     """A thinker that reads a pack row by its id once the read tool is offered."""
 
+    wanted: str = "ev_0900"
+
     def _generate(
         self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any
     ) -> ChatResult:
@@ -816,7 +818,11 @@ class _PackReader(_Thinker):
             turn = AIMessage(
                 content="",
                 tool_calls=[
-                    {"name": tac.READ_EVIDENCE_TOOL, "args": {"evidence_id": "ev_0900"}, "id": "p"}
+                    {
+                        "name": tac.READ_EVIDENCE_TOOL,
+                        "args": {"evidence_id": self.wanted},
+                        "id": "p",
+                    }
                 ],
             )
             return ChatResult(generations=[ChatGeneration(message=turn)])
@@ -845,6 +851,119 @@ def test_the_loop_reads_an_entry_of_the_run_it_did_not_file() -> None:
     assert str(answer.content).startswith("[ev_0900]\n") and "pack row" in str(answer.content)
     read = next(e for e in agent._evidence_entries if e.tool == tac.READ_EVIDENCE_TOOL)
     assert read.repeated_of == "ev_0900"
+
+
+def _earlier_chunk(agent: _Analyst, output: str) -> str:
+    """File one entry as an earlier chunk of ``agent``'s analysis would, under its counter."""
+    from malspark.schemas.evidence import EvidenceCounter
+
+    agent.evidence_counter = EvidenceCounter()
+    recorder = EvidenceRecorder("static", counter=agent.evidence_counter)
+    entry = recorder.record(tool="lookup", args={"n": 1}, server=None, output=output)
+    agent._evidence_entries = [entry]
+    return entry.id
+
+
+class TestTheAnalysisOwnEarlierEntriesAreRead:
+    """The read tool reads the job's ledger and the entries this analysis filed in
+    its earlier chunks and loops, whose ids its prompt names."""
+
+    def test_an_earlier_entry_of_the_analysis_is_read_without_a_ledger(self) -> None:
+        agent = _Analyst(llm=_Thinker(seen=[], refused=[]), name="static")
+        wanted = _earlier_chunk(agent, "the first chunk's answer")
+
+        reads = agent._run_ledger_reads()
+
+        assert reads is not None and reads.lookup(wanted) == "the first chunk's answer"
+
+    def test_the_job_s_ledger_and_the_analysis_entries_are_read_each_once(self) -> None:
+        agent = _Analyst(llm=_Thinker(seen=[], refused=[]), name="static")
+        wanted = _earlier_chunk(agent, "the first chunk's answer")
+        agent.run_state_source = {
+            "evidence_ledger": [
+                {"id": "ev_0040", "agent": "pipeline", "output": "pack"},
+                {"id": wanted, "agent": "static", "output": "the first chunk's answer"},
+            ]
+        }
+
+        reads = agent._run_ledger_reads()
+
+        assert reads is not None and len(reads) == 2
+        assert reads.lookup("ev_0040") == "pack"
+        assert reads.lookup(wanted) == "the first chunk's answer"
+
+    def test_an_unknown_id_is_still_answered_with_the_remedy(self) -> None:
+        from malspark.agents.base_agent import read_again_over
+
+        agent = _Analyst(llm=_Thinker(seen=[], refused=[]), name="static")
+        _earlier_chunk(agent, "the first chunk's answer")
+        answer_of, copy_of, holds = read_again_over(
+            EvidenceRecorder("static"), agent._run_ledger_reads()
+        )
+        tool = tac.read_evidence_tool(answer_of, None, copy_of, holds=holds)
+
+        answer = json.loads(tool.invoke({"evidence_id": "ev_0099"}))
+
+        assert answer["error"]["message"] == tac.unknown_evidence_message(
+            "ev_0099", tac.THE_RUNS_LEDGER
+        )
+        assert answer["error"]["remediation"] == tac.UNKNOWN_EVIDENCE_REMEDIATION
+
+    def test_the_judge_reads_its_mediation_round_s_ledger_alone(self) -> None:
+        from malspark.agents.judge_agent import JudgeAgent
+
+        judge = object.__new__(JudgeAgent)
+        judge._mediation_ledger = []
+        judge._evidence_entries = [{"id": "ev_0001", "agent": "judge", "output": "own"}]
+
+        assert "_run_ledger_reads" in JudgeAgent.__dict__
+        assert judge._run_ledger_reads() is None
+
+
+def _read_through_the_loop(agent: _Analyst, model: _PackReader) -> tuple[str, Any]:
+    agent.logger = logging.getLogger("test.clearing")
+    agent._container = _Container(_window(1_000_000))
+    agent.tools = [_lookup(6_000)]
+    cw.record_built_window(model, cw.WindowFact(12_000, cw.DECLARED, "test"))
+    with _settings():
+        agent.execute_tool_loop([("system", "You are a static analyst."), ("human", TASK)])
+    answer = next(
+        sent[-1]
+        for sent, _tools in model.seen
+        if isinstance(sent[-1], ToolMessage) and sent[-1].tool_call_id == "p"
+    )
+    reads = [e for e in agent._evidence_entries if e.tool == tac.READ_EVIDENCE_TOOL]
+    return str(answer.content), reads
+
+
+def test_a_later_chunk_reads_an_earlier_chunk_s_entry_as_a_repeat_of_it() -> None:
+    model = _PackReader(seen=[], refused=[], calls=8, reasoning=100)
+    agent = _Analyst(llm=model, name="static")
+    wanted = _earlier_chunk(agent, "the first chunk's answer")
+    model.wanted = wanted
+
+    shown, reads = _read_through_the_loop(agent, model)
+
+    assert shown.startswith(f"[{wanted}]\n") and "the first chunk's answer" in shown
+    # Filed as a repeat of the entry it reads: no second citable id.
+    assert [read.repeated_of for read in reads] == [wanted]
+    assert reads[0].output == tac.read_again_note(wanted)
+
+
+def test_a_chunk_reads_a_job_ledger_entry_beside_its_own_earlier_ones() -> None:
+    model = _PackReader(seen=[], refused=[], calls=8, reasoning=100)
+    agent = _Analyst(llm=model, name="static")
+    _earlier_chunk(agent, "the first chunk's answer")
+    agent.run_state_source = {
+        "evidence_ledger": [
+            {"id": "ev_0900", "agent": "pipeline", "tool": "reputation", "output": "pack row"}
+        ]
+    }
+
+    shown, reads = _read_through_the_loop(agent, model)
+
+    assert shown.startswith("[ev_0900]\n") and "pack row" in shown
+    assert [read.repeated_of for read in reads] == ["ev_0900"]
 
 
 def test_the_window_point_is_the_agent_s_own_window_never_the_job_s() -> None:
