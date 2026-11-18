@@ -24,7 +24,13 @@ from malspark.reporting.models import MalwareReport
 from malspark.reporting.renderers import HtmlRenderer, MarkdownRenderer
 from malspark.reporting.renderers.bundle import bundle_json
 from malspark.reporting.renderers.layout import ANALYST, BUNDLE
-from malspark.reporting.section_agreement import ANSWERS, StoredAnswers, ask_section_agreement
+from malspark.reporting.section_agreement import (
+    ANSWERS,
+    ANSWERS_MASKED,
+    AnswerChangedByMask,
+    StoredAnswers,
+    ask_section_agreement,
+)
 from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (
     _UNKNOWN,
     CALLED,
@@ -90,7 +96,7 @@ def test_the_stored_answers_re_applied_give_the_round_s_counts_records_and_repor
         assert kept == given
     # Re-applied through the round's own code, with no model call.
     again = _background()
-    replayed = _asked(again, StoredAnswers(copy.deepcopy(stored)))
+    replayed = _asked(again, StoredAnswers.of_record(copy.deepcopy(done.summary)))
     assert replayed.summary == done.summary
     assert replayed.tally.to_dict() == done.tally.to_dict()
     assert again.model_dump() == report.model_dump()
@@ -153,16 +159,26 @@ def test_the_stored_answers_are_masked_as_every_stored_model_answer_is(
         safe_answer_text(configured_key): [masked],
     }
     assert stored[1] == safe_answer_text(unread)
+    # The mask changed both: neither is handed back as the answer given.
+    assert done.summary[ANSWERS_MASKED] == [True, True]
+    with pytest.raises(AnswerChangedByMask, match="answer 1"):
+        StoredAnswers.of_record(copy.deepcopy(done.summary))
+
+
+def test_the_record_s_answers_the_mask_left_unchanged_are_handed_back_as_stored() -> None:
+    report = _background()
+    done = _asked(report, _Reporter(*_ANSWERS["unreadable first answer"]))
+    stored = done.summary[ANSWERS]
+    assert done.summary[ANSWERS_MASKED] == [False, False]
     # Re-applied, the record's answers are what the round is handed, as stored.
-    reporter = StoredAnswers(copy.deepcopy(stored))
+    reporter = StoredAnswers.of_record(copy.deepcopy(done.summary))
     handed = [asyncio.run(reporter.ask([], call="c", what="w")).content for _answer in range(3)]
-    assert handed == [json.dumps(stored[0]), stored[1], json.dumps({"sentences": []})]
+    assert handed == [stored[0], json.dumps(stored[1]), json.dumps({"sentences": []})]
 
 
 def test_an_answer_the_mask_changed_is_flagged_and_not_handed_back_as_given(
     configured_key: str,
 ) -> None:
-    from malspark.reporting.section_agreement import ANSWERS_MASKED, AnswerChangedByMask
     from tests.credential_shapes import password
 
     # An address with user information: the mask takes it out of the stored answer, so the
@@ -176,14 +192,54 @@ def test_an_answer_the_mask_changed_is_flagged_and_not_handed_back_as_given(
     assert stored[0] != answer
     assert done.summary[ANSWERS_MASKED] == [True, *([False] * (len(stored) - 1))]
     # Re-applied, the changed answer is refused, never handed back as the answer given.
-    reporter = StoredAnswers.of_record(done.summary)
     with pytest.raises(AnswerChangedByMask, match="answer 1"):
-        asyncio.run(reporter.ask([], call="c", what="w"))
+        StoredAnswers.of_record(done.summary)
+
+
+def test_a_record_with_any_answer_the_mask_changed_is_refused_before_the_round(
+    configured_key: str,
+) -> None:
+    from tests.credential_shapes import password
+
+    # The first answer is unchanged and opens the retry with a refused keep; the retry's
+    # answer copies a sentence the mask changes.
+    said = f"The sample uploads to ftp://bot:{password()}@203.0.113.9/drop [ev_0107]."
+    plain = f"Routine 0x5a10 calls `{CALLED}` through a slot [ev_0109]."
+    first = {
+        "sentences": [
+            _in(_row(_UNKNOWN, "rewrite", ["ledger.1"], rewrite=plain)),
+            _in(_row(FIRST, "keep", [], reason="no source states it")),
+        ]
+    }
+    second = {"sentences": [_row(said, "drop", [], reason="the lines shown say otherwise")]}
+
+    def written() -> MalwareReport:
+        return _report(said, background=f"{FIRST} {_UNKNOWN}")
+
+    done = _asked(written(), _Reporter(first, second))
+    assert done.summary[ANSWERS_MASKED] == [False, True]
+    # Refused up front: no round runs on the first answer and then stops at the second.
+    with pytest.raises(AnswerChangedByMask, match="answer 2"):
+        StoredAnswers.of_record(copy.deepcopy(done.summary))
+    with pytest.raises(AnswerChangedByMask, match="answer 2"):
+        StoredAnswers(done.summary[ANSWERS], masked=done.summary[ANSWERS_MASKED])
+    # Nothing of the first answer is applied: the report stands as written.
+    again = written()
+    with pytest.raises(AnswerChangedByMask, match="answer 2"):
+        _asked(again, StoredAnswers.of_record(copy.deepcopy(done.summary)))
+    assert again.model_dump() == written().model_dump()
+
+
+def test_answers_handed_back_without_a_flag_each_are_refused() -> None:
+    answers = list(_ANSWERS["answered in the retry"])
+    for flags in ([], [False]):
+        with pytest.raises(AnswerChangedByMask, match="no flag"):
+            StoredAnswers(answers, masked=flags)
+        with pytest.raises(AnswerChangedByMask, match="no flag"):
+            StoredAnswers.of_record({ANSWERS: answers, ANSWERS_MASKED: flags})
 
 
 def test_an_answer_the_mask_left_unchanged_is_handed_back_as_stored() -> None:
-    from malspark.reporting.section_agreement import ANSWERS_MASKED
-
     answers = _ANSWERS["answered in the retry"]
     report = _background()
     done = _asked(report, _Reporter(*answers))
