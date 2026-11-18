@@ -46,6 +46,7 @@ from malspark.pipeline.validation import (
     EntryTexts,
     ValidationTally,
     Violation,
+    call_count_violations,
     citation_violations,
     declaring,
     echoed_argument_citations,
@@ -749,6 +750,10 @@ async def answer_questions(
                 declaring(
                     QuestionRoundOutput,
                     lambda p: echoed_argument_citations(_answer_prose(p), evidence_texts),
+                ),
+                declaring(
+                    QuestionRoundOutput,
+                    lambda p: call_count_violations(_answer_prose(p), evidence_texts),
                 ),
                 declaring(
                     QuestionRoundOutput,

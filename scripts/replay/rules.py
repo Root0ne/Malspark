@@ -85,6 +85,7 @@ NARRATIVE_CHECKS: tuple[str, ...] = (
     "citation_violations",
     "wrong_entry_citations",
     "echoed_argument_citations",
+    "call_count_violations",
     "misstated_entry_contents",
     "ledger_absence_contradictions",
     "technique_name_violations",
@@ -149,6 +150,7 @@ AGREEMENT_NOT_REPLAYED: dict[str, str] = {
         "citation_violations",
         "wrong_entry_citations",
         "echoed_argument_citations",
+        "call_count_violations",
         "misstated_entry_contents",
         "ledger_absence_contradictions",
     )
@@ -2295,6 +2297,7 @@ def _narrative(run: _Run, built: _Built) -> dict[str, Any]:
             *v.citation_violations(payload, citable, prose=NARRATIVE_PROSE, items=items),
             *v.wrong_entry_citations(payload, entries, prose=NARRATIVE_PROSE),
             *v.echoed_argument_citations(payload, entries, prose=NARRATIVE_PROSE),
+            *v.call_count_violations(payload, entries, prose=NARRATIVE_PROSE),
             *v.misstated_entry_contents(payload, entries, prose=NARRATIVE_PROSE),
             *v.ledger_absence_contradictions(payload, entries),
             *v.technique_name_violations(payload),

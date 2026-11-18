@@ -148,3 +148,67 @@ class TestWhereItIsAsked:
         )
 
         assert CALL_COUNT_DIFFERS_CODE in {v.code for v in found}
+
+    def test_the_narrative_s_structured_answer_is_read(self) -> None:
+        from malspark.pipeline.validation import ValidationTally
+        from malspark.reporting.narrative_agent import NarrativeAgent, NarrativeOutput
+        from tests.unit.pipeline.test_a_finding_names_its_statement import _grounding
+
+        agent = object.__new__(NarrativeAgent)
+        agent._items = None
+        agent._report = None
+        agent.validation_tally = ValidationTally()
+        output = NarrativeOutput.model_construct(
+            executive_summary="The routine calls FUN_00401900 three times [ev_0095].",
+            key_findings=[],
+            defensive_recommendations=[],
+        )
+
+        agent._kept_with_ungrounded_recorded(
+            output, _grounding(), ["ev_0095"], ["ev_0095"], _texts()
+        )
+
+        assert CALL_COUNT_DIFFERS_CODE in {row["code"] for row in agent.validation_tally.unresolved}
+
+    def test_an_agreement_rewrite_is_read(self) -> None:
+        from malspark.reporting.section_agreement import _rewrite_violations
+
+        found = _rewrite_violations(
+            "The routine calls FUN_00401900 three times [ev_0095].", ["ev_0095"], None, _texts()
+        )
+
+        assert CALL_COUNT_DIFFERS_CODE in {v.code for v in found}
+
+    def test_a_question_round_answer_is_read(self) -> None:
+        import asyncio
+
+        from malspark.reporting.question_round import answer_questions
+        from tests.unit.reporting.test_a_question_asked_of_the_run_is_answered import (
+            LEDGER,
+            QUESTIONS,
+            _reply,
+            _report,
+            _Reporter,
+        )
+
+        stated = _reply(
+            1,
+            "established",
+            answer="The routine calls FUN_00401900 three times [ev_0095].",
+            evidence_ids=["ev_0095"],
+        )
+        fixed = _reply(
+            1,
+            "established",
+            answer="The routine's code writes four calls of FUN_00401900 [ev_0095].",
+            evidence_ids=["ev_0095"],
+        )
+        reporter = _Reporter({"answers": [stated]}, {"answers": [fixed]})
+
+        result = asyncio.run(
+            answer_questions(
+                reporter, _report(), QUESTIONS[:1], ledger=LEDGER, evidence_texts=_texts()
+            )
+        )
+
+        assert result.tally.by_code.get(CALL_COUNT_DIFFERS_CODE) == 1
