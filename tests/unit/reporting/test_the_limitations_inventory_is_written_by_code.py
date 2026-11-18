@@ -295,7 +295,7 @@ def test_a_run_with_nothing_measured_prints_no_item_for_it() -> None:
 def test_without_the_record_section_11_is_dev_s() -> None:
     section = _section_11(_report(_ledger(), build=False))
     assert LIST_LABEL not in section
-    assert "The evidence is partial: 1 of 6 tool calls failed and were not redone." in section
+    assert "The evidence is partial: 1 of 6 tool calls failed and was not redone." in section
     assert "The run recorded 2 limitations" in section
 
 

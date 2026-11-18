@@ -3225,6 +3225,8 @@ class _Context:
         # A failed call a later call redid left no gap: counted in the run's
         # bounds, not here (T-494 D6). Where the report holds the limitations
         # inventory, its failed calls are the count, as section 11 prints them.
+        from malspark.reporting.limitation_inventory import failed_calls_said, trimmed_entries
+
         if inventory is not None:
             from malspark.reporting.limitation_inventory import failed_counts
 
@@ -3238,10 +3240,9 @@ class _Context:
         trimmed = int(_trimmed(evidence, inventory) or 0)
         parts = []
         if failed:
-            not_redone = " and were not redone" if redone else ""
-            parts.append(f"{failed} of {entries} tool calls failed{not_redone}")
+            parts.append(failed_calls_said(failed, entries, not_redone=bool(redone)))
         if trimmed:
-            parts.append(f"{trimmed} of {entries} ledger entries were trimmed")
+            parts.append(trimmed_entries(trimmed, entries))
         return f" The evidence is partial: {' and '.join(parts)}." if parts else ""
 
 

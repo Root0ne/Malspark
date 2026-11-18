@@ -282,6 +282,18 @@ def test_a_trimmed_count_agrees_with_its_own_number() -> None:
     assert row.text.endswith(" 1 of 6 ledger entries was trimmed to the budget.")
 
 
+def test_the_partial_evidence_sentence_agrees_with_its_own_numbers() -> None:
+    report = _report(_ledger(), build=False)
+    report.run_summary["evidence"]["trimmed"] = 1
+    report.limitation_inventory = build_inventory(report, _ledger())
+    rendered = MarkdownRenderer(layout=ANALYST).render(report)
+    (said,) = re.findall(r"The evidence is partial: [^.]*\.", rendered)
+    assert said == (
+        "The evidence is partial: 1 of 6 tool calls failed and was not redone and 1 of 6 "
+        "ledger entries was trimmed."
+    )
+
+
 def test_the_disclosure_row_prints_where_the_inventory_prints_none() -> None:
     from tests.unit.reporting.test_the_limitations_inventory_is_written_by_code import (
         GATE,
