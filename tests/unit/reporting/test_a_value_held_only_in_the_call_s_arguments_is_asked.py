@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from malspark.pipeline.validation import (
     ASKED_BY_VALUE,
     KEPT_WITH_A_FINDING,
@@ -249,6 +251,45 @@ class TestTheCheck:
         (found,) = echoed_argument_citations({"commands": [row]}, _texts())
 
         assert found.quoted == (cited_row_text(row["name"], row),)
+
+
+def _asked_over_an_echo(value: str) -> bool:
+    """Whether ``value``, held only in a search's echoed pattern, is asked."""
+    pattern = f"re:(?i)({MATCHED}|{value})"
+    texts = EntryTexts.from_ledger(
+        [
+            _entry(
+                "ev_0050",
+                "strings",
+                json.dumps(
+                    {
+                        "pattern": pattern,
+                        "strings": [{"offset": 4096, "text": f"the {MATCHED} table is ready"}],
+                        "total_matched": 1,
+                    }
+                ),
+                args={"pattern": pattern},
+            )
+        ]
+    )
+    return bool(_body(f"The string evidence contains the term '{value}' [ev_0050].", texts))
+
+
+class TestWhatIsRead:
+    """The cases the code's register entry states: a number and a value holding a token
+    of an indicator's shape are not read; a common executable and a forward-slash path are.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        ["0x401000", "1234567890", "a1b2c3d4e5", "fetch http://relay.example.com/gate now"],
+    )
+    def test_a_number_or_a_value_holding_an_indicator_is_not_read(self, value: str) -> None:
+        assert not _asked_over_an_echo(value)
+
+    @pytest.mark.parametrize("value", ["cmd.exe", "/tmp/x", QUILL])
+    def test_a_value_of_no_indicator_s_shape_is_read(self, value: str) -> None:
+        assert _asked_over_an_echo(value)
 
 
 class TestTheFindingAndItsQuestion:

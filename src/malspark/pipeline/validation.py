@@ -8335,11 +8335,13 @@ def command_value_violations(payload: Any, compared: Sequence[ComparedValues]) -
 CITATION_WRONG_ENTRY_CODE = "report.citation_wrong_entry"
 # A quoted value that its cited entries hold only inside the echo of their own
 # call's arguments, never in what the answer found (``echoed_argument_citations``):
-# a search answer repeats the pattern it was given. Read for a quoted text value
-# of no indicator's shape (no digest, URL, path or registry key, mailbox, host or
-# file name) and that a text can hold or lack (no short number). Asked once with
-# the fact; a sentence kept after it is marked where it stands with the entry
-# named.
+# a search answer repeats the pattern it was given. Read for a quoted value of
+# three characters or more that is no number (digits with separators, a hex run
+# holding a digit, or ``0x`` hex) and holds no token of an indicator's shape (a
+# whole digest, a URL, a backslash path or registry key, a mailbox, a host under
+# a real top-level domain, or a file name with a file's extension other than an
+# executable every Windows host carries). Asked once with the fact; a sentence
+# kept after it is marked where it stands with the entry named.
 VALUE_ONLY_IN_CALL_ARGUMENTS_CODE = "report.value_only_in_call_arguments"
 # A recommendation or hunting note that acts on a value this run does not
 # publish. Asked once with the IOC table's own answer; a value kept after it
