@@ -10838,7 +10838,7 @@ def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tupl
     for entry_id in holding:
         echoes = _call_echoes(entries, entry_id)
         rest = _without_call_echoes(
-            entries.text_of(entry_id), echoes, _call_argument_keys(entries, entry_id)
+            entries.text_of(entry_id), echoes, _call_arguments(entries, entry_id)
         )
         if EntryTexts(texts={entry_id: rest}).holds(entry_id, value, fields=True):
             return ()
@@ -10850,18 +10850,19 @@ def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tupl
     return tuple(holding) if longer else ()
 
 
-def _without_call_echoes(
-    text: str, echoes: Collection[str], keys: Collection[str] = frozenset()
-) -> str:
+def _without_call_echoes(text: str, echoes: Collection[str], arguments: Any = None) -> str:
     """An entry's text with what echoes its own call taken out.
 
-    Read through its JSON where it is JSON: each string that is, whole, one
-    of ``echoes`` and stands under one of the call's own argument keys
-    (``keys``, :func:`_call_argument_keys`), itself or as an item of a list
-    there, is dropped; the same string under any other key is what the answer
-    holds (a match row equal to the pattern it was asked for) and stays. Any
-    other text has each echo of three characters or more masked where it
-    stands, as written and as a JSON string writes it.
+    Read through its JSON where it is JSON: a string is dropped where it
+    stands at the key path the call's arguments (``arguments``) give a value
+    it echoes (that value, or its last path component), the path counted from
+    the answer's root or from an object under a key that repeats the
+    arguments whole (a list's item is a row of the answer, whatever it
+    repeats), a list's items standing one step below the list. The same string at any
+    other place, under the same key name or not, is what the answer holds (a
+    match row equal to the pattern it was asked for) and stays. Any other
+    text has each echo of three characters or more masked where it stands, as
+    written and as a JSON string writes it.
     """
     import json as _json
 
@@ -10870,24 +10871,37 @@ def _without_call_echoes(
     except (ValueError, TypeError):
         parsed = None
     if isinstance(parsed, dict | list):
-        argument_keys = {str(key).strip().lower() for key in keys}
+        placed = _argument_places(arguments)
+        whole = _folded(arguments) if isinstance(arguments, dict) and arguments else None
 
-        def _echo(node: Any, key: Any) -> bool:
-            return (
-                key is not None
-                and str(key).strip().lower() in argument_keys
-                and isinstance(node, str)
-                and node.strip().lower() in echoes
+        def _repeats(node: dict[Any, Any]) -> bool:
+            held = _folded(node)
+            return whole is not None and all(
+                key in held and held[key] == value for key, value in whole.items()
             )
 
-        def _drop(node: Any, under: Any = None) -> Any:
+        def _echo(node: Any, at: Sequence[tuple[str, ...]]) -> bool:
+            return isinstance(node, str) and any(
+                node.strip().lower() in placed.get(path, ()) for path in at
+            )
+
+        def _drop(node: Any, at: tuple[tuple[str, ...], ...], keyed: bool = False) -> Any:
             if isinstance(node, dict):
-                return {key: _drop(item, key) for key, item in node.items() if not _echo(item, key)}
+                # A list's item is a row of the answer, whatever it repeats.
+                if keyed and _repeats(node):
+                    at = (*at, ())
+                kept: dict[Any, Any] = {}
+                for key, item in node.items():
+                    below = tuple((*path, str(key).strip().lower()) for path in at)
+                    if not _echo(item, below):
+                        kept[key] = _drop(item, below, keyed=True)
+                return kept
             if isinstance(node, list):
-                return [_drop(item, under) for item in node if not _echo(item, under)]
+                below = tuple((*path, _LIST_STEP) for path in at)
+                return [_drop(item, below) for item in node if not _echo(item, below)]
             return node
 
-        return _json.dumps(_drop(parsed), ensure_ascii=False, indent=1)
+        return _json.dumps(_drop(parsed, ((),)), ensure_ascii=False, indent=1)
     masked = str(text or "")
     for echo in sorted(echoes, key=len, reverse=True):
         if len(echo) < 3:
@@ -12525,22 +12539,50 @@ def _call_echoes(entries: EntryTexts, entry_id: str) -> frozenset[str]:
     return frozenset(echo.strip().lower() for echo in found if echo.strip())
 
 
-def _call_argument_keys(entries: EntryTexts, entry_id: str) -> frozenset[str]:
-    """The keys of an entry's own call arguments, at any depth: where its answer echoes them."""
-    found: set[str] = set()
-    entry = entries.entries.get(entry_id)
+# The step a list's items stand at below the list, in a key path.
+_LIST_STEP = "[]"
 
-    def _walk(node: Any) -> None:
+
+def _call_arguments(entries: EntryTexts, entry_id: str) -> Any:
+    """An entry's own call arguments as stored, or ``None``."""
+    entry = entries.entries.get(entry_id)
+    return getattr(entry, "args", None)
+
+
+def _argument_places(arguments: Any) -> dict[tuple[str, ...], frozenset[str]]:
+    """Each key path of a call's arguments, with what an answer echoing it there would write.
+
+    A path is its keys folded to lower case, a list's items one step
+    (``_LIST_STEP``) below the list; a value is echoed as passed and by its
+    last path component, as :func:`_call_echoes` reads one.
+    """
+    found: dict[tuple[str, ...], set[str]] = {}
+
+    def _walk(node: Any, path: tuple[str, ...]) -> None:
         if isinstance(node, dict):
             for key, value in node.items():
-                found.add(str(key))
-                _walk(value)
+                _walk(value, (*path, str(key).strip().lower()))
         elif isinstance(node, list | tuple):
             for item in node:
-                _walk(item)
+                _walk(item, (*path, _LIST_STEP))
+        elif isinstance(node, str | int | float) and not isinstance(node, bool):
+            written = str(node)
+            forms = {written.strip().lower(), re.split(r"[\\/]", written)[-1].strip().lower()}
+            found.setdefault(path, set()).update(form for form in forms if form)
 
-    _walk(getattr(entry, "args", None) or {})
-    return frozenset(key.strip().lower() for key in found if key.strip())
+    _walk(arguments, ())
+    return {path: frozenset(forms) for path, forms in found.items()}
+
+
+def _folded(node: Any) -> Any:
+    """A JSON value with its keys and its strings folded to lower case, stripped."""
+    if isinstance(node, dict):
+        return {str(key).strip().lower(): _folded(value) for key, value in node.items()}
+    if isinstance(node, list | tuple):
+        return [_folded(item) for item in node]
+    if isinstance(node, str):
+        return node.strip().lower()
+    return node
 
 
 def _name_words(tool: str) -> set[str]:

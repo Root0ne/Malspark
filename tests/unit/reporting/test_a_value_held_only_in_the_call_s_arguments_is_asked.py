@@ -136,6 +136,61 @@ class TestTheCheck:
 
         assert _body(f"The string evidence holds 'delete {QUILL}' [ev_0060].", texts) == []
 
+    def test_a_row_under_the_argument_s_name_but_not_its_place_is_the_answer_s(self) -> None:
+        # The answer's rows carry the argument's key name one level down a list: that
+        # is not where the call's argument stands, so the row is what the answer holds.
+        for searched, sentence in (
+            ("evil.example.com/gate", "The sample contacts evil.example.com [ev_0061]."),
+            (f"{MATCHED} delete {QUILL}", f"The string evidence holds 'delete {QUILL}' [ev_0061]."),
+        ):
+            texts = EntryTexts.from_ledger(
+                [
+                    _entry(
+                        "ev_0061",
+                        "strings",
+                        json.dumps([{"pattern": searched}]),
+                        args={"pattern": searched},
+                    )
+                ]
+            )
+
+            assert _body(sentence, texts) == []
+
+    def test_a_sub_object_repeating_the_arguments_whole_is_an_echo(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry(
+                    "ev_0062",
+                    "strings",
+                    json.dumps(
+                        {
+                            "request": {"pattern": PATTERN, "min_length": 4},
+                            "strings": [{"text": f"the {MATCHED} table"}],
+                        }
+                    ),
+                    args={"pattern": PATTERN, "min_length": 4},
+                )
+            ]
+        )
+
+        (found,) = _body(f"The string evidence contains the term '{QUILL}' [ev_0062].", texts)
+
+        assert found.values == (QUILL,)
+
+    def test_a_sub_object_holding_part_of_the_arguments_is_the_answer_s(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry(
+                    "ev_0063",
+                    "strings",
+                    json.dumps({"rows": {"pattern": PATTERN}, "total_matched": 0}),
+                    args={"pattern": PATTERN, "min_length": 4},
+                )
+            ]
+        )
+
+        assert _body(f"The string evidence contains the term '{QUILL}' [ev_0063].", texts) == []
+
     def test_a_value_named_as_absent_is_not_asked(self) -> None:
         sentence = f"The string evidence does not contain '{QUILL}' [ev_0030]."
 
