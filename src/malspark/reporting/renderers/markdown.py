@@ -3253,7 +3253,7 @@ class _Context:
         if failed:
             parts.append(failed_calls_said(failed, entries, not_redone=bool(redone)))
         if trimmed:
-            parts.append(trimmed_entries(trimmed, entries))
+            parts.append(trimmed_entries(trimmed, entries, grouped=False))
         return f" The evidence is partial: {' and '.join(parts)}." if parts else ""
 
 

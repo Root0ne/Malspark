@@ -294,6 +294,24 @@ def test_the_partial_evidence_sentence_agrees_with_its_own_numbers() -> None:
     )
 
 
+def test_a_count_past_a_thousand_reads_as_each_line_always_wrote_it() -> None:
+    # Section 11's row writes the ledger's size with a thousands separator; the
+    # partial-evidence sentence writes every number as it is.
+    report = _report(_ledger(), build=False)
+    report.run_summary["evidence"]["trimmed"] = 1
+    inventory = build_inventory(report, _ledger())
+    report.limitation_inventory = inventory.model_copy(update={"entries": 1234})
+    (row,) = [r for r in printed_rows(report.limitation_inventory) if r.part == "failed"]
+    assert row.text.startswith("Tool calls: 1 of 1,234 failed and was not redone: ")
+    assert row.text.endswith(" 1 of 1,234 ledger entries was trimmed to the budget.")
+    rendered = MarkdownRenderer(layout=ANALYST).render(report)
+    (said,) = re.findall(r"The evidence is partial: [^.]*\.", rendered)
+    assert said == (
+        "The evidence is partial: 1 of 1234 tool calls failed and was not redone and 1 of 1234 "
+        "ledger entries was trimmed."
+    )
+
+
 def test_the_disclosure_row_prints_where_the_inventory_prints_none() -> None:
     from tests.unit.reporting.test_the_limitations_inventory_is_written_by_code import (
         GATE,
