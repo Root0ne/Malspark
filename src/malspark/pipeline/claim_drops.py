@@ -10,7 +10,8 @@ answer is, and the record says what left it.
 A claim's values:
 
 - a number in hex (``0x…``) or in decimal, compared as one number, so ``0xf``
-  and ``15`` are the same value;
+  and ``15`` are the same value; a number list after a hyphenated name
+  (``SHA-1/2/512``) is one name, not values;
 - an ATT&CK technique id, in the claim text or on its technique line;
 - a quoted value with no space inside (in backticks or double quotes); quoted
   prose is words, not a value.
@@ -67,13 +68,19 @@ _REFERENCE_NUMBER = re.compile(
     r"(?:\s*(?:/|,|&|\+|and|to|-|–)\s*#?\d+)*"
 )
 _LIST_NUMBER = re.compile(r"(?m)^\s*\(?\d+[.)](?=\s)")
+# A number list after a hyphenated name, "SHA-1/2/512": one name in several
+# variants. The "-1" is never read as a value (``_DECIMAL``), and the "/2" and
+# "/512" are parts of the same name, so they are not read either. Any other
+# number after "/" ("UDP/53", "proc:85/89", "443/tcp") is a value.
+_VARIANT_LIST = re.compile(r"(?<![\w/])([A-Za-z][A-Za-z0-9]*-\d+)((?:/\d+)+)(?![\w/])")
 
 
 def _without_hex_and_ids(text: str) -> str:
     text = _HEX.sub(" ", text)
     text = _DECOMPILER_NAME.sub(" ", text)
     text = TECHNIQUE_WORD_RE.sub(" ", text)
-    return re.sub(r"\bev_\d+\b", " ", text)
+    text = re.sub(r"\bev_\d+\b", " ", text)
+    return _VARIANT_LIST.sub(lambda m: m.group(1) + re.sub(r"\d", "_", m.group(2)), text)
 
 
 def _stated_decimals(text: str) -> set[str]:
