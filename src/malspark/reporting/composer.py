@@ -22,6 +22,7 @@ import asyncio
 import contextlib
 import re
 import time
+from collections import Counter
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
@@ -3064,6 +3065,7 @@ class ReportComposer:
                     nonlocal declined, cut, cut_at, cut_text, answer_read
                     given = [first_answer]
                     opened = [True]
+                    kept_first: list[bool] = []
 
                     async def _again(turns: list[BaseMessage]) -> Any:
                         return given.pop() if given else await _run(turns)
@@ -3083,6 +3085,7 @@ class ReportComposer:
                             )
                         if not worse:
                             return latest
+                        kept_first.append(True)
                         declined = False
                         cut = False
                         cut_at = 0
@@ -3103,12 +3106,22 @@ class ReportComposer:
                     self._tally().retries += sent
                     if not sent or again is payload or again is None:
                         return bool(sent), None
+                    name = section or schema.__name__
+                    if kept_first:
+                        # The first answer stands: its findings on record stay,
+                        # and each of its own not yet recorded is recorded under
+                        # its own words, not asked.
+                        self._record_ungrounded(
+                            name,
+                            [v for v in left if (v.code, v.path, v.message) not in recorded],
+                            asked=False,
+                        )
+                        return True, schema.model_validate(again)
                     # The answer is replaced: the findings on record are those
                     # of the answer that stands. The first answer's are taken
                     # off; each of the standing answer's is recorded, as asked
                     # where the first answer held it too, as not asked where
                     # only this answer raises it.
-                    name = section or schema.__name__
                     self._withdraw_recorded(name, ungrounded)
                     self._record_ungrounded(
                         name, [v for v in left if (v.code, v.path, v.message) in recorded]
@@ -3222,7 +3235,11 @@ class ReportComposer:
 
     def _withdraw_recorded(self, section: str, violations: Sequence[Violation]) -> None:
         """Take a section's recorded findings off the record: its unresolved rows and the
-        sentences they marked. For an answer another one replaced. Never raises."""
+        sentences they marked. For an answer another one replaced. Never raises.
+
+        By section, sentence and code: a mark another section recorded for the
+        same sentence stays (``_section_marks``).
+        """
         if not violations:
             return
         try:
@@ -3234,17 +3251,37 @@ class ReportComposer:
                 for row in tally.unresolved
                 if not (row.get("agent") == agent and (row.get("code"), row.get("message")) in rows)
             ]
-            marked = {
-                (sentence, v.code)
-                for v in violations
-                if v.code in MARKED_IN_PLACE
-                for sentence in v.quoted
+            marks = self._section_marks()
+            own = marks.get(section, Counter())
+            withdrawn = {key for key in _mark_keys(violations, asked=True) if own[key] > 0}
+            for key in withdrawn:
+                own[key] -= 1
+            held = {
+                key
+                for counted in marks.values()
+                for key, count in counted.items()
+                if count > 0 and key in withdrawn
             }
+            gone = withdrawn - held
             flagged = getattr(getattr(self, "_report", None), "flagged_statements", None)
-            if marked and isinstance(flagged, list):
-                flagged[:] = [row for row in flagged if (row.sentence, row.code) not in marked]
+            if gone and isinstance(flagged, list):
+                flagged[:] = [
+                    row
+                    for row in flagged
+                    if (row.sentence, row.code, row.label, row.asked) not in gone
+                ]
         except Exception as exc:  # noqa: BLE001 — the record is never worth a report
             logger.debug("ReportComposer: a replaced answer's findings stayed (%s).", exc)
+
+    def _section_marks(self) -> dict[str, Counter[tuple[str, str, str, bool]]]:
+        """The marks each section recorded, by sentence, code, label and asked state."""
+        marks: dict[str, Counter[tuple[str, str, str, bool]]] | None = getattr(
+            self, "_marks_by_section", None
+        )
+        if marks is None:
+            marks = {}
+            self._marks_by_section = marks
+        return marks
 
     def _record_ungrounded(
         self, section: str, violations: list[Violation], *, asked: bool = True
@@ -3263,11 +3300,30 @@ class ReportComposer:
             ", ".join(v.path for v in violations),
         )
         self._tally().record_unresolved(f"composer:{section}", violations, asked=asked)
+        self._section_marks().setdefault(section, Counter()).update(
+            _mark_keys(violations, asked=asked)
+        )
         record = _SECTION_RECORD.get()
         if record is not None:
             record.effects.append(("flagged", list(violations), asked))
             return
         record_flagged_statements(getattr(self, "_report", None), violations, asked=asked)
+
+
+def _mark_keys(violations: Sequence[Violation], *, asked: bool) -> list[tuple[str, str, str, bool]]:
+    """The marks ``validation.record_flagged_statements`` puts on the report for ``violations``.
+
+    Each as ``(sentence, code, label, asked)``, the key it dedupes a mark by.
+    """
+    keys: list[tuple[str, str, str, bool]] = []
+    for violation in violations:
+        if violation.code not in MARKED_IN_PLACE:
+            continue
+        default = violation.path.replace("_", " ")
+        for position, sentence in enumerate(violation.quoted):
+            label = violation.labels[position] if position < len(violation.labels) else default
+            keys.append((sentence, violation.code, label, asked and violation.asked))
+    return keys
 
 
 def _published_answers(report: MalwareReport) -> Any:

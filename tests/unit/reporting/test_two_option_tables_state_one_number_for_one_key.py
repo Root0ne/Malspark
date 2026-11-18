@@ -156,7 +156,11 @@ def _commands_answer(description: str) -> str:
 
 
 def _compose_both(
-    commands: list[str], flags: list[str], *, command_checks: list[Any] | None = None
+    commands: list[str],
+    flags: list[str],
+    *,
+    command_checks: list[Any] | None = None,
+    before: Any = None,
 ) -> tuple[_RawLLM, MalwareReport, Any]:
     """Both tables written through the manual path by one model, then read together.
 
@@ -183,6 +187,8 @@ def _compose_both(
     comp._entries = None
     comp._citable = ["ev_0110", "ev_0111"]
     comp._turn_left = {}
+    if before is not None:
+        before(comp)
 
     def _apply(section: str, out: Any) -> None:
         if section == "commands":
@@ -321,3 +327,87 @@ class TestTheComposer:
         assert not [
             row for row in comp.validation_tally.unresolved if row["code"] == COMMAND_VALUES_CODE
         ]
+
+    def test_another_section_s_identical_mark_stays_when_an_answer_is_replaced(self) -> None:
+        from malspark.pipeline.validation import UNPUBLISHED_VALUE_CODE, Violation
+
+        sentence = "The tool writes its log to the named file."
+        fixed = "Sets key 0x5c to 4 for -wirelog."
+
+        def _mark() -> Any:
+            return Violation(
+                code=UNPUBLISHED_VALUE_CODE,
+                message="The sentence names a value this run does not publish.",
+                path="value",
+                quoted=(sentence,),
+                question_only=True,
+            )
+
+        def _values(payload: Any) -> list[Any]:
+            rows = (payload or {}).get("commands") or []
+            first = any(row.get("description") == COMMAND["description"] for row in rows)
+            return [_mark()] if first else []
+
+        _llm, report, _comp = _compose_both(
+            [_commands_answer(COMMAND["description"]), _commands_answer(fixed)],
+            [_flags_answer(FLAG["description"])],
+            command_checks=[_values],
+            before=lambda comp: comp._record_ungrounded("background", [_mark()]),
+        )
+
+        assert [
+            row.sentence for row in report.flagged_statements if row.code == UNPUBLISHED_VALUE_CODE
+        ] == [sentence]
+
+    def test_a_kept_first_answer_s_findings_keep_their_own_label(self) -> None:
+        from malspark.pipeline.validation import Violation
+        from malspark.reporting.composer import ONLY_IN_THE_RETRY
+
+        reads = [0]
+
+        def _values(payload: Any) -> list[Any]:
+            rows = (payload or {}).get("commands") or []
+            if not isinstance(rows, list) or not any(
+                isinstance(row, dict) and row.get("description") == COMMAND["description"]
+                for row in rows
+            ):
+                return []
+            reads[0] += 1
+            # Read again later, the first answer shows a second finding of its own.
+            found = [
+                Violation(
+                    code=COMMAND_VALUES_CODE,
+                    message="The commands row states two values.",
+                    path="commands",
+                    question_only=True,
+                )
+            ]
+            if reads[0] > 1:
+                found.append(
+                    Violation(
+                        code=COMMAND_VALUES_CODE,
+                        message="The commands row states a third value.",
+                        path="commands",
+                        question_only=True,
+                    )
+                )
+            return found
+
+        _llm, report, comp = _compose_both(
+            [_commands_answer(COMMAND["description"]), json.dumps({"commands": "unreadable"})],
+            [_flags_answer(FLAG["description"]), _flags_answer(FLAG["description"])],
+            command_checks=[_values],
+        )
+
+        ta = report.technical_analysis
+        assert ta is not None and ta.commands[0].description == COMMAND["description"]
+        rows = [
+            row["message"]
+            for row in comp.validation_tally.unresolved
+            if row["code"] == COMMAND_VALUES_CODE
+        ]
+        assert sorted(rows) == [
+            "The commands row states a third value.",
+            "The commands row states two values.",
+        ]
+        assert not any(ONLY_IN_THE_RETRY in message for message in rows)
