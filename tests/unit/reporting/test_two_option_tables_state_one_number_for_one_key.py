@@ -411,3 +411,58 @@ class TestTheComposer:
             "The commands row states two values.",
         ]
         assert not any(ONLY_IN_THE_RETRY in message for message in rows)
+
+    def test_a_mark_a_replaced_answer_recorded_twice_is_withdrawn_whole(self) -> None:
+        from malspark.pipeline.validation import UNPUBLISHED_VALUE_CODE, Violation
+
+        sentence = "The tool writes its log to the named file."
+        fixed = "Sets key 0x5c to 4 for -wirelog."
+
+        def _values(payload: Any) -> list[Any]:
+            rows = (payload or {}).get("commands") or []
+            if not any(row.get("description") == COMMAND["description"] for row in rows):
+                return []
+            # Two findings of one answer that mark the one sentence alike.
+            return [
+                Violation(
+                    code=UNPUBLISHED_VALUE_CODE,
+                    message=f"The sentence names {said}, which this run does not publish.",
+                    path="value",
+                    quoted=(sentence,),
+                    question_only=True,
+                )
+                for said in ("one value", "another value")
+            ]
+
+        _llm, report, comp = _compose_both(
+            [_commands_answer(COMMAND["description"]), _commands_answer(fixed)],
+            [_flags_answer(FLAG["description"])],
+            command_checks=[_values],
+        )
+
+        ta = report.technical_analysis
+        assert ta is not None and ta.commands[0].description == fixed
+        assert not [row for row in report.flagged_statements if row.sentence == sentence]
+        assert not any(
+            count > 0 for marks in comp._marks_by_section.values() for count in marks.values()
+        )
+
+    def test_each_report_starts_with_no_section_s_marks(self) -> None:
+        from collections import Counter
+
+        from malspark.reporting.composer import ReportComposer
+
+        class _BoomLLM:
+            def with_structured_output(self, schema: type, **_: Any) -> Any:
+                raise RuntimeError("boom")
+
+            async def ainvoke(self, messages: Any) -> Any:
+                raise RuntimeError("boom")
+
+        comp = ReportComposer(llm=_BoomLLM(), per_section_timeout=5)  # type: ignore[arg-type]
+        earlier = ("A sentence of an earlier report.", "report.code", "value", True)
+        comp._marks_by_section = {"background": Counter({earlier: 1})}
+
+        asyncio.run(comp.compose(_report(), None))
+
+        assert not any(earlier in marks for marks in comp._marks_by_section.values())

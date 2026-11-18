@@ -1451,6 +1451,9 @@ class ReportComposer:
         # Each option table's conversation while its one retry is unused, for a
         # question raised once both tables are written (:meth:`_tables_read_together`).
         self._turn_left: dict[str, Any] = {}
+        # The marks each section records, counted, so a replaced answer's are
+        # withdrawn by count (:meth:`_withdraw_recorded`).
+        self._marks_by_section: dict[str, Counter[tuple[str, str, str, bool]]] = {}
         # The analyst statements each subsection folds in, read once per report.
         self._folded = statements_to_fold(report)
         self._facts_block = facts_block
@@ -3237,8 +3240,9 @@ class ReportComposer:
         """Take a section's recorded findings off the record: its unresolved rows and the
         sentences they marked. For an answer another one replaced. Never raises.
 
-        By section, sentence and code: a mark another section recorded for the
-        same sentence stays (``_section_marks``).
+        By section, sentence and code, each mark as many times as it was
+        recorded: a mark another section recorded for the same sentence stays
+        (``_section_marks``).
         """
         if not violations:
             return
@@ -3253,9 +3257,12 @@ class ReportComposer:
             ]
             marks = self._section_marks()
             own = marks.get(section, Counter())
-            withdrawn = {key for key in _mark_keys(violations, asked=True) if own[key] > 0}
-            for key in withdrawn:
-                own[key] -= 1
+            # Each mark as many times as the answer recorded it.
+            withdrawn: set[tuple[str, str, str, bool]] = set()
+            for key, count in Counter(_mark_keys(violations, asked=True)).items():
+                if own[key] > 0:
+                    own[key] -= min(count, own[key])
+                    withdrawn.add(key)
             held = {
                 key
                 for counted in marks.values()
