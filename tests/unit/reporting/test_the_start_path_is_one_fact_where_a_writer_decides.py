@@ -52,8 +52,9 @@ class TestTheOneWriter:
         facts = evidence_bundles.sandbox_start_facts(_report())
         assert facts == {STAGED: f"{STAGED_WORDS} (pid 10). {STAGED_NOTE}"}
 
-    def test_a_pid_two_tasks_share_is_named_once(self) -> None:
+    def test_a_pid_two_tasks_share_is_two_marked_rows_each_named_with_its_task(self) -> None:
         from malspark.reporting.models import ProcessNode
+        from malspark.schemas.sandbox_report import staged_note
 
         report = _report()
         assert report.dynamic is not None
@@ -62,7 +63,10 @@ class TestTheOneWriter:
             for task in ("behavioral1", "behavioral2")
         ]
         assert evidence_bundles.sandbox_start_facts(report) == {
-            STAGED: f"{STAGED_WORDS} (pid 10). {STAGED_NOTE}"
+            STAGED: (
+                f"{STAGED_WORDS} (pid 10 in task behavioral1, pid 10 in task behavioral2). "
+                f"{staged_note(2)}"
+            )
         }
 
     def test_a_report_with_no_marked_row_has_none(self) -> None:
