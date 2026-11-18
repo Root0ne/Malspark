@@ -1199,14 +1199,17 @@ def _stored_copy_of(recorder: Any) -> Callable[[str], Any]:
 
 
 def read_again_over(
-    recorder: Any, run_reads: Any = None
+    recorder: Any, run_reads: Any = None, *, briefed: bool = True
 ) -> tuple[Callable[[str], str | None], Callable[[str], Any], str]:
     """What a loop's ``read_evidence`` reads: its own entries first, then the run's ledger.
 
     ``run_reads`` is the job's ledger outside this loop (``LedgerReads``), or
     ``None`` to read this loop's entries alone. Returns the stored answer and
     the stored copy of an id, and whose ids an unknown one is said not to be
-    (:func:`tool_answer_clearing.unknown_evidence_message`). The recorder is
+    (:func:`tool_answer_clearing.unknown_evidence_message`): the run's ledger
+    where the loop reads one, and this analysis's own otherwise. ``briefed``
+    false is a loop whose ``run_reads`` hold only its analysis's own earlier
+    entries, no run's ledger, and is said to read those. The recorder is
     given the run's ledger too, so a read of an entry another loop filed is
     filed as a repeat of that entry, as a read of its own is
     (``evidence_recorder``, ``EvidenceRecorder.outside``).
@@ -1225,7 +1228,8 @@ def read_again_over(
         return run_reads.stored_copy(entry_id)
 
     recorder.outside = run_reads
-    return answer_of, copy_of, THIS_ANALYSIS if run_reads is None else THE_RUNS_LEDGER
+    holds = THE_RUNS_LEDGER if run_reads is not None and briefed else THIS_ANALYSIS
+    return answer_of, copy_of, holds
 
 
 def _loop_binding(loop_model: Any, llm: Any) -> Any | None:
@@ -5758,6 +5762,18 @@ class BudgetMeter:
             rows, sizer=self._answer_sizer(), spill=getattr(self, "evidence_spill", None)
         )
 
+    def _read_again_over(
+        self, recorder: Any
+    ) -> tuple[Callable[[str], str | None], Callable[[str], Any], str]:
+        """What this agent's loop reads again (:func:`read_again_over`), and what it says it reads.
+
+        The run's ledger where the agent was briefed with a run state
+        (``run_state_source``); without one, its reads are this analysis's own
+        earlier entries, and its description and remedy say so.
+        """
+        briefed = isinstance(getattr(self, "run_state_source", None), Mapping)
+        return read_again_over(recorder, self._run_ledger_reads(), briefed=briefed)
+
     def _server_registry(self) -> Any | None:
         """The job's tool-server registry, or None when this agent runs bare."""
         container = getattr(self, "_container", None)
@@ -7169,7 +7185,7 @@ class BaseAnalyst(BudgetMeter, ABC):
         # analysis's earlier entries: the ids the analyst's prompt shows (the
         # pack's, an upstream analyst's, an earlier chunk's) are read as its
         # own are, each filed as a repeat of the entry it reads.
-        answer_of, copy_of, holds = read_again_over(recorder, self._run_ledger_reads())
+        answer_of, copy_of, holds = self._read_again_over(recorder)
         read_tool = record_tools(
             [read_evidence_tool(answer_of, self._answer_sizer(), copy_of, holds=holds)],
             recorder,

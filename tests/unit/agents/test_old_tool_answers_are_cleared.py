@@ -892,18 +892,45 @@ class TestTheAnalysisOwnEarlierEntriesAreRead:
         assert reads.lookup("ev_0040") == "pack"
         assert reads.lookup(wanted) == "the first chunk's answer"
 
-    def test_an_unknown_id_is_still_answered_with_the_remedy(self) -> None:
-        from malspark.agents.base_agent import read_again_over
+    def _loop_read(self, agent: _Analyst) -> tuple[Any, str]:
+        """The loop's read tool for ``agent``, and whose ids it says it reads."""
+        answer_of, copy_of, holds = agent._read_again_over(EvidenceRecorder("static"))
+        return tac.read_evidence_tool(answer_of, None, copy_of, holds=holds), holds
 
+    def test_an_unbriefed_later_chunk_says_it_reads_its_own_earlier_calls(self) -> None:
+        """Without a run's ledger the read reads this analysis's own entries, and
+        its description and its remedy say so."""
         agent = _Analyst(llm=_Thinker(seen=[], refused=[]), name="static")
-        _earlier_chunk(agent, "the first chunk's answer")
-        answer_of, copy_of, holds = read_again_over(
-            EvidenceRecorder("static"), agent._run_ledger_reads()
-        )
-        tool = tac.read_evidence_tool(answer_of, None, copy_of, holds=holds)
+        wanted = _earlier_chunk(agent, "the first chunk's answer")
+        tool, holds = self._loop_read(agent)
 
+        assert holds == tac.THIS_ANALYSIS
+        assert tool.description == tac.READ_OWN_EVIDENCE_DESCRIPTION
+        assert tool.invoke({"evidence_id": wanted}) == "the first chunk's answer"
         answer = json.loads(tool.invoke({"evidence_id": "ev_0099"}))
+        assert answer["error"]["message"] == tac.unknown_evidence_message("ev_0099")
+        assert answer["error"]["remediation"] == tac.UNKNOWN_OWN_EVIDENCE_REMEDIATION
 
+    def test_an_unbriefed_first_chunk_says_it_reads_its_own_calls(self) -> None:
+        agent = _Analyst(llm=_Thinker(seen=[], refused=[]), name="static")
+        tool, holds = self._loop_read(agent)
+
+        assert holds == tac.THIS_ANALYSIS
+        assert tool.description == tac.READ_OWN_EVIDENCE_DESCRIPTION
+
+    def test_a_briefed_chunk_says_it_reads_the_run_s_ledger(self) -> None:
+        agent = _Analyst(llm=_Thinker(seen=[], refused=[]), name="static")
+        wanted = _earlier_chunk(agent, "the first chunk's answer")
+        agent.run_state_source = {
+            "evidence_ledger": [{"id": "ev_0040", "agent": "pipeline", "output": "pack"}]
+        }
+        tool, holds = self._loop_read(agent)
+
+        assert holds == tac.THE_RUNS_LEDGER
+        assert tool.description == tac.READ_EVIDENCE_DESCRIPTION
+        assert tool.invoke({"evidence_id": wanted}) == "the first chunk's answer"
+        assert tool.invoke({"evidence_id": "ev_0040"}) == "pack"
+        answer = json.loads(tool.invoke({"evidence_id": "ev_0099"}))
         assert answer["error"]["message"] == tac.unknown_evidence_message(
             "ev_0099", tac.THE_RUNS_LEDGER
         )
