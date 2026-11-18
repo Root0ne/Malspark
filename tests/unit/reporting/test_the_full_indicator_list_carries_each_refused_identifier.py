@@ -5,9 +5,10 @@ the publish rule's answer. The full indicator list (``/iocs?include=all``,
 ``builder.full_ioc_list``) lists each refused row after the table's rows, unpublished,
 its answer the refusal, under source ``analysis``, typed by the rule's label or, where
 the rule has none, by the kind the analysis wrote, with the record every unpublished
-row carries (role ``listed``); only where no row of the table holds its value under any
-kind, and once per type and value. The report's IOC table holds none of these rows, so
-every surface that reads it, and the default list, reads the table's rows alone.
+row carries (role ``listed``); only where no row of the table holds its value, read as
+that row's kind spells a value (a row of no kind: as written), and once per type and
+value. The report's IOC table holds none of these rows, so every surface that reads
+it, and the default list, reads the table's rows alone.
 """
 
 from __future__ import annotations
@@ -19,8 +20,9 @@ import pytest
 
 from app.services import report_service
 from app.services.report_service import ioc_feed_rows
+from malspark.reporting import builder
 from malspark.reporting.builder import build_consolidated_iocs, full_ioc_list, ioc_table
-from malspark.reporting.models import MalwareReport, TechnicalAnalysis
+from malspark.reporting.models import ConsolidatedIOC, MalwareReport, TechnicalAnalysis
 from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer, publishes
 from malspark.reporting.stated_host_values import identifier_answers, with_held_in
 from malspark.schemas.stix_models import Bundle
@@ -83,7 +85,7 @@ def test_a_value_the_list_already_holds_is_not_listed_again() -> None:
     assert full_ioc_list(published) == ioc_table(published)
 
 
-def test_a_value_a_row_of_the_table_holds_under_any_kind_is_not_listed_again() -> None:
+def test_a_value_a_row_of_the_table_holds_is_not_listed_again_whatever_kind_states_it() -> None:
     report = _report(
         [
             _row("folder", "Custom_update"),
@@ -95,6 +97,41 @@ def test_a_value_a_row_of_the_table_holds_under_any_kind_is_not_listed_again() -
 
     assert sum(1 for answer in answers if not publishes(answer)) == 2
     assert full_ioc_list(report) == ioc_table(report)
+
+
+@pytest.mark.parametrize(
+    ("kind", "held", "stated", "listed"),
+    [
+        # A URL's path keeps its case: a value differing there is another URL.
+        ("url", "http://x.com/A", "http://x.com/a", True),
+        # A path reads one separator either way round.
+        ("path", "C:\\a\\b", "C:/a/b", False),
+        # A host reads without regard to case.
+        ("domain", "Relay.Example.com", "relay.example.com", False),
+    ],
+)
+def test_a_value_is_held_by_a_table_row_as_that_row_s_kind_spells_its_value(
+    monkeypatch: pytest.MonkeyPatch, kind: str, held: str, stated: str, listed: bool
+) -> None:
+    report = _report([_row("Install marker", stated)])
+    table = [ConsolidatedIOC(type=kind, kind=kind, value=held, published="yes")]
+    monkeypatch.setattr(builder, "ioc_table", lambda _report: list(table))
+
+    added = [row.value for row in full_ioc_list(report) if row.source == "analysis"]
+
+    assert added == ([stated] if listed else [])
+
+
+def test_a_table_row_of_no_kind_holds_only_its_value_as_written(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = _report([_row("Install marker", "Other_marker")])
+    table = [ConsolidatedIOC(type="Marker", value="other_marker", published="yes")]
+    monkeypatch.setattr(builder, "ioc_table", lambda _report: list(table))
+
+    assert [row.value for row in full_ioc_list(report) if row.source == "analysis"] == [
+        "Other_marker"
+    ]
 
 
 def test_refused_rows_of_one_value_are_one_row_per_type() -> None:

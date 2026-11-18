@@ -94,7 +94,7 @@ decides what comes back:
 | `include` | What comes back |
 | :-- | :-- |
 | `published` (default) | Only what the platform's publish rule publishes — the rows of the report's IOC table the exported STIX bundle is built from. |
-| `unpublished` | Only the rows it withholds, for a reader who is triaging rather than acting, and each host value the analysis states that the rule refuses and no row of the table holds under any kind, once per `type` and value, under source `analysis` with its refusal and its `type`: the rule's label, or the kind as the analysis wrote it. |
+| `unpublished` | Only the rows it withholds, for a reader who is triaging rather than acting, and each host value the analysis states that the rule refuses and no row of the table holds (read as that row's kind spells a value), once per `type` and value, under source `analysis` with its refusal and its `type`: the rule's label, or the kind as the analysis wrote it. |
 | `all` | Both. |
 
 Every row carries its `kind`, its `value`, a `source` (`sandbox`, `analyst`,
@@ -193,7 +193,9 @@ the reason it was refused. The full list of `/iocs` (`include=unpublished` or
 `all`) lists such a row after the table's rows, unpublished under source
 `analysis`, its `publish_answer` that refusal and its `type` the rule's label
 or, for a kind of no label, the kind as the analysis wrote it: only where no
-row of the table holds its value under any kind, and once per `type` and value.
+row of the table holds its value, read as that row's kind spells a value (a
+URL's path keeps its case, a path reads one separator either way round, a row of
+no kind holds its value as written), and once per `type` and value.
 A report stored before the typed kinds writes its rows under free-text kinds
 and without a use, and every such row is refused with that reason.
 

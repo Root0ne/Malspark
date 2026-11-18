@@ -806,7 +806,10 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
     its answer the refusal the identifier table prints, under source
     ``analysis``, typed by the rule's label or, for a row of no vocabulary
     kind, by the kind as the analysis wrote it; only where no row of the table
-    holds its value under any kind, and once per type and value. Each carries
+    holds its value, and once per type and value. A row of the table holds a
+    value equal to its own under that row's kind's spelling (``value_key``: a
+    URL's path keeps its case, a path reads one separator either way round);
+    a row of no kind holds only its value as written. Each carries
     the record every unpublished row carries (:func:`with_record`): role
     ``listed``, no indicator type. The table itself holds none of them: §9,
     the exports and every reader of the table read the table alone, and the
@@ -825,10 +828,12 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
         logger.exception("builder: the identifier rows could not be read; the table is listed.")
         return rows
     index = {row.id: at for at, row in enumerate(report.evidence_index)}
-    # A value a row of the table holds, under any kind, is that row's (as the
-    # table's own analysis rows read a refused row of the same type and value).
-    held_values = {value_key(row.kind or "", row.value) for row in rows}
-    held_values |= {row.value.strip().lower() for row in rows}
+    # Each row of the table's value, spelled as its own kind spells one.
+    held_values: dict[str, set[str]] = {}
+    for row in rows:
+        if row.kind:
+            held_values.setdefault(row.kind, set()).add(value_key(row.kind, row.value))
+    written = {row.value.strip() for row in rows if not row.kind}
     listed: set[tuple[str, str]] = set()
     added: list[ConsolidatedIOC] = []
     for stated, answer in answers:
@@ -837,7 +842,9 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
         label = stated.label or stated.written_kind
         if publishes(answer) or not value:
             continue
-        if value_key(kind, value) in held_values or value.lower() in held_values:
+        if value in written or any(
+            value_key(held, value) in keys for held, keys in held_values.items()
+        ):
             continue
         slot = (label, value_key(kind, value))
         if slot in listed:
