@@ -1048,13 +1048,16 @@ class SampleTree:
     lineages that differ. A record naming an unsettled pid is unattributed.
     ``reached`` is every pid a listed process of the tree carries, a pid
     another listed process also carries outside it included: a process read
-    by its place in the listing, not a record read by its pid.
+    by its place in the listing, not a record read by its pid. ``disputed``
+    holds ``(pid, name)`` for each process the two lineage facts disagree
+    about: the process is known, its lineage is not.
     """
 
     pids: frozenset[str]
     names: frozenset[str]
     unsettled: frozenset[str]
     reached: frozenset[str] = frozenset()
+    disputed: frozenset[tuple[str, str]] = frozenset()
 
 
 def _node_field(node: Any, name: str) -> Any:
@@ -1198,6 +1201,9 @@ def sample_process_tree(roots: list[Any], file_name: str = "", sha256: str = "")
         names=frozenset(n for n in (nodes[i][2].strip().lower() for i in tree) if n),
         unsettled=frozenset(unsettled),
         reached=frozenset(nodes[i][1] for i in tree if nodes[i][1]),
+        disputed=frozenset(
+            (nodes[i][1], nodes[i][2].strip()) for i in placed.disputed if nodes[i][1]
+        ),
     )
 
 
@@ -1205,6 +1211,7 @@ def sample_process_tree(roots: list[Any], file_name: str = "", sha256: str = "")
 WRITER_IN_TREE = "tree"
 WRITER_OUTSIDE = "outside"
 WRITER_UNSETTLED = "unsettled"
+WRITER_DISPUTED = "disputed"
 WRITER_UNLISTED = "unlisted"
 
 
@@ -1227,10 +1234,11 @@ class ProcessTrees:
 
         ``WRITER_IN_TREE`` for a process of its task's tree,
         ``WRITER_OUTSIDE`` for a listed process outside it,
-        ``WRITER_UNSETTLED`` for one the listing does not settle (a pid the
-        lineage facts dispute, or a number more than one listed process
-        answers to), ``WRITER_UNLISTED`` for a number no listed process
-        answers to.
+        ``WRITER_DISPUTED`` for one process whose lineage the two lineage
+        facts dispute (:meth:`disputed`), ``WRITER_UNSETTLED`` for one the
+        listing does not settle otherwise (a number more than one listed
+        process answers to), ``WRITER_UNLISTED`` for a number no listed
+        process answers to.
         """
         keys = self.identities.keys(pid, task)
         if not keys:
@@ -1239,9 +1247,26 @@ class ProcessTrees:
             return WRITER_UNSETTLED
         (key,) = keys
         tree = self.by_task.get(key.task)
+        if tree is not None and any(key.id == one for one, _name in tree.disputed):
+            return WRITER_DISPUTED
         if tree is None or key.id in tree.unsettled:
             return WRITER_UNSETTLED
         return WRITER_IN_TREE if key.id in tree.pids else WRITER_OUTSIDE
+
+    def disputed(self, pid: Any, task: str | None = None) -> str:
+        """The process ``pid`` names where :meth:`place` finds it ``WRITER_DISPUTED``.
+
+        As the network block names a traffic record's process: ``<image>
+        (procid N)``, or ``procid N`` where the listing names no image, N the
+        report's id. ``""`` for a pid placed otherwise.
+        """
+        if self.place(pid, task) != WRITER_DISPUTED:
+            return ""
+        (key,) = self.identities.keys(pid, task)
+        for one, name in sorted(self.by_task[key.task].disputed):
+            if one == key.id:
+                return f"{name} (procid {one})" if name else f"procid {one}"
+        return ""
 
 
 def sample_process_trees(roots: list[Any], file_name: str = "", sha256: str = "") -> ProcessTrees:

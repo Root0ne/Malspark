@@ -3486,9 +3486,15 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
     record naming a pid the listing does not settle is unattributed, and one
     naming a number no listed process answers to says so where every listed
     process it could name (its task's, where it states one) states its guest
-    pid, and is unattributed where one of them states none.
+    pid, and is unattributed where one of them states none. A record naming
+    a process whose lineage the two lineage facts dispute is unattributed
+    too, and says so naming the process in the network row's words for that
+    case (:data:`MADE_BY_WHOM`).
     """
+    from types import SimpleNamespace
+
     from malspark.schemas.sandbox_report import (
+        WRITER_DISPUTED,
         WRITER_IN_TREE,
         WRITER_UNLISTED,
         WRITER_UNSETTLED,
@@ -3508,6 +3514,10 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
         places = {trees.place(pid, task) for pid in by_pid}
         if WRITER_UNSETTLED in places:
             return UNATTRIBUTED_HOST_ROW.format(did=did)
+        if WRITER_DISPUTED in places:
+            named = list(dict.fromkeys(trees.disputed(pid, task) for pid in by_pid))
+            said = made_by_reason(SimpleNamespace(disputed=[one for one in named if one]))
+            return said or UNATTRIBUTED_HOST_ROW.format(did=did)
         if WRITER_IN_TREE in places:
             return ""
         if places == {WRITER_UNLISTED}:
