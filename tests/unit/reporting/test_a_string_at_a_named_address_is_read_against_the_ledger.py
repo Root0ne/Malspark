@@ -180,3 +180,56 @@ def test_a_keep_on_the_reason_is_refused_where_the_fact_speaks_of_the_absence() 
         # Without the row the keep on the reason stands, as before.
         silent = agreement_violations(keep, passages_of(report, entries=_ledger(layout=False)))
         assert KEEP_UNQUOTED_CODE not in {v.code for v in silent}, passage
+
+
+def test_a_file_offset_the_sentence_states_is_placed_as_a_file_offset() -> None:
+    # File offset 0x4410 is placed at offset 0x5010, where the row starts.
+    denied = "The module name at file offset 0x4410 was not recovered as text."
+    passages = passages_of(_report(denied), entries=_ledger())
+    (fact,) = _string_facts(passages)
+    assert fact.text == FACT_TEXT
+    assert dict(next(p for p in passages if p.id == "string_resolution").ledger_named) == {
+        denied: (fact.id,)
+    }
+
+
+def test_a_file_offset_is_never_read_as_an_offset_from_the_image_base() -> None:
+    # 0x5010 as a file offset lies elsewhere in .data, where no row starts; the row
+    # at offset 0x5010 from the image base is not that place.
+    for sentence in (
+        "The text at file offset 0x5010 was not recovered.",
+        # A file offset no section of the file holds names no row.
+        "The text at file offset 0x9f000 was not recovered.",
+    ):
+        assert _string_facts(passages_of(_report(sentence), entries=_ledger())) == [], sentence
+
+
+def test_a_string_fact_is_labelled_by_what_it_is() -> None:
+    (fact,) = _string_facts(passages_of(_report(STATED), entries=_ledger()))
+    assert fact.label == "what the run's answers hold at an address a sentence names"
+
+
+def test_a_held_denial_keeps_its_fact_within_the_budget(monkeypatch: Any) -> None:
+    from malspark.reporting import section_agreement
+
+    # A second row in .data: file offset 0x4420 is placed at offset 0x5020.
+    ledger = _ledger()
+    ledger[1] = ledger[1].model_copy(
+        update={
+            "structured": {
+                "strings": [
+                    {"offset": 0x4410, "text": "netapi.dll"},
+                    {"offset": 0x4420, "text": "samlib.dll"},
+                ]
+            }
+        }
+    )
+    stated = f"The loader passes the name at {BASE + 0x5020:#x} to the module loader."
+    # Room for one fact: the sentence denying nothing comes first and is shown only.
+    monkeypatch.setattr(section_agreement, "_NAMES_PER_QUESTION", len(FACT_TEXT) + 10)
+    passages = passages_of(_report(f"{stated} {DENIED}"), entries=ledger)
+    (fact,) = _string_facts(passages)
+    assert fact.text == FACT_TEXT
+    assert dict(next(p for p in passages if p.id == "string_resolution").ledger_named) == {
+        DENIED: (fact.id,)
+    }

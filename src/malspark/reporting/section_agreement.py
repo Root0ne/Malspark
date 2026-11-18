@@ -3192,6 +3192,8 @@ def _text_at_fact(key: str, names: Any) -> _NameFact | None:
 
 # An address as a sentence writes it in hex: only such a word is read for a strings row.
 _HEX_WORD = re.compile(r"0x([0-9a-fA-F]+)")
+# A hex word the sentence states as a file offset: "file offset" right before it.
+_FILE_OFFSET_BEFORE = re.compile(r"\bfile[\s-]+offset\s*(?:of\s+)?$", re.IGNORECASE)
 
 
 def _strings_named(sentence: str, names: Any) -> list[tuple[str, str, str]]:
@@ -3199,16 +3201,26 @@ def _strings_named(sentence: str, names: Any) -> list[tuple[str, str, str]]:
     strings row of the ledger starts (``RunNames.strings_at``): read against each file's
     layout as a virtual address and as an offset from the image base
     (``Layout.rvas_of``), keyed by that offset and the file, shown as the sentence writes
-    it. One look per address and file."""
+    it. A hex word the sentence states as a file offset ("file offset 0x4410") is placed
+    as one, through the file's section table (``Layout.rva_of_offset``), and never read
+    as an address; one no section places names no row. One look per address and file."""
     if not names.strings_at:
         return []
-    written = {int(m.group(1), 16) for m in _HEX_WORD.finditer(sentence)}
+    as_offset: set[int] = set()
+    as_address: set[int] = set()
+    for match in _HEX_WORD.finditer(sentence):
+        stated = _FILE_OFFSET_BEFORE.search(sentence[: match.start()])
+        (as_offset if stated else as_address).add(int(match.group(1), 16))
     out: dict[str, str] = {}
     for address in dict.fromkeys(_addresses_named(sentence)):
-        if address not in written:
+        if address not in as_offset | as_address:
             continue
         for file, layout in names.layouts.items():
-            for rva in layout.rvas_of(address):
+            readings = list(layout.rvas_of(address)) if address in as_address else []
+            placed = layout.rva_of_offset(address) if address in as_offset else None
+            if placed is not None:
+                readings.append(placed)
+            for rva in dict.fromkeys(readings):
                 if (file, rva) in names.strings_at:
                     out.setdefault(f"{rva:x}" + (f":{file}" if file else ""), hex(address))
     return [("string", key, shown) for key, shown in out.items()]
@@ -3280,7 +3292,8 @@ def _name_passages(
     closing sentence is): code decides none of them. The data addresses the listings name
     are read first (:func:`_hold_listed_data`, T-652). An address any sentence writes at
     which a strings row starts is shown its row (:func:`_string_fact`), a negated sentence
-    held on it (T-749)."""
+    held on it (T-749); the facts only shown, for a sentence denying nothing, are built
+    after every fact a sentence is held on, so the budget never takes a held one's."""
     _hold_listed_data(names, found, entries)
     listed = {routine.address: routine.listed_in for routine in found.listed}
     # The conclusion and the limitations first, then the fields answered whole (a value
@@ -3329,7 +3342,13 @@ def _name_passages(
         out.append(
             Passage(
                 id=fid,
-                label="what the run's answers hold of a name a sentence denies something of",
+                # What the fact is: a string fact is shown for any sentence naming the
+                # address, every other fact for a sentence that denies something.
+                label=(
+                    "what the run's answers hold at an address a sentence names"
+                    if kind == "string"
+                    else "what the run's answers hold of a name a sentence denies something of"
+                ),
                 text=built.text,
                 kind=FACT,
                 cites=built.cites,
@@ -3344,6 +3363,9 @@ def _name_passages(
         made[(kind, key)] = fid
         return fid
 
+    # The facts of strings rows a sentence denying nothing names: built once every fact a
+    # sentence is held on is, so a held denial never loses its fact to the budget.
+    shown_only: list[tuple[str, str, str]] = []
     for passage in ordered:
         previous = ""
         named: dict[str, list[str]] = {}
@@ -3361,8 +3383,11 @@ def _name_passages(
             readings.extend(strings)
             denies = bool(strings) and _denies_something(sentence)
             for reading in strings:
+                if not denies:
+                    shown_only.append((reading.kind, reading.key, sentence))
+                    continue
                 fid = _fact(reading.kind, reading.key, sentence)
-                if fid is not None and denies:
+                if fid is not None:
                     named.setdefault(sentence, []).append(fid)
         if not named:
             continue
@@ -3370,6 +3395,8 @@ def _name_passages(
         if not passage.closing:
             passage.absences = tuple(dict.fromkeys([*passage.absences, *named]))
         passage.held = tuple(dict.fromkeys([*passage.held, *named]))
+    for kind, key, sentence in shown_only:
+        _fact(kind, key, sentence)
     for fact in out:
         fact.speaks_to = tuple(speaks[fact.id])
     if left:
