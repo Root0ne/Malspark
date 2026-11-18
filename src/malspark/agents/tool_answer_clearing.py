@@ -83,11 +83,23 @@ READ_EVIDENCE_DESCRIPTION = (
     "the offset the next one starts at. Without them the call is the one above."
 )
 
+# The same for a loop that reads its own entries alone (no run's ledger to read).
+READ_OWN_EVIDENCE_DESCRIPTION = (
+    "Read again the stored answer of an earlier tool call of this analysis, by the "
+    "evidence id it was filed under (evidence_id, for example ev_0001). For an answer "
+    "the conversation shows as [cleared …]: the answer comes back whole under its own "
+    "id, as the ledger keeps it, shortened only where the room left for a tool answer "
+    "requires. For an answer longer than one read, pass offset (a byte position, 0 for the "
+    "start) and optionally limit (how many bytes) to read it page by page: each page names "
+    "the offset the next one starts at. Without them the call is the one above."
+)
+
 # What an id the ledger does not hold is answered with.
 UNKNOWN_EVIDENCE_REMEDIATION = (
     "pass an id the run's ledger holds, exactly as written: one a [cleared …] line, "
     "your prompt or a tool answer names"
 )
+UNKNOWN_OWN_EVIDENCE_REMEDIATION = "pass an id a [cleared …] line names, exactly as written"
 
 # Why a clear happened, as the event and the log say it.
 CLEARED_FOR_REFUSAL = "refused"
@@ -641,7 +653,9 @@ def read_evidence_tool(
 
     ``lookup`` answers an id with the output the ledger keeps for it, or
     ``None`` for an id it does not hold; an unknown id is said to be
-    none ``holds`` (:func:`unknown_evidence_message`). ``sizer`` is the job's
+    none ``holds`` (:func:`unknown_evidence_message`), and the tool's
+    description and remedy name what it reads: this analysis's own calls for
+    :data:`THIS_ANALYSIS`, the run's ledger otherwise. ``sizer`` is the job's
     answer guardrail (``ServerRegistry.answer_sizer``): the answer is measured
     against the room the conversation has and shortened as every tool answer
     is. The recorder files a found answer as a repeat of the entry it reads and
@@ -656,6 +670,10 @@ def read_evidence_tool(
     from langchain_core.tools import StructuredTool
 
     from malspark.tools.errors import BAD_ARGUMENT, tool_error
+
+    own = holds == THIS_ANALYSIS
+    description = READ_OWN_EVIDENCE_DESCRIPTION if own else READ_EVIDENCE_DESCRIPTION
+    remediation = UNKNOWN_OWN_EVIDENCE_REMEDIATION if own else UNKNOWN_EVIDENCE_REMEDIATION
 
     class _ReadAgain(StructuredTool):
         """The tool keeping to the arguments the call named: an optional one left out is not filled.
@@ -685,7 +703,7 @@ def read_evidence_tool(
                     BAD_ARGUMENT,
                     unknown_evidence_message(wanted, holds),
                     tool=READ_EVIDENCE_TOOL,
-                    remediation=UNKNOWN_EVIDENCE_REMEDIATION,
+                    remediation=remediation,
                 )
             )
         if offset or limit is not None:
@@ -713,10 +731,10 @@ def read_evidence_tool(
             return found
         return str(sizer._apply_output_guardrail(found, ()))
 
-    _read.__doc__ = READ_EVIDENCE_DESCRIPTION
+    _read.__doc__ = description
     return _ReadAgain.from_function(
         func=_read,
         name=READ_EVIDENCE_TOOL,
-        description=READ_EVIDENCE_DESCRIPTION,
+        description=description,
         metadata={READS_EVIDENCE: True},
     )

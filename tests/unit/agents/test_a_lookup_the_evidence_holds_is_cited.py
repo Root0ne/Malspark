@@ -1,10 +1,10 @@
 """A reputation answer the evidence already holds is cited, not looked up again.
 
-The pipeline's pack often holds the sample's reputation lookup as a ledger
-entry shown in the analyst's prompt, and the analysts were told to look the
-hash up once all the same. The sentence now says to cite an entry that holds
-the answer and to look a value up only where none does; no lookup is
-forbidden. Every role that carries the sentence carries the same one.
+Where an entry the analyst was given already holds a reputation answer for a
+value (the pipeline's pack often holds the sample's lookup), the analyst cites
+that entry by its evidence id; it looks a value up only where no entry holds
+one. No lookup is forbidden. Every role that carries the sentence carries the
+same one.
 """
 
 from __future__ import annotations

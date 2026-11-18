@@ -1,11 +1,10 @@
 """The TECHNIQUE line's rule is stated with the format, and a retry shows the line it asks about.
 
 The rule (ids alone, or NONE; an id the claim does not assert is left off the
-line) was stated only in the question an unread line earns, so analysts wrote
-"T1055 (candidate only, not asserted)" in every new answer and were asked
-again each time. And the question quotes a line the analyst could not see:
-an answer the strict parser read was shown back as its claims summary, which
-prints only the ids that were read.
+line) is stated wherever the claim format is given and in the question an
+unread line earns, in the same words. The validation turn shows the analyst
+its answer as written, so the line the question quotes is in front of it,
+whichever parser read the answer.
 """
 
 from __future__ import annotations

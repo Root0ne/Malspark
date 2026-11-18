@@ -1,9 +1,9 @@
 """The judge is shown the platform's confidence bands and asked to word its confidence by them.
 
 The report prints the verdict's confidence through one fixed table, and the
-judge's rationale worded the same number freely: two surfaces could state two
-words for one number. The verdict question shows the bands of that table once;
-nothing checks or rewrites what the judge writes.
+verdict question shows the judge the bands of that same table once, so the word
+its rationale gives a number is the word the report prints for it. Nothing
+checks or rewrites what the judge writes.
 """
 
 from __future__ import annotations

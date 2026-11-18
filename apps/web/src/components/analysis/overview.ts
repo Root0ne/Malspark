@@ -129,7 +129,7 @@ export const CONFIDENCE_WHY = "How sure the analysis is of this verdict";
 /*
  * The five rungs a confidence number reads as, highest first: the floors and
  * words the exported report prints beside the same number
- * (`CONFIDENCE_WORDS` in `src/malspark/reporting/renderers/markdown.py`), so the
+ * (`CONFIDENCE_WORDS` in `src/malspark/core/confidence_words.py`), so the
  * page and the report never word one number two ways.
  */
 const CONFIDENCE_RUNGS: readonly (readonly [number, string])[] = [

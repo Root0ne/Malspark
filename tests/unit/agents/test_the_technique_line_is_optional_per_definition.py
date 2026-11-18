@@ -38,7 +38,8 @@ TECHNIQUE_RULE = (
     "left off the line, and the claim sentence says so; a doubt about an id the claim "
     "does assert is said in the claim and in its CONFIDENCE.\n"
 )
-# The ISR instruction and the negotiation round's closing as dev sent them.
+# The ISR instruction and the negotiation round's closing a definition with the
+# line on is sent: the claim format with the TECHNIQUE line and its rule.
 DEV_ISR_INSTRUCTION = (
     "Return a structured list of findings. For each finding state: the claim, "
     "the exact artifact reference, your confidence (0.0-1.0), and the MITRE "

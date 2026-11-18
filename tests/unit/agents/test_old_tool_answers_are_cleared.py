@@ -348,6 +348,16 @@ class TestReadAgain:
         assert tool.invoke({"evidence_id": "ev_0040"}) == "pack"
         assert tool.invoke({"evidence_id": "EV_0041"}) == "upstream"
 
+    def test_the_loop_reads_the_run_s_ledger_without_building_its_tool(self) -> None:
+        """The loop's own tool reads the run's entries; the ledger's tool, for the
+        calls outside a loop, is built only where one is offered."""
+        run_reads = self._run_reads()
+        tool = self._loop_tool(self._recorder(), run_reads)
+
+        assert tool.invoke({"evidence_id": "ev_0040"}) == "pack"
+        assert "tool" not in vars(run_reads)
+        assert run_reads.tool.name == tac.READ_EVIDENCE_TOOL
+
     def test_an_id_no_entry_of_the_run_has_fails_with_a_remedy(self) -> None:
         tool = self._loop_tool(self._recorder(), self._run_reads())
 
@@ -364,6 +374,19 @@ class TestReadAgain:
         assert tool.invoke({"evidence_id": "ev_0001"}) == "the first answer"
         answer = json.loads(tool.invoke({"evidence_id": "ev_0040"}))
         assert answer["error"]["message"] == tac.unknown_evidence_message("ev_0040")
+        assert answer["error"]["remediation"] == tac.UNKNOWN_OWN_EVIDENCE_REMEDIATION
+
+    def test_each_loop_s_description_names_what_its_read_reads(self) -> None:
+        """A loop with the run's ledger offers reads of it; a loop without one
+        offers reads of its own earlier calls, and names no run's ledger."""
+        with_run = self._loop_tool(self._recorder(), self._run_reads())
+        own = self._loop_tool(self._recorder(), None)
+
+        assert with_run.description == tac.READ_EVIDENCE_DESCRIPTION
+        assert own.description == tac.READ_OWN_EVIDENCE_DESCRIPTION
+        assert "run's ledger" not in own.description
+        assert "run's ledger" not in tac.UNKNOWN_OWN_EVIDENCE_REMEDIATION
+        assert "this analysis" in own.description
 
     def test_the_description_and_the_remedy_name_the_run_s_ledger(self) -> None:
         assert "run's ledger" in tac.READ_EVIDENCE_DESCRIPTION
