@@ -55,7 +55,7 @@ from malspark.reporting.section_agreement import (
     FAILURE_REDONE_CODE,
     HELD_KEPT_CODE,
     KEEP_UNQUOTED_CODE,
-    KEPT_IN_SOURCE_WORDS_CODE,
+    KEPT_ON_ITS_QUOTE_CODE,
     QUALIFIED_CODE,
     REWRITTEN_CODE,
     UNKNOWN_PASSAGE_CODE,
@@ -965,7 +965,7 @@ def test_haiku12_s_c2_to_c5_kept_unsourced_on_both_answers_are_left_out_and_reco
     )
 
 
-def test_a_closing_keep_on_a_refused_quote_is_left_out_with_its_quote() -> None:
+def test_a_closing_keep_on_a_quote_refused_for_its_words_stands_as_written() -> None:
     report = _report(limitations=f"{STILL_OPEN} {SCOPE}")
     gamed = _row(
         "limitations", STILL_OPEN, "keep", ["persistence_detail"], quote="is not established"
@@ -975,15 +975,16 @@ def test_a_closing_keep_on_a_refused_quote_is_left_out_with_its_quote() -> None:
     done, reporter = _ask(report, answer, answer)
     assert len(reporter.asked) == 2
     # Its quote stands in one section 5 sentence and is refused only on the words of what
-    # the sentence denies: that sentence stands in its place, never the model's (T-705).
-    assert _limitations(report) == f"{HASHED} {SCOPE}"
+    # the sentence denies: the composer's sentence stands as written; the source's is not
+    # moved (T-736).
+    assert _limitations(report) == f"{STILL_OPEN} {SCOPE}"
     assert not [r for r in done.tally.unresolved if r["code"] == DROPPED_CODE]
-    (record,) = [r for r in done.tally.unresolved if r["code"] == KEPT_IN_SOURCE_WORDS_CODE]
+    (record,) = [r for r in done.tally.unresolved if r["code"] == KEPT_ON_ITS_QUOTE_CODE]
     assert "persistence_detail, quoting 'is not established'" in record["message"]
-    assert record["stood"] == STILL_OPEN
+    assert "stood" not in record
 
 
-def test_a_replacement_is_counted_and_logged(caplog: pytest.LogCaptureFixture) -> None:
+def test_a_keep_on_its_quote_is_counted_and_logged(caplog: pytest.LogCaptureFixture) -> None:
     report = _report(limitations=f"{STILL_OPEN} {SCOPE}")
     gamed = _row(
         "limitations", STILL_OPEN, "keep", ["persistence_detail"], quote="is not established"
@@ -992,16 +993,16 @@ def test_a_replacement_is_counted_and_logged(caplog: pytest.LogCaptureFixture) -
     answer = {"sentences": _settled(report, [gamed, scope])}
     with caplog.at_level(logging.INFO, logger="malspark"):
         done, _reporter = _ask(report, answer, answer)
-    # Counted as one replaced, never as left out (T-705).
-    assert done.summary["replaced"] == 1 and done.summary["dropped"] == 0
-    assert "0 left out, 0 qualified on the ledger, 1 replaced by their source's sentence." in (
+    # Counted as one kept on its quote, never as left out (T-736).
+    assert done.summary["kept_on_quote"] == 1 and done.summary["dropped"] == 0
+    assert "0 left out, 0 qualified on the ledger, 1 kept on a quote standing in their source." in (
         caplog.text
     )
 
 
 def test_a_closing_keep_another_check_refuses_too_is_left_out_with_its_quote() -> None:
-    # Refused on its words and on the ledger's count of failed calls: no source's sentence
-    # stands in its place (T-705).
+    # Refused on its words and on the ledger's count of failed calls: it is not kept on its
+    # quote (T-705, T-736).
     counted = "Two tool calls failed, and what the hashing routine hashes is still not established."
     report = _report(limitations=f"{counted} {SCOPE}")
     gamed = _row("limitations", counted, "keep", ["persistence_detail"], quote="is not established")
@@ -1009,7 +1010,7 @@ def test_a_closing_keep_another_check_refuses_too_is_left_out_with_its_quote() -
     answer = {"sentences": _settled(report, [gamed, scope])}
     done, _reporter = _ask(report, answer, answer)
     assert _limitations(report) == SCOPE
-    assert not [r for r in done.tally.unresolved if r["code"] == KEPT_IN_SOURCE_WORDS_CODE]
+    assert not [r for r in done.tally.unresolved if r["code"] == KEPT_ON_ITS_QUOTE_CODE]
     (record,) = [r for r in done.tally.unresolved if r["code"] == DROPPED_CODE]
     assert "persistence_detail, quoting 'is not established'" in record["message"]
     assert FAILURE_COUNT_CODE in [r["code"] for r in done.tally.unresolved]

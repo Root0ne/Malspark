@@ -43,6 +43,9 @@ from tests.unit.reporting.test_a_question_asked_of_the_run_is_answered import (
 
 FIRST = "The gate reads a host mode [ev_0107]."
 SECOND = "It waits for a reply [ev_0107]."
+# Sentences no passage holds: a row copying one names a passage no answer can place (T-736).
+NOWHERE = "The gate writes nothing at all."
+ELSEWHERE = "The gate waits for nothing at all."
 
 
 def _rows(*rows: dict[str, Any]) -> dict[str, Any]:
@@ -63,9 +66,9 @@ def _records(result: Any, code: str) -> list[dict[str, str]]:
 
 def test_agreement_round_records_a_finding_first_raised_in_its_retry_as_not_asked() -> None:
     reporter = _Reporter(
-        _rows(_elsewhere("nowhere", FIRST)),
+        _rows(_elsewhere("nowhere", NOWHERE)),
         # The retry fixes the row asked about and raises a new one, on another passage.
-        _rows(_kept(), _elsewhere("elsewhere", SECOND)),
+        _rows(_kept(), _elsewhere("elsewhere", ELSEWHERE)),
     )
     result = _ask(_report(f"{FIRST} {SECOND}"), reporter)
     (record,) = _records(result, UNKNOWN_PASSAGE_CODE)
@@ -77,9 +80,9 @@ def test_agreement_round_records_a_finding_first_raised_in_its_retry_as_not_aske
 
 def test_agreement_round_keeps_a_finding_its_retry_was_asked_about_as_asked() -> None:
     reporter = _Reporter(
-        _rows(_elsewhere("nowhere", FIRST)),
+        _rows(_elsewhere("nowhere", NOWHERE)),
         # The same refused row again, now second: the same finding, under another number.
-        _rows(_kept(), _elsewhere("nowhere", FIRST)),
+        _rows(_kept(), _elsewhere("nowhere", NOWHERE)),
     )
     result = _ask(_report(f"{FIRST} {SECOND}"), reporter)
     (record,) = _records(result, UNKNOWN_PASSAGE_CODE)
@@ -153,7 +156,7 @@ def record_only(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_in_record_only_the_agreement_round_leaves_the_loop_s_marks(record_only: None) -> None:
     # The retry asks only about the answer that could not be read; the finding of the answer
     # read after it is marked not asked by the loop, without the retry's own words.
-    reporter = _Reporter("not an answer", _rows(_elsewhere("nowhere", FIRST)))
+    reporter = _Reporter("not an answer", _rows(_elsewhere("nowhere", NOWHERE)))
     result = _ask(_report(f"{FIRST} {SECOND}"), reporter)
     (record,) = _records(result, UNKNOWN_PASSAGE_CODE)
     assert record["asked"] == "false"

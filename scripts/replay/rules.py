@@ -128,15 +128,16 @@ COMPOSER_NOT_REPLAYED: dict[str, str] = {
 # The agreement question asked once the body is written
 # (``reporting.section_agreement``): the stored report holds the passages as
 # its rewrites left them, and each sentence it rewrote or listed only as a
-# finding row (``agreement.rewritten``, ``agreement.listed``); the record keeps
-# not the answer whose rows its checks read, so none of them can be re-run.
-_AGREEMENT_ANSWER_NOT_STORED = (
-    "the agreement question's answer is not in the stored record: the stored report holds the "
-    "passages as its rewrites left them, and each rewritten or listed sentence only as a finding "
-    "row"
+# finding row (``agreement.rewritten``, ``agreement.listed``); the round's record
+# keeps its answers (``section_agreement.answers``), which no replay step reads,
+# so none of its checks is re-run here.
+_AGREEMENT_NOT_ASKED_AGAIN = (
+    "no replay step asks the agreement question again or reads the answers its record keeps "
+    "(section_agreement.answers): the stored report holds the passages as its rewrites left "
+    "them, and each rewritten or listed sentence only as a finding row"
 )
 AGREEMENT_NOT_REPLAYED: dict[str, str] = {
-    name: _AGREEMENT_ANSWER_NOT_STORED
+    name: _AGREEMENT_NOT_ASKED_AGAIN
     for name in (
         "schema_violations",
         "agreement_violations",

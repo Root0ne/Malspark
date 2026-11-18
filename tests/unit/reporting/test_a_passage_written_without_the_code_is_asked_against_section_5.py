@@ -666,9 +666,12 @@ def test_the_node_says_what_the_question_could_not_do() -> None:
         "dropped": 0,
         "qualified": 0,
         "held_kept": 0,
-        "replaced": 0,
+        "kept_on_quote": 0,
         # The texts printed in their writer's own words the round was shown (T-613).
         "verbatim_shown": {},
+        # The answers the round read, and whether the mask changed each: none (T-736).
+        "answers": [],
+        "answers_masked": [],
     }
 
 

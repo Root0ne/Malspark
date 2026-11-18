@@ -617,7 +617,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in communications.1.encryption as copied. Copy the whole sentence as the passage "
         "writes it; it must stand there once.",
-        f"agreement.held_unlisted at held.communications.1.encryption: {_CELL_IS}, and no row "
+        f"agreement.held_unlisted at [communications.1.encryption]: {_CELL_IS}, and no row "
         f"lists this sentence: 'Not established.'. List it: {_WHOLE}. {_LEFT_OUT}, and {_DASH}. "
         f"{_EVERY_ROW}",
     ],
@@ -676,7 +676,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in capability_summary.1 as copied. Copy the whole sentence as the passage writes "
         "it; it must stand there once.",
-        f"agreement.held_unlisted at held.capability_summary.1: {_BULLET_IS}, and no row lists "
+        f"agreement.held_unlisted at [capability_summary.1]: {_BULLET_IS}, and no row lists "
         f"this sentence: 'The sample resolves a host mode [ev_0107].'. List it: {_WHOLE}. "
         f"{_LEFT_OUT}, and {_NOT_PRINTED}. {_EVERY_ROW}",
     ],
@@ -757,7 +757,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in communications.1.encryption as copied. Copy the whole sentence as the passage "
         "writes it; it must stand there once.",
-        "agreement.held_unlisted at held.communications.1.encryption: "
+        "agreement.held_unlisted at [communications.1.encryption]: "
         "communications.1.encryption names what a ledger.N fact shows, and no row lists this "
         "sentence: 'Which export the loader calls is not established [ev_0104].'. List it: it "
         "names what ledger.1 holds lines on: a keep of it as written is refused, and the same "
@@ -766,7 +766,7 @@ TABLE: dict[str, list[str]] = {
         f"unknown, {_DENIAL}, or drop it. {_LEFT_OUT}, and {_DASH}. {_EVERY_ROW}",
     ],
     "held cell | no row | -": [
-        "agreement.held_unlisted at held.communications.1.encryption: "
+        "agreement.held_unlisted at [communications.1.encryption]: "
         "communications.1.encryption names what a ledger.N fact shows, and no row lists this "
         "sentence: 'Which export the loader calls is not established [ev_0104].'. List it: it "
         "names what ledger.1 holds lines on: a keep of it as written is refused, and the same "
@@ -842,7 +842,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in capability_summary.2 as copied. Copy the whole sentence as the passage writes "
         "it; it must stand there once.",
-        "agreement.held_unlisted at held.capability_summary.2: capability_summary.2 names what "
+        "agreement.held_unlisted at [capability_summary.2]: capability_summary.2 names what "
         "a ledger.N fact shows, and no row lists this sentence: 'Which export the loader calls "
         "is not established [ev_0104].'. List it: it names what ledger.1 holds lines on: a "
         "keep of it as written is refused, and the same words with a citation added are a "
@@ -851,7 +851,7 @@ TABLE: dict[str, list[str]] = {
         f"{_LEFT_OUT}, and {_NOT_PRINTED}. {_EVERY_ROW}",
     ],
     "held bullet | no row | not printed": [
-        "agreement.held_unlisted at held.capability_summary.2: capability_summary.2 names what "
+        "agreement.held_unlisted at [capability_summary.2]: capability_summary.2 names what "
         "a ledger.N fact shows, and no row lists this sentence: 'Which export the loader calls "
         "is not established [ev_0104].'. List it: it names what ledger.1 holds lines on: a "
         "keep of it as written is refused, and the same words with a citation added are a "
@@ -916,7 +916,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in conclusion as copied. Copy the whole sentence as the passage writes it; it "
         "must stand there once.",
-        "agreement.held_unlisted at held.conclusion: conclusion holds a sentence of a closing "
+        "agreement.held_unlisted at [conclusion]: conclusion holds a sentence of a closing "
         "section, every one of which is answered, and no row lists this sentence: 'The file is "
         "a loader [ev_0107].'. List it: rewrite it on the source that states otherwise, or "
         "keep it naming the source you read and found agreeing, quoting its words, or leave it "
@@ -978,7 +978,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in limitations as copied. Copy the whole sentence as the passage writes it; it "
         "must stand there once.",
-        "agreement.held_unlisted at held.limitations: limitations holds a sentence of a "
+        "agreement.held_unlisted at [limitations]: limitations holds a sentence of a "
         "closing section, every one of which is answered, and no row lists this sentence: 'The "
         "gate reads a host mode [ev_0107].'. List it: rewrite it on the source that states "
         "otherwise, or keep it naming the source you read and found agreeing, quoting its "
@@ -1059,14 +1059,14 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in limitations as copied. Copy the whole sentence as the passage writes it; it "
         "must stand there once.",
-        "agreement.held_unlisted at held.limitations: limitations holds a sentence of a "
+        "agreement.held_unlisted at [limitations]: limitations holds a sentence of a "
         "closing section, every one of which is answered, and no row lists this sentence: 'The "
         "decompile of 0x5a10 failed [ev_0101].'. List it: it says a call failed that a later "
         "call redid: a keep of it as written is refused; rewrite it citing ev_0107 and saying "
         f"what it answered, {_DENIAL}, or drop it. {_LEFT_OUT}. {_EVERY_ROW}",
     ],
     "held limitations | no row | left out": [
-        "agreement.held_unlisted at held.limitations: limitations holds a sentence of a "
+        "agreement.held_unlisted at [limitations]: limitations holds a sentence of a "
         "closing section, every one of which is answered, and no row lists this sentence: 'The "
         "decompile of 0x5a10 failed [ev_0101].'. List it: it says a call failed that a later "
         "call redid: a keep of it as written is refused; rewrite it citing ev_0107 and saying "
@@ -1126,7 +1126,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in introduction as copied. Copy the whole sentence as the passage writes it; it "
         "must stand there once.",
-        "agreement.held_unlisted at held.introduction: introduction calls something absent "
+        "agreement.held_unlisted at [introduction]: introduction calls something absent "
         "from the whole code read, and no row lists this sentence: 'The runtime result of "
         "`QueryHostMode` is not known [ev_0109].'. List it: it names what ledger.1 holds lines "
         'on: keep it naming that fact, with "quote": words inside one of its rows that name '
@@ -1177,7 +1177,7 @@ TABLE: dict[str, list[str]] = {
         f"{_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
     ],
     "cell failed | no row | -": [
-        f"agreement.held_unlisted at held.communications.1.encryption: {_CELL_IS}, and no row "
+        f"agreement.held_unlisted at [communications.1.encryption]: {_CELL_IS}, and no row "
         f"lists this sentence: 'The decompile of 0x5a10 failed [ev_0101].'. List it: {_UNKEPT}. "
         f"{_LEFT_OUT}, and {_DASH}. {_EVERY_ROW}",
     ],
@@ -1196,7 +1196,7 @@ TABLE: dict[str, list[str]] = {
         f"{_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
     ],
     "cell count | no row | -": [
-        f"agreement.held_unlisted at held.communications.1.encryption: {_CELL_IS}, and no row "
+        f"agreement.held_unlisted at [communications.1.encryption]: {_CELL_IS}, and no row "
         f"lists this sentence: 'Five tool calls failed [ev_0107].'. List it: {_UNKEPT}. "
         f"{_LEFT_OUT}, and {_DASH}. {_EVERY_ROW}",
     ],
@@ -1229,7 +1229,7 @@ TABLE: dict[str, list[str]] = {
         "what states otherwise than communications.1.encryption, but only the facts, the "
         "section 5 passages and the debate rounds listed are sources. Name the sources by "
         f"their ids. {_CELL_IS}: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
-        "agreement.unread_standing at held.communications.1.encryption: "
+        "agreement.unread_standing at [communications.1.encryption]: "
         "communications.1.encryption: 'The routine at 0x5a10 was not read [ev_0107].' calls "
         "code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): ev_0107 "
         "lists its code (decompiled or disassembled)). Rewrite it in your own words to state "
@@ -1244,7 +1244,7 @@ TABLE: dict[str, list[str]] = {
         "ev_0107, which the rewrite does not. Keep every id the sentence cites, or drop it.",
         "agreement.rewrite_ungrounded at sentences.0.rewrite: row 1: the rewrite cites none of "
         "the ids its sources cite. Cite the entry a source rests on, or drop it.",
-        "agreement.unread_standing at held.communications.1.encryption: "
+        "agreement.unread_standing at [communications.1.encryption]: "
         "communications.1.encryption: 'The routine at 0x5a10 was not read [ev_0107].' calls "
         "code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): ev_0107 "
         "lists its code (decompiled or disassembled)). Rewrite it in your own words to state "
@@ -1288,7 +1288,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in communications.1.encryption as copied. Copy the whole sentence as the passage "
         "writes it; it must stand there once.",
-        "agreement.unread_standing at held.communications.1.encryption: "
+        "agreement.unread_standing at [communications.1.encryption]: "
         "communications.1.encryption: 'The routine at 0x5a10 was not read [ev_0107].' calls "
         "code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): ev_0107 "
         "lists its code (decompiled or disassembled)). Rewrite it in your own words to state "
@@ -1296,7 +1296,7 @@ TABLE: dict[str, list[str]] = {
         f"cites, or drop it. {_EVERY_ROW} {_CELL_IS}: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
     ],
     "cell unread | no row | -": [
-        "agreement.unread_standing at held.communications.1.encryption: "
+        "agreement.unread_standing at [communications.1.encryption]: "
         "communications.1.encryption: 'The routine at 0x5a10 was not read [ev_0107].' calls "
         "code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): ev_0107 "
         "lists its code (decompiled or disassembled)). Rewrite it in your own words to state "
@@ -1339,7 +1339,7 @@ TABLE: dict[str, list[str]] = {
         f"{_UNKEPT}. {_LEFT_OUT}, and {_NOT_PRINTED}.",
     ],
     "bullet failed | no row | not printed": [
-        f"agreement.held_unlisted at held.capability_summary.1: {_BULLET_IS}, and no row lists "
+        f"agreement.held_unlisted at [capability_summary.1]: {_BULLET_IS}, and no row lists "
         f"this sentence: 'The decompile of 0x5a10 failed [ev_0101].'. List it: {_UNKEPT}. "
         f"{_LEFT_OUT}, and {_NOT_PRINTED}. {_EVERY_ROW}",
     ],
@@ -1358,7 +1358,7 @@ TABLE: dict[str, list[str]] = {
         f"{_LEFT_OUT}, and {_NOT_PRINTED}.",
     ],
     "bullet count | no row | not printed": [
-        f"agreement.held_unlisted at held.capability_summary.1: {_BULLET_IS}, and no row lists "
+        f"agreement.held_unlisted at [capability_summary.1]: {_BULLET_IS}, and no row lists "
         f"this sentence: 'Five tool calls failed [ev_0107].'. List it: {_UNKEPT}. {_LEFT_OUT}, "
         f"and {_NOT_PRINTED}. {_EVERY_ROW}",
     ],
@@ -1391,7 +1391,7 @@ TABLE: dict[str, list[str]] = {
         "what states otherwise than capability_summary.1, but only the facts, the section 5 "
         "passages and the debate rounds listed are sources. Name the sources by their ids. "
         f"{_BULLET_IS}: {_UNKEPT}. {_LEFT_OUT}, and {_NOT_PRINTED}.",
-        "agreement.unread_standing at held.capability_summary.1: capability_summary.1: 'The "
+        "agreement.unread_standing at [capability_summary.1]: capability_summary.1: 'The "
         "routine at 0x5a10 was not read [ev_0107].' calls code not read that the ledger lists "
         "(listed.1: 0x2475a10 (offset 0x5a10): ev_0107 lists its code (decompiled or "
         "disassembled)). Rewrite it in your own words to state that the code was read and what "
@@ -1433,7 +1433,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in capability_summary.1 as copied. Copy the whole sentence as the passage writes "
         "it; it must stand there once.",
-        "agreement.unread_standing at held.capability_summary.1: capability_summary.1: 'The "
+        "agreement.unread_standing at [capability_summary.1]: capability_summary.1: 'The "
         "routine at 0x5a10 was not read [ev_0107].' calls code not read that the ledger lists "
         "(listed.1: 0x2475a10 (offset 0x5a10): ev_0107 lists its code (decompiled or "
         "disassembled)). Rewrite it in your own words to state that the code was read and what "
@@ -1441,7 +1441,7 @@ TABLE: dict[str, list[str]] = {
         f"{_BULLET_IS}: {_UNKEPT}. {_LEFT_OUT}, and {_NOT_PRINTED}.",
     ],
     "bullet unread | no row | not printed": [
-        "agreement.unread_standing at held.capability_summary.1: capability_summary.1: 'The "
+        "agreement.unread_standing at [capability_summary.1]: capability_summary.1: 'The "
         "routine at 0x5a10 was not read [ev_0107].' calls code not read that the ledger lists "
         "(listed.1: 0x2475a10 (offset 0x5a10): ev_0107 lists its code (decompiled or "
         "disassembled)). Rewrite it in your own words to state that the code was read and what "
@@ -1495,7 +1495,7 @@ TABLE: dict[str, list[str]] = {
         'drop it with "reason".',
     ],
     "conclusion failed | no row | as written": [
-        "agreement.held_unlisted at held.conclusion: conclusion holds a sentence of a closing "
+        "agreement.held_unlisted at [conclusion]: conclusion holds a sentence of a closing "
         "section, every one of which is answered, and no row lists this sentence: 'The "
         f"decompile of 0x5a10 failed [ev_0101].'. List it: {_UNKEPT}. {_EVERY_ROW}",
     ],
@@ -1524,7 +1524,7 @@ TABLE: dict[str, list[str]] = {
         "not. State the ledger's count, or no number.",
     ],
     "conclusion count | no row | as written": [
-        "agreement.held_unlisted at held.conclusion: conclusion holds a sentence of a closing "
+        "agreement.held_unlisted at [conclusion]: conclusion holds a sentence of a closing "
         "section, every one of which is answered, and no row lists this sentence: 'Five tool "
         f"calls failed [ev_0107].'. List it: {_UNKEPT}. {_EVERY_ROW}",
     ],
@@ -1559,7 +1559,7 @@ TABLE: dict[str, list[str]] = {
         "refused whatever it names, and the same words with a citation added are a keep; "
         "rewrite it on the source that states otherwise, citing an entry that source cites, or "
         'drop it with "reason".',
-        "agreement.unread_standing at held.conclusion: conclusion: 'The routine at 0x5a10 was "
+        "agreement.unread_standing at [conclusion]: conclusion: 'The routine at 0x5a10 was "
         "not read [ev_0107].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
@@ -1577,7 +1577,7 @@ TABLE: dict[str, list[str]] = {
         "ev_0107, which the rewrite does not. Keep every id the sentence cites, or drop it.",
         "agreement.rewrite_ungrounded at sentences.0.rewrite: row 1: the rewrite cites none of "
         "the ids its sources cite. Cite the entry a source rests on, or drop it.",
-        "agreement.unread_standing at held.conclusion: conclusion: 'The routine at 0x5a10 was "
+        "agreement.unread_standing at [conclusion]: conclusion: 'The routine at 0x5a10 was "
         "not read [ev_0107].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
@@ -1657,7 +1657,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in conclusion as copied. Copy the whole sentence as the passage writes it; it "
         "must stand there once.",
-        "agreement.unread_standing at held.conclusion: conclusion: 'The routine at 0x5a10 was "
+        "agreement.unread_standing at [conclusion]: conclusion: 'The routine at 0x5a10 was "
         "not read [ev_0107].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
@@ -1667,7 +1667,7 @@ TABLE: dict[str, list[str]] = {
         'that states otherwise, citing an entry that source cites, or drop it with "reason".',
     ],
     "conclusion unread | no row | appended": [
-        "agreement.unread_standing at held.conclusion: conclusion: 'The routine at 0x5a10 was "
+        "agreement.unread_standing at [conclusion]: conclusion: 'The routine at 0x5a10 was "
         "not read [ev_0107].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
@@ -1693,7 +1693,7 @@ TABLE: dict[str, list[str]] = {
         'that states otherwise, citing an entry that source cites, or drop it with "reason".',
     ],
     "limitations count | no row | as written": [
-        "agreement.held_unlisted at held.limitations: limitations holds a sentence of a "
+        "agreement.held_unlisted at [limitations]: limitations holds a sentence of a "
         "closing section, every one of which is answered, and no row lists this sentence: "
         f"'Five tool calls failed [ev_0107].'. List it: {_UNKEPT}. {_EVERY_ROW}",
     ],
@@ -1728,7 +1728,7 @@ TABLE: dict[str, list[str]] = {
         "refused whatever it names, and the same words with a citation added are a keep; "
         "rewrite it on the source that states otherwise, citing an entry that source cites, or "
         'drop it with "reason".',
-        "agreement.unread_standing at held.limitations: limitations: 'The routine at 0x6100 "
+        "agreement.unread_standing at [limitations]: limitations: 'The routine at 0x6100 "
         "was not read [ev_0112].' calls code not read that the ledger lists (listed.2: "
         "0x2476100 (offset 0x6100): ev_0112 lists its code (decompiled or disassembled)). "
         "Rewrite it in your own words to state that the code was read and what the sentence "
@@ -1778,7 +1778,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in limitations as copied. Copy the whole sentence as the passage writes it; it "
         "must stand there once.",
-        "agreement.unread_standing at held.limitations: limitations: 'The routine at 0x6100 "
+        "agreement.unread_standing at [limitations]: limitations: 'The routine at 0x6100 "
         "was not read [ev_0112].' calls code not read that the ledger lists (listed.2: "
         "0x2476100 (offset 0x6100): ev_0112 lists its code (decompiled or disassembled)). "
         "Rewrite it in your own words to state that the code was read and what the sentence "
@@ -1789,7 +1789,7 @@ TABLE: dict[str, list[str]] = {
         'drop it with "reason".',
     ],
     "limitations unread | no row | appended": [
-        "agreement.unread_standing at held.limitations: limitations: 'The routine at 0x6100 "
+        "agreement.unread_standing at [limitations]: limitations: 'The routine at 0x6100 "
         "was not read [ev_0112].' calls code not read that the ledger lists (listed.2: "
         "0x2476100 (offset 0x6100): ev_0112 lists its code (decompiled or disassembled)). "
         "Rewrite it in your own words to state that the code was read and what the sentence "
@@ -1863,7 +1863,7 @@ TABLE: dict[str, list[str]] = {
         "is refused, and the same words with a citation added are a keep; rewrite it in your "
         "own words on the lines shown, citing the entry they come from, saying what the lines "
         f"show and what stays unknown, {_DENIAL}, or drop it. {_LEFT_OUT}, and {_DASH}.",
-        "agreement.unread_standing at held.communications.1.encryption: "
+        "agreement.unread_standing at [communications.1.encryption]: "
         "communications.1.encryption: 'Which export the loader calls is not established, the "
         "routine at 0x5a10 was not read, the decompile of 0x5a10 failed and five tool calls "
         "failed [ev_0101] [ev_0104].' calls code not read that the ledger lists (listed.1: "
@@ -1945,7 +1945,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in communications.1.encryption as copied. Copy the whole sentence as the passage "
         "writes it; it must stand there once.",
-        "agreement.unread_standing at held.communications.1.encryption: "
+        "agreement.unread_standing at [communications.1.encryption]: "
         "communications.1.encryption: 'Which export the loader calls is not established, the "
         "routine at 0x5a10 was not read, the decompile of 0x5a10 failed and five tool calls "
         "failed [ev_0101] [ev_0104].' calls code not read that the ledger lists (listed.1: "
@@ -1958,7 +1958,7 @@ TABLE: dict[str, list[str]] = {
         f"stays unknown, {_DENIAL}, or drop it. {_LEFT_OUT}, and {_DASH}.",
     ],
     "held cell twice | no row | -": [
-        "agreement.unread_standing at held.communications.1.encryption: "
+        "agreement.unread_standing at [communications.1.encryption]: "
         "communications.1.encryption: 'Which export the loader calls is not established, the "
         "routine at 0x5a10 was not read, the decompile of 0x5a10 failed and five tool calls "
         "failed [ev_0101] [ev_0104].' calls code not read that the ledger lists (listed.1: "
@@ -2028,7 +2028,7 @@ TABLE: dict[str, list[str]] = {
         "refused, and the same words with a citation added are a keep; rewrite it in your own "
         "words on the lines shown, citing the entry they come from, saying what the lines show "
         f"and what stays unknown, {_DENIAL}, or drop it. {_LEFT_OUT}, and {_NOT_PRINTED}.",
-        "agreement.unread_standing at held.capability_summary.2: capability_summary.2: 'Which "
+        "agreement.unread_standing at [capability_summary.2]: capability_summary.2: 'Which "
         "export the loader calls is not established, the routine at 0x5a10 was not read, the "
         "decompile of 0x5a10 failed and five tool calls failed [ev_0101] [ev_0104].' calls "
         "code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): ev_0107 "
@@ -2110,7 +2110,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in capability_summary.2 as copied. Copy the whole sentence as the passage writes "
         "it; it must stand there once.",
-        "agreement.unread_standing at held.capability_summary.2: capability_summary.2: 'Which "
+        "agreement.unread_standing at [capability_summary.2]: capability_summary.2: 'Which "
         "export the loader calls is not established, the routine at 0x5a10 was not read, the "
         "decompile of 0x5a10 failed and five tool calls failed [ev_0101] [ev_0104].' calls "
         "code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): ev_0107 "
@@ -2123,7 +2123,7 @@ TABLE: dict[str, list[str]] = {
         f"{_LEFT_OUT}, and {_NOT_PRINTED}.",
     ],
     "held bullet twice | no row | not printed": [
-        "agreement.unread_standing at held.capability_summary.2: capability_summary.2: 'Which "
+        "agreement.unread_standing at [capability_summary.2]: capability_summary.2: 'Which "
         "export the loader calls is not established, the routine at 0x5a10 was not read, the "
         "decompile of 0x5a10 failed and five tool calls failed [ev_0101] [ev_0104].' calls "
         "code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): ev_0107 "
@@ -2186,7 +2186,7 @@ TABLE: dict[str, list[str]] = {
         "call that failed and a later call redid: a keep of it as written is refused; rewrite "
         f"it in your own words on what ev_0107 answered, citing it, {_DENIAL}, or drop it; the "
         f"same words with a citation added are a keep. {_LEFT_OUT}.",
-        "agreement.unread_standing at held.limitations: limitations: 'The decompile of 0x5a10 "
+        "agreement.unread_standing at [limitations]: limitations: 'The decompile of 0x5a10 "
         "failed [ev_0101], so the routine at 0x5a10 was not read, and five tool calls failed.' "
         "calls code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): "
         "ev_0107 lists its code (decompiled or disassembled)). Rewrite it in your own words to "
@@ -2240,7 +2240,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in limitations as copied. Copy the whole sentence as the passage writes it; it "
         "must stand there once.",
-        "agreement.unread_standing at held.limitations: limitations: 'The decompile of 0x5a10 "
+        "agreement.unread_standing at [limitations]: limitations: 'The decompile of 0x5a10 "
         "failed [ev_0101], so the routine at 0x5a10 was not read, and five tool calls failed.' "
         "calls code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): "
         "ev_0107 lists its code (decompiled or disassembled)). Rewrite it in your own words to "
@@ -2251,7 +2251,7 @@ TABLE: dict[str, list[str]] = {
         f"added are a keep. {_LEFT_OUT}.",
     ],
     "held limitations twice | no row | left out": [
-        "agreement.unread_standing at held.limitations: limitations: 'The decompile of 0x5a10 "
+        "agreement.unread_standing at [limitations]: limitations: 'The decompile of 0x5a10 "
         "failed [ev_0101], so the routine at 0x5a10 was not read, and five tool calls failed.' "
         "calls code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): "
         "ev_0107 lists its code (decompiled or disassembled)). Rewrite it in your own words to "
@@ -2273,7 +2273,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.failure_count at sentences.0.rewrite: row 1: introduction gives failed "
         "calls a number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not redone) "
         f"does not. State the ledger's count, or no number. {_LEFT_OUT}.",
-        "agreement.unread_standing at held.introduction: introduction: 'The runtime result of "
+        "agreement.unread_standing at [introduction]: introduction: 'The runtime result of "
         "`QueryHostMode` is not known, the routine at 0x5a10 was not read and five tool calls "
         "failed [ev_0109].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
@@ -2293,7 +2293,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.failure_count at sentences.0.rewrite: row 1: introduction gives failed "
         "calls a number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not redone) "
         f"does not. State the ledger's count, or no number. {_LEFT_OUT}.",
-        "agreement.unread_standing at held.introduction: introduction: 'The runtime result of "
+        "agreement.unread_standing at [introduction]: introduction: 'The runtime result of "
         "`QueryHostMode` is not known, the routine at 0x5a10 was not read and five tool calls "
         "failed [ev_0109].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
@@ -2310,7 +2310,7 @@ TABLE: dict[str, list[str]] = {
         "what ledger.1 holds lines on: a keep of it is refused whatever it names; rewrite it "
         f"in your own words on the lines shown, citing an entry the fact cites, {_DENIAL}; or "
         f"drop it. {_LEFT_OUT}.",
-        "agreement.unread_standing at held.introduction: introduction: 'The runtime result of "
+        "agreement.unread_standing at [introduction]: introduction: 'The runtime result of "
         "`QueryHostMode` is not known, the routine at 0x5a10 was not read and five tool calls "
         "failed [ev_0109].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
@@ -2329,7 +2329,7 @@ TABLE: dict[str, list[str]] = {
         f"{_LEFT_OUT}.",
         "agreement.rewrite_ungrounded at sentences.0.rewrite: row 1: the rewrite cites none of "
         f"the ids its sources cite. Cite the entry a source rests on, or drop it. {_LEFT_OUT}.",
-        "agreement.unread_standing at held.introduction: introduction: 'The runtime result of "
+        "agreement.unread_standing at [introduction]: introduction: 'The runtime result of "
         "`QueryHostMode` is not known, the routine at 0x5a10 was not read and five tool calls "
         "failed [ev_0109].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
@@ -2376,7 +2376,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in introduction as copied. Copy the whole sentence as the passage writes it; it "
         "must stand there once.",
-        "agreement.unread_standing at held.introduction: introduction: 'The runtime result of "
+        "agreement.unread_standing at [introduction]: introduction: 'The runtime result of "
         "`QueryHostMode` is not known, the routine at 0x5a10 was not read and five tool calls "
         "failed [ev_0109].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
@@ -2387,7 +2387,7 @@ TABLE: dict[str, list[str]] = {
         f"{_LEFT_OUT}.",
     ],
     "held body twice | no row | left out": [
-        "agreement.unread_standing at held.introduction: introduction: 'The runtime result of "
+        "agreement.unread_standing at [introduction]: introduction: 'The runtime result of "
         "`QueryHostMode` is not known, the routine at 0x5a10 was not read and five tool calls "
         "failed [ev_0109].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
@@ -2407,8 +2407,9 @@ _RECORDS = frozenset(
         agreement.DROPPED_CODE,
         agreement.QUALIFIED_CODE,
         agreement.HELD_KEPT_CODE,
-        agreement.KEPT_IN_SOURCE_WORDS_CODE,
+        agreement.KEPT_ON_ITS_QUOTE_CODE,
         agreement.JUDGE_LEFT_OUT_CODE,
+        agreement.PLACED_BY_SENTENCE_CODE,
     }
 )
 # The report rounds' prose checks, run on every rewrite; and a procedure's own checks.
