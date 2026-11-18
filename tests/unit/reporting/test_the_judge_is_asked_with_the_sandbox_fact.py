@@ -979,6 +979,35 @@ class TestTheSampleSTreeIsItsLineage:
             "two facts dispute (notepad.exe (procid 30))"
         )
 
+    def test_a_disputed_process_listed_by_its_path_is_named_as_a_network_row_names_it(
+        self,
+    ) -> None:
+        # One process the two facts dispute, listed by its full path: the host
+        # row and the network row name it by its image and its id alike.
+        from malspark.reporting.ledger_projection import traffic_makers
+        from malspark.schemas.sandbox_report import _flow_attribution, _sample_process_tree
+
+        path = "C:\\Windows\\System32\\notepad.exe"
+        processes = [
+            self._node(10, "C:\\Users\\Public\\invoice.exe", 1, marked=True),
+            self._node(30, path, 2, marked=True),
+        ]
+        host = self._facts(processes, ["30"])("registry", self.KEY)
+        task = {
+            "processes": [
+                {"procid": 10, "procid_parent": 1, "image": processes[0].name, "orig": True},
+                {"procid": 30, "procid_parent": 2, "image": path, "orig": True},
+            ]
+        }
+        lineage = _sample_process_tree(task, {"target": "invoice.exe", "sha256": SHA256})
+        (made,) = traffic_makers(_flow_attribution({"procid": 30}, lineage))
+
+        assert made == ("disputed", "notepad.exe (procid 30)")
+        assert host == (
+            "the sandbox report says it was made by a process whose lineage the report's "
+            f"two facts dispute ({made[1]})"
+        )
+
     def test_a_pid_two_listed_processes_of_different_lineage_carry_is_unattributed(self) -> None:
         processes = [self._node(10, "invoice.exe", 1), self._node(10, "svchost.exe", 4)]
 

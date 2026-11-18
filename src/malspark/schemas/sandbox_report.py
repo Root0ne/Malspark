@@ -967,6 +967,15 @@ TRAFFIC_FLOWS_LEFT_OUT_KEY = "platform_flows_left_out"
 TRAFFIC_FLOWS_UNSETTLED_KEY = "platform_flows_unsettled"
 
 
+def flow_image(name: Any) -> str:
+    """A listed process's image as published text names it: the last part of its path, as written.
+
+    One name for a process on every row that names it, a network row's
+    (``FLOW_PROCESS_KEY``) and a host row's whose writer's lineage is disputed.
+    """
+    return re.split(r"[\\/]", str(name or "").strip().strip('"'))[-1]
+
+
 def _basename(path: str) -> str:
     return re.split(r"[\\/]", path.strip().strip('"').strip("'"))[-1].lower()
 
@@ -1202,7 +1211,7 @@ def sample_process_tree(roots: list[Any], file_name: str = "", sha256: str = "")
         unsettled=frozenset(unsettled),
         reached=frozenset(nodes[i][1] for i in tree if nodes[i][1]),
         disputed=frozenset(
-            (nodes[i][1], nodes[i][2].strip()) for i in placed.disputed if nodes[i][1]
+            (nodes[i][1], flow_image(nodes[i][2])) for i in placed.disputed if nodes[i][1]
         ),
     )
 
@@ -1808,10 +1817,7 @@ def _sample_process_tree(task: dict[str, Any], sample: dict[str, Any]) -> _Linea
     listed = [(procid, p) for procid, p in processes if procid]
     parent = {procid: pid_of(p.get("procid_parent")) for procid, p in listed}
     # As the report writes them, for a reader: the case is the file's own.
-    images = {
-        procid: re.split(r"[\\/]", str(p.get("image") or p.get("name") or "").strip())[-1]
-        for procid, p in listed
-    }
+    images = {procid: flow_image(p.get("image") or p.get("name")) for procid, p in listed}
     marked = {procid for procid, p in listed if p.get("orig") is True}
     named = {procid for procid, p in listed if _is_the_sample(p, sample)}
     by_mark, by_file = _reach(parent, marked), _reach(parent, named)
@@ -2371,7 +2377,7 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
         parent[node] = (task, ppid) if ppid else None
         by_pid.setdefault(pid, set()).add(node)
         image = _image_of(proc.name)
-        images[node] = re.split(r"[\\/]", proc.name.strip().strip('"'))[-1]
+        images[node] = flow_image(proc.name)
         if image == names.sample:
             roots.add(node)
             quoted = _QUOTED.search(proc.name)
