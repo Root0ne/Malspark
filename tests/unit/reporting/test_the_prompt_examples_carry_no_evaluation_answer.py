@@ -1644,7 +1644,7 @@ PROMPTS: dict[str, str] = {
         )
     ),
     "narrative question about a recommendation naming a technique not published": " ".join(
-        v.message
+        f"{v.message} {v.shown}"
         for v in recommendation_technique_violations(
             {"defensive_recommendations": [{"action": "Alert on it.", "technique_id": "T1001"}]},
             ["T1002"],

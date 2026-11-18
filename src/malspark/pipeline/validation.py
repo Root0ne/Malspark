@@ -8872,9 +8872,11 @@ def recommendation_technique_violations(
     hunting notes print is read — the action, the rationale, the detection and
     the technique column — and each id written there that the run does not
     publish is named, one question per recommendation, as an unpublished
-    indicator is (:func:`recommendation_indicator_violations`). ``None`` reads
-    nothing: with no list to compare with there is no fact to state. Nothing
-    is removed: what the model answers stands.
+    indicator is (:func:`recommendation_indicator_violations`): the finding
+    states the fact and names the row by its priority and category, and the
+    rule it is asked by is in the question sent (``shown``) alone. ``None``
+    reads nothing: with no list to compare with there is no fact to state.
+    Nothing is removed: what the model answers stands.
     """
     if published is None:
         return []
@@ -8893,14 +8895,16 @@ def recommendation_technique_violations(
             Violation(
                 code=UNPUBLISHED_RECOMMENDATION_TECHNIQUE_CODE,
                 message=(
-                    f"recommendation {safe_finding_value(index + 1)} names a technique this run "
-                    f"does not publish: {ids}. The report's ATT&CK table does not carry it. A "
-                    "recommendation acts on the techniques this run publishes. Write it with a "
-                    "published technique, or without the id."
+                    f"{_recommendation_named(row)} names a technique this run does not publish: "
+                    f"{ids}. The report's ATT&CK table does not carry it."
                 ),
                 path=f"defensive_recommendations.{index}",
                 subject=unpublished[0],
                 statements=(f"defensive_recommendations.{at}",),
+                shown=(
+                    "A recommendation acts on the techniques this run publishes. Write it with a "
+                    "published technique, or without the id."
+                ),
             )
         )
     return out
