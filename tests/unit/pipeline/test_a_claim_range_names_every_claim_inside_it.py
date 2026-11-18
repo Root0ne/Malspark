@@ -316,9 +316,10 @@ class TestANumberNoAnalystIsNamedForIsUnplaced:
     def test_on_a_one_analyst_line_a_later_possessive_number_is_the_analyst_s_for_a_ruling(
         self,
     ) -> None:
-        line = f"{REVERSER} The reverser's own claim 45 says X. {BLOCKS}"
+        line = f"{REVERSER} The reverser's own claim 45 says X at ev_0045. {BLOCKS}"
+        owners = {"all_tools_reverser_ghidra": {44: frozenset(), 45: frozenset({"ev_0045"})}}
 
-        refs = read_claim_references([line], PARTICIPANTS, whole_line=True)
+        refs = read_claim_references([line], PARTICIPANTS, owners, whole_line=True)
 
         assert refs.named == {"all_tools_reverser_ghidra": {45: [(1, True)]}}
         assert refs.unplaced == ()

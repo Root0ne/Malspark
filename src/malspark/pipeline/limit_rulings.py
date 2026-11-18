@@ -15,7 +15,9 @@ held and no analyst is called.
 Each ruling is written onto the claims the line names, read as the revision
 merge reads them (``debate_facts.claims_named_by_lines``), a later bare
 "claim N" of a line whose field names one analyst read as that analyst's
-too, judged by the whole line, and only where the
+too where its own clause shares a ledger id or an address with that claim
+and no other claim of the answer in force, judged by the whole line, and
+only where the
 claim shares a ledger id or an address with the line (with the reference's own
 clause, for a claim a range reaches, as ``revision_merge`` withdraws by rule),
 as a note the claim carries to the
@@ -291,8 +293,9 @@ def mark_claims(
     # Read in place, each line at its own number: a line left out stands as
     # an empty one, which names nothing.
     placed = [by_number.get(n, "") for n in range(1, max(by_number) + 1)]
-    # A later bare claim of a one-analyst line is the analyst's here, judged
-    # by the whole line (``debate_facts.read_claim_references``).
+    # A later bare claim of a one-analyst line whose own clause holds it is
+    # the analyst's here, judged by the whole line
+    # (``debate_facts.read_claim_references``).
     named = claims_named_by_lines(placed, list(participants), owners, whole_line=True)
     # The lines whose ruling was written onto a claim, and those a sentence
     # already says why it was not.
