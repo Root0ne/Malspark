@@ -205,27 +205,79 @@ def test_a_file_the_export_names_in_its_directory_is_the_table_s_one_path() -> N
     assert set(surfaces._stix_values(bundle)) == {"c:\\users\\public\\updater.exe", "/tmp/a.so"}
 
 
-def _with_a_refused_identifier(run: dict[str, Any], *, stated: bool, published: bool) -> None:
-    value = "C:\\Users\\Public\\marker.dat"
-    if stated:
-        run["report_full"].setdefault("technical_analysis", {})["host_identifiers"] = [
-            {"kind": "file path", "value": value}
-        ]
-    run["iocs_all"]["items"].append(
-        {"kind": "path", "value": value, "source": "analysis", "published": published}
-    )
+# A folder the rule refuses (no whole-value check is recorded for it) and one it
+# publishes (found whole in the entry it cites).
+REFUSED = {
+    "kind": "folder",
+    "value": "AppData",
+    "use": "creates/writes",
+    "evidence_refs": ["ev_0001"],
+}
+PUBLISHED = {**REFUSED, "value": "Custom_update", "held_in": ["ev_0001"]}
+
+
+def _rule_s_answer(run: dict[str, Any]) -> str:
+    from malspark.reporting.models import MalwareReport
+    from malspark.reporting.renderers.stix_renderer import one_reading
+    from malspark.reporting.stated_host_values import identifier_answers
+
+    report = MalwareReport.model_validate(run["report_full"])
+    with one_reading(report):
+        ((_stated, answer),) = identifier_answers(report)
+    return answer
+
+
+def _with_an_identifier(
+    run: dict[str, Any],
+    identifier: dict[str, Any],
+    *,
+    stated: bool = True,
+    published: bool = False,
+    answer: str | None = None,
+    typed: bool = True,
+) -> None:
+    full = run["report_full"]
+    for cell in full["capability_matrix"]:
+        cell.update(tactic="TA0002", tactic_name="Execution")
+    full["technical_analysis"] = {"host_identifiers": [dict(identifier)]}
+    said = _rule_s_answer(run) if answer is None else answer
+    if not stated:
+        full["technical_analysis"] = {"host_identifiers": []}
+    item = {
+        "kind": "folder",
+        "value": identifier["value"],
+        "source": "analysis",
+        "published": published,
+        "publish_answer": said,
+    }
+    if typed:
+        item["type"] = "Folder"
+    run["iocs_all"]["items"].append(item)
 
 
 def test_a_refused_identifier_the_full_list_carries_is_no_orphan() -> None:
     run = clean_run()
-    _with_a_refused_identifier(run, stated=True, published=False)
+    _with_an_identifier(run, REFUSED)
 
     assert defects(surfaces.audit(run, clean_spec())) == []
 
 
-def test_a_feed_row_no_identifier_states_is_still_an_orphan() -> None:
-    for stated, published in ((False, False), (True, True)):
+def test_a_feed_row_no_identifier_refusal_accounts_for_is_still_an_orphan() -> None:
+    for over in (
+        {"stated": False},
+        {"published": True},
+        {"typed": False},
+        {"answer": "no: a refusal the identifier rule does not give"},
+    ):
         run = clean_run()
-        _with_a_refused_identifier(run, stated=stated, published=published)
+        _with_an_identifier(run, REFUSED, **over)
 
-        assert ("orphan", "ioc", "iocs_all") in defects(surfaces.audit(run, clean_spec()))
+        assert ("orphan", "ioc", "iocs_all") in defects(surfaces.audit(run, clean_spec())), over
+
+
+def test_an_identifier_the_rule_publishes_that_the_table_drops_is_an_orphan() -> None:
+    for answer in (None, "no: refused"):
+        run = clean_run()
+        _with_an_identifier(run, PUBLISHED, answer=answer)
+
+        assert ("orphan", "ioc", "iocs_all") in defects(surfaces.audit(run, clean_spec())), answer

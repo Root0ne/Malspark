@@ -480,6 +480,30 @@ def _published(value: Any) -> bool | None:
     return None
 
 
+def _identifier_refusals(full: Any) -> dict[str, set[str]]:
+    """Each refusal the identifier rule gives, by the value it refuses.
+
+    The rule's own answers (``stated_host_values.identifier_answers``) on the
+    full report as the model reads it, ``{}`` for a report the model cannot
+    read; an answer that publishes is no refusal.
+    """
+    from malspark.reporting.models import MalwareReport
+    from malspark.reporting.renderers.stix_renderer import one_reading, publishes
+    from malspark.reporting.stated_host_values import identifier_answers
+
+    try:
+        report = MalwareReport.model_validate(full)
+        with one_reading(report):
+            answers = identifier_answers(report)
+    except Exception:  # noqa: BLE001 — no refusal is read, so no feed row is excused
+        return {}
+    out: dict[str, set[str]] = {}
+    for stated, answer in answers:
+        if not publishes(answer):
+            out.setdefault(_ioc_key(stated.value), set()).add(answer)
+    return out
+
+
 def canonical(surfaces: dict[str, Any]) -> Findings:
     """The job's own decisions, from the report row and its report document."""
     row = _dict(surfaces.get("report_row"))
@@ -936,16 +960,17 @@ def check_iocs(
                     f"published={said} in the feed, {ioc['published']} in the report's IOC table",
                 )
         # The full list carries each identifier row the rule refuses after the
-        # table's rows, unpublished under source ``analysis``
-        # (``builder.full_ioc_list``): a row the report's identifier table states.
-        ta = _dict(_dict(full).get("technical_analysis"))
-        stated = {_ioc_key(_dict(row).get("value")) for row in _list(ta.get("host_identifiers"))}
+        # table's rows, unpublished under source ``analysis`` and typed
+        # (``builder.full_ioc_list``): a row whose answer is the refusal the
+        # identifier rule gives that value.
+        refusals = _identifier_refusals(full)
         for key in feed.keys() - canon.keys():
             item = feed[key]
             if (
-                key in stated
-                and item.get("source") == "analysis"
+                item.get("source") == "analysis"
                 and _published(item.get("published")) is False
+                and _text(item.get("type")).strip()
+                and _text(item.get("publish_answer")) in refusals.get(key, ())
             ):
                 continue
             out.defect(
