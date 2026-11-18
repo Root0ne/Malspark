@@ -223,6 +223,7 @@ from malspark.pipeline.validation import (
     absence_claim_violation,
     analyst_cut_violation,
     analyst_repeated_violation,
+    call_count_violations,
     chunk_cut_unread_sentence,
     claim_does_not_describe_violation,
     claims_kept_under_disputes_finding,
@@ -1752,6 +1753,26 @@ PROMPTS: dict[str, str] = {
                 }
             ],
             [{"flag": "-q", "description": "Sets 0x10 to 2 here.", "evidence_ref": "ev_0001"}],
+        )
+    ),
+    "composer question about a count of calls the cited code does not write": " ".join(
+        f"{v.message} {v.shown}"
+        for v in call_count_violations(
+            {"body": "The routine calls FUN_00002000 three times [ev_0001]."},
+            EntryTexts.from_ledger(
+                [
+                    build_entry(
+                        entry_id="ev_0001",
+                        seq=1,
+                        agent="a",
+                        server="a",
+                        tool="decompile_function",
+                        args={"address": "0x1000"},
+                        output="void FUN_00001000(void)\n{\n  FUN_00002000(1);\n}",
+                    )
+                ]
+            ),
+            prose=("body",),
         )
     ),
     "judge question about an indicator on a value the sample did not reach": " ".join(

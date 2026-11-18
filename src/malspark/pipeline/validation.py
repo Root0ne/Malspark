@@ -8386,6 +8386,11 @@ ABSENCE_CONTRADICTS_LEDGER_CODE = "report.absence_contradicts_ledger"
 # (``option_number_violations``). The code cannot tell which row is right: each
 # section is asked once, shown both rows, and a row kept stands with the finding.
 OPTION_NUMBERS_DIFFER_CODE = "report.option_numbers_differ"
+# A cited sentence stating how many times a routine is called where the cited
+# entries' code writes another number of calls of it (``call_count_violations``).
+# Asked once with the fact; the model states the number the code shows or says
+# what its number counts, and a sentence kept after it stands with the finding.
+CALL_COUNT_DIFFERS_CODE = "report.call_count_differs"
 
 # The codes a report round's answer is kept with. A broken shape leaves nothing
 # to print; each of these leaves a printable answer with a finding beside it.
@@ -8458,6 +8463,7 @@ KEPT_WITH_A_FINDING: frozenset[str] = frozenset(
         REPEATED_ITEMS_CODE,
         COMMAND_VALUES_CODE,
         OPTION_NUMBERS_DIFFER_CODE,
+        CALL_COUNT_DIFFERS_CODE,
         UNPUBLISHED_RECOMMENDATION_CODE,
         UNPUBLISHED_RECOMMENDATION_TECHNIQUE_CODE,
         PERSISTENCE_NOT_OBSERVED_CODE,
@@ -11047,6 +11053,283 @@ def _key_numbers(text: str) -> dict[str, frozenset[int]]:
                 )
                 found.setdefault(key.group(0).lower(), set()).add(value)
     return {key: frozenset(numbers) for key, numbers in found.items()}
+
+
+# The numbers a count of calls is written in: digits, or a word up to twenty.
+_CALL_COUNT_WORDS = {
+    word: number
+    for number, word in enumerate(
+        "zero one two three four five six seven eight nine ten eleven twelve thirteen "
+        "fourteen fifteen sixteen seventeen eighteen nineteen twenty".split()
+    )
+}
+# A stated count of calls: a number directly before a noun that counts calls.
+# Callers, references, "once" and "twice" count places or events, not calls,
+# and are not read.
+_CALL_COUNT_RE = re.compile(
+    r"\b(?:(\d{1,3})|(" + "|".join(_CALL_COUNT_WORDS) + r"))\s+"
+    r"(?:separate\s+|distinct\s+|direct\s+)?"
+    r"(?:times|calls?|call[ -]sites?|occurrences?|invocations?)\b",
+    re.IGNORECASE,
+)
+# A token of a sentence that may name a routine: an address, or an identifier
+# of four characters or more.
+_CALLED_TOKEN_RE = re.compile(r"\b(?:0x[0-9a-fA-F]{5,}|[A-Za-z_][A-Za-z0-9_]{3,})\b")
+# Words of a count sentence that name no routine.
+_NOT_A_ROUTINE = frozenset(
+    {
+        "times",
+        "calls",
+        "call",
+        "sites",
+        "occurrences",
+        "with",
+        "that",
+        "this",
+        "from",
+        "each",
+        "once",
+        "twice",
+        "per",
+        "block",
+        "loop",
+        "function",
+        "routine",
+        "which",
+        "then",
+        "into",
+        "evidence",
+        "entry",
+        "code",
+    }
+)
+# A line that defines a routine: a return type before its name, and no
+# statement end after it.
+_ROUTINE_DEFINITION_RE = re.compile(r"^\s*(?:[A-Za-z_][\w]*[\s\*]+)+\**([A-Za-z_]\w*)\s*\([^;]*$")
+# Words that open a statement, which a definition line never starts with.
+_STATEMENT_WORDS = frozenset({"return", "if", "while", "for", "switch", "else", "do", "case"})
+
+
+@_locating(lambda payload, entries, *, prose=(): _Names(top=frozenset(prose)))
+def call_count_violations(
+    payload: Any, entries: EntryTexts | None, *, prose: Sequence[str] = ()
+) -> list[Violation]:
+    """Cited sentences that state a count of calls the cited entries' code does not write.
+
+    A count is a number (digits, or a word up to twenty) directly before a
+    noun that counts calls: times, calls, call sites, occurrences,
+    invocations. It is read against the routine the sentence names nearest to
+    it whose call (``name(``) a cited entry's text writes — an address read as
+    the decompiler names it — and the calls each cited entry writes are
+    counted, the routine's own definition not counted. Where the stated number
+    is neither one entry's count nor their sum, the model is asked once with
+    the fact alone: what the sentence states and what the code writes, in
+    which functions. A count in code is no count of executions (a call in a
+    loop is written once), so the model decides what its number counts; the
+    sentence is never rewritten. Read as :func:`wrong_entry_citations` reads
+    a text.
+    """
+    if payload is None or entries is None or not entries.texts:
+        return []
+    data = payload if isinstance(payload, dict) else getattr(payload, "__dict__", {}) or {}
+    codes: dict[str, str] = {}
+    out: list[Violation] = []
+
+    def _ask(sentence: str, cited: Sequence[str], where: str, span: Span) -> None:
+        known = [entry_id for entry_id in cited if entries.has_text(entry_id)]
+        if not known:
+            return
+        for match in _CALL_COUNT_RE.finditer(sentence):
+            stated = (
+                int(match.group(1)) if match.group(1) else _CALL_COUNT_WORDS[match.group(2).lower()]
+            )
+            for entry_id in known:
+                if entry_id not in codes:
+                    codes[entry_id] = _entry_code(entries, entry_id)
+            read = _counted_routine(sentence, match, {e: codes[e] for e in known})
+            if read is None:
+                continue
+            written, counts = read
+            calls = [number for number, _functions in counts.values()]
+            if stated in calls or stated == sum(calls):
+                continue
+            parts = []
+            for entry_id, (number, functions) in counts.items():
+                if not number:
+                    continue
+                inside = f"in {', '.join(functions)}" if functions else ""
+                parts.append(
+                    f"{safe_finding_value(entries.named(entry_id))} writes "
+                    f"{safe_finding_value(number)} {'call' if number == 1 else 'calls'} of "
+                    f"{safe_finding_value(written)}"
+                    f"{' (' + safe_finding_value(inside) + ')' if inside else ''}"
+                )
+            phrase = match.group(0)
+            out.append(
+                Violation(
+                    code=CALL_COUNT_DIFFERS_CODE,
+                    message=(
+                        f"The text states {safe_finding_value(phrase)!r} for "
+                        f"{safe_finding_value(written)}, citing "
+                        f"{safe_finding_value(', '.join(known))}; the code in "
+                        + "; the code in ".join(parts)
+                        + ", its own definition not counted."
+                    ),
+                    path="count",
+                    quoted=(where,),
+                    about=(span,),
+                    shown=(
+                        "Read the cited code again: if your number counts something else (calls "
+                        "per loop iteration, distinct callers, executions), say what it counts; "
+                        "otherwise state the number the code shows."
+                    ),
+                )
+            )
+
+    def _read_prose(text: Any) -> None:
+        read = _text_of(text)
+        for sentence, cited, begin, end in _cited_sentences(read):
+            _ask(sentence, cited, sentence.strip(), (read, begin, end))
+
+    def _walk(node: Any, depth: int = 0) -> None:
+        if depth > 4:
+            return
+        if isinstance(node, list | tuple):
+            for item in node:
+                _walk(item, depth + 1)
+            return
+        if not isinstance(node, dict):
+            return
+        refs: list[str] = []
+        for key in _CITING_FIELDS:
+            refs.extend(ref for ref in _ids_in(node.get(key)) if ref not in refs)
+        for key, value in node.items():
+            if key in _CITING_FIELDS:
+                continue
+            if isinstance(value, str):
+                if _sentences_with_citations(value):
+                    _read_prose(value)
+                elif refs:
+                    _ask(value, refs, cited_row_text(value, node), (value, 0, len(value)))
+            else:
+                _walk(value, depth + 1)
+
+    for key in prose:
+        if isinstance(data.get(key), str):
+            _read_prose(data.get(key))
+    _walk({key: value for key, value in data.items() if key not in prose})
+    for key in prose:
+        if not isinstance(data.get(key), str):
+            _walk(data.get(key))
+    return out
+
+
+def _entry_code(entries: EntryTexts, entry_id: str) -> str:
+    """An entry's text as code is read: its JSON's keys and strings, one per line.
+
+    The stored output in its own case where the entry's text is that output.
+    """
+    import json as _json
+
+    text = entries.text_of(entry_id)
+    written = str(getattr(entries.entries.get(entry_id), "output", "") or "")
+    if written and written.lower() == text:
+        text = written
+    try:
+        parsed: Any = _json.loads(text)
+    except (ValueError, TypeError):
+        return text
+    leaves: list[str] = []
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                leaves.append(str(key))
+                _walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                _walk(value)
+        elif isinstance(node, str):
+            leaves.append(node)
+
+    _walk(parsed)
+    return "\n".join(leaves)
+
+
+def _counted_routine(
+    sentence: str, match: re.Match[str], codes: Mapping[str, str]
+) -> tuple[str, dict[str, tuple[int, tuple[str, ...]]]] | None:
+    """The routine a count speaks of and the calls each entry's code writes, or ``None``.
+
+    The routine is the token of the sentence nearest the count that some
+    entry's code writes as a call; ``(its spelling in the code, {entry:
+    (calls, the functions they stand in)})``.
+    """
+    near: list[tuple[int, str]] = []
+    for token in _CALLED_TOKEN_RE.finditer(sentence):
+        word = token.group(0)
+        lowered = word.lower()
+        if (
+            lowered in _NOT_A_ROUTINE
+            or lowered in _CALL_COUNT_WORDS
+            or word.isdigit()
+            or _EVIDENCE_ID_RE.fullmatch(word)
+        ):
+            continue
+        if token.end() <= match.start():
+            distance = match.start() - token.end()
+        else:
+            distance = token.start() - match.end()
+        if distance >= 0:
+            near.append((distance, word))
+    for _distance, word in sorted(near):
+        for name in _routine_names(word):
+            counts = {entry_id: _calls_of(code, name) for entry_id, code in codes.items()}
+            if any(number for number, _functions, _written in counts.values()):
+                written = next(spelt for _n, _f, spelt in counts.values() if spelt)
+                return written, {
+                    entry_id: (number, functions)
+                    for entry_id, (number, functions, _spelt) in counts.items()
+                }
+    return None
+
+
+def _routine_names(token: str) -> list[str]:
+    """The names a routine is called by: an address as the decompiler names it."""
+    if token.lower().startswith("0x"):
+        digits = token[2:].lower().lstrip("0")
+        return [f"fun_{digits}", f"fun_{digits.zfill(8)}", f"sub_{digits}"]
+    return [token.lower()]
+
+
+def _calls_of(code: str, name: str) -> tuple[int, tuple[str, ...], str]:
+    """How many calls of ``name`` code writes, the functions they stand in, and its spelling.
+
+    A line that defines the routine is no call of it.
+    """
+    pattern = re.compile(r"(?<![\w])" + re.escape(name) + r"\s*\(", re.IGNORECASE)
+    calls = 0
+    functions: dict[str, None] = {}
+    spelt = ""
+    inside = ""
+    for line in code.splitlines():
+        defined = _ROUTINE_DEFINITION_RE.match(line)
+        if defined and line.split()[0].lower() not in _STATEMENT_WORDS and "=" not in line:
+            inside = defined.group(1)
+        for found in pattern.finditer(line):
+            before = line[: found.start()].strip()
+            if (
+                before
+                and re.fullmatch(r"[\w\s\*]+", before)
+                and not re.search(r"\breturn\b|=", before)
+                and not line.rstrip().endswith(";")
+            ):
+                continue
+            calls += 1
+            spelt = spelt or line[found.start() : found.end()].rstrip("( \t")
+            if inside and inside.lower() != name:
+                functions.setdefault(inside, None)
+    return calls, tuple(functions), spelt
 
 
 def cited_row_text(text: str, row: Mapping[str, Any]) -> str:
