@@ -40,7 +40,7 @@ TECHNIQUE_RULE = (
 )
 # The ISR instruction and the negotiation round's closing a definition with the
 # line on is sent: the claim format with the TECHNIQUE line and its rule.
-DEV_ISR_INSTRUCTION = (
+ISR_INSTRUCTION_WITH_TECHNIQUES = (
     "Return a structured list of findings. For each finding state: the claim, "
     "the exact artifact reference, your confidence (0.0-1.0), and the MITRE "
     "ATT&CK technique ID.\n\n"
@@ -52,7 +52,7 @@ DEV_ISR_INSTRUCTION = (
     "TECHNIQUE: <T-ID, several separated by commas, or NONE>\n"
     "---\n" + TECHNIQUE_RULE + "\n"
 )
-DEV_REVISION_CLOSING = (
+REVISION_CLOSING_WITH_TECHNIQUES = (
     "Format your response as structured claims (CLAIM/EVIDENCE/CONFIDENCE/TECHNIQUE)\n"
     "followed by a DISPUTES section listing peer claims you reject.\n"
     + TECHNIQUE_RULE
@@ -105,20 +105,20 @@ class TestOnIsTheDevPrompt:
         definition = _builtin_definitions()[key]
         agent = _agent(_NO_LINE, techniques=definition.attck_techniques, role=definition.role)
         agent.analyze_isr("DATA")
-        assert _human().startswith(DEV_ISR_INSTRUCTION)
+        assert _human().startswith(ISR_INSTRUCTION_WITH_TECHNIQUES)
 
     @pytest.mark.parametrize("key", sorted(_builtin_definitions()))
     def test_every_shipped_definition_revises_with_the_dev_closing(self, key: str) -> None:
         definition = _builtin_definitions()[key]
         agent = _agent(_NO_LINE, techniques=definition.attck_techniques, role=definition.role)
         agent.revise_isr("DATA", "OWN", {"peer": "P"}, "FEEDBACK")
-        assert _human().endswith("RAW DATA:\nDATA\n\n" + DEV_REVISION_CLOSING)
+        assert _human().endswith("RAW DATA:\nDATA\n\n" + REVISION_CLOSING_WITH_TECHNIQUES)
 
     def test_the_revision_default_is_the_dev_text(self) -> None:
         sent = revision_messages("SYS", "DATA", "OWN", {"peer": "P"}, "FB", isr=True)
         assert sent[1][1] == (
             "YOUR ORIGINAL REPORT:\nOWN\n\nPEER REPORTS:\nPEER REPORT:\nP\n\n"
-            "MEDIATOR FEEDBACK:\nFB\n\nRAW DATA:\nDATA\n\n" + DEV_REVISION_CLOSING
+            "MEDIATOR FEEDBACK:\nFB\n\nRAW DATA:\nDATA\n\n" + REVISION_CLOSING_WITH_TECHNIQUES
         )
 
 
@@ -447,7 +447,9 @@ class TestTheViewAndTierPilotFollowTheSwitch:
     def test_on_the_view_system_and_the_ladder_are_the_dev_texts(self) -> None:
         from malspark.agents import base_agent as b
 
-        claim_format = DEV_ISR_INSTRUCTION[DEV_ISR_INSTRUCTION.index("Format each finding") : -1]
+        claim_format = ISR_INSTRUCTION_WITH_TECHNIQUES[
+            ISR_INSTRUCTION_WITH_TECHNIQUES.index("Format each finding") : -1
+        ]
         assert b._VIEW_SYSTEM == (
             "You are an expert malware analyst examining one focused facet of a sample. "
             "Analyse ONLY the aspect named in the instruction; ignore everything else. "
