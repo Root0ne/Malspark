@@ -344,3 +344,32 @@ def test_a_key_a_row_writes_is_never_the_round_s_own_mark_wherever_the_rows_ente
     assert counts == plain_counts
     assert [(v.code, v.message) for v in records] == [(v.code, v.message) for v in plain_records]
     assert report.model_dump() == plain.model_dump()
+
+
+def test_a_copy_one_sentence_of_which_another_passage_holds_places_no_row() -> None:
+    # The introduction holds the copy's first sentence, though not the copy as a run.
+    _unplaced_ends(f"{FIRST} {_T}", f"{FIRST} {_X}", f"{FIRST} {_T}")
+
+
+def test_a_copy_another_passage_holds_as_a_run_of_its_words_places_no_row() -> None:
+    # The introduction holds the copy's words inside a longer sentence of its own.
+    _unplaced_ends(FIRST, f"As noted, {FIRST}", FIRST)
+
+
+def test_a_whole_copy_of_a_passage_cut_at_its_line_breaks_ends_as_its_sentences() -> None:
+    # The passage ends a sentence at a line break the copy writes as a space: the copy is the
+    # passage's sentences, each placed as given one by one.
+    head = FIRST.removesuffix(".")
+
+    def ended(sentences: list[str]) -> tuple[Any, ...]:
+        report = _report(f"{head}\n{_T}", background=_X)
+        rows = [
+            {**_row(s, "drop", [], reason="the lines shown say otherwise"), "passage": "held.x"}
+            for s in sentences
+        ]
+        done = _ask(report, _Reporter({"sentences": rows}, {"sentences": rows}))
+        return report.model_dump(), done.summary["dropped"]
+
+    whole, split = ended([f"{head} {_T}"]), ended([head, _T])
+    assert whole == split
+    assert split[1] == 2
