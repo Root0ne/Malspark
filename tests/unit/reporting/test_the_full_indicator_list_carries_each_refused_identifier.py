@@ -53,6 +53,18 @@ def test_each_refused_row_is_listed_unpublished_with_the_identifier_table_s_refu
     assert folder.evidence_ids == [] or set(folder.evidence_ids) <= {"ev_0021"}
 
 
+def test_each_refused_row_carries_the_record_every_unpublished_row_carries() -> None:
+    report = _report([_row("folder", "AppData"), _row("Install marker", "Custom_update")])
+
+    rows = _refused(report)
+
+    assert sorted(rows) == ["AppData", "Custom_update"]
+    assert all(row.role == "listed" and row.indicator_type is None for row in rows.values())
+    served = [row for row in ioc_feed_rows(report.model_dump(mode="json")) if row["value"] in rows]
+    assert [row["role"] for row in served] == ["listed", "listed"]
+    assert all(row["indicator_type"] is None for row in served)
+
+
 def test_a_row_of_no_rule_kind_is_typed_by_the_kind_the_analysis_wrote() -> None:
     report = _report([_row("Install marker", "Custom_update")])
 

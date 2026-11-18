@@ -806,9 +806,10 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
     its answer the refusal the identifier table prints, under source
     ``analysis``, typed by the rule's label or, for a row of no vocabulary
     kind, by the kind as the analysis wrote it; only where the list holds no
-    row of the same kind and value. The table itself is not changed, so §9,
-    the exports and every reader of the table read what they read before; the
-    published rows are the table's alone.
+    row of the same kind and value. Each carries the record every unpublished
+    row carries (:func:`with_record`): role ``listed``, no indicator type. The
+    table itself is not changed, so §9, the exports and every reader of the
+    table read what they read before; the published rows are the table's alone.
     """
     from malspark.reporting.detonation_marks import entry_marks
     from malspark.reporting.ledger_projection import value_key
@@ -824,7 +825,7 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
         return rows
     index = {row.id: at for at, row in enumerate(report.evidence_index)}
     keys = {(row.kind or "", value_key(row.kind or "", row.value)) for row in rows}
-    out = list(rows)
+    added: list[ConsolidatedIOC] = []
     for stated, answer in answers:
         value = str(stated.value or "").strip()
         kind = stated.table_kind
@@ -833,7 +834,7 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
             continue
         keys.add(slot)
         held = [*(stated.held_in or ())]
-        out.append(
+        added.append(
             ConsolidatedIOC(
                 type=stated.label or stated.written_kind,
                 kind=kind,
@@ -846,7 +847,7 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
                 observed_in=entry_marks(held, report),
             )
         )
-    return out
+    return [*rows, *with_record(added, report)]
 
 
 def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
