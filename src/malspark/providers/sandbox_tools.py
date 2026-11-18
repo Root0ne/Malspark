@@ -48,11 +48,11 @@ from malspark.schemas.sandbox_report import (
     LINEAGE_SAMPLE,
     PROCESS_TASK_KEY,
     STAGED_KEY,
-    STAGED_NOTE,
     STAGED_NOTE_KEY,
     dropped_size,
     process_lineage,
     reading_of_run,
+    staged_note,
     started_by_the_sandbox,
     written_during_the_run,
 )
@@ -334,8 +334,9 @@ def sandbox_processes(
             row[STAGED_KEY] = True
         rows.append(row)
     answer: dict[str, Any] = {"processes": rows, "total": len(processes), **meta}
-    if any(STAGED_KEY in row for row in rows):
-        answer = {STAGED_NOTE_KEY: STAGED_NOTE, **answer}
+    count = sum(STAGED_KEY in row for row in rows)
+    if count:
+        answer = {STAGED_NOTE_KEY: staged_note(count), **answer}
     return answer
 
 

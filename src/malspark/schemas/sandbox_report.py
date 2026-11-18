@@ -1373,7 +1373,8 @@ def process_placement(
 # as the sandbox started it (:func:`started_by_the_sandbox`), left out where
 # not; the words every surface that renders the row writes beside it
 # (:func:`staged_words`); and the sentence an answer holding such a row carries
-# once, under :data:`STAGED_NOTE_KEY`.
+# once, under :data:`STAGED_NOTE_KEY` (:func:`staged_note`, by the number of
+# rows it holds marked).
 STAGED_KEY = "staged_by_sandbox"
 STAGED_WORDS = "the sandbox started the submitted file from this path"
 STAGED_NOTE_KEY = "staged_by_sandbox_note"
@@ -1382,6 +1383,22 @@ STAGED_NOTE = (
     "started by no process that runs it, at a path the report does not show written "
     "during the run: the sandbox started the submitted file from there."
 )
+
+
+def staged_note(count: int) -> str:
+    """The sentence beside ``count`` rows marked :data:`STAGED_KEY`.
+
+    :data:`STAGED_NOTE`, word for word, for one row; the same fact stated of
+    each row for more.
+    """
+    if count <= 1:
+        return STAGED_NOTE
+    return (
+        f"Each of the {count} rows marked {STAGED_KEY} is the first process of its own "
+        "lineage that runs the submitted file, started by no process that runs it, at a "
+        "path the report does not show written during the run: the sandbox started the "
+        "submitted file from each row's path."
+    )
 
 
 def started_by_the_sandbox(

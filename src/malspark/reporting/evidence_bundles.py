@@ -1344,12 +1344,13 @@ def sandbox_start_facts(report: MalwareReport) -> dict[str, str]:
     The one writer of the fact every writer that decides is shown (a
     section's facts, the narrative's facts block, the agreement round's
     facts): the words every surface writes beside the marked row, the rows'
-    pids, and the sentence the process view states (``STAGED_NOTE``),
-    unchanged. One entry per path in the platform's normal form for a path,
-    in tree order; ``{}`` where no row is marked.
+    pids, and the sentence the process view states (``staged_note``, by
+    the number of rows the entry names), unchanged. One entry per path in
+    the platform's normal form for a path, in tree order; ``{}`` where no
+    row is marked.
     """
     from malspark.reporting.dedupe import indicator_fingerprint
-    from malspark.schemas.sandbox_report import STAGED_NOTE, STAGED_WORDS
+    from malspark.schemas.sandbox_report import STAGED_WORDS, staged_note
 
     pids: dict[tuple[str, str], list[str]] = {}
     paths: dict[tuple[str, str], str] = {}
@@ -1362,7 +1363,7 @@ def sandbox_start_facts(report: MalwareReport) -> dict[str, str]:
         if f"pid {node.pid}" not in held:
             held.append(f"pid {node.pid}")
     return {
-        path: f"{STAGED_WORDS} ({', '.join(pids[key])}). {STAGED_NOTE}"
+        path: f"{STAGED_WORDS} ({', '.join(pids[key])}). {staged_note(len(pids[key]))}"
         for key, path in paths.items()
     }
 
