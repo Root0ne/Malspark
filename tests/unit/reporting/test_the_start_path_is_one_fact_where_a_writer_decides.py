@@ -69,6 +69,19 @@ class TestTheOneWriter:
             )
         }
 
+    def test_a_process_listed_twice_in_one_task_is_one_marked_row(self) -> None:
+        from malspark.reporting.models import ProcessNode
+
+        report = _report()
+        assert report.dynamic is not None
+        report.dynamic.process_tree = [
+            ProcessNode(pid=10, name=STAGED, task="behavioral1", staged_by_sandbox=True)
+            for _ in range(2)
+        ]
+        assert evidence_bundles.sandbox_start_facts(report) == {
+            STAGED: f"{STAGED_WORDS} (pid 10). {STAGED_NOTE}"
+        }
+
     def test_a_report_with_no_marked_row_has_none(self) -> None:
         assert evidence_bundles.sandbox_start_facts(_report(marked=False)) == {}
         assert evidence_bundles.sandbox_start_line(_report(marked=False)) == ""

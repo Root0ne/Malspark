@@ -1375,7 +1375,9 @@ def sandbox_start_facts(report: MalwareReport) -> dict[str, str]:
         return ", ".join(dict.fromkeys(said))
 
     return {
-        path: f"{STAGED_WORDS} ({_named(rows[key])}). {staged_note(len(rows[key]))}"
+        # A row is a process of a task: a process listed twice in one task is one row.
+        path: f"{STAGED_WORDS} ({_named(rows[key])}). "
+        f"{staged_note(len({(node.pid, node.task) for node in rows[key]}))}"
         for key, path in paths.items()
     }
 
