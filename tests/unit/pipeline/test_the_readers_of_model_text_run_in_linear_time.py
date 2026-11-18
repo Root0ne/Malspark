@@ -512,27 +512,6 @@ EXITS = exit_branches(
             id="its claims on a one-analyst line",
         ),
         pytest.param(
-            lambda t: claim_references_of(
-                "[analysts: a] x " + "claim 3 and " * (len(t) // 12), ["a", "b"], ["a"]
-            ),
-            id="a chain of later claims on a one-analyst line",
-        ),
-        pytest.param(
-            lambda t: read_claim_references(
-                ["[analysts: a] x " + "claim 3 and " * (len(t) // 12) + "[blocking: x]"],
-                ["a", "b"],
-                {"a": {3: frozenset({"ev_0003"})}},
-                whole_line=True,
-            ),
-            id="a ruling's reading of a chain of later claims",
-        ),
-        pytest.param(
-            lambda t: claim_references_of(
-                "[analysts: a] " + "claim 3 and " * (len(t) // 12), ["a", "b"], ["a"]
-            ),
-            id="a chain of claims right after a one-analyst field",
-        ),
-        pytest.param(
             lambda t: read_claim_references(
                 ["[analysts: a] " + "its claim 3 own " * (len(t) // 16) + "[blocking: x]"],
                 ["a", "b"],

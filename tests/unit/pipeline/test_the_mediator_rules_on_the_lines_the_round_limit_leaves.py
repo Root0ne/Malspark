@@ -268,22 +268,6 @@ class TestTheRulingsAreWrittenOntoTheClaims:
         assert out.isrs == {}
         assert any("its ruling is written onto no claim" in s for s in out.sentences)
 
-    def test_a_later_claim_whose_own_clause_shares_nothing_is_stated_and_marks_nothing(
-        self,
-    ) -> None:
-        # A bare "claim N" later on a line whose field names one analyst is
-        # that analyst's only where its own clause shares an id or an address
-        # with that claim alone.
-        line = (
-            "[analysts: NETWORK ANALYST] The names are read wrongly: claim 2 cites the wrong "
-            "entry for them. [blocking: wrong entry.]"
-        )
-
-        out = mark_claims([line], {1: Ruling(1, True, "r")}, _isrs(), NAMES, 5)
-
-        assert out.isrs == {}
-        assert any("its ruling is written onto no claim" in s for s in out.sentences)
-
     def test_a_number_read_for_its_owner_by_a_shared_entry_is_marked(self) -> None:
         # As the merge reads it (``debate_facts.OwnedClaim``): the claim shares
         # the reference's ledger id, and no other claim of the answer writes it.

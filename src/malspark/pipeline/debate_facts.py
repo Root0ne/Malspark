@@ -2316,153 +2316,18 @@ def _earlier_round(text: str, start: int, names: Sequence[str]) -> bool:
 
 # "its claim 40", "its own claims 3 and 4": the possessive right before "claim(s)".
 _ITS_BEFORE = re.compile(r"\bits(?:\s++own)?\s*+$", re.IGNORECASE)
-# A parenthesis opened right before "claim(s)": "the reverser (claim 28)".
-_PARENTHESIS_BEFORE = re.compile(r"\(\s*+$")
-# Text in square brackets: a field, a mark, a note.
-_BRACKETED = re.compile(r"\[[^\[\]]*+\]")
-# The words before "claim(s)" that say it is an earlier answer's, no name
-# needed: "the previous round's claim 9", "Round-2 claim 9", "an earlier
-# claim 9"; a round written short ("R2's claim 9") is one too.
-_EARLIER_ANSWER_WORDS = frozenset({"earlier", "previous", "prior", "former", "old", "round"})
-_ROUND_WRITTEN_SHORT = re.compile(r"r\d++", re.IGNORECASE)
-# How many words before "claim(s)" are read for one of them.
-_EARLIER_ANSWER_REACH = 4
-# A possessive right before "claim(s)": "the code analyst's claim 20", "the
-# analysts' claim 3", "the analyst's own claim 20".
-_POSSESSIVE_BEFORE = re.compile(r"([A-Za-z][A-Za-z0-9_]*+)['’]s?\s++(?:own\s++)?$", re.IGNORECASE)
-# "of", "from" or "by" after a reference's numbers, and the words after it.
-_OF_AFTER = re.compile(r"\s*+(?:of|from|by)\s++(?:the\s++)?", re.IGNORECASE)
-_SPACES = re.compile(r"\s*+")
-
-
-def _another_s_in_parenthesis(text: str, start: int, names: Sequence[str], owner: str) -> bool:
-    """Whether "claim(s)" at ``start`` opens a parenthesis after another participant's short name.
-
-    "the reverser (claim 28)", "QU1 (claim 25)": the number is that
-    participant's; ``_short_named`` stops at the "(", so the name is read here.
-    """
-    window = max(0, start - 8)
-    opened = _PARENTHESIS_BEFORE.search(text[window:start])
-    if opened is None:
-        return False
-    named = _short_named(text, window + opened.start(), names)
-    return named is not None and named != owner
-
-
-def _named_after(text: str, end: int, names: Sequence[str]) -> bool:
-    """Whether a participant is named right after a reference's numbers ending at ``end``.
-
-    "(TRIAGE)", the name itself, or "of/from/by [the] <name or short form>":
-    the number is that participant's.
-    """
-    if _named_next(text, end, names):
-        return True
-    after = _SPACES.match(text, end).end()  # type: ignore[union-attr]
-    if any(_name_pattern(n).match(text, after) for n in names):
-        return True
-    of = _OF_AFTER.match(text, end)
-    if of is None:
-        return False
-    tail = re.split(r"[^A-Za-z0-9'\s]", text[of.end() : of.end() + 60])[0]
-    words = [w.lower() for w in _WORD_BEFORE.findall(tail)][:3]
-    # The same fit a short form before "claim" must make, read from the front.
-    for size in (3, 2, 1):
-        if len(words) >= size:
-            probe = " ".join(words[:size]) + " "
-            if _short_named(probe, len(probe), names) is not None:
-                return True
-    return False
-
-
-def _others_short_named(text: str, names: Sequence[str], owner: str) -> list[int]:
-    """Where each word ending another participant's short form starts (:func:`_short_named`).
-
-    Text in square brackets (the field, the mediator's marks and notes) and
-    ``owner``'s own name are not read; a name written whole is a short form
-    of itself. The places are in order. Each word looks back a bounded
-    window, so the line is read in linear time.
-    """
-    skip = _covered(
-        [
-            *(m.span() for m in _BRACKETED.finditer(text)),
-            *(m.span() for m in _name_pattern(owner).finditer(text)),
-        ],
-        len(text),
-    )
-    out: list[int] = []
-    for word in _WORD_BEFORE.finditer(text):
-        if skip[word.start()]:
-            continue
-        named = _short_named(text, word.end(), names)
-        if named is not None and named != owner:
-            out.append(word.start())
-    return out
-
-
-def _earlier_answer_before(text: str, start: int) -> bool:
-    """Whether a word for an earlier answer stands just before the "claim(s)" at ``start``.
-
-    "the previous round's claim 9", "round two's claim 9", "Round-2 claim 9",
-    "R2's claim 9", "the old claim 9": the last few words of the clause
-    before it are read (:data:`_EARLIER_ANSWER_WORDS`), named or not.
-    """
-    tail = re.split(r"[^A-Za-z0-9'’\s\-]", text[max(0, start - 60) : start])[-1]
-    words = [w.lower() for w in _WORD_BEFORE.findall(tail)][-_EARLIER_ANSWER_REACH:]
-    return any(w in _EARLIER_ANSWER_WORDS or _ROUND_WRITTEN_SHORT.fullmatch(w) for w in words)
-
-
-def _another_s_possessive(text: str, start: int, names: Sequence[str], owner: str) -> bool:
-    """Whether a possessive other than ``owner``'s stands right before the "claim(s)" at ``start``.
-
-    "the code analyst's claim 20", "the analysts' claim 3", "the sample's
-    claim 4": the number is the possessor's. ``owner``'s own label or short
-    form ("the static analyst's claim 20") and a bare "the analyst's (own)"
-    or "the same analyst's" are ``owner``'s.
-    """
-    window = max(0, start - 60)
-    found = _POSSESSIVE_BEFORE.search(text, window, start)
-    if found is None:
-        return False
-    named = _short_named(text, found.end(1), names)
-    if named is not None:
-        return named != owner
-    tail = re.split(r"[^A-Za-z0-9'’\s]", text[window : found.end(1)])[-1]
-    words = [w.lower() for w in _WORD_BEFORE.findall(tail)]
-    bare = words[-1:] == ["analyst"] and (
-        len(words) < 2 or words[-2] in _FILLER_WORDS or words[-2] == "same"
-    )
-    return not bare
 
 
 def _own_references(
-    text: str, names: Sequence[str], field_names: Sequence[str] | None, read: bytearray
-) -> list[tuple[str, int, bool, bool]]:
-    """``(analyst, numbers' start, read before, whole line)`` per later claim of a one-analyst line.
+    text: str, names: Sequence[str], field_names: Sequence[str] | None, read: set[int]
+) -> list[tuple[str, int, bool]]:
+    """``(analyst, where its numbers start, False)`` per "its claim N" of a one-analyst line.
 
     Only on a line whose field names one analyst, and only where no other
-    participant is named in the text before the reference, so the reference
-    can mean nobody else. "its claim N" is read as the newer reading reads a
-    reference (read before ``False``): a blocking line withdraws such a claim
-    by rule only where the reference's clause shares a ledger id or an
-    address with it (``ExpandedNaming``). Any other bare "claim(s) N" later on
-    the line is the analyst's for a ruling at the round limit (whole line
-    ``True``), read as the claim right after the field is (read before
-    ``True``), so the whole line's ids and addresses speak for it; the merge
-    does not read it (:func:`read_claim_references`). None is where another
-    participant's short form stands before it ("the reverser's analysis in
-    claim 28") or in its own clause after it ("claim 28 says 900 s per the
-    dynamic analyst"), a possessive other than the analyst's stands right
-    before it ("the code analyst's claim 20"), it stands inside a mark's
-    reason, reads as a verb ("claims 3 hosts"), names an earlier answer's
-    claim, named or not ("Round-2 claim 9", "the previous round's claim 9",
-    "the earlier claim 9"), opens a parenthesis right after another
-    participant's short name ("the reverser (claim 28)") or has another
-    participant named right after it ("claim 4 of the reverser").
-
-    ``read`` marks, one byte per character, the numbers the references
-    found before already read; a reference whose numbers start inside them,
-    or inside numbers read here, is that reference going on and is skipped,
-    so a chain of "claim 3 and claim 4 and ..." is read once, in linear time.
+    participant is named in the text before the reference, so "its" can stand
+    for nobody else. Read as the newer reading reads a reference, so a
+    blocking line withdraws such a claim by rule only where the reference's
+    clause shares a ledger id or an address with it (``ExpandedNaming``).
     """
     if field_names is None or len(field_names) != 1:
         return []
@@ -2473,64 +2338,17 @@ def _own_references(
         (m.end() for n in names if n != owner if (m := _name_pattern(n).search(text))),
         default=len(text) + 1,
     )
-    in_marks = _covered((m.span() for m in _MARK_ANYWHERE.finditer(text)), len(text))
-    references = list(_CLAIM_REFERENCE.finditer(text))
-    # Where each reference's "claim(s)" starts, for a clause to end at the next one.
-    reference_starts = [r.start() for r in references]
-    # Where another participant's short form is written: found once, and
-    # only for a line with a bare reference to place.
-    others: list[int] | None = None
-    out: list[tuple[str, int, bool, bool]] = []
-    bare: list[tuple[str, int, bool, bool]] = []
-    for reference in references:
+    out: list[tuple[str, int, bool]] = []
+    for reference in _CLAIM_REFERENCE.finditer(text):
         at = reference.start(1)
-        if read[at] or first_other <= reference.start():
-            continue
-        if _ITS_BEFORE.search(text[max(0, reference.start() - 16) : reference.start()]):
-            out.append((owner, at, False, False))
-            its = read_claim_numbers(text, at, names)
-            if its is not None:
-                read[at : its.end] = b"\x01" * (its.end - at)
-            continue
-        if in_marks[reference.start()]:
-            continue
-        if others is None:
-            others = _others_short_named(text, names, owner)
-        if others and others[0] <= reference.start():
-            continue
-        numbers = read_claim_numbers(text, at, names)
-        if numbers is None:
-            continue
-        read[at : numbers.end] = b"\x01" * (numbers.end - at)
-        head = reference.group(0)[: at - reference.start()].lower()
         if (
-            (head.startswith("claims") and len(numbers.numbers) == 1 and not numbers.unplaced)
-            or _earlier_answer_before(text, reference.start())
-            or _another_s_possessive(text, reference.start(), names, owner)
-            or _another_s_in_parenthesis(text, reference.start(), names, owner)
-            or _named_after(text, numbers.end, names)
-            or _named_in_clause(text, numbers.end, others, reference_starts)
+            at in read
+            or first_other <= reference.start()
+            or _ITS_BEFORE.search(text[max(0, reference.start() - 16) : reference.start()]) is None
         ):
             continue
-        bare.append((owner, at, True, True))
-    return out + bare
-
-
-def _named_in_clause(text: str, end: int, others: Sequence[int], starts: Sequence[int]) -> bool:
-    """Whether another participant is named in a reference's clause after its numbers.
-
-    The clause runs from the numbers' ``end`` to the next "claim(s)"
-    (``starts``, sorted), a ";" or the end of the sentence; ``others`` are
-    where other participants are named (:func:`_others_short_named`), sorted.
-    """
-    following = bisect.bisect_left(starts, end)
-    clause_end = starts[following] if following < len(starts) else len(text)
-    ends = _clause_ends(text)
-    ended = bisect.bisect_left(ends, end)
-    if ended < len(ends):
-        clause_end = min(clause_end, ends[ended])
-    named = bisect.bisect_left(others, end)
-    return named < len(others) and others[named] < clause_end
+        out.append((owner, at, False))
+    return out
 
 
 class ClaimReference(NamedTuple):
@@ -2541,15 +2359,10 @@ class ClaimReference(NamedTuple):
     numbers: ClaimNumbers
     read_before: bool
     in_mark: bool
-    whole_line: bool = False
 
 
 def claim_references_of(
-    text: str,
-    names: Sequence[str],
-    field_names: Sequence[str] | None,
-    *,
-    whole_line: bool = False,
+    text: str, names: Sequence[str], field_names: Sequence[str] | None
 ) -> list[ClaimReference]:
     """Every claim reference a line writes for a participant, in the order found.
 
@@ -2565,18 +2378,13 @@ def claim_references_of(
     for the field's one analyst where "claim(s) N" follows the field
     directly or after the mediator's marks written after it, for an
     analyst a short form of whose name stands before "claim(s) N"
-    (``_short_named``), and for the field's one analyst where "claim(s) N"
-    stands later on the line, "its" before it or not, and no other
-    participant is named before (``_own_references``).
+    (``_short_named``), and for the field's one analyst where "its" stands
+    before it and no other participant is named before (``_own_references``).
     Its numbers are read whole (:func:`read_claim_numbers`).
 
     ``read_before`` says whether the earlier reading read the reference,
     ``in_mark`` whether it stands inside a ``[blocking: ...]`` or ``[not
-    blocking: ...]`` mark, ``whole_line`` whether it is a later bare "claim(s)
-    N" of a one-analyst line, the analyst's for a ruling at the round limit
-    only (:func:`read_claim_references`): such a reference is returned only
-    where ``whole_line`` is asked for, so every other reader reads the line
-    as if it were not there. A reference inside a mark is its reason: it is
+    blocking: ...]`` mark. A reference inside a mark is its reason: it is
     kept only where the earlier reading read it, with the
     numbers that reading read and no more (no range, no list going on); a
     reference only the newer reading reads there is not returned. A claim of
@@ -2584,41 +2392,30 @@ def claim_references_of(
     numbers index another answer. Linear in the line.
     """
     in_marks = _covered((m.span() for m in _MARK_ANYWHERE.finditer(text)), len(text))
-    # (analyst, where its numbers start, whether the earlier reading read it,
-    # whether it is a later bare claim of a one-analyst line).
-    found: list[tuple[str, int, bool, bool]] = [
-        (name, match.start(1), True, False) for name, match in _claim_numbers_named(text, names)
+    # (analyst, where its numbers start, whether the earlier reading read it).
+    found: list[tuple[str, int, bool]] = [
+        (name, match.start(1), True) for name, match in _claim_numbers_named(text, names)
     ]
     if field_names is not None and len(field_names) == 1:
         opened = _ANALYSTS_FIELD.search(text)
         if opened is not None:
             bare = _BARE_CLAIMS.match(text, opened.end())
             if bare is not None:
-                found.append((field_names[0], bare.start(1), True, False))
+                found.append((field_names[0], bare.start(1), True))
             elif (after := _MARKS_AFTER_FIELD.match(text, opened.end())) is not None:
                 # "[analysts: X] [not blocking: ...] Claim 18 says ...".
                 bare = _BARE_CLAIMS.match(text, after.end())
                 if bare is not None:
-                    found.append((field_names[0], bare.start(1), False, False))
+                    found.append((field_names[0], bare.start(1), False))
     # A short form of a participant's name before "claim(s) N"; the earlier
     # reading read it on a line whose field names analysts only.
     for reference in _CLAIM_REFERENCE.finditer(text):
         short = _short_named(text, reference.start(), names)
         if short is not None:
-            found.append((short, reference.start(1), bool(field_names), False))
-    # Each reference's numbers, read once; what they cover is read by no later reference.
-    reads = {at: read_claim_numbers(text, at, names) for _n, at, _o, _w in found}
-    covered = _covered(
-        ((at, numbers.end) for at, numbers in reads.items() if numbers is not None), len(text)
-    )
-    for own in _own_references(text, names, field_names, covered):
-        found.append(own)
-        if own[1] not in reads:
-            reads[own[1]] = read_claim_numbers(text, own[1], names)
+            found.append((short, reference.start(1), bool(field_names)))
+    found.extend(_own_references(text, names, field_names, {at for _n, at, _o in found}))
     out: list[ClaimReference] = []
-    for name, at, old, whole in found:
-        if whole and not whole_line:
-            continue
+    for name, at, old in found:
         if in_marks[at]:
             earlier = _EARLIER_NUMBERS.match(text, at) if old else None
             if earlier is not None:
@@ -2626,9 +2423,9 @@ def claim_references_of(
                 numbers = ClaimNumbers(digits, (), earlier.end())
                 out.append(ClaimReference(name, at, numbers, True, True))
             continue
-        read = reads[at]
+        read = read_claim_numbers(text, at, names)
         if read is not None:
-            out.append(ClaimReference(name, at, read, old, False, whole))
+            out.append(ClaimReference(name, at, read, old, False))
     return out
 
 
@@ -2754,8 +2551,6 @@ def read_claim_references(
     lines: Sequence[str],
     participants: Sequence[str],
     owners: Mapping[str, Mapping[int, frozenset[str]]] | None = None,
-    *,
-    whole_line: bool = False,
 ) -> ClaimReferences:
     """Per analyst, the claims each line names, and the references that name none.
 
@@ -2788,17 +2583,6 @@ def read_claim_references(
     answer writes (:class:`OwnedClaim`): it names that claim as a line that
     does not block, so it is carried with the line and never withdrawn by
     rule, and the merge says so. Linear in the lines and the claims.
-
-    A later bare "claim(s) N" of a one-analyst line (``ClaimReference.whole_line``)
-    is read only with ``whole_line`` and ``owners``, the reading of a ruling
-    at the round limit: there it is the analyst's claim, judged by the whole
-    line's ids and addresses as the claim right after the field is, where
-    its own clause shares with each claim it names an id or an address no
-    other claim of the analyst's answer in force writes (the test a number
-    written for no analyst is read for its owner by, :class:`OwnedClaim`).
-    Anywhere else, and in the merge's reading, it is read as no reference
-    reads it: a number no analyst is read for, so a blocking line that only
-    mentions it never withdraws it by rule.
     """
     names = [str(p) for p in participants if str(p).strip()]
     out: dict[str, dict[int, list[tuple[int, bool]]]] = {}
@@ -2812,16 +2596,12 @@ def read_claim_references(
         # The text with every mark's reason blanked out, for the clauses' tokens.
         masked = marks_blanked(text)
         stated = mark.blocking and not mark.unread
-        references = claim_references_of(text, names, field_names, whole_line=whole_line)
-        later = [ref for ref in references if ref.whole_line]
-        references = [ref for ref in references if not ref.whole_line]
+        references = claim_references_of(text, names, field_names)
         starts = sorted(ref.numbers_start for ref in references)
-        if later and owners:
-            references += _later_claims_held(text, masked, names, references, later, owners)
         # Per reference kept: (analyst, its numbers, the tokens of its clause).
         kept: list[tuple[str, ClaimNumbers, frozenset[str]]] = []
         cited: dict[str, set[int]] = {}
-        for name, at, numbers, old, _in_mark, _whole in references:
+        for name, at, numbers, old, _in_mark in references:
             if field_names and name not in field_names and owners is not None:
                 name = _held_in_the_field(text, at, numbers, name, field_names, owners)
             if field_names is not None and name not in field_names:
@@ -2929,57 +2709,19 @@ def read_claim_references(
     )
 
 
-def _later_claims_held(
-    text: str,
-    masked: str,
-    names: Sequence[str],
-    references: Sequence[ClaimReference],
-    later: Sequence[ClaimReference],
-    owners: Mapping[str, Mapping[int, frozenset[str]]],
-) -> list[ClaimReference]:
-    """The later bare references of ``later`` whose own clause holds each claim they name.
-
-    Each is read where :func:`read_claim_references` reads a number written
-    for no analyst (``unattributed_references`` over ``references``), with
-    the clause that reading gives it: kept only where every claim it names
-    shares with that clause an id or an address no other claim of its
-    analyst's answer in force writes (:func:`_owner_of`), and no range of it
-    runs past the cap.
-    """
-    by_start = {ref.numbers_start: ref for ref in later}
-    unattributed = unattributed_references(text, names, references)
-    starts = sorted([*(ref.numbers_start for ref in references), *(at for at, _n in unattributed)])
-    held: list[ClaimReference] = []
-    for start, numbers in unattributed:
-        found = _CLAIM_REFERENCE.match(text, start)
-        ref = by_start.get(found.start(1)) if found is not None else None
-        if ref is None or numbers.unplaced:
-            continue
-        tokens = clause_tokens(text, masked, start, numbers.end, starts)
-        counted = [n for n in map(_as_claim_number, numbers.numbers) if n is not None]
-        if counted and all(_owner_of(n, tokens, (ref.analyst,), owners) for n in counted):
-            held.append(ref)
-    return held
-
-
 def claims_named_by_lines(
     lines: Sequence[str],
     participants: Sequence[str],
     owners: Mapping[str, Mapping[int, frozenset[str]]] | None = None,
-    *,
-    whole_line: bool = False,
 ) -> dict[str, dict[int, list[tuple[int, bool]]]]:
     """``{analyst: {claim number: [(line number, blocking), ...]}}`` for the lines given.
 
     The claims :func:`read_claim_references` reads each line to name (a claim
     number written for no analyst read for its owner where ``owners`` is
-    given, a later bare claim of a one-analyst line read only with
-    ``whole_line``), each analyst's carrying what its merge reads besides
+    given), each analyst's carrying what its merge reads besides
     (:class:`NamedClaims`). Linear in the lines.
     """
-    return NamedByLines(
-        read_claim_references(lines, participants, owners, whole_line=whole_line), participants
-    )
+    return NamedByLines(read_claim_references(lines, participants, owners), participants)
 
 
 @dataclass(frozen=True)

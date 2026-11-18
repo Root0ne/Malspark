@@ -11,12 +11,9 @@ the line. Now:
   its clause shares a ledger id or an address with the claim;
 - a bare "claim N" the line already names for that analyst is that claim
   written again, not an unplaced reference;
-- a bare "claim N" that repeats nothing is that analyst's for a ruling at
-  the round limit where its own clause shares an id or an address with that
-  claim alone, read as the claim right after the field is (whole-line ids
-  and addresses), and stays unplaced for the merge; "its" binds nothing
-  after another participant's name, on a field of two analysts, or inside a
-  mark's reason.
+- a bare "claim N" that repeats nothing stays unplaced, as before, and "its"
+  binds nothing after another participant's name, on a field of two
+  analysts, or inside a mark's reason.
 
 Every value is synthetic.
 """
@@ -51,18 +48,7 @@ def test_its_claim_and_a_repeated_number_are_read_for_the_analyst() -> None:
     assert 27 not in references.expanded.get("a", {})
 
 
-def test_a_bare_number_that_repeats_nothing_is_read_for_the_analyst_by_the_whole_line() -> None:
-    line = LINE.replace("its claim 40 says", "claim 40 at ev_0040 says")
-    owners = {"a": {27: frozenset({"ev_0027"}), 40: frozenset({"ev_0040"})}}
-
-    references = read_claim_references([line], NAMES, owners, whole_line=True)
-
-    assert references.named == {"a": {27: [(1, True)], 40: [(1, True)]}}
-    assert references.unplaced == ()
-    assert 40 not in references.expanded.get("a", {})
-
-
-def test_a_bare_number_that_repeats_nothing_stays_unplaced_for_the_merge() -> None:
+def test_a_bare_number_that_repeats_nothing_stays_unplaced() -> None:
     line = LINE.replace("its claim 40", "claim 40")
 
     references = read_claim_references([line], NAMES)

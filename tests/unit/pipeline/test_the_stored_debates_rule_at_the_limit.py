@@ -13,8 +13,8 @@ force each run stored (every line taken as upheld, so every mark shows):
   stated, never marked;
 - haiku11: the reverser's claim 10 (0x72c8) and the triage analyst's claim 27,
   the anti-debug absence ev_0143 contradicts (K3.1);
-- haiku12: none. Both lines write "Round-4 claim N", an earlier round's
-  claim, which the platform reads for no analyst: each is stated.
+- haiku12: none. Both lines write "Round-4 claim N", which the platform reads
+  for no analyst: each is stated.
 
 haiku7 and haiku9 converged and ask nothing. Local runs only: skipped where the
 stored runs are not on the machine.

@@ -39,8 +39,6 @@ from malspark.schemas.isr_models import AgentISR
 PARTICIPANTS = ["static", "all_tools_reverser_ghidra", "dynamic", "triage"]
 REVERSER = "[analysts: ALL_TOOLS_REVERSER_GHIDRA ANALYST]"
 STATIC = "[analysts: STATIC ANALYST]"
-# A field of two analysts: a later bare "claim N" is read for neither.
-STATIC_AND_DYNAMIC = "[analysts: STATIC ANALYST, DYNAMIC ANALYST]"
 BLOCKS = "[blocking: the listing shows another call.]"
 
 
@@ -219,7 +217,7 @@ class TestWhatTheLineSaysAroundItsReferences:
         assert refs.unplaced == ()
 
     def test_a_line_marked_blocking_right_after_its_field_states_its_reference(self) -> None:
-        line = f"{STATIC_AND_DYNAMIC} [blocking: x] The analyst's own claim 4 is loose."
+        line = f"{STATIC} [blocking: x] The analyst's own claim 4 is loose."
 
         refs = read_claim_references([line], PARTICIPANTS)
 
@@ -299,30 +297,16 @@ class TestARangeIsCapped:
 
 class TestANumberNoAnalystIsNamedForIsUnplaced:
     def test_a_possessive_with_a_word_between_names_no_analyst(self) -> None:
-        line = (
-            "[analysts: ALL_TOOLS_REVERSER_GHIDRA ANALYST, DYNAMIC ANALYST] The reverser's own "
-            f"claim 45 says X. {BLOCKS}"
-        )
+        line = f"{REVERSER} The reverser's own claim 45 says X. {BLOCKS}"
 
         refs = read_claim_references([line], PARTICIPANTS)
 
         assert refs.named == {}
         [said] = refs.unplaced
-        assert said.analysts == ("all_tools_reverser_ghidra", "dynamic")
+        assert said.analysts == ("all_tools_reverser_ghidra",)
         assert (said.claims, said.why, said.lowest) == ("claim 45", NO_ANALYST_NAMED, 45)
         assert refs.unplaced_for("all_tools_reverser_ghidra") == (said,)
         assert refs.unplaced_for("static") == ()
-
-    def test_on_a_one_analyst_line_a_later_possessive_number_is_the_analyst_s_for_a_ruling(
-        self,
-    ) -> None:
-        line = f"{REVERSER} The reverser's own claim 45 says X at ev_0045. {BLOCKS}"
-        owners = {"all_tools_reverser_ghidra": {44: frozenset(), 45: frozenset({"ev_0045"})}}
-
-        refs = read_claim_references([line], PARTICIPANTS, owners, whole_line=True)
-
-        assert refs.named == {"all_tools_reverser_ghidra": {45: [(1, True)]}}
-        assert refs.unplaced == ()
 
     def test_a_line_without_a_field_may_mean_every_participant(self) -> None:
         refs = read_claim_references([f"The own claims 4 and 6 say X. {BLOCKS}"], PARTICIPANTS)
@@ -511,8 +495,7 @@ class TestTheMergeReadsARangeAsItReadsASingleClaim:
         answer = _block(MUTEX)
 
         merge = _merge(
-            f"{STATIC_AND_DYNAMIC} The static's own claim 2 says X; STATIC ANALYST claims 1 to 40 "
-            "say Y. "
+            f"{STATIC} The static's own claim 2 says X; STATIC ANALYST claims 1 to 40 say Y. "
             f"{BLOCKS}",
             answer,
         )
@@ -529,7 +512,7 @@ class TestTheMergeReadsARangeAsItReadsASingleClaim:
         ]
 
     def test_an_unmarked_line_is_a_line_not_a_blocking_line(self) -> None:
-        merge = _merge(f"{STATIC_AND_DYNAMIC} The static's own claim 2 says X.", _block(MUTEX))
+        merge = _merge(f"{STATIC} The static's own claim 2 says X.", _block(MUTEX))
 
         assert [s for s in merge.sentences("static", 3) if "on that reference" in s] == [
             "Line L1 of the round-3 mediation writes claim 2 and the platform reads no analyst "
@@ -564,8 +547,7 @@ class TestTheMergeReadsARangeAsItReadsASingleClaim:
                 "[analysts: STATIC ANALYST] Claims 2 to 3 say the beacon at 0x402000 waits 600 s "
                 "and the key 0x403000 uses is 0x5a, versus the listing. [blocking: the listing "
                 "shows 900 s.]",
-                "[analysts: STATIC ANALYST, DYNAMIC ANALYST] The analyst's own claim 4 names the "
-                "key loosely. "
+                "[analysts: STATIC ANALYST] The analyst's own claim 4 names the key loosely. "
                 "[blocking: the listing names another value.]",
             ],
             revise=["static"],
