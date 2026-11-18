@@ -130,22 +130,80 @@ def _called(node: ast.Call) -> tuple[str, list[ast.expr]]:
     return name, list(node.args)
 
 
-def _says_unstated(node: ast.expr) -> bool:
-    """Whether a reader argument is the pack's "no reader stated" mark, by any qualified name."""
-    return _dotted(node).rsplit(".", 1)[-1].endswith("UNSTATED") or (
-        isinstance(node, ast.Attribute) and node.attr.endswith("UNSTATED")
-    )
+def _says_unstated(node: ast.expr | None, names: frozenset[str] = frozenset()) -> bool:
+    """Whether an expression is, or can yield, the pack's "no reader stated" mark.
+
+    By any qualified name ending in ``UNSTATED``, a name of ``names`` (one
+    bound to the mark in the source: an alias import or an assignment), a
+    ``getattr`` of it, the enum or its member, or a conditional or a boolean
+    expression one of whose values is one of those.
+    """
+    if node is None:
+        return False
+    if isinstance(node, ast.Name) and node.id in names:
+        return True
+    dotted = _dotted(node)
+    if dotted.rsplit(".", 1)[-1].endswith("UNSTATED") or "_Unstated" in dotted.split("."):
+        return True
+    if isinstance(node, ast.Attribute) and node.attr.endswith("UNSTATED"):
+        return True
+    if isinstance(node, ast.Call):
+        called = _dotted(node.func).rsplit(".", 1)[-1]
+        if called == "_Unstated":
+            return True
+        if called == "getattr" and len(node.args) >= 2:
+            named = node.args[1]
+            return isinstance(named, ast.Constant) and str(named.value).endswith("UNSTATED")
+        return False
+    if isinstance(node, ast.IfExp):
+        return _says_unstated(node.body, names) or _says_unstated(node.orelse, names)
+    if isinstance(node, ast.BoolOp):
+        return any(_says_unstated(value, names) for value in node.values)
+    return False
+
+
+def _unstated_names(tree: ast.AST) -> frozenset[str]:
+    """The names ``tree`` binds to the mark: alias imports of it, and assignments, to a fixpoint."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names |= {
+                alias.asname or alias.name
+                for alias in node.names
+                if alias.name.endswith("UNSTATED") or alias.name == "_Unstated"
+            }
+    assignments = [
+        (target.id, node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    ] + [
+        (node.target.id, node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign | ast.NamedExpr) and isinstance(node.target, ast.Name)
+    ]
+    grown = True
+    while grown:
+        grown = False
+        for name, value in assignments:
+            if name not in names and _says_unstated(value, frozenset(names)):
+                names.add(name)
+                grown = True
+    return frozenset(names)
 
 
 def readers_made_up(source: str) -> list[str]:
     """Where ``source`` calls a function of :data:`READER_TAKERS` with no reader stated.
 
     Each as ``line name``: the reader argument left out, given as a literal
-    ``None``, or given as the pack's mark of no reader stated (a name ending
-    in ``UNSTATED``).
+    ``None``, or given as the pack's mark of no reader stated, directly or
+    handed over (:func:`_says_unstated`).
     """
     found: list[str] = []
-    for node in ast.walk(ast.parse(source)):
+    tree = ast.parse(source)
+    marks = _unstated_names(tree)
+    for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         name, args = _called(node)
@@ -163,7 +221,7 @@ def readers_made_up(source: str) -> list[str]:
         if (
             given is None
             or (isinstance(given, ast.Constant) and given.value is None)
-            or _says_unstated(given)
+            or _says_unstated(given, marks)
         ):
             found.append(f"{node.lineno} {name}")
     return found
