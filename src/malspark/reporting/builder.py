@@ -805,11 +805,12 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
     refuses (``stated_host_values.identifier_answers``) as an unpublished row:
     its answer the refusal the identifier table prints, under source
     ``analysis``, typed by the rule's label or, for a row of no vocabulary
-    kind, by the kind as the analysis wrote it; only where the list holds no
-    row of the same kind and value. Each carries the record every unpublished
-    row carries (:func:`with_record`): role ``listed``, no indicator type. The
-    table itself is not changed, so §9, the exports and every reader of the
-    table read what they read before; the published rows are the table's alone.
+    kind, by the kind as the analysis wrote it; only where no row of the table
+    holds its value under any kind, and once per type and value. Each carries
+    the record every unpublished row carries (:func:`with_record`): role
+    ``listed``, no indicator type. The table itself is not changed, so §9, the
+    exports and every reader of the table read what they read before; the
+    published rows are the table's alone.
     """
     from malspark.reporting.detonation_marks import entry_marks
     from malspark.reporting.ledger_projection import value_key
@@ -824,19 +825,28 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
         logger.exception("builder: the identifier rows could not be read; the table is listed.")
         return rows
     index = {row.id: at for at, row in enumerate(report.evidence_index)}
-    keys = {(row.kind or "", value_key(row.kind or "", row.value)) for row in rows}
+    # A value a row of the table holds, under any kind, is that row's (as the
+    # table's own analysis rows read a refused row of the same type and value).
+    held_values = {value_key(row.kind or "", row.value) for row in rows}
+    held_values |= {row.value.strip().lower() for row in rows}
+    listed: set[tuple[str, str]] = set()
     added: list[ConsolidatedIOC] = []
     for stated, answer in answers:
         value = str(stated.value or "").strip()
         kind = stated.table_kind
-        slot = (kind, value_key(kind, value))
-        if publishes(answer) or not value or slot in keys:
+        label = stated.label or stated.written_kind
+        if publishes(answer) or not value:
             continue
-        keys.add(slot)
+        if value_key(kind, value) in held_values or value.lower() in held_values:
+            continue
+        slot = (label, value_key(kind, value))
+        if slot in listed:
+            continue
+        listed.add(slot)
         held = [*(stated.held_in or ())]
         added.append(
             ConsolidatedIOC(
-                type=stated.label or stated.written_kind,
+                type=label,
                 kind=kind,
                 value=value,
                 source=ANALYSIS_SOURCE,

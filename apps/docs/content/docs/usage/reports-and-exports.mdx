@@ -94,7 +94,7 @@ decides what comes back:
 | `include` | What comes back |
 | :-- | :-- |
 | `published` (default) | Only what the platform's publish rule publishes — the rows of the report's IOC table the exported STIX bundle is built from. |
-| `unpublished` | Only the rows it withholds, for a reader who is triaging rather than acting, and each host value the analysis states that the rule refuses, under source `analysis` with its refusal and its `type`: the rule's label, or the kind as the analysis wrote it. |
+| `unpublished` | Only the rows it withholds, for a reader who is triaging rather than acting, and each host value the analysis states that the rule refuses and no row of the table holds under any kind, once per `type` and value, under source `analysis` with its refusal and its `type`: the rule's label, or the kind as the analysis wrote it. |
 | `all` | Both. |
 
 Every row carries its `kind`, its `value`, a `source` (`sandbox`, `analyst`,
@@ -139,8 +139,8 @@ with one kind of a closed list — `mutex`, `file path`, `file name`, `folder`,
 the sample doing with it: `creates/writes`, `reads/checks` or `not shown`. The
 platform then checks each value in code, and exports it as source `analysis`
 ("stated by the analysis") only when all of these hold (a value that fails one
-is served on the full list of `/iocs` under the same source, unpublished with
-the rule's refusal and its `type`, as below):
+may be served on the full list of `/iocs` under the same source, unpublished
+with the rule's refusal and its `type`, where the end of this section says):
 
 - its kind names a host object and the sample creates or writes it;
 - the value is found whole in a ledger entry the row cites — not as part of a
@@ -192,9 +192,10 @@ the IOC table: section 9 prints the rule's answer beside every identifier, with
 the reason it was refused. The full list of `/iocs` (`include=unpublished` or
 `all`) lists such a row after the table's rows, unpublished under source
 `analysis`, its `publish_answer` that refusal and its `type` the rule's label
-or, for a kind of no label, the kind as the analysis wrote it. A report stored before the typed kinds writes its
-rows under free-text kinds and without a use, and every such row is refused with
-that reason.
+or, for a kind of no label, the kind as the analysis wrote it: only where no
+row of the table holds its value under any kind, and once per `type` and value.
+A report stored before the typed kinds writes its rows under free-text kinds
+and without a use, and every such row is refused with that reason.
 
 ## The STIX bundle
 

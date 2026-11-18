@@ -83,6 +83,37 @@ def test_a_value_the_list_already_holds_is_not_listed_again() -> None:
     assert full_ioc_list(published) == ioc_table(published)
 
 
+def test_a_value_a_row_of_the_table_holds_under_any_kind_is_not_listed_again() -> None:
+    report = _report(
+        [
+            _row("folder", "Custom_update"),
+            _row("mutex", "Custom_update", use="reads/checks"),
+            _row("Install marker", "custom_update"),
+        ]
+    )
+    answers = [answer for _stated, answer in identifier_answers(report)]
+
+    assert sum(1 for answer in answers if not publishes(answer)) == 2
+    assert full_ioc_list(report) == ioc_table(report)
+
+
+def test_refused_rows_of_one_value_are_one_row_per_type() -> None:
+    report = _report(
+        [
+            _row("Install marker", "Other_marker"),
+            _row("Marker file", "Other_marker"),
+            _row("Install marker", "other_marker"),
+        ]
+    )
+
+    added = [row for row in full_ioc_list(report) if row.source == "analysis"]
+
+    assert [(row.kind, row.type, row.value) for row in added] == [
+        ("", "Install marker", "Other_marker"),
+        ("", "Marker file", "Other_marker"),
+    ]
+
+
 def test_the_report_s_table_holds_no_refused_row() -> None:
     report = _report([_row("folder", "AppData"), _row("mutex", TEMPLATE)])
 
@@ -115,7 +146,7 @@ def test_the_default_list_is_unchanged_and_the_full_list_gains_the_refused_rows(
 def test_the_served_list_carries_each_refused_row_s_type_and_no_other_row_s() -> None:
     from app.schemas.job import IOCEntry
 
-    report = _report([_row("Install marker", "Custom_update"), _row("folder", "Custom_update")])
+    report = _report([_row("Install marker", "Other_marker"), _row("folder", "Custom_update")])
     served = [
         IOCEntry.model_validate(row).model_dump(mode="json")
         for row in ioc_feed_rows(report.model_dump(mode="json"))

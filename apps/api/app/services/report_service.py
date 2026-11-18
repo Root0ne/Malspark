@@ -148,9 +148,10 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     rebuilt from the stored report by the current rule), so the feed and the
     table cannot diverge: each row carries the table's kind, source, publish
     answer and recovery note, and ``published`` is that answer's decision.
-    After the table's rows, each identifier row the rule refuses is listed
-    unpublished with its refusal (``builder.full_ioc_list``), so the default
-    list is the table's published rows alone.
+    After the table's rows, each identifier row the rule refuses whose value
+    no row of the table holds is listed unpublished with its refusal
+    (``builder.full_ioc_list``), so the default list is the table's published
+    rows alone.
     A domain or an address keeps the network block's suspicion flag and
     reason. A stored report the model cannot read serves the rows it stored.
     The sample's own digests, which the router established and no rule
