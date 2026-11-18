@@ -205,3 +205,39 @@ class TestThePackRecordReadsTheLayout:
             # and what it records cover every pass entry alike.
             differs += want != [e.id for e in triage_pack.pack_unsaid(worded, 0)]
         assert differs
+
+
+def _later(payload: dict[str, Any], number: int) -> Any:
+    """``payload`` as the platform's read of a further detonation (``d2``)."""
+    return _entry("pcap_summary" if "conversations" in payload else bc.TOOL, payload, number)
+
+
+def _with_later(links: dict[str, Any]) -> list[Any]:
+    """The job's own entries, then a further detonation's capture and code-links answers."""
+    mark = {"detonation": "d2", "launched_with": "-x"}
+    rows = [
+        _entry("sandbox_network", _flows(), 13),
+        _entry(bc.TOOL, _links(), 15),
+        _entry("pcap_summary", _capture(*CONVERSATIONS), 17),
+        _later({**links, **mark}, 21),
+        _later({**_capture(*CONVERSATIONS), **mark}, 23),
+    ]
+    return triage_pack.pack_entries(rows)
+
+
+def _later_lines(block: str) -> list[str]:
+    return [line for line in block.split("\n") if "detonation 2" in line]
+
+
+class TestALaterDetonationsLinesCarryNoWords:
+    @pytest.mark.parametrize("room", [0, *range(1_500, 16_000, 450)])
+    def test_its_lines_are_those_of_its_answers_without_the_words(self, room: int) -> None:
+        worded = triage_pack.pack_block(_with_later(_links()), room, normalised_by=READER)
+        bare = triage_pack.pack_block(
+            _with_later(_bare_links(_links())), room, normalised_by=READER
+        )
+        lines = _later_lines(worded)
+        assert lines and lines == _later_lines(bare)
+        for line in lines:
+            assert UNLISTED_WORDS not in line and STAGED_WORDS not in line
+            assert all(f"; {said}" not in line for said in WORDS)
