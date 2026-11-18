@@ -10,7 +10,9 @@ Every claim reading of every stored mediation of haiku7 to haiku11 is pinned
 (``tests/fixtures/debate/stored_mediation_readings.json``): the claims each
 line names, the references left unplaced and the analysts each mediation asks.
 Against origin/dev the one difference is haiku11's round-4 line 1, and no
-mediation asks other analysts than before. Local runs only: skipped where the
+mediation asks other analysts than before. A bare "claim N" later on a line
+whose field names one analyst is read for that analyst as well, and asks no
+other analysts either. Local runs only: skipped where the
 stored runs are not on the machine.
 """
 

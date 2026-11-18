@@ -2316,18 +2316,69 @@ def _earlier_round(text: str, start: int, names: Sequence[str]) -> bool:
 
 # "its claim 40", "its own claims 3 and 4": the possessive right before "claim(s)".
 _ITS_BEFORE = re.compile(r"\bits(?:\s++own)?\s*+$", re.IGNORECASE)
+# A parenthesis opened right before "claim(s)": "the reverser (claim 28)".
+_PARENTHESIS_BEFORE = re.compile(r"\(\s*+$")
+# "of", "from" or "by" after a reference's numbers, and the words after it.
+_OF_AFTER = re.compile(r"\s*+(?:of|from|by)\s++(?:the\s++)?", re.IGNORECASE)
+_SPACES = re.compile(r"\s*+")
+
+
+def _another_s_in_parenthesis(text: str, start: int, names: Sequence[str], owner: str) -> bool:
+    """Whether "claim(s)" at ``start`` opens a parenthesis after another participant's short name.
+
+    "the reverser (claim 28)", "QU1 (claim 25)": the number is that
+    participant's; ``_short_named`` stops at the "(", so the name is read here.
+    """
+    window = max(0, start - 8)
+    opened = _PARENTHESIS_BEFORE.search(text[window:start])
+    if opened is None:
+        return False
+    named = _short_named(text, window + opened.start(), names)
+    return named is not None and named != owner
+
+
+def _named_after(text: str, end: int, names: Sequence[str]) -> bool:
+    """Whether a participant is named right after a reference's numbers ending at ``end``.
+
+    "(TRIAGE)", the name itself, or "of/from/by [the] <name or short form>":
+    the number is that participant's.
+    """
+    if _named_next(text, end, names):
+        return True
+    after = _SPACES.match(text, end).end()  # type: ignore[union-attr]
+    if any(_name_pattern(n).match(text, after) for n in names):
+        return True
+    of = _OF_AFTER.match(text, end)
+    if of is None:
+        return False
+    tail = re.split(r"[^A-Za-z0-9'\s]", text[of.end() : of.end() + 60])[0]
+    words = [w.lower() for w in _WORD_BEFORE.findall(tail)][:3]
+    # The same fit a short form before "claim" must make, read from the front.
+    for size in (3, 2, 1):
+        if len(words) >= size:
+            probe = " ".join(words[:size]) + " "
+            if _short_named(probe, len(probe), names) is not None:
+                return True
+    return False
 
 
 def _own_references(
     text: str, names: Sequence[str], field_names: Sequence[str] | None, read: set[int]
 ) -> list[tuple[str, int, bool]]:
-    """``(analyst, where its numbers start, False)`` per "its claim N" of a one-analyst line.
+    """``(analyst, where its numbers start, read before)`` per later claim of a one-analyst line.
 
     Only on a line whose field names one analyst, and only where no other
-    participant is named in the text before the reference, so "its" can stand
-    for nobody else. Read as the newer reading reads a reference, so a
-    blocking line withdraws such a claim by rule only where the reference's
-    clause shares a ledger id or an address with it (``ExpandedNaming``).
+    participant is named in the text before the reference, so the reference
+    can mean nobody else. "its claim N" is read as the newer reading reads a
+    reference (``False``): a blocking line withdraws such a claim by rule only
+    where the reference's clause shares a ledger id or an address with it
+    (``ExpandedNaming``). Any other bare "claim(s) N" later on the line is the
+    analyst's too, read as the claim right after the field is (``True``), so
+    the whole line's ids and addresses speak for it; none is where it stands
+    inside a mark's reason, reads as a verb ("claims 3 hosts"), names an
+    earlier round's claim, opens a parenthesis right after another
+    participant's short name ("the reverser (claim 28)") or has another
+    participant named right after it ("claim 4 of the reverser").
     """
     if field_names is None or len(field_names) != 1:
         return []
@@ -2338,17 +2389,31 @@ def _own_references(
         (m.end() for n in names if n != owner if (m := _name_pattern(n).search(text))),
         default=len(text) + 1,
     )
+    in_marks = _covered((m.span() for m in _MARK_ANYWHERE.finditer(text)), len(text))
     out: list[tuple[str, int, bool]] = []
+    bare: list[tuple[str, int, bool]] = []
     for reference in _CLAIM_REFERENCE.finditer(text):
         at = reference.start(1)
+        if at in read or first_other <= reference.start():
+            continue
+        if _ITS_BEFORE.search(text[max(0, reference.start() - 16) : reference.start()]):
+            out.append((owner, at, False))
+            continue
+        if in_marks[reference.start()]:
+            continue
+        numbers = read_claim_numbers(text, at, names)
+        if numbers is None:
+            continue
+        head = reference.group(0)[: at - reference.start()].lower()
         if (
-            at in read
-            or first_other <= reference.start()
-            or _ITS_BEFORE.search(text[max(0, reference.start() - 16) : reference.start()]) is None
+            (head.startswith("claims") and len(numbers.numbers) == 1 and not numbers.unplaced)
+            or _earlier_round(text, reference.start(), names)
+            or _another_s_in_parenthesis(text, reference.start(), names, owner)
+            or _named_after(text, numbers.end, names)
         ):
             continue
-        out.append((owner, at, False))
-    return out
+        bare.append((owner, at, True))
+    return out + bare
 
 
 class ClaimReference(NamedTuple):
@@ -2378,8 +2443,9 @@ def claim_references_of(
     for the field's one analyst where "claim(s) N" follows the field
     directly or after the mediator's marks written after it, for an
     analyst a short form of whose name stands before "claim(s) N"
-    (``_short_named``), and for the field's one analyst where "its" stands
-    before it and no other participant is named before (``_own_references``).
+    (``_short_named``), and for the field's one analyst where "claim(s) N"
+    stands later on the line, "its" before it or not, and no other
+    participant is named before (``_own_references``).
     Its numbers are read whole (:func:`read_claim_numbers`).
 
     ``read_before`` says whether the earlier reading read the reference,

@@ -11,7 +11,8 @@ the line. Now:
   its clause shares a ledger id or an address with the claim;
 - a bare "claim N" the line already names for that analyst is that claim
   written again, not an unplaced reference;
-- a bare "claim N" that repeats nothing stays unplaced, as before, and "its"
+- a bare "claim N" that repeats nothing is that analyst's too, read as the
+  claim right after the field is (whole-line ids and addresses), and "its"
   binds nothing after another participant's name, on a field of two
   analysts, or inside a mark's reason.
 
@@ -20,11 +21,7 @@ Every value is synthetic.
 
 from __future__ import annotations
 
-from malspark.pipeline.debate_facts import (
-    NO_ANALYST_NAMED,
-    claims_named_by_lines,
-    read_claim_references,
-)
+from malspark.pipeline.debate_facts import claims_named_by_lines, read_claim_references
 from malspark.pipeline.revision_merge import merge_revision
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
@@ -48,13 +45,14 @@ def test_its_claim_and_a_repeated_number_are_read_for_the_analyst() -> None:
     assert 27 not in references.expanded.get("a", {})
 
 
-def test_a_bare_number_that_repeats_nothing_stays_unplaced() -> None:
+def test_a_bare_number_that_repeats_nothing_is_read_for_the_analyst_by_the_whole_line() -> None:
     line = LINE.replace("its claim 40", "claim 40")
 
     references = read_claim_references([line], NAMES)
 
-    assert references.named == {"a": {27: [(1, True)]}}
-    assert [(u.claims, u.why) for u in references.unplaced] == [("claim 40", NO_ANALYST_NAMED)]
+    assert references.named == {"a": {27: [(1, True)], 40: [(1, True)]}}
+    assert references.unplaced == ()
+    assert 40 not in references.expanded.get("a", {})
 
 
 def test_its_claim_after_another_participant_s_name_is_not_bound() -> None:

@@ -13,8 +13,10 @@ force each run stored (every line taken as upheld, so every mark shows):
   stated, never marked;
 - haiku11: the reverser's claim 10 (0x72c8) and the triage analyst's claim 27,
   the anti-debug absence ev_0143 contradicts (K3.1);
-- haiku12: none. Both lines write "Round-4 claim N", which the platform reads
-  for no analyst: each is stated.
+- haiku12: the reverser's claim 32 (0x3868) and the network analyst's claim 8
+  (ev_0017). Both lines write "Round-4 claim N" later on a line whose field
+  names that one analyst, so each is that analyst's claim, judged by the
+  whole line's ids and addresses.
 
 haiku7 and haiku9 converged and ask nothing. Local runs only: skipped where the
 stored runs are not on the machine.
@@ -40,7 +42,7 @@ MARKED = {
     "haiku9": None,
     "haiku10": {"all_tools_reverser_ghidra": [2, 46]},
     "haiku11": {"all_tools_reverser_ghidra": [10], "triage": [27]},
-    "haiku12": {},
+    "haiku12": {"all_tools_reverser_ghidra": [32], "network": [8]},
 }
 
 
