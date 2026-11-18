@@ -204,9 +204,18 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
                 # Under which detonations a further detonation observed it
                 # (``reporting.detonation_marks``); absent for the job's own alone.
                 **_observed_in(row),
+                # What an identifier row the rule refuses is (``builder.full_ioc_list``).
+                **({"type": row.type} if _refused_identifier(row) else {}),
             }
         )
     return out
+
+
+def _refused_identifier(row: Any) -> bool:
+    """Whether a row is an identifier row the rule refuses: unpublished, of source ``analysis``."""
+    from malspark.reporting.stated_host_values import ANALYSIS_SOURCE
+
+    return row.source == ANALYSIS_SOURCE and not publishes(row.published)
 
 
 def _observed_in(row: Any) -> dict[str, Any]:

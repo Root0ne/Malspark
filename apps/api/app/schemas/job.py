@@ -582,6 +582,10 @@ class IOCEntry(BaseModel):
     observed_in: list[dict[str, str]] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    # What an identifier row the rule refuses is, which the full list carries
+    # after the IOC table's rows: the rule's label (``Folder``), or the kind as
+    # the analysis wrote it where the rule has none. Left out on every other row.
+    type: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class IOCListResponse(BaseModel):

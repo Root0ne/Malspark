@@ -96,6 +96,20 @@ def test_the_default_list_is_unchanged_and_the_full_list_gains_the_refused_rows(
     assert sorted(row["value"] for row in added) == ["AppData", "Custom_update"]
     assert all(row["published"] is False and row["source"] == "analysis" for row in added)
     assert all(row["publish_answer"].startswith("no") for row in added)
+    assert sorted(row["type"] for row in added) == ["Folder", "Install marker"]
+    assert not any("type" in row for row in table_rows)
+
+
+def test_the_served_list_carries_each_refused_row_s_type_and_no_other_row_s() -> None:
+    from app.schemas.job import IOCEntry
+
+    report = _report([_row("Install marker", "Custom_update"), _row("folder", "Custom_update")])
+    served = [
+        IOCEntry.model_validate(row).model_dump(mode="json")
+        for row in ioc_feed_rows(report.model_dump(mode="json"))
+    ]
+
+    assert [row["type"] for row in served if "type" in row] == ["Install marker"]
 
 
 def _with_a_judge_indicator(identifiers: list[Any]) -> tuple[list[dict[str, Any]], list[Any]]:
