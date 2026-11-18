@@ -8333,6 +8333,11 @@ def command_value_violations(payload: Any, compared: Sequence[ComparedValues]) -
 
 
 CITATION_WRONG_ENTRY_CODE = "report.citation_wrong_entry"
+# A quoted value that its cited entries hold only inside the echo of their own
+# call's arguments, never in what the answer found (``echoed_argument_citations``):
+# a search answer repeats the pattern it was given. Asked once with the fact; a
+# sentence kept after it is marked where it stands with the entry named.
+VALUE_ONLY_IN_CALL_ARGUMENTS_CODE = "report.value_only_in_call_arguments"
 # A recommendation or hunting note that acts on a value this run does not
 # publish. Asked once with the IOC table's own answer; a value kept after it
 # is recorded beside the recommendation.
@@ -8388,6 +8393,7 @@ MARKED_IN_PLACE: frozenset[str] = frozenset(
         RULE_MATCH_AS_ACTION_CODE,
         UNPUBLISHED_VALUE_CODE,
         CITATION_WRONG_ENTRY_CODE,
+        VALUE_ONLY_IN_CALL_ARGUMENTS_CODE,
         ID_NOT_IN_CITED_ENTRY_CODE,
         NUMERIC_CONFIDENCE_CODE,
         PROCESS_WORDS_CODE,
@@ -8399,6 +8405,7 @@ MARKED_IN_PLACE: frozenset[str] = frozenset(
 ASKED_BY_VALUE: frozenset[str] = frozenset(
     {
         CITATION_WRONG_ENTRY_CODE,
+        VALUE_ONLY_IN_CALL_ARGUMENTS_CODE,
         ID_NOT_IN_CITED_ENTRY_CODE,
         STATED_VALUE_INSIDE_A_TOKEN_CODE,
         UNPUBLISHED_RECOMMENDATION_CODE,
@@ -8432,6 +8439,7 @@ KEPT_WITH_A_FINDING: frozenset[str] = frozenset(
         UNCITED_CONFIGURATION_CODE,
         CITATION_NOT_EVIDENCE_CODE,
         CITATION_WRONG_ENTRY_CODE,
+        VALUE_ONLY_IN_CALL_ARGUMENTS_CODE,
         ENTRY_CONTENTS_MISSTATED_CODE,
         ABSENCE_CONTRADICTS_LEDGER_CODE,
         UNCITED_IDENTIFIER_CODE,
@@ -10653,6 +10661,200 @@ def wrong_entry_citations(
             )
         )
     return violations
+
+
+@_locating(lambda payload, entries, *, prose=(): _Names(top=frozenset(prose)))
+def echoed_argument_citations(
+    payload: Any, entries: EntryTexts | None, *, prose: Sequence[str] = ()
+) -> list[Violation]:
+    """Quoted values a cited entry holds only in the echo of its own call's arguments.
+
+    A tool's stored answer may repeat the call it answers (a search answer
+    carries its pattern), and :meth:`EntryTexts.holds` reads the whole answer,
+    so a term of the query reads as held by the entry whether the answer
+    matched it or not. A value is asked about when it is quoted
+    (:func:`quoted_values`) and :func:`literal_values` does not also read it;
+    the sentence does not name it as absent where it stands
+    (:func:`_named_as_absent`); at least one cited entry holds it on its whole
+    text and none holds it once the echoes of its own call's arguments are
+    taken out (:func:`_call_echoes`, :func:`_without_call_echoes`); and in at
+    least one cited entry the echo that holds it is longer than the value — a
+    value that is a whole argument is the call's own target. A cited entry
+    whose text is not the whole answer says nothing of what the answer lacks,
+    and nothing is asked over it. Read as :func:`wrong_entry_citations` reads
+    a text: ``prose`` fields sentence by sentence under each sentence's
+    brackets, every other string under its own brackets or its record's
+    citations. Asked once; the sentence is never rewritten, and one kept is
+    marked where it stands with the entries named (``labels``).
+    """
+    if payload is None or entries is None or not (entries.texts or entries.items is not None):
+        return []
+    data = payload if isinstance(payload, dict) else getattr(payload, "__dict__", {}) or {}
+    echoed: dict[tuple[str, ...], list[str]] = {}
+    written: dict[tuple[str, ...], dict[str, list[str]]] = {}
+    spans: dict[tuple[str, ...], list[Span]] = {}
+
+    def _ask(value: str, cited: Sequence[str], sentence: str, where: str, span: Span) -> None:
+        value = str(value or "").strip()
+        if literal_values(value) or not decidable(value):
+            return
+        start = sentence.find(value)
+        if start >= 0 and _named_as_absent(sentence, start, start + len(value)):
+            return
+        holding = _echo_holders(value, cited, entries)
+        if not holding:
+            return
+        values = echoed.setdefault(holding, [])
+        if value not in values:
+            values.append(value)
+        found = written.setdefault(holding, {}).setdefault(where, [])
+        if value not in found:
+            found.append(value)
+        spans.setdefault(holding, []).append(span)
+
+    def _read_prose(text: Any) -> None:
+        read = _text_of(text)
+        for sentence, cited, begin, end in _cited_sentences(read):
+            for value in quoted_values(sentence):
+                _ask(value, cited, sentence, sentence.strip(), (read, begin, end))
+
+    def _walk(node: Any, depth: int = 0) -> None:
+        if depth > 4:
+            return
+        if isinstance(node, list | tuple):
+            for item in node:
+                _walk(item, depth + 1)
+            return
+        if not isinstance(node, dict):
+            return
+        refs: list[str] = []
+        for key in _CITING_FIELDS:
+            refs.extend(ref for ref in _ids_in(node.get(key)) if ref not in refs)
+        for key, value in node.items():
+            if key in _CITING_FIELDS:
+                continue
+            if isinstance(value, str):
+                if _sentences_with_citations(value):
+                    _read_prose(value)
+                elif refs:
+                    where = cited_row_text(value, node)
+                    for stated in quoted_values(value):
+                        _ask(stated, refs, value, where, (value, 0, len(value)))
+            else:
+                _walk(value, depth + 1)
+
+    for key in prose:
+        if isinstance(data.get(key), str):
+            _read_prose(data.get(key))
+    _walk({key: value for key, value in data.items() if key not in prose})
+    for key in prose:
+        if not isinstance(data.get(key), str):
+            _walk(data.get(key))
+
+    violations: list[Violation] = []
+    for holding, values in echoed.items():
+        one = len(values) == 1
+        more = len(values) - _MAX_NAMED_IDS
+        listed = ", ".join(repr(value) for value in values[:_MAX_NAMED_IDS])
+        named = ", ".join(entries.named(i) for i in holding)
+        verb = "is" if one else "are"
+        them = "it" if one else "them"
+        stands = "it stands" if one else "they stand"
+        answers = "the answer" if len(holding) == 1 else "the answers"
+        calls = "that call was" if len(holding) == 1 else "those calls were"
+        places = written.get(holding, {})
+        violations.append(
+            Violation(
+                code=VALUE_ONLY_IN_CALL_ARGUMENTS_CODE,
+                message=(
+                    f"{safe_finding_value(listed)}"
+                    f"{' (with ' + safe_finding_value(more) + ' more)' if more > 0 else ''} "
+                    f"{verb} not in {answers} of {safe_finding_value(named)}, which the text "
+                    f"cites for {them}; {stands} only in what {calls} asked for."
+                ),
+                path="citation",
+                quoted=tuple(places),
+                labels=tuple(_echoed_label(stated, holding) for stated in places.values()),
+                values=tuple(values),
+                about=_distinct_spans(spans.get(holding, [])),
+                shown=(
+                    "Say what the entry's answer holds, or state the value without attributing it "
+                    "to the entry."
+                ),
+            )
+        )
+    return violations
+
+
+def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tuple[str, ...]:
+    """The cited entries that hold ``value`` only in the echo of their own call, or ``()``.
+
+    ``()`` unless every condition of :func:`echoed_argument_citations` holds:
+    a cited entry holds the value on its whole text, none holds it once its
+    call's echoes are out, none is a part of its answer only, and in one of
+    them the echo that holds it is longer than the value.
+    """
+    known = [entry_id for entry_id in cited if entries.has_text(entry_id)]
+    holding = [entry_id for entry_id in known if entries.holds(entry_id, value, fields=True)]
+    if not holding or any(entry_id in entries.partial for entry_id in known):
+        return ()
+    longer = False
+    for entry_id in holding:
+        echoes = _call_echoes(entries, entry_id)
+        rest = _without_call_echoes(entries.text_of(entry_id), echoes)
+        if EntryTexts(texts={entry_id: rest}).holds(entry_id, value, fields=True):
+            return ()
+        longer = longer or any(
+            len(echo) > len(value)
+            for echo in echoes
+            if EntryTexts(texts={entry_id: echo}).holds(entry_id, value, fields=True)
+        )
+    return tuple(holding) if longer else ()
+
+
+def _without_call_echoes(text: str, echoes: Collection[str]) -> str:
+    """An entry's text with what echoes its own call taken out.
+
+    Read through its JSON where it is JSON: each string that is, whole, one
+    of ``echoes`` is dropped, as :func:`_held_values` reads one. Any other
+    text has each echo of three characters or more masked where it stands, as
+    written and as a JSON string writes it.
+    """
+    import json as _json
+
+    try:
+        parsed: Any = _json.loads(text)
+    except (ValueError, TypeError):
+        parsed = None
+    if isinstance(parsed, dict | list):
+
+        def _echo(node: Any) -> bool:
+            return isinstance(node, str) and node.strip().lower() in echoes
+
+        def _drop(node: Any) -> Any:
+            if isinstance(node, dict):
+                return {key: _drop(item) for key, item in node.items() if not _echo(item)}
+            if isinstance(node, list):
+                return [_drop(item) for item in node if not _echo(item)]
+            return node
+
+        return _json.dumps(_drop(parsed), ensure_ascii=False, indent=1)
+    masked = str(text or "")
+    for echo in sorted(echoes, key=len, reverse=True):
+        if len(echo) < 3:
+            continue
+        for form in {echo, _json.dumps(echo, ensure_ascii=False)[1:-1]}:
+            masked = re.sub(re.escape(form), lambda match: " " * len(match.group(0)), masked)
+    return masked
+
+
+def _echoed_label(values: Sequence[str], holding: Sequence[str]) -> str:
+    """What a renderer prints beside a sentence kept after the question: the values, the entries."""
+    said = ", ".join(f'"{value}"' for value in values[:_MAX_NAMED_IDS])
+    if len(values) > _MAX_NAMED_IDS:
+        said += f" and {len(values) - _MAX_NAMED_IDS} more"
+    asked = "was asked for" if len(holding) == 1 else "were asked for"
+    return f"{said} {'is' if len(values) == 1 else 'are'} only in what {', '.join(holding)} {asked}"
 
 
 def cited_row_text(text: str, row: Mapping[str, Any]) -> str:

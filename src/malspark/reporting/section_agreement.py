@@ -252,6 +252,7 @@ from malspark.pipeline.validation import (
     _NegationReader,
     _read_dashes,
     citation_violations,
+    echoed_argument_citations,
     generic_function_name,
     ledger_absence_contradictions,
     misstated_entry_contents,
@@ -7396,6 +7397,7 @@ def _rewrite_violations(
     return [
         *citation_violations(prose, citable, prose=("rewrite",), items=items),
         *wrong_entry_citations(prose, entries, prose=("rewrite",)),
+        *echoed_argument_citations(prose, entries, prose=("rewrite",)),
         *misstated_entry_contents(prose, entries, prose=("rewrite",)),
         *ledger_absence_contradictions(prose, entries),
     ]

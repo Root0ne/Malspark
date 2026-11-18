@@ -84,6 +84,7 @@ from malspark.pipeline.validation import (
     command_value_violations,
     compared_values,
     configuration_citation_violations,
+    echoed_argument_citations,
     flow_voice_violations,
     identifier_citation_violations,
     keep_known_keys,
@@ -2396,6 +2397,7 @@ class ReportComposer:
                     payload, citable, prose=prose, items=self._items, records=True
                 ),
                 *wrong_entry_citations(payload, entries, prose=prose),
+                *echoed_argument_citations(payload, entries, prose=prose),
                 *misstated_entry_contents(payload, entries, prose=prose),
                 *ledger_absence_contradictions(payload, entries),
                 *technique_name_violations(payload),

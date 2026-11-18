@@ -61,6 +61,7 @@ from malspark.pipeline.validation import (
     answer_of,
     citation_violations,
     declaring,
+    echoed_argument_citations,
     key_finding_citation_violations,
     ledger_absence_contradictions,
     misstated_entry_contents,
@@ -1180,6 +1181,7 @@ class NarrativeAgent:
                             p, citable, prose=NARRATIVE_PROSE, items=self._items
                         ),
                         lambda p: wrong_entry_citations(p, evidence, prose=NARRATIVE_PROSE),
+                        lambda p: echoed_argument_citations(p, evidence, prose=NARRATIVE_PROSE),
                         lambda p: misstated_entry_contents(p, evidence, prose=NARRATIVE_PROSE),
                         lambda p: ledger_absence_contradictions(p, evidence),
                         technique_name_violations,
@@ -1413,6 +1415,7 @@ class NarrativeAgent:
                 *key_finding_citation_violations(answer, known_ids or [], self._items),
                 *citation_violations(answer, citable, prose=NARRATIVE_PROSE, items=self._items),
                 *wrong_entry_citations(answer, evidence, prose=NARRATIVE_PROSE),
+                *echoed_argument_citations(answer, evidence, prose=NARRATIVE_PROSE),
                 *misstated_entry_contents(answer, evidence, prose=NARRATIVE_PROSE),
                 *ledger_absence_contradictions(answer, evidence),
                 *technique_name_violations(answer),

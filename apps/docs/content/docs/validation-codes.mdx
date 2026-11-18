@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**137 codes in 12 families:** [agreement](#agreement) 21 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 22 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**138 codes in 12 families:** [agreement](#agreement) 21 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 23 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -752,6 +752,14 @@ A table row whose whole value is in none of the entries it cites (`stated_value_
 - **Raised at** `malspark.pipeline.validation:stated_value_violations`
 - **Constant** `malspark.pipeline.validation:STATED_VALUE_UNHELD_CODE`
 - **Docs** [Architecture](/docs/architecture/)
+
+### `report.value_only_in_call_arguments`
+
+A quoted value that its cited entries hold only inside the echo of their own call's arguments, never in what the answer found (`echoed_argument_citations`): a search answer repeats the pattern it was given. Asked once with the fact; a sentence kept after it is marked where it stands with the entry named.
+
+- **Raised at** `malspark.pipeline.validation:echoed_argument_citations`
+- **Constant** `malspark.pipeline.validation:VALUE_ONLY_IN_CALL_ARGUMENTS_CODE`
+- **Docs** none
 
 ## stix
 

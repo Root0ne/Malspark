@@ -230,6 +230,7 @@ from malspark.pipeline.validation import (
     command_value_violations,
     confidence_violation,
     decompiled_not_described_violation,
+    echoed_argument_citations,
     feedback_text,
     flow_voice_violations,
     gate_removed_note,
@@ -1716,6 +1717,26 @@ PROMPTS: dict[str, str] = {
         v.message
         for v in unpublished_value_violations(
             {"body": "It reaches 192.0.2.1."}, lambda kind, value: "no: x"
+        )
+    ),
+    "composer question about a value held only in the call's own arguments": " ".join(
+        f"{v.message} {v.shown}"
+        for v in echoed_argument_citations(
+            {"body": "The strings hold 'beta' [ev_0001]."},
+            EntryTexts.from_ledger(
+                [
+                    build_entry(
+                        entry_id="ev_0001",
+                        seq=1,
+                        agent="a",
+                        server="a",
+                        tool="strings",
+                        args={"pattern": "alpha|beta"},
+                        output='{"pattern": "alpha|beta", "strings": ["alpha one"]}',
+                    )
+                ]
+            ),
+            prose=("body",),
         )
     ),
     "judge question about an indicator on a value the sample did not reach": " ".join(

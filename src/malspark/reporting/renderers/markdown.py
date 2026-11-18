@@ -3620,6 +3620,7 @@ _FLAG_WORDS = {
     "report.rule_match_as_action": "a rule match only, stated as an action",
     "report.unpublished_value": "not published by this run",
     "report.citation_wrong_entry": "cited to an entry that does not hold it",
+    "report.value_only_in_call_arguments": "held only in what the call was asked for",
     "report.id_not_in_cited_entry": "an id none of its cited entries holds",
     "report.numeric_confidence": "a confidence written as a number",
     "report.process_words": "names how the report was made",
@@ -4695,7 +4696,9 @@ def _finding_text(row: dict[str, Any], plain: Callable[[str], str] = _defanged_t
 
 # The marks whose labels name values: several on one sentence or row read as
 # one list in one mark.
-_JOINED_MARK_CODES = frozenset({"report.citation_wrong_entry"})
+_JOINED_MARK_CODES = frozenset(
+    {"report.citation_wrong_entry", "report.value_only_in_call_arguments"}
+)
 
 
 def _joined_marks(rows: Sequence[Any]) -> list[Any]:
