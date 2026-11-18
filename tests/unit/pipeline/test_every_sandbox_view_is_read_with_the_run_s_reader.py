@@ -274,6 +274,18 @@ class TestOneEntryPoint:
             "pack_block(e, c, normalised_by=UNSTATED)\n",
             "triage_pack.pack_row_heads(rows, normalised_by=triage_pack.UNSTATED)\n",
             "pack_row_heads(rows, normalised_by=__import__('m', fromlist=['x']).UNSTATED)\n",
+            # The mark handed over indirectly.
+            "from malspark.pipeline.triage_pack import UNSTATED as NR\n"
+            "pack_block(e, c, normalised_by=NR)\n",
+            "from malspark.pipeline.triage_pack import UNSTATED as normalised_by\n"
+            "pack_block(e, c, normalised_by=normalised_by)\n",
+            "nb = UNSTATED\npack_block(e, c, normalised_by=nb)\n",
+            "nb = triage_pack.UNSTATED\nother = nb\npack_row_heads(r, normalised_by=other)\n",
+            "pack_block(e, c, normalised_by=getattr(triage_pack, 'UNSTATED'))\n",
+            "pack_block(e, c, normalised_by=triage_pack._Unstated.READER)\n",
+            "pack_block(e, c, normalised_by=_Unstated('unstated'))\n",
+            "pack_block(e, c, normalised_by=r if r else UNSTATED)\n",
+            "pack_block(e, c, normalised_by=r or UNSTATED)\n",
         ],
     )
     def test_the_guard_finds_a_reader_left_out_or_none(self, source: str) -> None:
