@@ -442,7 +442,8 @@ CODE_OWNED_CALLS: frozenset[str] = (
             # it names goes through the helper inside it.
             "unissued_sentence",
             # ``_recommendation_named`` answers with the table's own words for a
-            # row, its priority and its category each through the helper inside it.
+            # row, its priority and its category each through the helper inside it,
+            # and its place among the rows that share them in this module's words.
             "_recommendation_named",
         }
     )

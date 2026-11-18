@@ -129,6 +129,29 @@ class TestTheFindingAndItsQuestion:
         assert found.path == "defensive_recommendations.1"
         assert found.statements == ("defensive_recommendations.1",)
 
+    def test_a_row_sharing_its_priority_and_category_is_named_by_its_place_among_them(
+        self,
+    ) -> None:
+        payload = _recommendations("Alert on beacons.", f"Block {REFUSED}.")
+
+        (found,) = recommendation_indicator_violations(payload, published_answers(_report()))
+
+        assert found.message.startswith(
+            "the second P0 firewall recommendation names a value this run does not publish: "
+        )
+
+    def test_rows_naming_neither_are_named_by_their_place_among_them(self) -> None:
+        payload = _recommendations(f"Block {REFUSED}.", "Alert on beacons.")
+        for row in payload["defensive_recommendations"]:
+            row.pop("priority")
+            row.pop("category")
+
+        (found,) = recommendation_indicator_violations(payload, published_answers(_report()))
+
+        assert found.message.startswith(
+            "the first recommendation names a value this run does not publish: "
+        )
+
     def test_the_question_names_the_network_values_the_run_publishes(self) -> None:
         (found,) = recommendation_indicator_violations(
             _recommendations(f"Block {REFUSED}."), published_answers(_report())

@@ -108,6 +108,33 @@ class TestTheFindingAndItsQuestion:
         assert found.path == "defensive_recommendations.1"
         assert found.statements == ("defensive_recommendations.1",)
 
+    def test_a_row_sharing_its_priority_and_category_is_named_by_its_place_among_them(
+        self,
+    ) -> None:
+        rows = [_row("T1105", priority="P2"), _row("T1105"), _row("T1059.003", priority="P2")]
+
+        (found,) = recommendation_technique_violations(
+            {"defensive_recommendations": rows}, PUBLISHED
+        )
+
+        assert found.message.startswith(
+            "the second P2 edr hunting recommendation names a technique this run does not publish: "
+        )
+
+    def test_rows_naming_neither_are_named_by_their_place_among_them(self) -> None:
+        rows = [
+            _row("T1105", priority="", category=""),
+            _row("T1059.003", priority="", category=""),
+        ]
+
+        (found,) = recommendation_technique_violations(
+            {"defensive_recommendations": rows}, PUBLISHED
+        )
+
+        assert found.message.startswith(
+            "the second recommendation names a technique this run does not publish: "
+        )
+
     def test_the_instruction_is_in_the_question_sent_alone(self) -> None:
         (found,) = recommendation_technique_violations(
             {"defensive_recommendations": [_row("T1059.003")]}, PUBLISHED

@@ -8809,7 +8809,8 @@ def recommendation_indicator_violations(
 
     shown = _recommendation_list_question(getattr(answers, "network", None))
     out: list[Violation] = []
-    for index, (at, row) in enumerate(_placed_rows(payload, "defensive_recommendations")):
+    placed = _placed_rows(payload, "defensive_recommendations")
+    for index, (at, row) in enumerate(placed):
         text = " ".join(str(row.get(key) or "") for key in ("action", "rationale", "detection"))
         refused: list[str] = []
         values: list[str] = []
@@ -8837,8 +8838,8 @@ def recommendation_indicator_violations(
             Violation(
                 code=UNPUBLISHED_RECOMMENDATION_CODE,
                 message=(
-                    f"{_recommendation_named(row)} names a value this run does not publish: "
-                    f"{'; '.join(refused)}."
+                    f"{_recommendation_named(placed, index)} names a value this run does not "
+                    f"publish: {'; '.join(refused)}."
                 ),
                 path=f"defensive_recommendations.{index}",
                 statements=(f"defensive_recommendations.{at}",),
@@ -8849,14 +8850,36 @@ def recommendation_indicator_violations(
     return out
 
 
-def _recommendation_named(row: Mapping[str, Any]) -> str:
-    """A recommendation as the report's table names it: ``the P2 firewall recommendation``."""
-    words = [
-        safe_finding_value(str(row.get(key) or "").strip().replace("_", " "))
-        for key in ("priority", "category")
-        if str(row.get(key) or "").strip()
+_ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth")
+
+
+def _ordinal(n: int) -> str:
+    """``first`` to ``ninth`` in words, then ``10th``, ``11th``, ``21st``."""
+    if n <= len(_ORDINALS):
+        return _ORDINALS[n - 1]
+    suffix = "th" if n % 100 in (11, 12, 13) else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _recommendation_named(rows: Sequence[tuple[int, Mapping[str, Any]]], index: int) -> str:
+    """The recommendation ``rows[index]`` as the report's table names it.
+
+    ``the P2 firewall recommendation``: by its priority and category; where
+    more rows share that name, each is named by its place among them (``the
+    second P2 firewall recommendation``), so a finding names one row. A row
+    whose name no other row shares keeps it as it is.
+    """
+    keys = [
+        tuple(
+            safe_finding_value(str(row.get(key) or "").strip().replace("_", " "))
+            for key in ("priority", "category")
+            if str(row.get(key) or "").strip()
+        )
+        for _at, row in rows
     ]
-    return " ".join(["the", *words, "recommendation"])
+    words = keys[index]
+    place = [_ordinal(keys[: index + 1].count(words))] if keys.count(words) > 1 else []
+    return " ".join(["the", *place, *words, "recommendation"])
 
 
 def _recommendation_list_question(network: Sequence[str] | None) -> str:
@@ -8902,7 +8925,8 @@ def recommendation_technique_violations(
         return []
     known = {str(tid).strip().upper() for tid in published if str(tid).strip()}
     out: list[Violation] = []
-    for index, (at, row) in enumerate(_placed_rows(payload, "defensive_recommendations")):
+    placed = _placed_rows(payload, "defensive_recommendations")
+    for index, (at, row) in enumerate(placed):
         text = " ".join(
             str(row.get(key) or "") for key in ("action", "rationale", "detection", "technique_id")
         )
@@ -8915,8 +8939,8 @@ def recommendation_technique_violations(
             Violation(
                 code=UNPUBLISHED_RECOMMENDATION_TECHNIQUE_CODE,
                 message=(
-                    f"{_recommendation_named(row)} names a technique this run does not publish: "
-                    f"{ids}. The report's ATT&CK table does not carry it."
+                    f"{_recommendation_named(placed, index)} names a technique this run does not "
+                    f"publish: {ids}. The report's ATT&CK table does not carry it."
                 ),
                 path=f"defensive_recommendations.{index}",
                 subject=unpublished[0],
