@@ -246,11 +246,18 @@ CLAIM_FORMAT_WITHOUT_TECHNIQUE_FRAGMENT = (
 # The second half is the load-bearing half. A detection ratio is one source
 # among the run's own, and an analyst that reads it as the answer has stopped
 # analysing -- which is the failure mode a reputation tool invites.
+#
+# A reputation answer the evidence an analyst was given already holds (the
+# pipeline's pack often carries the sample's lookup) is cited by its entry;
+# a value is looked up where no entry holds one. No lookup is forbidden. The
+# seeded generic prompts (``agents.prompts``) carry the same sentence.
 REPUTATION_LOOKUP_FRAGMENT = (
-    "\n\nWhen a reputation tool is among your tools, look the sample's hash up once, "
-    "cite what comes back with its evidence id like any other tool result, and weigh "
-    "it as one source: a reputation label is not the verdict, and an unknown hash is "
-    "not a clean sample."
+    "\n\nWhen a reputation tool is among your tools: where an entry you were given "
+    "already holds a reputation answer for a value, such as the sample's hash, cite that "
+    "entry by its evidence id; look a value up only when no entry you were given holds "
+    "one, and cite what comes back with its evidence id like any other tool result. "
+    "Weigh a reputation answer as one source: a reputation label is not the verdict, and "
+    "an unknown hash is not a clean sample."
 )
 
 

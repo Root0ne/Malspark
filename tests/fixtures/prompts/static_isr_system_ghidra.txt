@@ -83,4 +83,4 @@ Every tool result you were shown starts with its id in brackets, for example [ev
 
 Claims state findings that bear on the verdict. File metadata — hashes, size, mime type, machine type, timestamps — goes in the artifacts block, not in claims.
 
-When a reputation tool is among your tools, look the sample's hash up once, cite what comes back with its evidence id like any other tool result, and weigh it as one source: a reputation label is not the verdict, and an unknown hash is not a clean sample.
+When a reputation tool is among your tools: where an entry you were given already holds a reputation answer for a value, such as the sample's hash, cite that entry by its evidence id; look a value up only when no entry you were given holds one, and cite what comes back with its evidence id like any other tool result. Weigh a reputation answer as one source: a reputation label is not the verdict, and an unknown hash is not a clean sample.

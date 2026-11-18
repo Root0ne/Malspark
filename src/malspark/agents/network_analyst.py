@@ -29,6 +29,7 @@ from malspark.agents.base_agent import BaseAnalyst, prompt_to_messages, revision
 from malspark.agents.prompt_fragments import (
     CLAIM_FORMAT_FRAGMENT,
     FINDINGS_BLOCK_FRAGMENT,
+    REPUTATION_LOOKUP_FRAGMENT,
     format_fragment,
     tools_statement,
 )
@@ -51,8 +52,10 @@ _NET_HEAD = (
 
 # The optional structured channel, appended last for the same reason the other
 # analysts append theirs: the assembly order is a contract, and this is the
-# last thing the analyst reads before it answers.
-_NET_TAIL = FINDINGS_BLOCK_FRAGMENT
+# last thing the analyst reads before it answers. The network analyst's
+# definition carries a reputation tool, so it is told what the static analyst
+# is told about one.
+_NET_TAIL = FINDINGS_BLOCK_FRAGMENT + REPUTATION_LOOKUP_FRAGMENT
 
 
 def assemble_network_prompt(
