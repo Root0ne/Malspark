@@ -12544,10 +12544,6 @@ def _call_echoes(entries: EntryTexts, entry_id: str) -> frozenset[str]:
     return frozenset(echo.strip().lower() for echo in found if echo.strip())
 
 
-# The step a list's items stand at below the list, in a key path.
-_LIST_STEP = "[]"
-
-
 def _call_arguments(entries: EntryTexts, entry_id: str) -> Any:
     """An entry's own call arguments as stored, or ``None``."""
     entry = entries.entries.get(entry_id)
@@ -12557,8 +12553,8 @@ def _call_arguments(entries: EntryTexts, entry_id: str) -> Any:
 def _argument_places(arguments: Any) -> dict[tuple[str, ...], frozenset[str]]:
     """Each key path of a call's arguments, with what an answer echoing it there would write.
 
-    A path is its keys folded to lower case, a list's items one step
-    (``_LIST_STEP``) below the list; a value is echoed as passed and by its
+    A path is its keys folded to lower case; no key path runs through a list,
+    so a value under one has no place. A value is echoed as passed and by its
     last path component, as :func:`_call_echoes` reads one.
     """
     found: dict[tuple[str, ...], set[str]] = {}
@@ -12567,9 +12563,6 @@ def _argument_places(arguments: Any) -> dict[tuple[str, ...], frozenset[str]]:
         if isinstance(node, dict):
             for key, value in node.items():
                 _walk(value, (*path, str(key).strip().lower()))
-        elif isinstance(node, list | tuple):
-            for item in node:
-                _walk(item, (*path, _LIST_STEP))
         elif isinstance(node, str | int | float) and not isinstance(node, bool):
             written = str(node)
             forms = {written.strip().lower(), re.split(r"[\\/]", written)[-1].strip().lower()}
