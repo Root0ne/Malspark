@@ -1139,9 +1139,23 @@ scheme into the URL, and a path with neither is a `url path`, never a URL; a
 registry key is read with no IOC-table suffix taken off (`Vendor App (x86)` is
 a key name), and every key that maps to a hiveless held path is linked. A
 network value is linked only where the sandbox attributes a row of it to the
-sample's process tree (`sample_process_tree`); a value no row attributes is
-marked `process not attributed`, and one every row of which belongs to another
-process is not linked and is counted. Items of a section with no value under
+sample's process tree (`sample_process_tree`); whether a value's traffic is a
+process's the report does not list (`process_not_listed`) is the publish
+rule's decision, read over the report's network block with the run's reader
+(`stix_renderer.unlisted_reasons`; a request's path or a user agent, which the
+block keys no row for, by the rule's reading of a request's records,
+`ledger_projection.records_made_by`; an address (written with a port or
+not), a URL whose host is an address and a request to an address by that
+address's row, as the rule's URL
+branch decides them, never by a request row's own process): such a value says
+so in the rule's words, with the process as the rows name it, in the place of
+`process not attributed`; a value no row attributes, or whose rows the rule
+does not put on one unlisted process, is marked `process not attributed`, and
+one every row of which belongs to another listed process is not linked and is
+counted. The command line of the process the sandbox started the submitted
+file from carries the mark's words beside its items, in the pack line and the
+report's table, read by the one reading the process view asks
+(`sandbox_tools.sandbox_started_positions`, `sandbox_report.staged_words`). Items of a section with no value under
 the fields read are counted. The step runs under the pack's time budget, like
 the other late steps, and stops with a `partial` answer. The function is
 the one the holding's own answer names (a blob's references, a recovered
@@ -5937,7 +5951,33 @@ is assembled from what the run gathered rather than recomputed beside it:
   and a public address that sent to the peer is named with what it sent. A
   conversation with no internal end says so, and a record stored before the
   ends were named prints the peer's share as the peer's and keeps every other
-  line its writer stored. The report's "Capture summary" is printed whole
+  line its writer stored. The capture entry holds the tool's answer and
+  nothing else. Where the pack is written with the run's reader
+  (`triage_pack.pack_block`, `pack_row_heads`), its capture line adds to each
+  conversation what the flow rows of the pack's own network view say of the
+  remote address, from the record only, computed for the line and handed to
+  the capture's renderer (`ledger_projection.address_flow_facts`): the view
+  projected as the report's network block is, the address looked up in its
+  flow rows (`FLOW_ROWS`), and said as the publish rule says it
+  (`stix_renderer.address_flow_reason`: the processes it names, those the
+  report does not list, or that it does not say which process made the
+  flows), as a flow of the sample's process tree, or as "no flow row of the
+  sandbox's network view holds it", whatever a DNS answer or the host list
+  holds. A view not read whole (a page, a bounded or shortened answer, a
+  truncated entry, or any of several answers being one) says nothing of any
+  address; a value that does not parse as an address gets no words. The
+  conversations shown are chosen as without the words, by their own sizes;
+  the words are then added conversation by conversation, in order, while the
+  room lasts. A bounded pack is laid out at the sizes its lines have without
+  such words (the capture line's, the behaviour links' words on a value's
+  process, said there as `process not attributed`, and on the start path):
+  the entries shown, the trailer's count and every cut are that layout's at
+  every room. Each line the layout shows whole then takes its words, in pack
+  order, while the pack stays within its room (the capture line's conversation
+  by conversation, the links' all or none); a line cut to a room, and one whose
+  words do not fit, stays as laid out (`triage_pack.render_pack`). With no
+  room limit every line of the job's own detonation takes every word; a later
+  detonation's lines take none. The report's "Capture summary" is printed whole
   when it fits its room (3.3 times a text section's), or when the same rows
   written with the line that gave the peer's share alone would have fitted a
   text section and the whole stays within 10 times one (40,000 characters).
@@ -6048,7 +6088,28 @@ is assembled from what the run gathered rather than recomputed beside it:
   process tree carries the mark (`ProcessNode.staged_by_sandbox`, left out
   when false), and the pack's process line, the evidence table, the report's
   process tree and its figure write the same words beside the row
-  (`sandbox_report.staged_words`).
+  (`sandbox_report.staged_words`). So do the behaviour links (the marked
+  process's command line), the composer's execution-flow tree and the note
+  naming the entries that hold a value a claim quotes, where the value is that
+  path or that command line (`evidence_bundles.sandbox_start_matcher`). The
+  item reader (`sandbox_items`) labels nothing by its design and answers the
+  rows as the report holds them. Where a row is marked, the path is one fact
+  where a writer decides, from one writer (`evidence_bundles.sandbox_start_facts`):
+  the facts of the execution-flow, configuration and host-identifier sections
+  (`sandbox_start_path`), the narrative's facts block, which the question
+  round shares, and the agreement round's facts each carry one line: the path,
+  the mark's words with the rows' pids, and the process view's sentence
+  unchanged. A configuration or host-identifier row whose value is that path
+  (or that process's command line) and whose every cited entry holds it only
+  as a process row (the process view, the item reader asked for processes, a
+  behaviour link observed in process items only; a citation read in the
+  normal form every check reads it, an item citation of an entry, such as
+  `ev_0012:proc:83`, as a citation of that entry) is asked about once with the
+  fact (`report.sandbox_start_path_as_value`, `start_path_value_violations`):
+  the writer keeps the row, rewrites it or leaves it out, and a row kept stands
+  with the finding beside it. The check reads the row's value and the declared
+  kinds of its cited entries, never a sentence; recommendation and hunting text
+  is not checked by code.
 * **The IOC table's row is the one record every surface reads.** The table's
   builder (`builder.ioc_table`) asks the rule once per value and records on the
   row its answer, its role (`sample_identity`, `similarity`, `indicator`,
@@ -6448,7 +6509,10 @@ is assembled from what the run gathered rather than recomputed beside it:
   technique id the report's ATT&CK table does not publish; one question per
   recommendation, naming the ids), `report.configuration_uncited` (a value said to be decrypted or
   observed cites no entry), `report.identifier_uncited` (a host identifier
-  cites no entry of the run), `report.id_not_in_cited_entry` (a table row's
+  cites no entry of the run), `report.sandbox_start_path_as_value` (a
+  configuration or host-identifier row states the path the sandbox started the
+  submitted file from, which its cited entries hold only as a process row;
+  asked with the fact), `report.id_not_in_cited_entry` (a table row's
   `id`, a command's, is held by none of the entries the row cites while another
   entry of the run holds it: a number, alone or as the id's last word after a
   label every numbered row of the table shares (any other id is text), is held

@@ -8342,6 +8342,11 @@ UNPUBLISHED_RECOMMENDATION_CODE = "narrative.unpublished_indicator"
 UNPUBLISHED_RECOMMENDATION_TECHNIQUE_CODE = "narrative.unpublished_technique"
 ENTRY_CONTENTS_MISSTATED_CODE = "report.entry_contents_misstated"
 UNCITED_IDENTIFIER_CODE = "report.identifier_uncited"
+# A configuration or identifier row whose value is the path the sandbox
+# started the submitted file from, which its cited entries hold only as a
+# process row (``start_path_value_violations``). Asked once with the fact; a
+# row kept after it stands, with the finding beside it.
+SANDBOX_START_PATH_VALUE_CODE = "report.sandbox_start_path_as_value"
 # A table row whose whole value is in none of the entries it cites
 # (``stated_value_violations``). Asked once; a row kept after it is marked
 # beside its evidence.
@@ -8425,6 +8430,7 @@ KEPT_WITH_A_FINDING: frozenset[str] = frozenset(
         ENTRY_CONTENTS_MISSTATED_CODE,
         ABSENCE_CONTRADICTS_LEDGER_CODE,
         UNCITED_IDENTIFIER_CODE,
+        SANDBOX_START_PATH_VALUE_CODE,
         STATED_VALUE_UNHELD_CODE,
         STATED_VALUE_INSIDE_A_TOKEN_CODE,
         ID_NOT_IN_CITED_ENTRY_CODE,
@@ -9609,6 +9615,51 @@ def identifier_citation_violations(
                 statements=(f"identifiers.{at}",),
             )
         )
+    return out
+
+
+def start_path_value_violations(
+    payload: Any, start_path: Callable[[str, Iterable[str]], str] | None
+) -> list[Violation]:
+    """Configuration and identifier rows that state the start path from process rows alone.
+
+    ``start_path`` (``evidence_bundles.sandbox_start_question``) answers, for a
+    row's value and the ids it cites, the record's fact where the value is the
+    path the sandbox started the submitted file from (or that process's
+    command line) and every cited entry holds it only as a process row; ``""``
+    otherwise. Such a row is asked about once, the fact first: the writer
+    keeps it with what it says of the path, rewrites it or leaves it out.
+    Nothing is dropped and no sentence is read; with no marked row nothing is
+    asked.
+    """
+    if start_path is None:
+        return []
+    out: list[Violation] = []
+    for key, what, label in (
+        ("items", "configuration item", "key"),
+        ("identifiers", "identifier", "kind"),
+    ):
+        for index, (at, row) in enumerate(_placed_rows(payload, key)):
+            cited = _cited(row, "evidence_refs")
+            fact = start_path(str(row.get("value") or ""), cited)
+            if not fact:
+                continue
+            out.append(
+                Violation(
+                    code=SANDBOX_START_PATH_VALUE_CODE,
+                    message=(
+                        f"{what} {safe_finding_value(index + 1)} "
+                        f"({safe_finding_value(row.get(label))}) states "
+                        f"{safe_finding_value(row.get('value'))}, which "
+                        f"{safe_finding_value(_named_ids(cited))} hold only as a process row: "
+                        f"{safe_finding_value(fact, whole=True)} Keep the row "
+                        "if what it says of this path is what the record shows of it, rewrite "
+                        "it, or leave it out."
+                    ),
+                    path=f"{key}.{index}.value",
+                    statements=(f"{key}.{at}",),
+                )
+            )
     return out
 
 

@@ -595,6 +595,14 @@ def findings_lines(
         lines.append("  (no network data)")
     lines.append("")
 
+    # --- The place the sandbox started the submitted file from ----------
+    from malspark.reporting.evidence_bundles import sandbox_start_line
+
+    started = sandbox_start_line(report)
+    if started:
+        lines.append(f"Sandbox start path: {started}")
+        lines.append("")
+
     # --- Persistence ---------------------------------------------------
     lines.append("Persistence:")
     if report.persistence:

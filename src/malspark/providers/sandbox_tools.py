@@ -321,18 +321,8 @@ def sandbox_processes(
     # the whole listing whichever page is asked for, and the row of the same
     # process marked.
     built = [_process_row(proc, launched) if isinstance(proc, dict) else None for proc in processes]
-    reading = _reading(normalised_by)
-    lineage = process_lineage(processes)
-    named = {
-        id(node)
-        for node in started_by_the_sandbox(
-            lineage,
-            *_submitted(report),
-            written=lambda: written_during_the_run(report, reading),
-            shipped=_the_system_ships,
-        )
-    }
-    staged = {id(row) for row, node in zip(built, lineage, strict=True) if id(node) in named}
+    marked = sandbox_started_positions(report, normalised_by)
+    staged = {id(row) for position, row in enumerate(built) if position in marked}
     page, meta = _page(built, offset, limit)
     rows: list[dict[str, Any]] = []
     for row in page:
@@ -347,6 +337,36 @@ def sandbox_processes(
     if any(STAGED_KEY in row for row in rows):
         answer = {STAGED_NOTE_KEY: STAGED_NOTE, **answer}
     return answer
+
+
+def sandbox_started_positions(
+    report: dict[str, Any] | None, normalised_by: Sequence[str] | None
+) -> frozenset[int]:
+    """The places in the report's process list of the rows the sandbox started the file from.
+
+    The one reading every surface that renders the report's process rows
+    asks (``sandbox_report.started_by_the_sandbox``): read from the report's
+    own processes, each row read the one way the document reads a process
+    row, over the whole listing, with the run's reader. Empty where the report
+    lists no processes.
+    """
+    if not isinstance(report, dict):
+        return frozenset()
+    processes = place(report, "processes")
+    if not isinstance(processes, list) or not processes:
+        return frozenset()
+    reading = _reading(normalised_by)
+    lineage = process_lineage(processes)
+    named = {
+        id(node)
+        for node in started_by_the_sandbox(
+            lineage,
+            *_submitted(report),
+            written=lambda: written_during_the_run(report, reading),
+            shipped=_the_system_ships,
+        )
+    }
+    return frozenset(position for position, node in enumerate(lineage) if id(node) in named)
 
 
 def _the_system_ships(path: str) -> bool:

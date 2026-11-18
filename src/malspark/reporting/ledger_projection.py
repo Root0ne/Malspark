@@ -29,7 +29,7 @@ import bisect
 import hashlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -104,6 +104,10 @@ _IDENTITY_KINDS = ("identity", "signing")
 # Beside an address's disputed lineage facts: the sandboxes whose mark they are.
 _MARKED_BY = "marked_by"
 
+# The lists of a sandbox network view whose rows are flows: each names the
+# address it reached and what the sandbox says of the process that made it.
+FLOW_ROWS = ("tcp", "udp")
+
 
 def traffic_maker(row: Any) -> bool | tuple[str, str] | None:
     """What a sandbox's traffic record says of the process that made it.
@@ -139,6 +143,40 @@ def traffic_maker(row: Any) -> bool | tuple[str, str] | None:
     if held.get(PROCESS_UNLISTED_KEY) is True:
         return ("unlisted", named)
     return None
+
+
+def records_made_by(rows: Iterable[Any]) -> NetworkURL:
+    """A request row whose process facts are those ``rows`` state, read as a URL's records are.
+
+    The publish rule's reading of the records of one request's traffic
+    (:class:`_MakerTally`): the sample's when any record is the tree's,
+    another lineage's only when every record names a process. For a value the
+    network block keys no row for (a request's path, a user agent), read off
+    the records that hold it.
+    """
+    tally = _MakerTally()
+    for row in rows:
+        for answer in traffic_makers(row):
+            tally.add(answer)
+    held = NetworkURL(url="", source="sandbox")
+    tally.state(held)
+    return held
+
+
+def request_address(row: Any) -> str:
+    """The address a request record's host is, as its URL row's host is read; ``""`` for a name.
+
+    The URL the block makes of the record (``_http_url``), else its host: a
+    request to an address takes that address's row in the publish rule
+    (``stix_renderer.url_address``).
+    """
+    from malspark.reporting.renderers.stix_renderer import url_address
+
+    host = _first_str(row, "host", "hostname")
+    url = _http_url(row, host)
+    if url:
+        return url_address(url)
+    return url_address(f"http://{host}/") if host else ""
 
 
 def traffic_makers(row: Any) -> list[bool | tuple[str, str] | None]:
@@ -1618,7 +1656,7 @@ def network_from_ledger(
                 host_facts.setdefault(address, {}).update(
                     {k: row[k] for k in ("asn", "country_name") if row.get(k)}
                 )
-        for key in ("tcp", "udp"):
+        for key in FLOW_ROWS:
             for row in data.get(key) or []:
                 address = address_key(_first_str(row, "dst", "ip", "address"))
                 _add("ip", address, "sandbox")
@@ -2721,6 +2759,60 @@ def network_from_sandbox_report(
         source="sandbox",
     )
     return network_from_ledger([entry], normalised_by=normalised_by)
+
+
+# What the capture line says of a conversation's remote address beside it
+# (:func:`address_flow_facts`): a flow of the sample's process tree reached it,
+# or no flow row of the sandbox's network view holds it. Any other address
+# takes the publish rule's sentence (``stix_renderer.address_flow_reason``).
+SAMPLE_TREE_FLOW = "the sandbox attributes a flow to it to the sample's process tree"
+NO_FLOW_ROW = "no flow row of the sandbox's network view holds it"
+
+
+def address_flow_facts(
+    ledger: list[LedgerEntry], *, normalised_by: Sequence[str] | None
+) -> Callable[[Any], str] | None:
+    """``address -> words``: what the sandbox's flow rows say of the process behind each address.
+
+    Read from the record only: the ``sandbox_network`` answers of ``ledger``
+    projected as the report's network block is (:func:`network_from_ledger`),
+    with the run's reader ``normalised_by``. An address is looked up in the
+    flow rows of those answers (:data:`FLOW_ROWS`): one a flow row holds is
+    said as the publish rule says its row (``stix_renderer.address_flow_reason``),
+    or :data:`SAMPLE_TREE_FLOW`; one no flow row holds is :data:`NO_FLOW_ROW`,
+    whatever a DNS answer or a host list holds; a value that does not parse as
+    an address is said nothing of. ``None``, and so no words for any address,
+    where the ledger holds no such answer or any answer read is not the whole
+    view (a page, a bounded or shortened answer): no words are derived from
+    part of a view.
+    """
+    from malspark.reporting.renderers.stix_renderer import address_flow_reason
+
+    reads = _payloads(ledger, "sandbox_network")
+    views = _ledger_views(reads)
+    if not views or not all(is_whole for _data, is_whole in views):
+        return None
+    flowed = {
+        address_key(_first_str(row, "dst", "ip", "address"))
+        for data, _whole in views
+        for key in FLOW_ROWS
+        for row in data.get(key) or []
+    }
+    network = network_from_ledger([entry for entry, _data in reads], normalised_by=normalised_by)
+    rows = {ip.address: ip for ip in (network.ips if network else []) if ip.source == "sandbox"}
+
+    def _fact(address: Any) -> str:
+        key = address_key(address)
+        if not _parses_as_an_address(key):
+            return ""
+        row = rows.get(key) if key in flowed else None
+        if row is None:
+            return NO_FLOW_ROW
+        if row.sample_process_tree is True:
+            return SAMPLE_TREE_FLOW
+        return address_flow_reason(row)
+
+    return _fact
 
 
 def _fold_url_host(url: str) -> str:

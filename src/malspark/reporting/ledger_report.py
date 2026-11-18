@@ -1220,6 +1220,8 @@ def _behaviour_code(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) ->
     The text above the rows says what was compared, how much of each answer,
     and where the functions came from or why none could be stated.
     """
+    from malspark.schemas.sandbox_report import staged_words
+
     links = [row for row in data.get("links") or [] if isinstance(row, dict)]
     table = acc.get(
         BEHAVIOUR_CODE_SECTION,
@@ -1247,8 +1249,13 @@ def _behaviour_code(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) ->
     for row in links:
         kind, value = _text(row.get("kind")), _text(row.get("value"))
         items = ", ".join(str(item) for item in row.get("items") or [])
-        if row.get("attribution") == behaviour_code.NOT_ATTRIBUTED:
-            items += f" ({behaviour_code.NOT_ATTRIBUTED})"
+        attribution = behaviour_code.attribution_words(row)
+        if attribution:
+            items += f" ({attribution})"
+        # A marked process's command line: the words every surface writes beside its row.
+        staged = staged_words(row)
+        if staged:
+            items += f" ({staged})"
         held = [h for h in row.get("held") or [] if isinstance(h, dict)]
         if not held:
             acc.add_row(table, [kind, value, items, only, "", ""])

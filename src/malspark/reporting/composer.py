@@ -99,6 +99,7 @@ from malspark.pipeline.validation import (
     schema_violations,
     section_capability_violations,
     section_cut_violation,
+    start_path_value_violations,
     stated_value_violations,
     technique_name_violations,
     unpublished_value_violations,
@@ -140,6 +141,8 @@ from malspark.reporting.evidence_bundles import (
     sandbox_entry_ids,
     sandbox_item_observation,
     sandbox_saw_no_persistence,
+    sandbox_start_matcher,
+    sandbox_start_question,
 )
 from malspark.reporting.models import (
     C2Channel,
@@ -683,6 +686,7 @@ def _bundle_text(
     bundle: dict[str, Any],
     entries: EntryTexts | None = None,
     item_chars: int | None = None,
+    started: Callable[[str], bool] | None = None,
 ) -> str:
     """Render an evidence bundle into a compact prompt body.
 
@@ -739,7 +743,7 @@ def _bundle_text(
             if held and item_chars is not None:
                 left = item_chars - (len(shown) - len(quoted_value(""))) if item_chars >= 0 else -1
                 held = _within_view(held, left, str) if left != 0 else ""
-            lines.append(f"- {label}{shown}" + _where_quoted(claim, entries) + held)
+            lines.append(f"- {label}{shown}" + _where_quoted(claim, entries, started) + held)
         lines.append("")
     tools = bundle.get("tool_outputs") or []
     if tools:
@@ -988,23 +992,31 @@ RULE_ONLY_NOTE = (
 WHERE_QUOTED_LEAD = "the run's evidence: "
 
 
-def _where_quoted(line: str, entries: EntryTexts | None) -> str:
+def _where_quoted(
+    line: str, entries: EntryTexts | None, started: Callable[[str], bool] | None = None
+) -> str:
     """Which of the run's entries hold the values a claim quotes, as a note after it.
 
     A claim is another model's words and is shown as written. What the
     platform adds is a fact it can state: the entries whose text holds each
     value the claim quotes. A section shown only the claim and the facts of
     its own bundle once called a claim unsupported that an entry it was never
-    shown carried word for word. A value no entry holds gets no note.
+    shown carried word for word. A value no entry holds gets no note. A value
+    that is the path the sandbox started the submitted file from (``started``,
+    ``evidence_bundles.sandbox_start_matcher``) carries the words every
+    surface writes beside its row.
     """
     if entries is None:
         return ""
+    from malspark.schemas.sandbox_report import STAGED_WORDS
+
     notes: list[str] = []
     for value in quoted_values(line):
         holders = entries.holding(value)
         if holders:
             where = ", ".join(entries.named(entry_id) for entry_id in holders[:4])
-            notes.append(f"{quoted_value(value)} is in {where}")
+            staged = f" ({STAGED_WORDS})" if started is not None and started(value) else ""
+            notes.append(f"{quoted_value(value)}{staged} is in {where}")
     return f" ({WHERE_QUOTED_LEAD}{'; '.join(notes)})" if notes else ""
 
 
@@ -1465,6 +1477,9 @@ class ReportComposer:
         # What the Persistence section prints as "no persistence observed":
         # a step or that section's prose stating persistence is asked once.
         saw_no_persistence = sandbox_saw_no_persistence(report)
+        # A configuration or identifier row stating the path the sandbox
+        # started the submitted file from, from process rows alone, is asked.
+        start_path = sandbox_start_question(report, self._entries)
 
         # 1. Introduction / background.
         def _intro(out: BaseModel | None) -> int:
@@ -1646,6 +1661,7 @@ class ReportComposer:
                 [
                     lambda p: configuration_citation_violations(p, known_ids, self._items),
                     lambda p: stated_value_violations(p, self._entries),
+                    lambda p: start_path_value_violations(p, start_path),
                 ],
                 _config,
             ),
@@ -1656,6 +1672,7 @@ class ReportComposer:
                 [
                     lambda p: identifier_citation_violations(p, known_ids, self._items),
                     lambda p: stated_value_violations(p, self._entries),
+                    lambda p: start_path_value_violations(p, start_path),
                 ],
                 _identifiers,
             ),
@@ -2059,11 +2076,14 @@ class ReportComposer:
         # on that path nothing had ever shown the model a key name.
         contract = section_contract(section, schema)
         entries = getattr(self, "_entries", None)
+        # The path the sandbox started the submitted file from, as a claim's
+        # holders note names it (``evidence_bundles.sandbox_start_matcher``).
+        started = sandbox_start_matcher(report)
         # The claims and the tool answers share what the model's window leaves
         # after its reply and the rest of this prompt; measured on the prompt
         # with each of them empty, so only its line's own lead is charged.
         without = "\n\n".join(
-            [*head, instruction, contract, _bundle_text(section, bundle, entries, item_chars=-1)]
+            [*head, instruction, contract, _bundle_text(section, bundle, entries, -1, started)]
         )
         prompt_chars = len(_SYSTEM) + len(without)
         logger.info(
@@ -2085,7 +2105,12 @@ class ReportComposer:
             len(bundle.get("claims") or []) + len(bundle.get("tool_outputs") or []),
         )
         human = "\n\n".join(
-            [*head, instruction, contract, _bundle_text(section, bundle, entries, item_chars)]
+            [
+                *head,
+                instruction,
+                contract,
+                _bundle_text(section, bundle, entries, item_chars, started),
+            ]
         )
         # The sample's own evidence the section is shown, for the style check
         # (``composer_pro.style_violations``): its tool outputs and code only.
