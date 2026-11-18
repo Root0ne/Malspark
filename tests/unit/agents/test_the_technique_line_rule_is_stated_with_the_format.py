@@ -18,6 +18,7 @@ import pytest
 
 from malspark.agents.base_agent import _REVISION_ISR_FORMAT, BaseAnalyst
 from malspark.agents.prompt_fragments import CLAIM_FORMAT_FRAGMENT, TECHNIQUE_LINE_RULE
+from malspark.pipeline.retry_merge import numbering_unsettled
 from malspark.pipeline.validation import technique_line_violation
 from malspark.schemas.isr_models import AgentISR
 
@@ -138,3 +139,35 @@ def test_an_answer_shown_as_its_summary_carries_the_unread_line_as_written() -> 
 
     [shown] = _shown(analyst)
     assert _UNREAD in shown
+
+
+_MUTEX = "The loader creates the mutex Global\\qx7 before anything else."
+_INJECT = "The loader writes into another process's memory."
+
+
+def _numbered(number: int, sentence: str, technique: str) -> str:
+    return (
+        f"CLAIM {number}: {sentence}\n"
+        "EVIDENCE: [ev_0004] WriteProcessMemory import\n"
+        "CONFIDENCE: 0.6\n"
+        f"TECHNIQUE: {technique}\n"
+        "---\n"
+    )
+
+
+def test_a_strictly_read_answer_keeps_its_written_text_and_its_retry_merges_by_number() -> None:
+    """The strict parser's answer records the text it was read from, so a retry
+    that writes only the claim asked about replaces that claim by its number and
+    keeps the rest."""
+    first = _numbered(1, _MUTEX, "NONE") + _numbered(2, _INJECT, _UNREAD)
+    analyst = _StrictAnalyst(first, [_numbered(2, _INJECT, "NONE")])
+    parsed = analyst.analyze_isr("raw data")
+    assert parsed.answer_text.strip() == first.strip()
+    assert numbering_unsettled(parsed) == ""
+    analyst = _StrictAnalyst(first, [_numbered(2, _INJECT, "NONE")])
+
+    isr = analyst.safe_analyze_isr("raw data")
+
+    # A whole-answer retry would leave claim 2 alone; the merge keeps claim 1.
+    assert [c.claim for c in isr.claims] == [_MUTEX, _INJECT]
+    assert [c.technique_line for c in isr.claims] == [None, None]
