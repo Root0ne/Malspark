@@ -136,6 +136,23 @@ class TestTheCheck:
         assert _body("The routine calls FUN_00401900 2.5 times per block [ev_0095].") == []
         assert _body("The routine makes 1000 calls to FUN_00401900 [ev_0095].") == []
 
+    def test_a_number_inside_a_longer_token_is_not_read(self) -> None:
+        """A count is a token of its own: digits ending a name, a hex number, a range or a
+        compound number word are not read as it."""
+        assert _body("The RC4 calls to FUN_00401900 mix the block [ev_0095].") == []
+        assert _body("The RC2 calls to FUN_00401900 mix the block [ev_0095].") == []
+        assert _body("The SHA256 calls to FUN_00401900 mix the block [ev_0095].") == []
+        assert _body("The Win32 calls to FUN_00401900 mix the block [ev_0095].") == []
+        assert _body("It makes 0x10 calls to FUN_00401900 [ev_0095].") == []
+        assert _body("It makes 3-4 calls to FUN_00401900 [ev_0095].") == []
+        assert _body("It makes 4-5 calls to FUN_00401900 [ev_0095].") == []
+        assert _body("It makes twenty-one calls to FUN_00401900 [ev_0095].") == []
+
+    def test_a_count_in_brackets_is_read(self) -> None:
+        (found,) = _body("The mixer is busy (3 calls to FUN_00401900) [ev_0095].")
+
+        assert found.message.startswith("The text states '3 calls' and names FUN_00401900; ")
+
     def test_an_entry_that_lists_no_code_is_not_read(self) -> None:
         assert _body("The routine calls seed 2 times [ev_0097].") == []
         assert _body("The routine calls FUN_00401900 three times [ev_0097].") == []

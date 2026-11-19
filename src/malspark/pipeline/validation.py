@@ -11143,8 +11143,10 @@ _CALL_COUNT_WORDS = {
 # words: "calls X N times", "X is called N times", "N calls to/of X". Callers,
 # call sites and references count places across the image, not the calls one
 # function's code writes; "once" and "twice" are not read either. A number is
-# read whole: one with a separator or a decimal point is not read.
-_COUNTED = r"(?<![\d,.])(\d{1,3}(?![\d,.]?\d)|\b(?:" + "|".join(_CALL_COUNT_WORDS) + r"))"
+# read only as a token of its own, whitespace or an opening bracket before it:
+# none that ends a name (``RC4``), a hex number, a range (``3-4``), a compound
+# number word or one with a separator or a decimal point.
+_COUNTED = r"(?<![\w,.\-])(\d{1,3}|(?:" + "|".join(_CALL_COUNT_WORDS) + r"))(?![\w\-]|[,.]\d)"
 _COUNTED_NAME = r"(0x[0-9a-fA-F]{5,}|[A-Za-z_][A-Za-z0-9_]{3,})"
 # Words that stand between a count's verb and the routine it names without
 # naming one: a pronoun or a preposition there means the routine is another
