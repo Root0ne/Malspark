@@ -34,12 +34,12 @@ from pathlib import Path
 from typing import Any
 
 _ROOT = Path(__file__).resolve().parents[2]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
 
-# The headings the round's prompt groups its passages under (``section_agreement``).
+# The headings the round's prompt groups its passages under (``section_agreement``): the
+# judge's decision among them (T-717), read as the judge's, never as a fact before it.
 _KINDS = {
     "FACTS THE PLATFORM STATES": "fact",
+    "THE JUDGE'S DECISION": "judge",
     "SECTION 5, WRITTEN FROM THE CODE AND THE TOOL ANSWERS": "section 5",
     "THE DEBATE'S MEDIATIONS, IN ROUND ORDER": "debate",
     "PASSAGES WRITTEN WITHOUT THE CODE": "claim-led",
@@ -115,7 +115,8 @@ def _passages(prompt: str, rebuilt: Mapping[str, Any] | None = None) -> list[Any
             Passage(
                 id=pid,
                 label=label,
-                text=text if kind == "fact" else _unquoted(text),
+                # A fact and a judge passage are shown as written; every other text quoted.
+                text=text if kind in ("fact", "judge") else _unquoted(text),
                 kind=kind,
                 write=(lambda _text: None) if writable else None,
                 closing=pid in _CLOSING,
@@ -340,4 +341,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # The checkout first on the path when run as a program, never on import, so an importing
+    # process keeps its own.
+    if str(_ROOT) not in sys.path:
+        sys.path.insert(0, str(_ROOT))
     raise SystemExit(main())
