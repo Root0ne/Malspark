@@ -517,6 +517,10 @@ LIMITS: tuple[str, ...] = (
     "code is reported by neither mode; the replay comparison (scripts/replay/run.py --compare) "
     "keys a finding by its producer, answer, claim, path and code, not by its words, so no tool "
     "here compares a finding's message",
+    "a comparison given --work makes its temporary folders inside that folder and leaves none in "
+    "the system's temporary directory (without --work its work folder is made there); a plain "
+    "--out render run by itself lets the replay guard keep its ATT&CK cache folder in the "
+    "system's temporary directory for the length of the run",
 )
 
 # The surfaces of each mode, in the order they are rendered.
