@@ -34,8 +34,6 @@ from pathlib import Path
 from typing import Any
 
 _ROOT = Path(__file__).resolve().parents[2]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
 
 # The headings the round's prompt groups its passages under (``section_agreement``): the
 # judge's decision among them (T-717), read as the judge's, never as a fact before it.
@@ -343,4 +341,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # The checkout first on the path when run as a program, never on import, so an importing
+    # process keeps its own.
+    if str(_ROOT) not in sys.path:
+        sys.path.insert(0, str(_ROOT))
     raise SystemExit(main())

@@ -1,5 +1,9 @@
 """Re-run a stored run's agreement round on the model's stored answers, at zero cost.
 
+As the stored runs stand, none replays without ``--allow-differing``: the retry turn the
+round sends differs from the logged one in every run that has an agreement request, so the
+tool is a comparison instrument on rebuilt inputs only, not a reproduction of what a run did.
+
 Over one or more stored runs, each a directory in the benchmark's layout::
 
     python scripts/replay/agreement_round.py <run dir> [<run dir> ...] [--out DIR]
@@ -10,9 +14,10 @@ place of the model:
 
 - the round's first request and its retry request, read line by line from ``worker.log``
   and chosen by the round's system text; the passages as the first request showed them;
-- the model's first answer: the assistant turn the retry request repeats; and, where the
-  run's record keeps them (``run_summary.section_agreement.answers`` of ``report.json``,
-  each left unchanged by the record's mask), the answers of both turns;
+- the model's first answer: the assistant turn the retry request repeats, its raw text; and,
+  where the run's record keeps them (``run_summary.section_agreement.answers`` of
+  ``report.json``, each left unchanged by the record's mask), the answers of both turns, as
+  parsed (a parsed answer is fed re-serialised, and marked ``answer_reserialised``);
 - the report as the round was given it: the stored report is the one after the round, so
   each passage's text is put back to what the first request showed (with the ids a rewrite
   added to its record's list taken out again, and the round's own flagged statements left
@@ -21,14 +26,14 @@ place of the model:
   request. The reconstruction is checked: the prompt the round's code builds from it must
   equal the logged one, and where it does not the first differing position is said.
 
-The replay hands the stub the first answer for the first turn and, for the retry, the
-retry's stored answer; where none is stored the run is marked "first turn only" and the
+The replay hands the stub the first answer for the first turn (the log's raw text where the
+log holds it, the record's copy otherwise) and, for the retry, the retry's stored answer;
+where none is stored the run is marked "first turn only" and the
 retry is answered with no rows, as the round's own re-applier answers a turn it holds no
 answer for (``section_agreement.StoredAnswers``); the round then acts on an empty retry the
 run did not have, and every record, difference and label line of such a run says
-``first_turn_only``. Where the record keeps the answers, its first answer is the one
-replayed, and a first answer the log repeats differently is said
-(``first_answer_matches_record``). It records every passage's text before
+``first_turn_only``. A first answer the log repeats otherwise than the record keeps it is
+said (``first_answer_matches_record``). It records every passage's text before
 and after, every outcome record of the round (``agreement.*``), its counts and flagged
 statements, and every row of the answers with what became of it: applied, kept, left out,
 or replaced by the retry's row, with the records that name it.
@@ -41,13 +46,19 @@ in the logged prompt only, in the rebuilt one only, and in both with another tex
 rebuilt prompt is not the logged one, the round is given an input the model was not shown:
 every record, difference and label line carries ``prompt_reproduced``,
 ``first_difference`` and the differing blocks, and says which kinds differ and how many. A
-run whose prompt differs in any block, or outside them, is replayed only under
-``--allow-differing``; without it the run is refused, and so is a log holding more requests
-than the round's two (more than one job's round). A label of a refused run says why. The
-command ends with status 3 where a run is refused, and 5 where a run is refused and a
-difference no expectation excuses is found as well, printed under the refusals. The command
-refuses to start, with status 4, where the round's code is imported from another tree than
-this one.
+block shown in both at another place is named under ``order``. Every human turn the round
+sends is also checked, inside the stub, against the logged turn of the same position by
+the same comparison: the first turn as sent (``first_turn_sent_reproduced``) and the retry's
+correction turn (``retry_reproduced``, ``retry_first_difference``,
+``retry_blocks_differing``). A run whose prompt differs in any block, in their order or
+outside them, or whose retry turn differs, is replayed only under ``--allow-differing``, and
+such a replay is a comparison of refs on a rebuilt input, not a reproduction of what the run
+did, said once per run and in the summary line; without the flag the run is refused, and so
+is a log holding more requests than the round's two (more than one job's round). A label of
+a refused run says why. The command ends with status 3 where a run is refused, and 5 where
+a run is refused and a difference no expectation excuses is found as well, printed under the
+refusals. The command refuses to start, with status 4, where the round's code is imported
+from another tree than this one.
 
 ``--check-stored`` also compares, for a run whose record keeps the round's answers, the
 replay's passages, records and whole report with the stored ones, and names every
@@ -60,8 +71,11 @@ lists the sentences whose final text differs, the sentences left out under one r
 and the outcome codes gained and lost. ``--expect FILE`` (a JSON list of expected
 differences, kept outside git, each matching every difference whose fields it gives)
 excuses differences; the command ends with status 1 on any difference no entry matches,
-0 otherwise. Each ref rebuilds its own facts inside the round, but no ref checks its own
-prompt against the logged one; the output says so once.
+0 otherwise. Each ref's round checks every human turn it sends against the logged one,
+printed per ref; the pre-round report is rebuilt, and a run refused, by the code this
+command runs from. With ``--check-stored``, ref A's differences from the stored round on a
+run with no marks count toward the status (the harness testing itself); ref B's, the change
+measured, are printed only.
 
 ``--labels FILE`` (a JSON list of labelled sentences kept outside git, each with ``run``,
 ``text``, ``label`` ``false`` or ``true``, and ``passage`` where it is known) states, per
@@ -69,16 +83,17 @@ label, whether that exact text is printed in the final text of its passage (of a
 where none is given) under each ref, and as stored before the round. Results are judged by
 these labels, never by the code's own reading of a contradiction.
 
-Limits: the answers after the retry are stored for two runs only (the record keeps the
-round's answers since T-736); a first answer is recovered only where the retry request
+Limits: final answers are replayed only where the run's record stores them (the record keeps
+the round's answers since T-736); a first answer is recovered only where the retry request
 repeats it (a first answer the retry left out, and a round that needed no retry, give
-none); the passages are put back from the prompt, so a text the prompt does not show is the
-stored one; the ledger is the stored one, after its byte budget, and no sandbox report nor
-evidence corpus is stored, so an item's or an entry's text is read as stored. Under
-``--compare`` the pre-round report is rebuilt and the prompt checked by the code this
-command runs from, not by each ref's. The harness shows what the code does with a given
-answer, not what a model would answer to a changed question; results are judged by the
-labels, not by the code's own reading.
+none); an answer only the record keeps is fed re-serialised from its parsed form, not as the
+text the round read; the passages are put back from the prompt, so a text the prompt does
+not show is the stored one; the facts are rebuilt from the shortened stored ledger, the one
+after its byte budget, and no sandbox report nor evidence corpus is stored, so an item's or
+an entry's text is read as stored. Where the retry is the harness's own empty answer, any
+difference in how a retry is handled is measured on a turn the run never had. The harness
+shows what the code does with a given answer, not what a model would answer to a changed
+question; results are judged by the labels, not by the code's own reading.
 
 Read-only over the runs: nothing is written beside them, no network is reached, no
 credential is read; every file of a run is digested before and after.
@@ -128,15 +143,24 @@ REFUSED_AND_DIFFERING = 5
 STATUSES = (
     "Exit status: 0 where every replayed run ends as expected; 1 where a difference no "
     "expectation excuses is found (under --check-stored, any difference from the stored "
-    "round); 2 on a usage error; 3 where a run is refused and no such difference is found; "
+    "round; under --compare with --check-stored, also any difference of ref A's replay from "
+    "the stored round on a run with no marks, ref B's being printed and never counted); 2 on "
+    "a usage error; 3 where a run is refused and no such difference is found; "
     "4 where the round's code is imported from another tree than this one; 5 where a run is "
     "refused and such a difference is found as well."
 )
 
 # Said once in the output of two refs: what each ref checks of its own input.
 COMPARE_NOTE = (
-    "note: each ref rebuilds its own facts inside the round, but no ref checks its own prompt "
-    "against the logged one; the prompt is checked by the code this command runs from only"
+    "note: each ref checks every human turn its own round sends against the logged turn of "
+    "the same position (printed per ref); the pre-round report is rebuilt, and a run refused, "
+    "by the code this command runs from"
+)
+# What a replay of a rebuilt input is, and what a retry the run never had measures: said once
+# per such run and in the summary line.
+REBUILT_NOTE = "a comparison of refs on a rebuilt input, not a reproduction of what the run did"
+EMPTY_RETRY_NOTE = (
+    "any difference in how a retry is handled is measured on a turn the run never had"
 )
 
 # What selects the round's requests in a worker log: its system text (``SYSTEM_PROMPT``).
@@ -154,17 +178,22 @@ _SUMMARY_SKIP = ("answers", "answers_masked", "verbatim_unseen")
 _NO_ROWS = '{"sentences": []}'
 
 LIMITS = (
-    "Limits: the answers after the retry are stored for two runs only; where the retry's "
-    "answer is not stored the retry is answered with no rows, an empty retry the run did not "
-    "have, and the run is marked first_turn_only; a first answer is recovered only where the "
-    "retry request repeats it; a text the prompt does not show is the stored one; where the "
-    "rebuilt prompt is not the logged one the round acts on an input the model was not shown, "
-    "and a run whose prompt differs in any block (a written passage, a fact, the judge's "
-    "decision, a debate mediation) or outside them is replayed only under --allow-differing, "
-    "every line of it marked with the kinds that differ and how many; the ledger is the "
-    "stored one and no sandbox report or evidence corpus is stored; under --compare the "
-    "pre-round report is rebuilt and the prompt checked by the code this command runs from, "
-    "not each ref's, while each ref rebuilds its own facts inside the round; the harness "
+    "Limits: final answers are replayed only where the run's record stores them; where the "
+    "retry's answer is not stored the retry is answered with no rows, an empty retry the run "
+    "did not have, the run is marked first_turn_only, and " + EMPTY_RETRY_NOTE + "; a first "
+    "answer is recovered only where the retry request repeats it, and the model's raw answer "
+    "text is fed only where the log holds it: an answer only the record keeps is fed "
+    "re-serialised from its parsed form, which need not be the text the round read, and the "
+    "run is marked answer_reserialised; a text the prompt does not show is the stored one; "
+    "the facts are rebuilt from the shortened stored ledger (the ledger after its byte "
+    "budget), and no sandbox report or evidence corpus is stored; where the rebuilt prompt "
+    "or the retry turn the round sends is not the logged one the round acts on an input the "
+    "model was not shown, and a run whose first turn differs in any block (a written passage, "
+    "a fact, the judge's decision, a debate mediation), in the blocks' order or outside them, "
+    "or whose retry turn differs, is replayed only under --allow-differing, every line of it "
+    "marked with the kinds that differ and how many: such a replay is " + REBUILT_NOTE + "; "
+    "under --compare the pre-round report is rebuilt and a run refused by the code this "
+    "command runs from, while each ref checks the turns its own round sends; the harness "
     "shows what the code does with a given answer, not what a model would answer to a "
     "changed question; results are judged by the labels, not by the code's own reading."
 )
@@ -175,13 +204,20 @@ MARKS = (
     "passages_differing",
     "facts_differing",
     "blocks_differing",
+    "first_turn_sent_reproduced",
+    "retry_reproduced",
+    "retry_first_difference",
+    "retry_blocks_differing",
     "first_turn_only",
     "first_answer_matches_record",
+    "answer_reserialised",
 )
 # The kinds of block a prompt is compared by, as ``blocks_differing`` names them, and what
 # each block's difference is: present in the logged prompt only, in the rebuilt one only, or
-# in both with another text. ``outside`` is the prompt's text outside every block.
-BLOCK_KINDS = ("written", "fact", "judge", "debate", "outside")
+# in both with another text. ``order`` names the blocks shown in both whose order differs;
+# ``outside`` is the prompt's text outside every block.
+BLOCK_KINDS = ("written", "fact", "judge", "debate", "order", "outside")
+_COUNTED = BLOCK_KINDS[:4]
 _WHERE = ("only_logged", "only_rebuilt", "text")
 _KIND_NAMES = {
     "written": "written passage(s)",
@@ -285,6 +321,12 @@ def agreement_requests(log: Path) -> Requests:
     return found
 
 
+def human_turns(turns: Sequence[Mapping[str, Any]] | None) -> list[str]:
+    """A request's human turns in order, its tool replies left out: the retry request repeats
+    the first turn and adds its correction after the answer."""
+    return [str(t["text"]) for t in turns or () if t["role"] == "user" and not t["tool"]]
+
+
 def prompt_of(turns: Sequence[Mapping[str, Any]]) -> str:
     """The round's human turn: the first user turn of its first request."""
     return next((str(t["text"]) for t in turns if t["role"] == "user"), "")
@@ -379,7 +421,9 @@ def blocks_of(prompt: str) -> tuple[dict[str, tuple[str, str]], str]:
 def block_differences(logged: str, rebuilt: str) -> dict[str, dict[str, list[str]]]:
     """Where two prompts differ, block by block and by kind (``BLOCK_KINDS``): per kind, the
     ids of the blocks shown in the logged prompt only, in the rebuilt one only, and in both
-    with another text. Empty where the two are the same."""
+    with another text; the blocks shown in both at another place in their order (``order``,
+    as the logged prompt orders them); and the text outside them. Empty where the two are the
+    same."""
     one, outside_one = blocks_of(logged)
     two, outside_two = blocks_of(rebuilt)
     out: dict[str, dict[str, list[str]]] = {}
@@ -390,6 +434,11 @@ def block_differences(logged: str, rebuilt: str) -> dict[str, dict[str, list[str
         kind = "written" if held in _WRITTEN else held
         where = "only_rebuilt" if pid not in one else "only_logged" if pid not in two else "text"
         out.setdefault(kind, {w: [] for w in _WHERE})[where].append(pid)
+    order_one = [pid for pid in one if pid in two]
+    order_two = [pid for pid in two if pid in one]
+    moved = [a for a, b in zip(order_one, order_two, strict=True) if a != b]
+    if moved:
+        out["order"] = {"only_logged": [], "only_rebuilt": [], "text": moved}
     if outside_one != outside_two or (logged != rebuilt and not out):
         out["outside"] = {"only_logged": [], "only_rebuilt": [], "text": ["outside"]}
     return out
@@ -404,6 +453,9 @@ def _differing_text(blocks: Mapping[str, Mapping[str, Sequence[str]]]) -> list[s
             continue
         if kind == "outside":
             said.append("the text outside the passages differs")
+            continue
+        if kind == "order":
+            said.append(f"order differs ({', '.join(held.get('text') or [])})")
             continue
         counts = [len(held.get(w) or []) for w in _WHERE]
         said.append(
@@ -578,7 +630,16 @@ class Recovery:
     not_found: list[str] = field(default_factory=list)
     not_writable: list[str] = field(default_factory=list)
     ids_taken_out: list[str] = field(default_factory=list)
+    # Each human turn this tree's round sends, checked against the logged turn of the same
+    # position: the first turn as sent, and the retry turn (``None`` where neither the log nor
+    # the replay holds one).
+    first_turn_sent_reproduced: bool | None = None
+    retry_reproduced: bool | None = None
+    retry_first_difference: int | None = None
+    retry_blocks_differing: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     first_turn_only: bool | None = None
+    # The turns whose answer is fed re-serialised from the record's parsed copy.
+    answer_reserialised: list[int] = field(default_factory=list)
     why: list[str] = field(default_factory=list)
     # Why the run is not replayed although it gives a case; empty where it is.
     refused: str = ""
@@ -586,10 +647,13 @@ class Recovery:
     tree: str = ""
     # What the replay is given: absent where the run gives it nothing to replay.
     case: dict[str, Any] | None = None
+    # The replay the turns were checked by, kept for the command to print.
+    record: dict[str, Any] | None = None
 
     def row(self) -> dict[str, Any]:
         out = asdict(self)
         out.pop("case")
+        out.pop("record")
         return out
 
 
@@ -707,7 +771,7 @@ def recover(run: Path, name: str | None = None, *, allow_differing: bool = False
     if answer is not None and answers:
         # Masked as the worker masked the record's copy (:func:`_rows_as_the_worker_keeps_them`).
         with _rows_as_the_worker_keeps_them():
-            found.first_answer_matches_record = _parsed(answer) == answers[0]
+            found.first_answer_matches_record = _parsed(answer) == _parsed(answers[0])
     prompt = prompt_of(requests.first)
     pre = pre_round_report(stored.report, prompt)
     found.not_found, found.not_writable = pre.not_found, pre.not_writable
@@ -734,34 +798,12 @@ def recover(run: Path, name: str | None = None, *, allow_differing: bool = False
             prompt[max(0, at - 60) : at + 60],
             rebuilt[max(0, at - 60) : at + 60],
         )
-    turns: list[Any] = []
-    source = ""
-    if answers:
-        # The record's own copy of what the round parsed; a log that repeats it differently
-        # is said (``first_answer_matches_record``), never read in its place.
-        turns.extend(answers)
-        source = "answers from the run's record"
-    elif answer is not None:
-        turns.append(answer)
-        source = "first answer from the retry request"
+    turns, source = _answers_fed(answer, answers)
     if not turns:
         return found
     found.first_turn_only = len(turns) < 2
-    if found.blocks_differing and not allow_differing:
-        named = "; ".join(
-            f"{kind}: " + ", ".join(pid for w in _WHERE for pid in held.get(w, []))
-            for kind, held in found.blocks_differing.items()
-            if kind != "outside"
-        )
-        found.refused = (
-            "the prompt the round's code builds here is not the logged one: "
-            + "; ".join(_differing_text(found.blocks_differing))
-            + (f" ({named})" if named else "")
-            + ", so the round would act on an input the model was not shown; replay it with "
-            "--allow-differing to have every line of it marked"
-        )
-        return found
-    found.case = {
+    found.answer_reserialised = [n for n, a in enumerate(turns, 1) if not isinstance(a, str)]
+    case: dict[str, Any] = {
         "run": found.run,
         "path": str(run),
         "report": pre.report.model_dump(mode="json"),
@@ -769,10 +811,84 @@ def recover(run: Path, name: str | None = None, *, allow_differing: bool = False
         "discussion": pre.discussion,
         "answers": turns,
         "answer_source": source,
+        # Every human turn of the round as logged, by position: the first and the retry's.
+        "logged_turns": human_turns(requests.retry or requests.first),
         "settings": stored.settings,
         **{mark: getattr(found, mark) for mark in MARKS},
     }
+    # This tree's round over the case: each human turn it sends is checked against the logged
+    # turn of the same position, the retry's among them.
+    record = replay_case(case)
+    for mark in _OWN_MARKS:
+        setattr(found, mark, copy.deepcopy(record[mark]))
+        case[mark] = copy.deepcopy(record[mark])
+    reasons = _refusals(found, record)
+    if reasons and not allow_differing:
+        found.refused = (
+            "; ".join(reasons) + ", so the round would act on an input the model was not "
+            "shown; replay it with --allow-differing to have every line of it marked"
+        )
+        return found
+    found.case = case
+    found.record = record
     return found
+
+
+def _answers_fed(answer: str | None, answers: Sequence[Any] | None) -> tuple[list[Any], str]:
+    """The answers the stub feeds, in turn order, and where they come from: the model's raw
+    first answer where the retry request repeats it, the record's copy of it otherwise, and
+    each later answer from the record (a parsed copy there, unless the record kept the text)."""
+    turns: list[Any] = []
+    if answer is not None:
+        turns.append(answer)
+    elif answers:
+        turns.append(answers[0])
+    turns.extend(list(answers or [])[1:])
+    if answer is None:
+        source = "answers from the run's record" if turns else ""
+    elif len(turns) > 1:
+        source = "first answer from the retry request, the retry's from the run's record"
+    else:
+        source = "first answer from the retry request"
+    return turns, source
+
+
+def _refusals(found: Recovery, record: Mapping[str, Any]) -> list[str]:
+    """Why the round would act on an input the model was not shown: its first turn as rebuilt
+    or as sent, or its retry turn, not the logged one."""
+    out: list[str] = []
+    if found.blocks_differing:
+        named = "; ".join(
+            f"{kind}: " + ", ".join(pid for w in _WHERE for pid in held.get(w, []))
+            for kind, held in found.blocks_differing.items()
+            if kind != "outside"
+        )
+        out.append(
+            "the prompt the round's code builds here is not the logged one: "
+            + "; ".join(_differing_text(found.blocks_differing))
+            + (f" ({named})" if named else "")
+        )
+    checks = {int(c["turn"]): c for c in record.get("turns_checked") or []}
+    if found.first_turn_sent_reproduced is False:
+        out.append(
+            "the first turn this tree's round sends is not the logged one: "
+            + "; ".join(_differing_text(checks[1]["blocks_differing"]))
+        )
+    if found.retry_reproduced is False:
+        retry = checks[2]
+        if not retry["sent"]:
+            said = "the log holds a retry turn the replay's round does not send"
+        elif not retry["logged"]:
+            said = "the replay's round sends a retry turn the log does not hold"
+        else:
+            said = (
+                f"the retry turn the round sends is not the logged one (differs at "
+                f"{retry['first_difference']}: logged {retry['context'][0]!r}, sent "
+                f"{retry['context'][1]!r}): "
+                + "; ".join(_differing_text(retry["blocks_differing"]))
+            )
+        out.append(said)
+    return out
 
 
 def _name(run: Path) -> str:
@@ -801,19 +917,84 @@ def _parsed(answer: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
+def turn_check(turn: int, logged: str | None, sent: str | None) -> dict[str, Any]:
+    """One human turn of the round against the logged turn of the same position, by the
+    block comparison of the first turn: whether each side holds it, whether the two are the
+    same, where they first differ and the blocks that differ."""
+    at = _first_difference(sent or "", logged or "")
+    return {
+        "turn": turn,
+        "logged": logged is not None,
+        "sent": sent is not None,
+        "reproduced": logged is not None and sent is not None and at is None,
+        "first_difference": at,
+        "context": (
+            ((logged or "")[max(0, at - 60) : at + 60], (sent or "")[max(0, at - 60) : at + 60])
+            if at is not None
+            else ("", "")
+        ),
+        "blocks_differing": block_differences(logged or "", sent or "") if at is not None else {},
+    }
+
+
+# The marks a replay sets from its own round's turns rather than from the recovery.
+_OWN_MARKS = (
+    "first_turn_sent_reproduced",
+    "retry_reproduced",
+    "retry_first_difference",
+    "retry_blocks_differing",
+)
+
+
+def own_marks(checks: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The marks of the turns a round sent (``_OWN_MARKS``): the first turn as sent, and the
+    retry turn, ``None`` where neither the log nor the round holds one."""
+    by_turn = {int(c["turn"]): c for c in checks}
+    first, retry = by_turn.get(1), by_turn.get(2)
+    return {
+        "first_turn_sent_reproduced": first["reproduced"] if first and first["logged"] else None,
+        "retry_reproduced": retry["reproduced"] if retry else None,
+        "retry_first_difference": retry["first_difference"] if retry else None,
+        "retry_blocks_differing": copy.deepcopy(retry["blocks_differing"]) if retry else {},
+    }
+
+
 class _Stub:
     """The model's place in the round: each turn answered with the stored answer for it, a
-    turn none is stored for with no rows."""
+    turn none is stored for with no rows; and each human turn the round sends checked
+    against the logged turn of the same position (``checks``)."""
 
-    def __init__(self, answers: Sequence[Any]) -> None:
+    def __init__(self, answers: Sequence[Any], logged: Sequence[str] = ()) -> None:
+        # A parsed answer is fed re-serialised: the case marks it (``answer_reserialised``).
         self.answers = [a if isinstance(a, str) else json.dumps(a) for a in answers]
+        self.logged = [str(t) for t in logged]
+        self.sent: list[str] = []
+        self.checks: list[dict[str, Any]] = []
         self.asked = 0
         self.unanswered = 0
         self.degradations: list[str] = []
 
-    async def ask(self, turns: list[Any], *_args: Any, **_kwargs: Any) -> Any:
-        from langchain_core.messages import AIMessage
+    def _check(self, said: str | None) -> None:
+        place = len(self.checks)
+        logged = self.logged[place] if place < len(self.logged) else None
+        self.checks.append(turn_check(place + 1, logged, said))
 
+    def finished(self) -> list[dict[str, Any]]:
+        """Every turn's check, with one for each logged turn the round never sent; none where
+        no turn is logged."""
+        if not self.logged:
+            return []
+        while len(self.checks) < len(self.logged):
+            self._check(None)
+        return self.checks
+
+    async def ask(self, turns: list[Any], *_args: Any, **_kwargs: Any) -> Any:
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        said = [_text(t.content) for t in turns if isinstance(t, HumanMessage)]
+        for text in said[len(self.sent) :]:
+            self.sent.append(text)
+            self._check(text)
         place = self.asked
         self.asked += 1
         if place >= len(self.answers):
@@ -973,7 +1154,7 @@ def replay_case(case: Mapping[str, Any]) -> dict[str, Any]:
         narrative = bool(case.get("narrative_written", True))
         discussion = list(case.get("discussion") or [])
         before = texts_of(report, narrative, discussion)
-        stub = _Stub(case.get("answers") or [])
+        stub = _Stub(case.get("answers") or [], case.get("logged_turns") or [])
         done = asyncio.run(
             ask_section_agreement(
                 stub,
@@ -995,6 +1176,8 @@ def replay_case(case: Mapping[str, Any]) -> dict[str, Any]:
         "tree": _tree_of(),
         "answer_source": case.get("answer_source"),
         **marks_of(case),
+        **(own_marks(stub.finished()) if stub.logged else {}),
+        "turns_checked": stub.finished(),
         "turns_asked": stub.asked,
         "turns_unanswered": stub.unanswered,
         "before": before,
@@ -1020,8 +1203,8 @@ def marks_of(record: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def mark_text(record: Mapping[str, Any]) -> str:
-    """The marks a printed line of a run carries: empty for a replay of the logged input with
-    both turns' answers, the logged first answer the record's."""
+    """The marks a printed line of a run carries: empty for a replay of the logged turns with
+    both turns' raw answers, the logged first answer the record's."""
     said = []
     if record.get("prompt_reproduced") is False:
         said.append(f"prompt not reproduced (differs at {record.get('first_difference')})")
@@ -1032,11 +1215,75 @@ def mark_text(record: Mapping[str, Any]) -> str:
             said.append(f"{len(record['passages_differing'])} written passage(s) differ")
         if record.get("facts_differing"):
             said.append(f"{len(record['facts_differing'])} fact, judge or debate block(s) differ")
+    if record.get("first_turn_sent_reproduced") is False:
+        said.append("the first turn this tree's round sends is not the logged one")
+    if record.get("retry_reproduced") is False:
+        said.append(
+            f"retry turn not reproduced (differs at {record.get('retry_first_difference')})"
+        )
+        said.extend(
+            f"retry: {t}" for t in _differing_text(record.get("retry_blocks_differing") or {})
+        )
     if record.get("first_turn_only"):
         said.append("first turn only")
     if record.get("first_answer_matches_record") is False:
         said.append("the log's first answer is not the record's")
+    if record.get("answer_reserialised"):
+        said.append(
+            "answer(s) "
+            + ", ".join(str(n) for n in record["answer_reserialised"])
+            + " re-serialised from the record"
+        )
     return f" [{'; '.join(said)}]" if said else ""
+
+
+def rebuilt_input(record: Mapping[str, Any]) -> bool:
+    """Whether a run's replay rests on a turn that is not the logged one: replayed only under
+    ``--allow-differing``."""
+    return bool(
+        record.get("prompt_reproduced") is False
+        or record.get("blocks_differing")
+        or record.get("first_turn_sent_reproduced") is False
+        or record.get("retry_reproduced") is False
+    )
+
+
+def empty_retry(record: Mapping[str, Any]) -> bool:
+    """Whether the replay's retry was answered by the harness's own empty answer."""
+    return bool(record.get("first_turn_only") and record.get("turns_unanswered"))
+
+
+def run_notes(record: Mapping[str, Any]) -> list[str]:
+    """What a run's replay is, said once per run: a comparison on a rebuilt input, and a retry
+    the run never had."""
+    return [
+        note
+        for note, holds in (
+            (REBUILT_NOTE, rebuilt_input(record)),
+            (EMPTY_RETRY_NOTE, empty_retry(record)),
+        )
+        if holds
+    ]
+
+
+def checks_text(record: Mapping[str, Any]) -> str:
+    """Each human turn a replay's round sent, against the logged one, as a line says it."""
+    said = []
+    for check in record.get("turns_checked") or []:
+        if check["reproduced"]:
+            what = "as logged"
+        elif not check["sent"]:
+            what = "logged, not sent"
+        elif not check["logged"]:
+            what = "sent, not logged"
+        else:
+            what = (
+                f"differs at {check['first_difference']} ("
+                + "; ".join(_differing_text(check["blocks_differing"]))
+                + ")"
+            )
+        said.append(f"turn {check['turn']} {what}")
+    return "; ".join(said) or "no logged turn to check"
 
 
 # ---------------------------------------------------------------------------
@@ -1326,30 +1573,44 @@ def _yes(value: bool | None) -> str:
     return "-" if value is None else "yes" if value else "no"
 
 
-def _block_counts(row: Recovery) -> str:
+def _block_counts(blocks: Mapping[str, Mapping[str, Sequence[str]]], checked: bool) -> str:
     """Per kind of block, how many differ: only logged / only rebuilt / in text."""
-    if row.prompt_reproduced is None:
+    if not checked:
         return "-"
-    return ", ".join(
-        f"{kind} "
-        + "/".join(str(len(row.blocks_differing.get(kind, {}).get(w, []))) for w in _WHERE)
-        for kind in BLOCK_KINDS[:-1]
-    ) + (", outside" if "outside" in row.blocks_differing else "")
+    return (
+        ", ".join(
+            f"{kind} " + "/".join(str(len(blocks.get(kind, {}).get(w, []))) for w in _WHERE)
+            for kind in _COUNTED
+        )
+        + (", order" if "order" in blocks else "")
+        + (", outside" if "outside" in blocks else "")
+    )
 
 
 def _print_recovery(rows: Sequence[Recovery]) -> None:
     print(
         "run | requests | request | first answer | final answers | prompt reproduced | "
-        "blocks differing per kind (only logged/only rebuilt/in text) | first turn only | replay"
+        "blocks differing per kind (only logged/only rebuilt/in text) | first turn as sent | "
+        "retry reproduced | retry blocks differing per kind | first turn only | "
+        "answers re-serialised | replay"
     )
     for row in rows:
         where = "" if row.first_difference is None else f" (differs at {row.first_difference})"
+        again = (
+            ""
+            if row.retry_first_difference is None
+            else f" (differs at {row.retry_first_difference})"
+        )
         replay = "refused" if row.refused else "yes" if row.case is not None else "-"
         print(
             f"{_safe(row.run)} | {row.requests} | {_yes(row.request_found)} | "
             f"{_yes(row.first_answer_found)} | {_yes(row.final_answers_stored)} | "
-            f"{_yes(row.prompt_reproduced)}{where} | {_block_counts(row)} | "
-            f"{_yes(row.first_turn_only)} | {replay}"
+            f"{_yes(row.prompt_reproduced)}{where} | "
+            f"{_block_counts(row.blocks_differing, row.prompt_reproduced is not None)} | "
+            f"{_yes(row.first_turn_sent_reproduced)} | {_yes(row.retry_reproduced)}{again} | "
+            f"{_block_counts(row.retry_blocks_differing, row.retry_reproduced is not None)} | "
+            f"{_yes(row.first_turn_only)} | "
+            f"{', '.join(str(n) for n in row.answer_reserialised) or '-'} | {replay}"
         )
 
 
@@ -1364,15 +1625,23 @@ def against_line(found: Sequence[str], record: Mapping[str, Any]) -> str:
 
 
 def summary_line(
-    differences: Sequence[Mapping[str, Any]], left: Sequence[Mapping[str, Any]]
+    differences: Sequence[Mapping[str, Any]],
+    left: Sequence[Mapping[str, Any]],
+    records: Sequence[Mapping[str, Any]] = (),
 ) -> str:
     """The closing line of two refs' differences: how many, how many not expected, how many
-    rest on marked input, and each marked run's marks."""
+    rest on marked input, each marked run's marks, and what the replay of each run on a
+    rebuilt input or with a retry the run never had is."""
     marked = [d for d in differences if mark_text(d)]
     runs = {str(d.get("run")): mark_text(d) for d in marked}
+    rebuilt = sorted({str(r.get("run")) for r in (*differences, *records) if rebuilt_input(r)})
+    empty = sorted({str(r.get("run")) for r in records if empty_retry(r)})
     return (
         f"{len(differences)} difference(s), {len(left)} not expected, {len(marked)} on marked "
-        "input" + "".join(f"; {_safe(run)}{said}" for run, said in sorted(runs.items()))
+        "input"
+        + "".join(f"; {_safe(run)}{said}" for run, said in sorted(runs.items()))
+        + (f"; {REBUILT_NOTE}: {', '.join(_safe(r) for r in rebuilt)}" if rebuilt else "")
+        + (f"; {EMPTY_RETRY_NOTE}: {', '.join(_safe(r) for r in empty)}" if empty else "")
     )
 
 
@@ -1408,6 +1677,8 @@ def _print_record(record: Mapping[str, Any]) -> None:
         )
         + marked
     )
+    for note in run_notes(record):
+        print(f"   note: {note}")
     for row in record["rows"]:
         print(
             f"   turn {row['turn']} row {row['row']} [{_safe(row['passage'])}] "
@@ -1445,7 +1716,8 @@ def _print_labels(lines: Sequence[Mapping[str, Any]]) -> None:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python scripts/replay/agreement_round.py",
-        description=(__doc__ or "").split("\n", 1)[0],
+        # The summary line and what the tool is on the stored runs as they stand.
+        description=" ".join(" ".join((__doc__ or "").split("\n\n")[:2]).split()),
         epilog=f"{LIMITS} {STATUSES}",
     )
     parser.add_argument("runs", nargs="*", type=Path, help="stored run directories")
@@ -1523,7 +1795,7 @@ def main(argv: list[str] | None = None) -> int:
         left_lines: list[str] = []
         for row in cases:
             assert row.case is not None
-            record = replay_case(row.case)
+            record = row.record if row.record is not None else replay_case(row.case)
             records[row.run] = record
             _print_record(record)
             if args.check_stored and row.final_answers_stored:
@@ -1565,8 +1837,19 @@ def main(argv: list[str] | None = None) -> int:
     ]
     left = unexpected(differences, _read_list(args.expect))
     _write(out / "differences.json", differences)
+    for run, under_a in by_ref["A"].items():
+        # Each ref's own turns against the logged ones, and what the run's replay is.
+        for side, ref in zip(("A", "B"), args.compare, strict=True):
+            mine = by_ref[side].get(run)
+            if mine is not None:
+                print(f"{_safe(run)} under {_safe(ref)}: {_safe(checks_text(mine))}")
+        for note in run_notes(under_a):
+            print(f"{_safe(run)}: note: {note}")
+    stored_left: list[str] = []
     if args.check_stored:
-        # Each ref's replay against the round as stored, where its answers are stored.
+        # Each ref's replay against the round as stored, where its answers are stored. Ref A's
+        # differences on a run with no marks are the harness testing itself and are counted;
+        # ref B's are the change measured and are printed only.
         for row in cases:
             if not row.final_answers_stored or row.case is None:
                 continue
@@ -1578,6 +1861,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{_safe(row.run)} under {_safe(ref)} {against_line(found, replayed)}")
                 for line in found:
                     print(f"   {_safe(line)}{mark_text(replayed)}")
+                if side == "A" and not mark_text(replayed):
+                    stored_left.extend(f"{row.run} under {ref}: {line}" for line in found)
     print(f"== {args.compare[0]} (A) against {args.compare[1]} (B)")
     print(COMPARE_NOTE)
     for d in differences:
@@ -1586,9 +1871,9 @@ def main(argv: list[str] | None = None) -> int:
         lines = label_lines(labels, by_ref, why_refused)
         _print_labels(lines)
         _write(out / "labels.json", lines)
-    print(summary_line(differences, left))
-    _closing(refused, [_difference_text(d) for d in left])
-    return _status(refused, bool(left))
+    print(summary_line(differences, left, list(by_ref["A"].values())))
+    _closing(refused, [_difference_text(d) for d in left] + stored_left)
+    return _status(refused, bool(left) or bool(stored_left))
 
 
 def _difference_text(d: Mapping[str, Any]) -> str:
