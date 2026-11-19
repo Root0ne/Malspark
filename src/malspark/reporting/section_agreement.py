@@ -4812,7 +4812,8 @@ def _row_violations(
                 violation,
                 message=(
                     f"row {safe_finding_value(index + 1)}: the rewrite of "
-                    f"{safe_finding_value(passage.id)}: {safe_finding_value(violation.message)}"
+                    f"{safe_finding_value(passage.id)}: "
+                    f"{safe_finding_value(violation.message, whole=violation.instructs)}"
                 ),
                 sentence="",
                 path=f"{path}.rewrite",
@@ -7553,8 +7554,11 @@ def rewrites_violations(
         found = [
             replace(
                 violation,
+                # A finding that says what to do is passed whole, each value in it
+                # already bounded where it was written (``Violation.instructs``).
                 message=(
-                    f"row {safe_finding_value(index + 1)}: {safe_finding_value(violation.message)}"
+                    f"row {safe_finding_value(index + 1)}: "
+                    f"{safe_finding_value(violation.message, whole=violation.instructs)}"
                 ),
                 sentence="",
                 path=f"sentences.{index}.rewrite",

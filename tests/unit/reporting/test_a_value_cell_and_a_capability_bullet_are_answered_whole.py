@@ -652,7 +652,7 @@ _KEEP_TOLD = (
 _NOT_SHOWN = (
     "row 1: [ev_0999] is not an entry this answer was shown. Cite an entry by its evidence id "
     "in brackets — this answer may cite ev_0101, ev_0102, ev_0103, ev_0104, ev_0107, ev_0109 — "
-    "or write the sentence witho…"
+    "or write the sentence without a bracketed citation."
 )
 _UNGROUNDED = (
     "row 1: the rewrite cites none of the ids its sources cite. Cite the entry a source rests "
