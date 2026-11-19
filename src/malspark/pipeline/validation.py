@@ -17427,6 +17427,8 @@ def technique_absence_sources(
                 continue
             ref = str(getattr(claim, "evidence_ref", "") or "")
             said = f"{getattr(claim, 'claim', '') or ''} {ref}"
+            # Cited entries sorted as in ``technique_roots``; no output reads
+            # this order, since the sources are sorted below.
             read(tid, said, [*sorted(entry_ids_in(said)), *item_ids_in(ref)])
         for finding in getattr(isr, "findings", None) or []:
             said = f"{getattr(finding, 'title', '') or ''} {getattr(finding, 'detail', '') or ''}"
@@ -17547,6 +17549,8 @@ def technique_sources(
                 continue
             ref = str(getattr(claim, "evidence_ref", "") or "")
             said = f"{getattr(claim, 'claim', '') or ''} {ref}"
+            # The entries one statement cites, sorted as in ``technique_roots``
+            # (fixed-width ids sort in issue order; another width as a string).
             cited = [*sorted(entry_ids_in(said)), *item_ids_in(ref)]
             add(tid, cited_sources(said, cited, tid, str(getattr(claim, "claim", "") or "")))
         for finding in getattr(isr, "findings", None) or []:

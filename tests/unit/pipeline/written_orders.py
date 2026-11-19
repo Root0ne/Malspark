@@ -52,7 +52,7 @@ def _claim(said: str) -> Any:
 
 
 def corroboration_lists() -> dict[str, Any]:
-    from malspark.pipeline.validation import corroboration
+    from malspark.pipeline.validation import corroboration, technique_sources
     from malspark.schemas.isr_models import AgentISR
 
     # ev_0100..ev_0102 are cited and never filed: each gives a reason, not a root.
@@ -65,6 +65,8 @@ def corroboration_lists() -> dict[str, Any]:
     return {
         "evidence_roots": row.get("evidence_roots") or [],
         "roots_not_read": row.get("roots_not_read") or [],
+        # The sources in the order the statements cite them, each statement sorted.
+        "sources": list(technique_sources({"static": isr}, _ledger()).get("T1027") or {}),
     }
 
 

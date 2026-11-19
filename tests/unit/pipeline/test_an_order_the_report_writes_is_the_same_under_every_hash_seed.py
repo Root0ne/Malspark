@@ -37,6 +37,16 @@ EXPECTED: dict[str, Any] = {
             "ev_0101: no: ev_0101 is not an entry of this run's ledger",
             "ev_0102: no: ev_0102 is not an entry of this run's ledger",
         ],
+        "sources": [
+            "ev_0001",
+            "ev_0003",
+            "ev_0005",
+            "ev_0007",
+            "ev_0009",
+            "ev_0012",
+            "ev_0002",
+            "ev_0011",
+        ],
     },
     "dropped_values": ["0x401000", "T1027", "Alpha", "bravo", "charlie", "delta", "echo"],
     "platform_warnings": [
@@ -48,20 +58,32 @@ EXPECTED: dict[str, Any] = {
 }
 
 
-def _written(seed: str) -> dict[str, Any]:
-    done = subprocess.run(  # noqa: S603 - this interpreter and a script of this repository
-        [sys.executable, str(HELPER)],
-        env={**os.environ, "PYTHONHASHSEED": seed},
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
-    assert done.returncode == 0, done.stderr[-2000:]
-    return json.loads(done.stdout)
+SEEDS = ("0", "1", "2", "3")
+
+
+def _written() -> dict[str, dict[str, Any]]:
+    """The helper's output per seed, the four processes run at once."""
+    running = {
+        seed: subprocess.Popen(  # noqa: S603 - this interpreter and a script of this repository
+            [sys.executable, str(HELPER)],
+            env={**os.environ, "PYTHONHASHSEED": seed},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for seed in SEEDS
+    }
+    written: dict[str, dict[str, Any]] = {}
+    for seed, process in running.items():
+        out, err = process.communicate(timeout=120)
+        assert process.returncode == 0, f"seed {seed}: {err[-2000:]}"
+        written[seed] = json.loads(out)
+    return written
 
 
 def test_every_seed_writes_the_order_the_data_gives() -> None:
-    written = {seed: _written(seed) for seed in ("0", "1", "2", "3")}
-    assert all(orders == written["0"] for orders in written.values()), written
-    assert written["0"] == EXPECTED
+    written = _written()
+    for seed, orders in written.items():
+        assert orders == written["0"], f"seed {seed} differs from seed 0"
+    for seed, orders in written.items():
+        assert orders == EXPECTED, f"seed {seed}"
