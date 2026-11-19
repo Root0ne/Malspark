@@ -37,6 +37,7 @@ from typing import Annotated, Any, Union, get_args, get_origin
 from pydantic import ValidationError
 
 from malspark.agents.claim_headings import claim_blocks, count_claims_begun
+from malspark.agents.prompt_fragments import TECHNIQUE_LINE_RULE
 from malspark.agents.run_evidence_corpus import CorpusState, both_searched
 from malspark.agents.tool_fence import quoted_value
 
@@ -632,11 +633,7 @@ def technique_line_violation(lines: list[str]) -> Violation:
         code=TECHNIQUE_LINE_UNREAD_CODE,
         message=(
             f"{len(lines)} claim(s) have a TECHNIQUE line that is not technique ids or "
-            f"NONE, so no technique is read from them: {shown}. Write each claim's "
-            "technique ids alone, several separated by commas, or NONE when it claims "
-            "none. An id the claim does not assert (negated, absent, not supported) is "
-            "left off the line, and the claim sentence says so; a doubt about an id the "
-            "claim does assert is said in the claim and in its CONFIDENCE."
+            f"NONE, so no technique is read from them: {shown}. {TECHNIQUE_LINE_RULE}"
         ),
     )
 

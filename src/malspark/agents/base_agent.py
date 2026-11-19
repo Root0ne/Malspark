@@ -63,6 +63,7 @@ from malspark.agents.prompt_fragments import (
     CLAIM_FORMAT_FRAGMENT,
     CLAIM_FORMAT_WITHOUT_TECHNIQUE_FRAGMENT,
     KEEP_REPLY,
+    TECHNIQUE_LINE_RULE,
 )
 from malspark.agents.technique_facts import (
     STANDING_FACTS_CHARS,
@@ -73,6 +74,8 @@ from malspark.agents.technique_facts import (
 from malspark.agents.tool_answer_clearing import (
     CLEARED_FOR_REFUSAL,
     CLEARED_FOR_TIER,
+    THE_RUNS_LEDGER,
+    THIS_ANALYSIS,
     Clearing,
     ToolAnswerClearing,
     read_evidence_tool,
@@ -1193,6 +1196,40 @@ def _stored_copy_of(recorder: Any) -> Callable[[str], Any]:
         return None
 
     return copy
+
+
+def read_again_over(
+    recorder: Any, run_reads: Any = None, *, briefed: bool = True
+) -> tuple[Callable[[str], str | None], Callable[[str], Any], str]:
+    """What a loop's ``read_evidence`` reads: its own entries first, then the run's ledger.
+
+    ``run_reads`` is the job's ledger outside this loop (``LedgerReads``), or
+    ``None`` to read this loop's entries alone. Returns the stored answer and
+    the stored copy of an id, and whose ids an unknown one is said not to be
+    (:func:`tool_answer_clearing.unknown_evidence_message`): the run's ledger
+    where the loop reads one, and this analysis's own otherwise. ``briefed``
+    false is a loop whose ``run_reads`` hold only its analysis's own earlier
+    entries, no run's ledger, and is said to read those. The recorder is
+    given the run's ledger too, so a read of an entry another loop filed is
+    filed as a repeat of that entry, as a read of its own is
+    (``evidence_recorder``, ``EvidenceRecorder.outside``).
+    """
+    own_answer, own_copy = _stored_answer_of(recorder), _stored_copy_of(recorder)
+
+    def answer_of(entry_id: str) -> str | None:
+        found = own_answer(entry_id)
+        if found is None and run_reads is not None:
+            found = run_reads.lookup(entry_id)
+        return found
+
+    def copy_of(entry_id: str) -> Any:
+        if recorder.filed(recorder.holder_of(entry_id)) or run_reads is None:
+            return own_copy(entry_id)
+        return run_reads.stored_copy(entry_id)
+
+    recorder.outside = run_reads
+    holds = THE_RUNS_LEDGER if run_reads is not None and briefed else THIS_ANALYSIS
+    return answer_of, copy_of, holds
 
 
 def _loop_binding(loop_model: Any, llm: Any) -> Any | None:
@@ -3819,6 +3856,7 @@ _REVISION_ISR_FRAMING = (
 _REVISION_ISR_FORMAT = (
     "Format your response as structured claims (CLAIM/EVIDENCE/CONFIDENCE/TECHNIQUE)\n"
     "followed by a DISPUTES section listing peer claims you reject.\n"
+    f"{TECHNIQUE_LINE_RULE}\n"
     "Example:\n"
     "CLAIM: ...\nEVIDENCE: ...\nCONFIDENCE: 0.8\nTECHNIQUE: T1071\n---\n"
     "DISPUTES:\n- Static analyst says no C2 strings but PCAP shows beaconing.\n"
@@ -5104,11 +5142,18 @@ class _PriorAnswer:
         # merge of chunks. ``shown`` replaces it where only part of the answer
         # is sent back: an answer that repeated its claims is shown up to the
         # first claim that repeats.
-        self.content = (
-            shown
-            if shown is not None
-            else isr.answer_text or isr.unparsed_answer or isr.to_text_summary()
-        )
+        self.content = shown if shown is not None else answer_shown_back(isr)
+
+
+def answer_shown_back(isr: AgentISR) -> str:
+    """The answer a validation turn shows the analyst as its own: as written, where one wrote it.
+
+    An ISR no single answer produced (a merge of chunks) is shown as its
+    claims summary, with each TECHNIQUE line no id was read from as written:
+    the question about such a line quotes it, and the summary prints only
+    the ids that were read.
+    """
+    return isr.answer_text or isr.unparsed_answer or isr.to_text_summary(technique_lines=True)
 
 
 def alignment_gate(knowledge: Any, cfg_validation: Any, log: Any, name: str) -> Any | None:
@@ -5693,6 +5738,42 @@ class BudgetMeter:
         except Exception as exc:  # noqa: BLE001 — an answer read again unsized is still an answer
             self.logger.debug("%s: no answer guardrail for read_evidence (%s).", self.name, exc)
             return None
+
+    def _run_ledger_reads(self) -> Any | None:
+        """``LedgerReads`` over the job's ledger and this analysis's own earlier entries, or ``None``.
+
+        The ledger of the state :func:`pipeline.nodes.brief_agent` handed it
+        (``run_state_source``), which is assigned on every brief, so it is
+        always this job's: a loop reads no other job's entries. Beside it the
+        entries this analysis filed in its earlier chunks and loops and has
+        not yet handed over (``_evidence_entries``), whose ids the chunk's
+        prompt and the run-state lines name (``earlier_chunks_block``,
+        :func:`current_run_state`); an id both hold is read once, from the
+        ledger. ``None`` when neither holds an entry.
+        """
+        source = getattr(self, "run_state_source", None)
+        ledger = source.get("evidence_ledger") if isinstance(source, Mapping) else None
+        rows = [*(ledger or ()), *(getattr(self, "_evidence_entries", None) or ())]
+        if not rows:
+            return None
+        from malspark.agents.ledger_reads import LedgerReads
+
+        return LedgerReads(
+            rows, sizer=self._answer_sizer(), spill=getattr(self, "evidence_spill", None)
+        )
+
+    def _read_again_over(
+        self, recorder: Any
+    ) -> tuple[Callable[[str], str | None], Callable[[str], Any], str]:
+        """What this agent's loop reads again (:func:`read_again_over`), and what it says it reads.
+
+        The run's ledger where the agent was briefed with a run state
+        (``run_state_source``) and a row stands to read, of the job's ledger
+        or of this analysis's earlier entries; otherwise its reads are this
+        analysis's own entries, and its description and remedy say so.
+        """
+        briefed = isinstance(getattr(self, "run_state_source", None), Mapping)
+        return read_again_over(recorder, self._run_ledger_reads(), briefed=briefed)
 
     def _server_registry(self) -> Any | None:
         """The job's tool-server registry, or None when this agent runs bare."""
@@ -7101,14 +7182,13 @@ class BaseAnalyst(BudgetMeter, ABC):
         # built again with it (``_offer_read_again``), from public calls only.
         self._offered_after_clear = []
         clearing: ToolAnswerClearing | None = self._tool_answer_clearing()
+        # The loop's own entries first, then the run's ledger and this
+        # analysis's earlier entries: the ids the analyst's prompt shows (the
+        # pack's, an upstream analyst's, an earlier chunk's) are read as its
+        # own are, each filed as a repeat of the entry it reads.
+        answer_of, copy_of, holds = self._read_again_over(recorder)
         read_tool = record_tools(
-            [
-                read_evidence_tool(
-                    _stored_answer_of(recorder),
-                    self._answer_sizer(),
-                    _stored_copy_of(recorder),
-                )
-            ],
+            [read_evidence_tool(answer_of, self._answer_sizer(), copy_of, holds=holds)],
             recorder,
             repeats,
             repairs,
@@ -11281,9 +11361,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             def _turns(text: str, prior: str | None = None) -> list[Any]:
                 asked = _with_feedback(
                     messages,
-                    first_answer.answer_text or first_answer.to_text_summary()
-                    if prior is None
-                    else prior,
+                    answer_shown_back(first_answer) if prior is None else prior,
                     # As the turn without the branches is measured: they go first.
                     _left_out(shown),
                     closing=text,
@@ -13121,15 +13199,21 @@ class BaseAnalyst(BudgetMeter, ABC):
             blocks_without_confidence=read.without_confidence,
             confidence_unreadable=read.confidence_unreadable,
         )
-        return self._keep_claims_for_function_map(self._with_claims_read(isr))
+        isr = self._keep_claims_for_function_map(self._with_claims_read(isr))
+        # The answer as written, as the lenient reading records it: the
+        # validation turn shows the analyst this, and its questions quote
+        # lines (an unread TECHNIQUE line) the claims summary does not print.
+        isr.note_answer_text(self._written_answer(content))
+        return isr
 
-    def _text_to_isr(self, text: str, revision_round: int) -> AgentISR:
-        """Convert a free-text report into a minimal AgentISR.
+    def _written_answer(self, text: str) -> str:
+        """``text`` as the model wrote it: its findings block put back, its tool-call markup out.
 
-        The ISR carries the answer it was parsed from as the model wrote it
-        (``AgentISR.answer_text``): the findings block ``_capture_findings``
-        took out of ``text`` is put back, because the validation turn shows the
-        analyst its own answer and the block is part of it.
+        ``_capture_findings`` took the block out of the answer ``text`` is the
+        prose of; it is part of the answer the validation turn shows back.
+        Tool-call markup a model wrote into its answer is not part of it — the
+        parser reads none of it — and replayed into a tool-free turn it would
+        be shown back as something to write again.
         """
         written = text
         last = getattr(self, "_last_written_answer", None)
@@ -13137,11 +13221,17 @@ class BaseAnalyst(BudgetMeter, ABC):
             written = str(last[1])
         # Read once: the next answer's block is its own.
         self._last_written_answer = None
+        return strip_tool_call_scaffolding(written)
+
+    def _text_to_isr(self, text: str, revision_round: int) -> AgentISR:
+        """Convert a free-text report into a minimal AgentISR.
+
+        The ISR carries the answer it was parsed from as the model wrote it
+        (``AgentISR.answer_text``, :meth:`_written_answer`).
+        """
+        written = self._written_answer(text)
         isr = self._keep_claims_for_function_map(self._parse_answer_text(text, revision_round))
-        # Tool-call markup a model wrote into its answer is not part of it —
-        # the parser reads none of it — and replayed into a tool-free turn it
-        # would be shown back as something to write again.
-        isr.note_answer_text(strip_tool_call_scaffolding(written))
+        isr.note_answer_text(written)
         return isr
 
     def _parse_answer_text(self, text: str, revision_round: int) -> AgentISR:

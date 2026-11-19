@@ -202,6 +202,17 @@ FINDINGS_BLOCK_FRAGMENT = (
 #
 # Each tool result the analyst is shown opens with its id in brackets, so the
 # id is in front of the model when it writes the line.
+#
+# What the TECHNIQUE line holds, in the words the unread-line question uses
+# (``validation.technique_line_violation``): stated where the format is given,
+# so the line is written that way the first time rather than asked about.
+TECHNIQUE_LINE_RULE = (
+    "Write each claim's technique ids alone, several separated by commas, or NONE when "
+    "it claims none. An id the claim does not assert (negated, absent, not supported) is "
+    "left off the line, and the claim sentence says so; a doubt about an id the claim "
+    "does assert is said in the claim and in its CONFIDENCE."
+)
+
 CLAIM_FORMAT_FRAGMENT = (
     "Format each finding as:\n"
     "CLAIM: <claim text>\n"
@@ -210,6 +221,7 @@ CLAIM_FORMAT_FRAGMENT = (
     "CONFIDENCE: <float>\n"
     "TECHNIQUE: <T-ID, several separated by commas, or NONE>\n"
     "---\n"
+    f"{TECHNIQUE_LINE_RULE}\n"
 )
 
 # The same shape for an agent that is not asked for techniques
@@ -234,11 +246,19 @@ CLAIM_FORMAT_WITHOUT_TECHNIQUE_FRAGMENT = (
 # The second half is the load-bearing half. A detection ratio is one source
 # among the run's own, and an analyst that reads it as the answer has stopped
 # analysing -- which is the failure mode a reputation tool invites.
+#
+# A reputation answer the evidence an analyst was given already holds (the
+# pipeline's pack often carries the sample's lookup) is cited by its entry;
+# a lookup adds what no entry holds. No lookup is forbidden. The seeded
+# generic prompts (``agents.prompts``) carry the same sentence.
 REPUTATION_LOOKUP_FRAGMENT = (
-    "\n\nWhen a reputation tool is among your tools, look the sample's hash up once, "
-    "cite what comes back with its evidence id like any other tool result, and weigh "
-    "it as one source: a reputation label is not the verdict, and an unknown hash is "
-    "not a clean sample."
+    "\n\nWhen a reputation tool is among your tools: where an entry you were given "
+    "already holds a reputation answer for a value, such as the sample's hash, cite that "
+    "entry by its evidence id rather than asking again; a lookup adds what no entry you "
+    "were given holds, and you cite what comes back with its evidence id like any other "
+    "tool result. "
+    "Weigh a reputation answer as one source: a reputation label is not the verdict, and "
+    "an unknown hash is not a clean sample."
 )
 
 

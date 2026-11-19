@@ -2507,18 +2507,21 @@ FORMER_SEED_PROMPT_DIGESTS: dict[str, frozenset[str]] = {
             "6a73348166297c3296f6f829727799b5929c4ec55049e281edb44b7f6b810267",
             "486bffd12746ef38cdd4bcdc94413e03584a5009abb2e4f5bfde6a6d6d3e2875",
             "f0add93b08ffd9897fdb84d80f16f8b956681e28c2c3fbce8276f2746c6388b7",
+            "92a7c46822a62261aa3ece79d887a94190135aaa02e49798ba4d5bc27f0b0c40",
         }
     ),
     "triage": frozenset(
         {
             "548dbd4f8a38495320ccfc5076a6b81df32581e2748d794003cb27702c948583",
             "8222ed6448b01cae52ff39debdbef1abe0283fa9450120db24829f46c57c9409",
+            "43d6e144eb344c175c9b84808e9767e24655d502dec809509e85ed77f9f64518",
         }
     ),
     "android_static": frozenset(
         {
             "22e4389d96dd022526f33c0bb95c5edd75b51f3a4ce53cfbe3806397efa83609",
             "19a98551834f425c1af85400754d7c22c26f88b6160cab4567d0ca7ba308873e",
+            "9f672152b854ccae4d96351c91a69e35d426250ac1a9e2de16caaf429a8d4902",
         }
     ),
     "lead": frozenset(

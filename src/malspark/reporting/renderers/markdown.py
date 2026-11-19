@@ -69,6 +69,7 @@ from malspark.analysis.run_summary import (
 from malspark.analysis.technique_ids import ID_BODY
 from malspark.analysis.tool_effects import INTRO_SENTENCE as EFFECTS_INTRO
 from malspark.analysis.tool_effects import effects_lines
+from malspark.core.confidence_words import confidence_word
 from malspark.core.logger import logger
 from malspark.core.rule_matches import is_rule_fact
 from malspark.core.undeclared_tools import (
@@ -192,27 +193,8 @@ VOICES: frozenset[str] = frozenset(
 # Confidence in words
 # ---------------------------------------------------------------------------
 
-# The word a number reads as. A deterministic reading of the producer's own
-# number, printed beside it and never instead of it. Only confidence levels are
-# written here; likelihood words belong to the models' prose.
-CONFIDENCE_WORDS: tuple[tuple[float, str], ...] = (
-    (0.90, "high confidence"),
-    (0.70, "moderate-to-high confidence"),
-    (0.50, "moderate confidence"),
-    (0.30, "low confidence"),
-    (0.0, "very low confidence"),
-)
-
-
-def confidence_word(value: float | None) -> str:
-    """The fixed word for a confidence number, or ``not assessed`` for none."""
-    if value is None:
-        return "not assessed"
-    rounded = round(float(value), 2)
-    for floor, word in CONFIDENCE_WORDS:
-        if rounded >= floor:
-            return word
-    return CONFIDENCE_WORDS[-1][1]
+# The word a number reads as, from the one table the judge is shown too
+# (``core.confidence_words``).
 
 
 def confidence_phrase(value: float | None, producer: str = "") -> str:

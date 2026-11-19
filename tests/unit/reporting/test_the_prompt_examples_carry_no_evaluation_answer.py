@@ -130,7 +130,9 @@ from malspark.agents.static_analyst import (
 )
 from malspark.agents.tool_answer_clearing import (
     READ_EVIDENCE_DESCRIPTION,
+    READ_OWN_EVIDENCE_DESCRIPTION,
     UNKNOWN_EVIDENCE_REMEDIATION,
+    UNKNOWN_OWN_EVIDENCE_REMEDIATION,
     cleared_reference,
     read_again_note,
     unknown_evidence_message,
@@ -2373,7 +2375,9 @@ PROMPTS: dict[str, str] = {
             unknown_evidence_message("ev_0002"),
             read_again_note("ev_0001"),
             READ_EVIDENCE_DESCRIPTION,
+            READ_OWN_EVIDENCE_DESCRIPTION,
             UNKNOWN_EVIDENCE_REMEDIATION,
+            UNKNOWN_OWN_EVIDENCE_REMEDIATION,
         ]
     ),
     "a tool answer the conversation had no room for, as told and as recorded": " ".join(

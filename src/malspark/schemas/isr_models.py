@@ -590,7 +590,12 @@ def _technique_written(claim: ClaimEvidence) -> str:
 
 
 def claim_summary_line(
-    number: int, claim: ClaimEvidence, block: Sequence[ClaimEvidence] = (), written: str = ""
+    number: int,
+    claim: ClaimEvidence,
+    block: Sequence[ClaimEvidence] = (),
+    written: str = "",
+    *,
+    technique_line: bool = False,
 ) -> str:
     """One claim as an ISR summary shows it to a model (``AgentISR.to_text_summary``).
 
@@ -601,9 +606,14 @@ def claim_summary_line(
     listed several ids is one claim, shown once with all of its ids.
     ``written`` is the round its text was last written, as a later mediation
     is told it (:func:`written_round_note`), shown last among the notes.
+    ``technique_line`` adds a TECHNIQUE line no id was read from, as written:
+    for the analyst shown its own answer as this summary, whose question
+    about the line quotes it.
     """
     ids = list(dict.fromkeys(w for c in (block or (claim,)) if (w := _technique_written(c))))
     tech = f" ({', '.join(ids)})" if ids else ""
+    if technique_line and not ids and claim.technique_line:
+        tech = f" | TECHNIQUE: {claim.technique_line}"
     noted = f" {claim.heading_note}" if claim.heading_note else ""
     failed = f" ({FAILED_CALLS_MARKER})" if claim.cites_only_failed_calls else ""
     retried = (
@@ -881,7 +891,9 @@ class AgentISR(BaseModel):
             blocks[index].append(claim)
         return blocks
 
-    def to_text_summary(self, last_round: int | None = None) -> str:
+    def to_text_summary(
+        self, last_round: int | None = None, *, technique_lines: bool = False
+    ) -> str:
         """Render this ISR as a concise human-readable text block.
 
         Used when the ISR must be passed to an LLM prompt as context.
@@ -889,7 +901,8 @@ class AgentISR(BaseModel):
         is the revision round held right before a debate's later mediation:
         each claim whose text an earlier mediation read then states the round
         it was last written (:func:`written_round_note`). ``None``, every
-        other surface, renders no such note.
+        other surface, renders no such note. ``technique_lines`` shows each
+        TECHNIQUE line no id was read from as written (:func:`claim_summary_line`).
         """
         lines: list[str] = [
             f"[{self.agent_id.upper()} ANALYST — round {self.revision_round}]",
@@ -905,7 +918,8 @@ class AgentISR(BaseModel):
                 if last_round is not None
                 else ""
             )
-            lines.append(f"  {claim_summary_line(i, block[0], block, written)}")
+            line = claim_summary_line(i, block[0], block, written, technique_line=technique_lines)
+            lines.append(f"  {line}")
 
         # An unknown the analyst names, for a peer, the mediator, the judge
         # or the lead that asked to route: never an absence, and absent from
