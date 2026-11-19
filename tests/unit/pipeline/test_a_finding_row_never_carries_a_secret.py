@@ -478,6 +478,9 @@ MESSAGE_BUILDERS: frozenset[str] = frozenset(
         # The cited ids a job never issued, each through the helper, and the
         # span of ids the job's own counter issued.
         "unissued_sentence",
+        # A wrong-entry question: the search, its spellings and what it found,
+        # each value and id through the helper.
+        "_wrong_entry_message",
     }
 )
 

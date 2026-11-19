@@ -73,7 +73,9 @@ class TestTheFinding:
         (found,) = wrong_entry_citations({"body": sentence}, _texts(), prose=("body",))
 
         assert found.quoted == (sentence,)
-        assert found.labels == (f'"{KEYWORD}" is not in ev_0105; ev_0107 (floss) holds it',)
+        assert found.labels == (
+            f'"{KEYWORD}" was not found whole in ev_0105; it was found whole in ev_0107 (floss)',
+        )
 
     def test_a_value_several_entries_hold_is_attributed_to_none(self) -> None:
         sentence = f"It opens the mutex `{MUTEX}` [ev_0102]."
@@ -81,7 +83,7 @@ class TestTheFinding:
         (found,) = wrong_entry_citations({"body": sentence}, _texts(), prose=("body",))
 
         (label,) = found.labels
-        assert label.endswith("; 2 other entries hold it")
+        assert label.endswith("; it was found whole in 2 other entries")
         assert "ev_0107" not in label and "ev_0109" not in label
 
     def test_a_row_is_named_by_its_text_under_the_ids_it_cites(self) -> None:
@@ -112,8 +114,8 @@ class TestTheReport:
 
         line = next(line for line in text.splitlines() if "reply parser" in line)
         assert "[ev_0105]" in line
-        assert "cited to an entry that does not hold it" in line
-        assert "ev_0107 (floss) holds it" in line
+        assert "cited to an entry it was not found whole in" in line
+        assert "it was found whole in ev_0107 (floss)" in line
 
     def test_a_row_is_marked_beside_its_evidence_and_no_other_place(self) -> None:
         wrong = {"key": "Stop word", "value": KEYWORD, "evidence_refs": ["ev_0105"]}
@@ -135,7 +137,7 @@ class TestTheReport:
         text = MarkdownRenderer().render(report)
 
         stop = next(line for line in text.splitlines() if line.startswith("| Stop word"))
-        assert "ev_0105 **[cited to an entry that does not hold it:" in stop
+        assert "ev_0105 **[cited to an entry it was not found whole in:" in stop
         halt = next(line for line in text.splitlines() if line.startswith("| Halt word"))
         assert "cited to an entry" not in halt
         reads = next(line for line in text.splitlines() if "also reads" in line)
@@ -156,8 +158,8 @@ class TestTheReport:
         text = MarkdownRenderer().render(report)
 
         line = next(line for line in text.splitlines() if "Replies end with" in line)
-        assert line.index("ev_0105") < line.index("cited to an entry that does not hold it")
-        assert "ev_0107 (floss) holds it" in line
+        assert line.index("ev_0105") < line.index("cited to an entry it was not found whole in")
+        assert "it was found whole in ev_0107 (floss)" in line
 
 
 class _RawLLM:
@@ -200,7 +202,7 @@ class TestTheComposer:
         (row,) = report.flagged_statements
         assert row.sentence == kept and row.code == CITATION_WRONG_ENTRY_CODE
         assert row.asked is True
-        assert "ev_0107 (floss) holds it" in row.label
+        assert "it was found whole in ev_0107 (floss)" in row.label
 
     def test_a_citation_fixed_after_the_question_is_not_marked(self) -> None:
         first = json.dumps({"body": f"It stops on `{KEYWORD}` [ev_0105].", "evidence_refs": []})
@@ -246,8 +248,11 @@ class TestTheLabel:
         text = MarkdownRenderer().render(report)
 
         line = next(line for line in text.splitlines() if "It stops on" in line)
-        assert line.count("cited to an entry that does not hold it") == 1
-        assert "ev_0107 (floss) holds it" in line and "2 other entries hold it" in line
+        assert line.count("cited to an entry it was not found whole in") == 1
+        assert (
+            "it was found whole in ev_0107 (floss)" in line
+            and "it was found whole in 2 other entries" in line
+        )
 
 
 def _narrative(*answers: str) -> MalwareReport:

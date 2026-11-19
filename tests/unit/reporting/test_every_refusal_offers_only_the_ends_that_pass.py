@@ -536,17 +536,19 @@ _EVERY_ROW = "Answer with every row again, this one included."
 _NOT_SHOWN = (
     "row 1: [ev_0999] is not an entry this answer was shown. Cite an entry by its evidence id in "
     "brackets — this answer may cite ev_0101, ev_0102, ev_0103, ev_0104, ev_0107, ev_0109, "
-    "ev_0112 — or write the sente…"
+    "ev_0112 — or write the sentence without a bracketed citation."
 )
 _WRONG_ENTRY = (
-    "row 1: 'QueryHostMode' is not in ev_0107 (lift_routine), which the text cites for it; this "
-    "run's evidence holds it in ev_0109 (routine_table). Cite the entry that holds the value the "
-    "text states."
+    "row 1: 'QueryHostMode' was not found as a whole value in the answer of ev_0107 "
+    "(lift_routine), which the sentence cites, read as written, as JSON writes it or as the "
+    "triage pack quotes it; it was found whole in ev_0109 (routine_table). Cite an entry that "
+    "holds the value as the text states it, or, where the cited entry writes it in another "
+    "spelling, keep the citation and say so in the text."
 )
 _MISSTATED = (
     "row 1: The text says ev_0107 (lift_routine) holds nothing ('Entry ev_0107 is empty "
     "[ev_0107].'); ev_0107 (lift_routine) holds 8 values in this run. State what the entry "
-    "holds, or cite the entry the statemen…"
+    "holds, or cite the entry the statement is about."
 )
 _NOT_READ = (
     "row 1: The text says 0x5a10 was not read ('Routine 0x5a10 was not read [ev_0107].'); "
@@ -2228,7 +2230,7 @@ TABLE: dict[str, list[str]] = {
         "report.absence_contradicts_ledger at sentences.0.rewrite: row 1: The text says 0x5a10 "
         "was not read ('The decompile of 0x5a10 failed [ev_0101], so the routine at 0x5a10 was "
         "not read, and five tool calls failed [ev_0107].'); ev_0107 (lift_routine) holds it in "
-        f"this r… {_LEFT_OUT}.",
+        f"this run. State what that entry shows, or say exactly what is absent. {_LEFT_OUT}.",
     ],
     "held limitations twice | rows naming no sentence of it | left out": [
         "agreement.sentence_not_found at sentences.0.sentence: row 1: the sentence does not "
