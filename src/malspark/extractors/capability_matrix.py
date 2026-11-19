@@ -108,6 +108,36 @@ _TACTIC_BY_SLUG: dict[str, tuple[str, str]] = {
 _TACTIC_NAME_BY_ID: dict[str, str] = {tid: name for tid, _slug, name in _TACTIC_TABLE}
 
 
+def tactic_order(domain: str = "enterprise") -> tuple[tuple[str, str], ...]:
+    """A domain's tactics as ``(tactic_id, name)``, in the ATT&CK matrix's column order.
+
+    The order is the column positions the vendored tactic catalogue carries,
+    which the ATT&CK update script writes from the bundle's own matrix; the
+    name is pinned as :func:`_resolve_tactic` pins it. A tactic the catalogue
+    gives no position is not in the tuple, and a catalogue with none (or none
+    readable) gives an empty one: no order is made up here, and the inlined
+    fallback table orders nothing. A new tuple on every call.
+    """
+    from malspark.memory import attck_loader
+
+    try:
+        columns = attck_loader._technique_table()[1].get(domain, {})
+    except Exception as exc:  # noqa: BLE001 — a catalogue read degrades, never raises
+        logger.debug("capability_matrix: no tactic catalogue for %s (%s)", domain, exc)
+        return ()
+    placed: dict[str, tuple[int, str]] = {}
+    for column in columns.values():
+        if column.position is None or not column.tactic_id:
+            continue
+        held = placed.get(column.tactic_id)
+        if held is None or column.position < held[0]:
+            placed[column.tactic_id] = (column.position, column.name)
+    return tuple(
+        (tid, _TACTIC_NAME_BY_ID.get(tid, name))
+        for tid, (_position, name) in sorted(placed.items(), key=lambda item: item[1][0])
+    )
+
+
 def build_capability_matrix(
     *,
     stix_output: dict[str, Any] | None,
