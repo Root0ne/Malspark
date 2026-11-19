@@ -10,7 +10,8 @@ first commit against itself renders the same units, and the build mode, which
 needs the tree's replay, is a surface produced by neither ref, listed with the
 reason on both sides and ending the comparison with its own status unless it is
 accepted; against the second, the one sentence is the one change on each surface that
-prints it (status 1), and an expectation naming it makes the status 0.
+prints it, on each line of a file that holds it and on each file, the length the
+headers serve included (status 1), and an expectation naming it makes the status 0.
 """
 
 from __future__ import annotations
@@ -70,13 +71,23 @@ def test_each_tree_is_rendered_by_this_driver_and_the_one_sentence_is_the_one_ch
         == 1
     )
     [diff] = json.loads(out.read_text(encoding="utf-8"))["runs"]
-    # The one sentence, on each surface that prints it: the bundle's JSON and its HTML cover.
-    assert sorted((c["mode"], c["surface"], c["change"]) for c in diff["changes"]) == [
-        ("serve", "bundle.html.header", "changed"),
-        ("serve", "bundle.lines", "changed"),
+    # The one sentence, on each surface that prints it: the bundle's JSON and its HTML cover;
+    # on the line of each file that holds it, and the length each file is served with.
+    files = ["evidence-bundle.html", "evidence-bundle.json"]
+    assert sorted((c["surface"], c["group"]) for c in diff["changes"] if c["mode"] == "serve") == [
+        ("bundle.html.header", "cover"),
+        ("bundle.lines", "Title"),
+        *[(rs.FILE_SURFACE, "the file differs")] * 4,
+        *sorted((rs.FILE_LINES, f"{name}{end}") for name in files for end in ("", ".headers")),
     ]
+    assert {c["mode"] for c in diff["changes"]} == {"serve"}
     for change in diff["changes"]:
-        assert OLD.lstrip("_") in change["old"] and NEW.lstrip("_") in change["new"]
+        if change["surface"] in {"bundle.lines", "bundle.html.header"}:
+            assert OLD.lstrip("_") in change["old"] and NEW.lstrip("_") in change["new"]
+        elif change["surface"] == rs.FILE_LINES and not change["group"].endswith(".headers"):
+            assert "The record behind" in change["old"] and "The evidence behind" in change["new"]
+        elif change["surface"] == rs.FILE_LINES:
+            assert change["old"].startswith("content-length: ")
 
     expect = tmp_path / "expect.json"
     expect.write_text(
@@ -88,7 +99,20 @@ def test_each_tree_is_rendered_by_this_driver_and_the_one_sentence_is_the_one_ch
                     "new": "The evidence behind",
                     "reason": "the bundle's opening line is reworded",
                 }
-                for surface in ("bundle.lines", "bundle.html.header")
+                for surface in ("bundle.lines", "bundle.html.header", rs.FILE_LINES)
+            ]
+            + [
+                {
+                    "surface": rs.FILE_LINES,
+                    "key": "headers",
+                    "new": "^content-length: ",
+                    "reason": "the bundle is served two bytes longer",
+                },
+                {
+                    "surface": rs.FILE_SURFACE,
+                    "key": "^evidence-bundle[.]",
+                    "reason": "the bundle's files hold the reworded line",
+                },
             ]
         ),
         encoding="utf-8",

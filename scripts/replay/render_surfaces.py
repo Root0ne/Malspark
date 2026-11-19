@@ -7,12 +7,14 @@ Over one or more stored runs, each a directory in the benchmark's layout::
 renders what a reader of the run is shown, at zero cost, and writes a surface
 record (``DIR/surfaces.json``) beside the rendered files (``DIR/<run>/<mode>/``:
 ``report.md``, ``report.html``, ``evidence-bundle.json``,
-``evidence-bundle.html``, ``iocs.json``, ``iocs-default.json``,
+``evidence-bundle.html``, the headers each of the last three is served with
+(``*.headers``), ``full.json``, ``iocs.json``, ``iocs-default.json``, one
+``iocs-<kind>.json`` per kind served only to a filter naming it,
 ``stix-bundle.json``, ``stix-judge.json``, ``stix-note.txt``, ``mitre.json``,
 ``misp-event.json``, ``attack-layer.json``, ``call-map.json``,
-``signatures.json`` and one rule download per kind). Nothing is written into a
-run's directory: every file of it is digested before and after, and the
-command fails when a digest changed.
+``signatures.json`` and two rule downloads per kind, ``include=all`` and
+``include=printed``). Nothing is written into a run's directory: every file of
+it is digested before and after, and the command fails when a digest changed.
 
 The record is a list of units, each with its ``surface``, the ``mode`` that
 produced it, a ``group`` (a section path, a figure id, a rule kind), a stable
@@ -22,8 +24,11 @@ value is left out unless it is shown to vary without a code change (the same
 ref rendered twice, and once more with the clock moved), and each such
 exclusion is listed with its proof in :data:`EXCLUDED`, in the record and in
 the comparison's output. None is listed: rendered twice and with the clock
-moved five years on, every unit and every file of a run is byte-equal. What
-each surface compares:
+moved five years on, every unit and every file of a run is byte-equal. Two
+sources of variance are pinned rather than excluded: the build's clock (see
+build mode) and the string hash seed each tree is rendered under
+(:data:`HASH_SEED`), which fixes an order the tree takes from a set. What each
+surface compares:
 
 =====================  ==========================================================
 surface                compared
@@ -39,7 +44,8 @@ surface                compared
                        text node as a block, a table row's cells joined, each
                        line of a style or a script (``.body``); every
                        ``title``, ``aria-label`` and ``alt`` attribute
-                       (``.attrs``)
+                       (``.attrs``); every start tag as written, each attribute
+                       and its value in it, in order (``.tags``)
 ``bundle.html.*``      the same, over ``/evidence-bundle.html``
 ``bundle.lines``       every line of every section of ``/evidence-bundle.json``,
                        blank and fenced ones too
@@ -47,6 +53,8 @@ surface                compared
 ``bundle.index``       each section's other fields, the header, the format, each
                        evidence entry and every other field of the document, as
                        canonical JSON
+``full``               each top-level field of ``/full`` as served, as JSON in
+                       its served key order
 ``iocs.default``,      each row ``/iocs`` serves (by default; with
 ``iocs.all``           ``include=all`` and the filter-only kinds), keyed by kind
                        and value, every other field as canonical JSON
@@ -68,16 +76,36 @@ surface                compared
 ``call_map``           the map's own fields and each function, every field
 ``rules``              each drafted rule's every field but its body, as
                        canonical JSON; ``rules.body``: every line of its body;
-                       ``rules.download``: every line of each kind's download
+                       ``rules.download``: every line of each kind's download,
+                       both ``include`` values
+``file.lines``         every line of every rendered file, in order, exactly as
+                       written: split at each line feed only, so a carriage
+                       return, the whitespace, the order of rows and keys and the
+                       final newline are each in a unit
 ``file``               each rendered file by digest: one that differs (or is on
-                       one side only) where no unit read from it does is a
-                       change, shown at its first differing line, so what the
-                       units do not hold (any other attribute, the whitespace,
-                       the order of rows and keys) is compared all the same
+                       one side only) is a change, whatever else changed in it,
+                       shown at its first differing line
 =====================  ==========================================================
 
-The API's routes and writers are the tree's own: the ``/stix`` route is called
-with the tree's service reading a row of the stored (or rebuilt) columns.
+The units of a surface may read a file more loosely than it is written: an
+HTML text has its whitespace runs said as one space, a style or script line
+its indentation stripped, a Markdown or rule line is split at every line
+break, a canonical JSON unit sorts its keys, and a STIX ref is said as its
+target's key. Each of these is kept for the unit's readability, and what it
+hides is a ``file.lines`` change of the same file.
+
+The API's routes and services are the tree's own: each route is called as the
+API calls it, with the tree's service reading a row of the stored (or rebuilt)
+columns (``/markdown``, ``/html``, ``/evidence-bundle.html``,
+``/evidence-bundle.json``, ``/full``, ``/iocs``, ``/signatures/{kind}``,
+``/stix``, ``/mitre``, ``/misp-event``, ``/attack-layer``) or the stored ledger
+rows (``/jobs/{id}/evidence/call-map``). A JSON answer is serialised as the
+API serialises it: through the route's ``response_model`` where it declares
+one (validated, then dumped in JSON mode with the route's options), else
+through FastAPI's encoder, and written in the served key order, never sorted,
+so a key moved or a value of another JSON type is a change. The HTML is
+rendered with a fixed nonce, so its ``<style nonce>`` and the policy header
+are the served ones.
 
 Two modes produce the units, and each unit says which:
 
@@ -93,7 +121,10 @@ Two modes produce the units, and each unit says which:
   clock is the stored report's: ``generated_at`` and every value the builder
   dates from the current time (the cover's date, the date inside the report
   number, the copyright year, the revision history's date) are set to the
-  stored report's before the export and the drafts read them.
+  stored report's before the export and the drafts read them. The tree's STIX
+  models read the same clock while the build runs (``get_utcnow``), so a
+  timestamp a model fills by default (an indicator's ``valid_from`` nobody
+  wrote) is the stored report's time, never the time of the render.
 
 A surface a tree cannot produce (a function its tree does not have, a stored
 file the run lacks, a report the replay could not rebuild) is listed under
@@ -140,6 +171,28 @@ Limits:
   its other fields (the transcript, the findings, the verdict reading, the
   section tabs) are not rendered; nor are the PDF (the HTML through WeasyPrint),
   the job package and the console, which draws the API's JSON;
+* routes and variants not rendered (:data:`NOT_RENDERED`): ``/iocs`` with
+  ``include=unpublished`` or a ``kind`` filter other than the kinds served only
+  when named, ``/attack-layer`` with a ``domain``, the ``download`` variant of
+  ``/html`` and ``/evidence-bundle.html``, ``/reports/{id}/timeline``,
+  ``/reports/diff``, ``/jobs/{id}/evidence``, ``/jobs/{id}/evidence/verify``,
+  ``/jobs/{id}/evidence/{entry_id}/objects/{part}``, ``/jobs/{id}/follow-ups``,
+  ``/jobs/{id}/usage`` and ``/jobs/{id}/events``;
+* the routes are called with a service reading one row and no settings store:
+  the layout the service reads from the store falls back to the process's
+  settings, which the replay guard sets to the run's;
+* stages of the report node build mode does not run (:data:`NOT_REBUILT`):
+  the section agreement round (``_ask_section_agreement``), the limitations as
+  recorded (``_limitations_as_recorded``), the notes on unlinked techniques and
+  on the export's findings (``_note_unlinked_techniques``,
+  ``_note_export_findings``), filing only the published family
+  (``_file_only_the_published_family``), the retry's additions
+  (``retry_additions_report``), the corroboration with publication
+  (``_corroboration_with_publication``), the sandbox degradation reason
+  (``sandbox_degradation_reason``) and fitting the structures to the budget
+  (``fit_structures_to_budget``); the run summary's blocks other than the
+  validation, the corroboration, the STIX counts, the evidence and the
+  sections without evidence are copied from the stored summary;
 * fields an older build lacked default to empty when typed under a newer
   model, so a re-render shows the differences between two refs only, and is
   not what a new run would print;
@@ -165,9 +218,9 @@ import subprocess  # nosec B404 — this driver under another tree, an argument 
 import sys
 import tempfile
 import traceback
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from datetime import UTC, datetime
-from fnmatch import fnmatch
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, NoReturn
@@ -176,6 +229,9 @@ _ROOT = Path(__file__).resolve().parents[2]
 # Set to the tree a run of this driver renders under: that tree's import path is
 # the process's own, and nothing of this checkout is put on it.
 TREE_VARIABLE = "MALSPARK_SURFACES_TREE"
+# The string hash seed each tree is rendered under: an order the tree takes from
+# iterating a set of strings is then the same on every render of it.
+HASH_SEED = "0"
 # The package names the tree's platform may be imported under, current first.
 PACKAGES_VARIABLE = "MALSPARK_SURFACES_PACKAGES"
 # The ATT&CK loader's cache directory, read at import (``scripts.replay.guard``).
@@ -196,6 +252,35 @@ EXIT_STATUSES: tuple[tuple[int, str], ...] = (
     (0, "the refs render the same, or every difference was expected"),
 )
 
+# The routes and variants the API serves that the render does not, each by its path.
+NOT_RENDERED: tuple[str, ...] = (
+    "/reports/{id}/iocs?include=unpublished",
+    "/reports/{id}/iocs?kind= (a kind other than the ones served only when named)",
+    "/reports/{id}/attack-layer?domain=",
+    "/reports/{id}/html?download=true",
+    "/reports/{id}/evidence-bundle.html?download=true",
+    "/reports/{id}/timeline",
+    "/reports/diff",
+    "/jobs/{id}/evidence",
+    "/jobs/{id}/evidence/verify",
+    "/jobs/{id}/evidence/{entry_id}/objects/{part}",
+    "/jobs/{id}/follow-ups",
+    "/jobs/{id}/usage",
+    "/jobs/{id}/events",
+)
+# The report node's stages build mode does not run (``malspark.pipeline.nodes``).
+NOT_REBUILT: tuple[str, ...] = (
+    "_ask_section_agreement",
+    "_limitations_as_recorded",
+    "_note_unlinked_techniques",
+    "_note_export_findings",
+    "_file_only_the_published_family",
+    "retry_additions_report",
+    "_corroboration_with_publication",
+    "sandbox_degradation_reason",
+    "fit_structures_to_budget",
+)
+
 LIMITS: tuple[str, ...] = (
     "serve mode cannot change platform text that was written before rendering and stored: "
     "clauses appended to section bodies, degradation reasons, the indicators' reasons and the "
@@ -206,6 +291,14 @@ LIMITS: tuple[str, ...] = (
     "build mode's judge view carries the stored record's label map",
     "the report detail is read for its STIX note only; its other fields, the PDF, the job "
     "package and the console are not rendered",
+    "routes and variants not rendered: " + ", ".join(NOT_RENDERED),
+    "the routes are called with a service reading one row and no settings store: the layout "
+    "the service reads from the store falls back to the process's settings, which the replay "
+    "guard sets to the run's",
+    "the report node's stages build mode does not run: "
+    + ", ".join(NOT_REBUILT)
+    + "; the run summary's blocks other than the validation, the corroboration, the STIX "
+    "counts, the evidence and the sections without evidence are copied from the stored summary",
     "fields an older build lacked default to empty, so a re-render shows the differences "
     "between two refs only and is not what a new run would print",
     "the run's unresolved findings are read as the run summary stored them in serve mode and "
@@ -224,6 +317,8 @@ SURFACES: tuple[str, ...] = (
     "html.notes",
     "html.body",
     "html.attrs",
+    "html.tags",
+    "full",
     "iocs.default",
     "iocs.all",
     "stix",
@@ -246,7 +341,10 @@ SURFACES: tuple[str, ...] = (
     "bundle.html.notes",
     "bundle.html.body",
     "bundle.html.attrs",
+    "bundle.html.tags",
 )
+# The surface every line of every rendered file is a unit of, in order.
+FILE_LINES = "file.lines"
 # The surfaces whose units are lines in order: compared by aligning each
 # group's texts, so a line put in does not move every key after it.
 ORDERED: frozenset[str] = frozenset(
@@ -257,6 +355,7 @@ ORDERED: frozenset[str] = frozenset(
         "html.notes",
         "html.body",
         "html.attrs",
+        "html.tags",
         "rules.body",
         "rules.download",
         "bundle.lines",
@@ -264,44 +363,12 @@ ORDERED: frozenset[str] = frozenset(
         "bundle.html.notes",
         "bundle.html.body",
         "bundle.html.attrs",
+        "bundle.html.tags",
+        FILE_LINES,
     }
 )
-# The rendered file each surface is read from (shell patterns). A file that
-# differs between the refs while no unit of its surfaces does is a change all
-# the same (surface ``file``): what the units do not hold (an attribute, the
-# whitespace, the order of rows) is compared through the file.
-SURFACE_FILES: dict[str, tuple[str, ...]] = {
-    "report.md": ("report.md",),
-    "banner": ("report.md",),
-    "html.header": ("report.html",),
-    "html.figure": ("report.html",),
-    "html.notes": ("report.html",),
-    "html.body": ("report.html",),
-    "html.attrs": ("report.html",),
-    "iocs.default": ("iocs-default.json",),
-    "iocs.all": ("iocs.json",),
-    "stix": ("stix-bundle.json",),
-    "stix.notice": ("stix-bundle.json",),
-    "stix.note": ("stix-note.txt",),
-    "stix.judge": ("stix-judge.json",),
-    "stix.judge.notice": ("stix-judge.json",),
-    "mitre": ("mitre.json",),
-    "misp": ("misp-event.json",),
-    "navigator": ("attack-layer.json",),
-    "call_map": ("call-map.json",),
-    "rules": ("signatures.json",),
-    "rules.body": ("signatures.json",),
-    "rules.download": ("signatures-*.txt",),
-    "bundle.notes": ("evidence-bundle.json",),
-    "bundle.lines": ("evidence-bundle.json",),
-    "bundle.index": ("evidence-bundle.json",),
-    "bundle.html.header": ("evidence-bundle.html",),
-    "bundle.html.figure": ("evidence-bundle.html",),
-    "bundle.html.notes": ("evidence-bundle.html",),
-    "bundle.html.body": ("evidence-bundle.html",),
-    "bundle.html.attrs": ("evidence-bundle.html",),
-}
-# The surface a rendered file's own change is reported on.
+# The surface a rendered file's own change is reported on: a file that differs
+# is a change whatever else changed in it, never left to the other units.
 FILE_SURFACE = "file"
 # What is left out of the comparison, each with the proof that it varies
 # without a code change (the same ref rendered twice, and once more with the
@@ -625,6 +692,10 @@ class _HtmlBody(HTMLParser):
     is one text; the cells of a row are joined with `` | ``. Each line of a
     style or a script is a block of its own, grouped under ``<style>`` or
     ``<script>``. The cover and the figures are :class:`_HtmlReader`'s.
+
+    ``tags``: every start tag of the whole document, the cover's and the
+    figures' too, as written (each attribute and its value), under the section
+    it stands in.
     """
 
     _BLOCKS = frozenset(
@@ -668,6 +739,7 @@ class _HtmlBody(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.blocks: list[tuple[str, str]] = []  # (section, text)
+        self.tags: list[tuple[str, str]] = []  # (section, the start tag as written)
         self._chunk: list[str] = []
         self._skipping: list[str] = []
         self._raw: str | None = None
@@ -686,7 +758,11 @@ class _HtmlBody(HTMLParser):
             self.blocks.append((self.section, said))
         self._chunk = []
 
+    def _tag(self) -> None:
+        self.tags.append((self.section, str(self.get_starttag_text() or "")))
+
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._tag()
         if self._skipping:
             if tag in self._SKIPPED:
                 self._skipping.append(tag)
@@ -707,6 +783,7 @@ class _HtmlBody(HTMLParser):
                 self._heading_level = int(tag[1])
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._tag()
         if not self._skipping and tag in self._BLOCKS:
             self._flush()
 
@@ -757,8 +834,9 @@ def html_units(
 
     The cover's fields (``.header``), each figure's caption, legend, SVG
     labels, tooltips and other text (``.figure``), the note paragraphs
-    (``.notes``), every other block (``.body``) and each ``title``,
-    ``aria-label`` and ``alt`` attribute (``.attrs``).
+    (``.notes``), every other block (``.body``), each ``title``,
+    ``aria-label`` and ``alt`` attribute (``.attrs``) and every start tag as
+    written, each attribute in it (``.tags``).
     """
     reader = _HtmlReader()
     reader.feed(document)
@@ -768,6 +846,8 @@ def html_units(
     body.close()
     for section, said in body.blocks:
         units.add(f"{prefix}.body", "block", said, group=section)
+    for section, said in body.tags:
+        units.add(f"{prefix}.tags", "tag", said, group=section)
     marked = set(dynamic_figures)
     for said in reader.header:
         units.add(f"{prefix}.header", "field", said, group="cover")
@@ -792,21 +872,37 @@ def _without(row: Mapping[str, Any], *names: str) -> dict[str, Any]:
     return {k: v for k, v in row.items() if k not in names}
 
 
-def _ioc_units(rows: Sequence[Mapping[str, Any]], units: _Units, *, dynamic: bool) -> None:
+def _ioc_units(
+    surface: str, rows: Sequence[Mapping[str, Any]], units: _Units, *, dynamic: bool
+) -> None:
     """Each row as served, keyed by its kind and value, every other field its text."""
-    for surface, wanted in (("iocs.default", True), ("iocs.all", None)):
-        for row in rows:
-            if wanted is not None and row.get("published") is not wanted:
-                continue
-            key = f"{row.get('kind') or ''} {row.get('value') or ''}"
-            text = canonical(_without(row, "kind", "value"))
-            units.add(
-                surface,
-                key,
-                text,
-                group=str(row.get("kind") or ""),
-                dynamic=dynamic and str(row.get("source") or "") in DYNAMIC_IOC_SOURCES,
-            )
+    for row in rows:
+        key = f"{row.get('kind') or ''} {row.get('value') or ''}"
+        text = canonical(_without(row, "kind", "value"))
+        units.add(
+            surface,
+            key,
+            text,
+            group=str(row.get("kind") or ""),
+            dynamic=dynamic and str(row.get("source") or "") in DYNAMIC_IOC_SOURCES,
+        )
+
+
+def _full_units(document: Mapping[str, Any], units: _Units) -> None:
+    """Each top-level field of ``/full`` as served, as JSON in its served key order."""
+    for name, value in document.items():
+        units.add("full", str(name), json.dumps(value, ensure_ascii=False, separators=(", ", ": ")))
+
+
+def file_line_units(files: Mapping[str, str], units: _Units) -> None:
+    """Every line of every rendered file, in order, split at each line feed and at nothing else.
+
+    The file is its lines joined by line feeds again: a carriage return stays
+    in its line, and a file that ends with a newline ends with an empty unit.
+    """
+    for name, text in sorted(files.items()):
+        for line in text.split("\n"):
+            units.add(FILE_LINES, "line", line, group=name)
 
 
 def _stix_ident(obj: Mapping[str, Any]) -> str:
@@ -1188,74 +1284,221 @@ def _typed(report: Mapping[str, Any]) -> Any:
     return model.model_validate(ordered)
 
 
-def _served_stix(bundle: Any) -> dict[str, Any]:
-    """The bundle as ``/reports/{id}/stix`` serves it: renamed properties, a draft enveloped."""
-    if not isinstance(bundle, dict) or not bundle:
-        raise Absent("no STIX bundle is stored on the report row")
+class _FixedSecrets:
+    """The ``secrets`` module with every token fixed: a route's nonce is the same on each render."""
+
+    def __getattr__(self, name: str) -> Any:
+        import secrets
+
+        return getattr(secrets, name)
+
+    @staticmethod
+    def token_bytes(nbytes: int | None = None) -> bytes:
+        return bytes(32 if nbytes is None else nbytes)
+
+    @classmethod
+    def token_hex(cls, nbytes: int | None = None) -> str:
+        return cls.token_bytes(nbytes).hex()
+
+    @classmethod
+    def token_urlsafe(cls, nbytes: int | None = None) -> str:
+        import base64
+
+        return base64.urlsafe_b64encode(cls.token_bytes(nbytes)).rstrip(b"=").decode("ascii")
+
+
+def _uuid(said: Any) -> Any:
+    """``said`` as the UUID a row's id column holds, else ``None``."""
+    import uuid
+
     try:
-        served: dict[str, Any] = dict(
-            entry("platform.schemas.stix_models", "with_current_property_names")(bundle)
-        )
-    except Absent:
-        served = dict(bundle)
-    if served.get("x_malspark_published") is False:
-        try:
-            notice = entry("platform.schemas.stix_models", "UNPUBLISHED_NOTICE")
-        except Absent:
-            # A tree from before the notice served the bundle as it was stored.
-            return served
-        return {"published": False, "notice": notice, "bundle": served}
-    return served
+        return uuid.UUID(str(said))
+    except ValueError:
+        return None
 
 
-def _routed_stix(export: Any, judge: Any, source: str, report_id: str) -> dict[str, Any]:
-    """What the tree's ``/reports/{id}/stix`` route answers for a row holding these columns.
+def call_route(
+    module: str, name: str, given: Mapping[str, Any], query: Mapping[str, Any] | None = None
+) -> tuple[Any, Any]:
+    """The tree's route ``module.name`` called as the API calls it; its answer and its route.
 
-    The route itself is called, its service the tree's own ``ReportService``
-    reading a row of the two columns, so the envelope, the notice and the
-    renamed properties are the tree's. A tree without the route serves the
-    export as :func:`_served_stix` does; the judge source, which only the route
-    serves, is then not produced.
+    ``given`` holds what the API's dependencies would hand it (the path's ids,
+    ``user``, ``svc``, ``db``), passed where the route asks for them; ``query``
+    the query parameters, each of which the route must take (else
+    :class:`Absent`). A parameter neither names takes its declared default. A
+    route that answers an HTTP error is :class:`Absent` with its status and
+    detail: no surface, never an empty one. The route's own ``secrets`` draws
+    are fixed while it runs (:class:`_FixedSecrets`).
     """
     import asyncio
     import inspect
-    import uuid
+
+    from fastapi import params
+
+    route = entry(module, name)
+    parameters = inspect.signature(route).parameters
+    named: dict[str, Any] = {}
+    for key, value in (query or {}).items():
+        if key not in parameters:
+            raise Absent(f"this tree's {name} takes no {key}")
+        named[key] = value
+    for key, parameter in parameters.items():
+        if key in named:
+            continue
+        default = parameter.default
+        if key in given:
+            named[key] = given[key]
+        elif isinstance(default, params.Depends) or default is inspect.Parameter.empty:
+            raise Absent(f"this tree's {name} asks for {key}, which the render cannot hand it")
+        elif isinstance(default, params.Param):
+            if default.is_required():
+                raise Absent(f"this tree's {name} requires {key}")
+            named[key] = default.default
+        else:
+            named[key] = default
+    holder = sys.modules[route.__module__]
+    drawn = getattr(holder, "secrets", None)
+    if drawn is not None:
+        holder.secrets = _FixedSecrets()  # type: ignore[attr-defined]
+    try:
+        answer = asyncio.run(route(**named))
+    except Exception as exc:
+        status = getattr(exc, "status_code", None)
+        if status is None:
+            raise
+        raise Absent(f"the route answers {status}: {getattr(exc, 'detail', '')}") from exc
+    finally:
+        if drawn is not None:
+            holder.secrets = drawn  # type: ignore[attr-defined]
+    router = getattr(holder, "router", None)
+    declared = next(
+        (r for r in getattr(router, "routes", []) if getattr(r, "endpoint", None) is route), None
+    )
+    return answer, declared
+
+
+def served_json(answer: Any, declared: Any) -> Any:
+    """``answer`` as the API serialises it: through the route's ``response_model``, else encoded.
+
+    A route that declares a model has its answer prepared, validated by the
+    model and dumped in JSON mode with the route's options, as FastAPI does;
+    any other answer goes through FastAPI's ``jsonable_encoder``. The key
+    order is the served one.
+    """
+    from fastapi.encoders import jsonable_encoder
+    from pydantic import BaseModel
+
+    model = getattr(declared, "response_model", None)
+    if isinstance(model, type) and issubclass(model, BaseModel):
+        options: dict[str, Any] = {
+            "by_alias": bool(getattr(declared, "response_model_by_alias", True)),
+            "exclude_unset": bool(getattr(declared, "response_model_exclude_unset", False)),
+            "exclude_defaults": bool(getattr(declared, "response_model_exclude_defaults", False)),
+            "exclude_none": bool(getattr(declared, "response_model_exclude_none", False)),
+        }
+        prepared = answer.model_dump(**options) if isinstance(answer, BaseModel) else answer
+        return model.model_validate(prepared).model_dump(
+            mode="json",
+            include=getattr(declared, "response_model_include", None),
+            exclude=getattr(declared, "response_model_exclude", None),
+            **options,
+        )
+    return jsonable_encoder(answer)
+
+
+def _served_body(answer: Any) -> tuple[str, str]:
+    """A ``Response`` a route answers: its body as text, and its headers one per line."""
+    body = bytes(answer.body).decode("utf-8", "surrogateescape")
+    headers = "".join(f"{name}: {value}\n" for name, value in answer.headers.items())
+    return body, headers
+
+
+def _report_row(stored: _Stored, **columns: Any) -> Any:
+    """A report row of the stored run: its ids, its run summary, and ``columns``."""
     from types import SimpleNamespace
 
-    try:
-        route = entry("app.api.v1.reports", "get_stix_bundle")
-        service = entry("app.services.report_service", "ReportService")
-    except Absent:
-        if source == "judge":
-            raise
-        return _served_stix(export)
-    parameters = inspect.signature(route).parameters
-    if source == "judge" and "source" not in parameters:
-        raise Absent("this tree's /stix route serves no judge source")
-    row = SimpleNamespace(
-        id=report_id or None, stix_bundle=export, judge_stix_bundle=judge, malware_report=None
-    )
+    row: dict[str, Any] = {
+        "id": _uuid(stored.report_id),
+        "job_id": _uuid(stored.job_id),
+        "malware_report": None,
+        "stix_bundle": None,
+        "judge_stix_bundle": None,
+        "mitre_techniques": None,
+        "run_summary": stored.run_summary,
+    }
+    row.update(columns)
+    return SimpleNamespace(**row)
+
+
+def report_route(name: str, row: Any, query: Mapping[str, Any] | None = None) -> tuple[Any, Any]:
+    """The tree's ``app.api.v1.reports`` route ``name`` over ``row``, through its own service.
+
+    The service is the tree's ``ReportService`` reading ``row`` where it reads
+    the store, so every step between the row and the answer is the tree's.
+    """
+    import uuid
+
+    service = entry("app.services.report_service", "ReportService")
 
     class _Row(service):  # type: ignore[misc, valid-type]
         async def get_report(self, *_args: Any, **_kwargs: Any) -> Any:
             return row
 
-    named: dict[str, Any] = {
-        "report_id": uuid.UUID(int=0),
-        "user": None,
-        "svc": _Row(None),
-    }
-    if "source" in parameters:
-        named["source"] = source
-    try:
-        answer = asyncio.run(route(**named))
-    except Exception as exc:
-        # The route's 404, with what it says: no surface, never an empty one.
-        status = getattr(exc, "status_code", None)
-        if status is None:
-            raise
-        raise Absent(f"the route answers {status}: {getattr(exc, 'detail', '')}") from exc
-    return dict(answer)
+    given = {"report_id": row.id or uuid.UUID(int=0), "user": None, "svc": _Row(None)}
+    return call_route("app.api.v1.reports", name, given, query)
+
+
+def _routed_stix(export: Any, judge: Any, source: str, stored: _Stored) -> dict[str, Any]:
+    """What the tree's ``/reports/{id}/stix`` route answers for a row holding these columns.
+
+    The envelope, the notice and the renamed properties are the tree's; a tree
+    whose route takes no ``source`` serves no judge source.
+    """
+    row = _report_row(stored, stix_bundle=export, judge_stix_bundle=judge)
+    answer, declared = report_route(
+        "get_stix_bundle", row, {"source": "judge"} if source == "judge" else None
+    )
+    return dict(served_json(answer, declared))
+
+
+def _call_map_route(stored: _Stored) -> tuple[Any, Any]:
+    """The tree's ``/jobs/{id}/evidence/call-map`` route over the stored ledger rows.
+
+    Its service is the tree's ``AnalysisService`` finding the job, and its
+    session answers the one query the route makes, the job's ledger rows in
+    the order of their ``seq``, with the stored rows; a query for anything else
+    is :class:`Absent`. The route reads each row with its own row model.
+    """
+    import uuid
+    from types import SimpleNamespace
+
+    if not stored.evidence:
+        raise Absent("the stored run holds no evidence ledger")
+    if any("id" not in row for row in stored.evidence):
+        raise Absent("the stored ledger's rows hold no id column, which the route reads them with")
+    service = entry("app.services.analysis_service", "AnalysisService")
+    job = SimpleNamespace(id=_uuid(stored.job_id) or uuid.UUID(int=0))
+    rows = [
+        SimpleNamespace(**row)
+        for row in sorted(stored.evidence, key=lambda row: int(row.get("seq") or 0))
+    ]
+
+    class _Job(service):  # type: ignore[misc, valid-type]
+        async def get_job(self, *_args: Any, **_kwargs: Any) -> Any:
+            return job
+
+    class _Ledger:
+        async def execute(self, statement: Any) -> Any:
+            asked = [
+                str(getattr(column.get("entity"), "__name__", ""))
+                for column in getattr(statement, "column_descriptions", None) or []
+            ]
+            if asked != ["EvidenceEntry"]:
+                raise Absent(f"the route asks the store for {asked}, which the run does not hold")
+            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: list(rows)))
+
+    given = {"job_id": job.id, "user": None, "svc": _Job(None), "db": _Ledger()}
+    return call_route("app.api.v1.jobs", "get_job_call_map", given)
 
 
 def _render(
@@ -1265,138 +1508,146 @@ def _render(
     mr: dict[str, Any],
     *,
     untyped: str = "",
-    **parts: Any,
+    **columns: Any,
 ) -> None:
-    """Every surface of one report: the renderers' and the API writers' own output.
+    """Every surface of one report, each as the tree's route serves it over the report's row.
 
     ``report`` is the typed report, ``None`` when it does not read as the tree's
     model (``untyped`` says why): the surfaces the API builds from the stored
     document alone are produced all the same, as the API serves them.
+    ``columns`` holds what reads the row's other columns: ``stix`` and
+    ``judge`` (the served views) and ``mitre`` (the column), each raising
+    :class:`Absent` when the run has none.
     """
     dynamic = mode.mode == "build"
-    # The layout the API serves the report in, by the run's settings
-    # (``reporting.full_report_in_one_file``, read under the replay guard);
-    # a tree without layouts prints its one.
-    try:
-        layout: str | None = str(entry("platform.reporting.renderers.layout", "report_layout")())
-    except Absent:
-        layout = None
+    figures = DYNAMIC_FIGURES if dynamic else ()
 
-    def _need() -> Any:
+    def _need() -> None:
         if report is None:
             raise Absent(untyped)
-        return report
 
-    def _laid_out(module: str, name: str) -> Any:
-        renderer = entry(module, name)
-        if layout is None:
-            return renderer()
-        try:
-            return renderer(layout=layout)
-        except TypeError as exc:
-            raise Absent(f"this tree's {name} prints no {layout} layout") from exc
+    def _row(**more: Any) -> Any:
+        return _report_row(stored, malware_report=mr, **more)
+
+    def _served(name: str, row: Any, query: Mapping[str, Any] | None = None) -> Any:
+        answer, declared = report_route(name, row, query)
+        return served_json(answer, declared)
 
     def _markdown() -> None:
-        renderer = _laid_out("platform.reporting.renderers.markdown", "MarkdownRenderer")
-        text = str(renderer.render(_need()))
+        _need()
+        answer, _declared = report_route("get_full_malware_report_markdown", _row())
+        text = str(answer)
         mode.files["report.md"] = text
         markdown_units(text, mode.units)
 
     def _html() -> None:
-        renderer = _laid_out("platform.reporting.renderers.html", "HtmlRenderer")
-        text = str(renderer.render(_need()))
+        _need()
+        answer, _declared = report_route("get_full_malware_report_html", _row())
+        text, headers = _served_body(answer)
         mode.files["report.html"] = text
-        html_units(text, mode.units, dynamic_figures=DYNAMIC_FIGURES if dynamic else ())
+        mode.files["report.html.headers"] = headers
+        html_units(text, mode.units, dynamic_figures=figures)
+
+    def _full() -> None:
+        served = _served("get_full_malware_report", _row())
+        mode.files["full.json"] = _json(served)
+        _full_units(served, mode.units)
 
     def _iocs() -> None:
-        feed = entry("app.services.report_service", "ioc_feed_rows")
-        rows = list(feed(mr))
+        row = _row()
+        default = _served("get_full_malware_report_iocs", row)
+        mode.files["iocs-default.json"] = _json(default)
+        _ioc_units("iocs.default", default.get("items") or [], mode.units, dynamic=dynamic)
+        every = _served("get_full_malware_report_iocs", row, {"include": "all"})
+        mode.files["iocs.json"] = _json(every)
+        rows = list(every.get("items") or [])
         # The kinds served only to a filter that names them, after the rest.
-        held = {(row.get("kind"), row.get("value")) for row in rows}
         for kind in _FILTERED_IOC_KINDS:
-            try:
-                only = feed(mr, kind)
-            except TypeError:
-                break  # a feed without the filter serves every kind unfiltered
-            rows += [r for r in only if (r.get("kind"), r.get("value")) not in held]
-        mode.files["iocs.json"] = _json({"items": rows, "total": len(rows)})
-        default = [row for row in rows if row.get("published") is True]
-        mode.files["iocs-default.json"] = _json({"items": default, "total": len(default)})
-        _ioc_units(rows, mode.units, dynamic=dynamic)
+            only = _served("get_full_malware_report_iocs", row, {"include": "all", "kind": kind})
+            mode.files[f"iocs-{kind}.json"] = _json(only)
+            rows += list(only.get("items") or [])
+        _ioc_units("iocs.all", rows, mode.units, dynamic=dynamic)
 
     def _stix() -> None:
-        served = parts["stix"]()
+        served = columns["stix"]()
         mode.files["stix-bundle.json"] = _json(served)
         _stix_units(served, mode.units, dynamic=dynamic)
 
     def _stix_note() -> None:
         # The note the detail endpoint serves beside the report (``with_current_iocs``).
         with_current_iocs = entry("app.services.report_service", "with_current_iocs")
-        _served, note = with_current_iocs(dict(mr), stored.report_id)
+        _served_mr, note = with_current_iocs(dict(mr), stored.report_id)
         mode.files["stix-note.txt"] = f"{note or '(none)'}\n"
         mode.units.add("stix.note", "note", note or "(none)")
 
     def _judge_view() -> None:
-        view = parts["judge"]()
+        view = columns["judge"]()
         mode.files["stix-judge.json"] = _json(view)
         _judge_view_units(view, mode.units)
 
     def _mitre() -> None:
-        rows = parts["mitre"]()
-        mode.files["mitre.json"] = _json({"techniques": rows or []})
-        _mitre_units(rows, mode.units)
+        served = _served("get_mitre_techniques", _row(mitre_techniques=columns["mitre"]()))
+        mode.files["mitre.json"] = _json(served)
+        _mitre_units(served.get("techniques"), mode.units)
 
     def _misp() -> None:
-        event = parts["misp"](_need())
+        _need()
+        event = _served("get_misp_event", _row())
         mode.files["misp-event.json"] = _json(event)
         _misp_units(event, mode.units)
 
     def _layer() -> None:
-        build_layer = entry("platform.reporting.navigator_layer", "build_layer")
-        layer = build_layer(mr, name=f"Malspark report {stored.report_id}")
+        layer = _served("get_attack_navigator_layer", _row())
         mode.files["attack-layer.json"] = _json(layer)
         _layer_units(layer, mode.units)
 
     def _call_map() -> None:
-        call_map = entry("platform.reporting.call_map", "call_map")
-        stored_ledger = entry("platform.reporting.follow_up", "stored_ledger")
-        if not stored.evidence:
-            raise Absent("the stored run holds no evidence ledger")
-        found = call_map(stored_ledger(stored.evidence)[0])
+        answer, declared = _call_map_route(stored)
+        found = served_json(answer, declared)
         mode.files["call-map.json"] = _json(found)
         _call_map_units(found, mode.units)
 
     def _rules() -> None:
         signatures = [r for r in mr.get("detection_signatures") or [] if isinstance(r, dict)]
-        download = entry("app.services.report_service", "signature_download")
-        downloads: dict[str, str] = {}
         mode.files["signatures.json"] = _json(signatures)
+        row = _row()
+        downloads: dict[str, str] = {}
         for kind in RULE_KINDS:
-            downloads[kind] = str(download(signatures, kind, "all"))
-            if downloads[kind]:
-                mode.files[f"signatures-{kind}.txt"] = downloads[kind]
+            for include in ("all", "printed"):
+                answer, _declared = report_route(
+                    "get_full_malware_report_signatures", row, {"kind": kind, "include": include}
+                )
+                name = (
+                    f"signatures-{kind}.txt"
+                    if include == "all"
+                    else f"signatures-{kind}-printed.txt"
+                )
+                mode.files[name] = downloads[f"{kind} {include}"] = str(answer)
         _rule_units(signatures, downloads, mode.units)
 
     def _bundle() -> None:
-        text = str(entry("platform.reporting.renderers.bundle", "bundle_json")(_need()))
+        _need()
+        answer, _declared = report_route("get_evidence_bundle_json", _row())
+        text, headers = _served_body(answer)
         mode.files["evidence-bundle.json"] = text
+        mode.files["evidence-bundle.json.headers"] = headers
         _bundle_units(json.loads(text), mode.units)
 
     def _bundle_html() -> None:
         # ``/reports/{id}/evidence-bundle.html``: the bundle layout, whatever the run's.
-        layout_name = entry("platform.reporting.renderers.layout", "BUNDLE")
-        renderer = entry("platform.reporting.renderers.html", "HtmlRenderer")(layout=layout_name)
-        text = str(renderer.render(_need()))
+        _need()
+        answer, _declared = report_route("get_evidence_bundle_html", _row())
+        text, headers = _served_body(answer)
         mode.files["evidence-bundle.html"] = text
-        html_units(
-            text,
-            mode.units,
-            dynamic_figures=DYNAMIC_FIGURES if dynamic else (),
-            prefix="bundle.html",
-        )
+        mode.files["evidence-bundle.html.headers"] = headers
+        html_units(text, mode.units, dynamic_figures=figures, prefix="bundle.html")
 
     mode.produce(("report.md", "banner"), _markdown)
-    mode.produce(("html.header", "html.figure", "html.notes", "html.body", "html.attrs"), _html)
+    mode.produce(
+        ("html.header", "html.figure", "html.notes", "html.body", "html.attrs", "html.tags"),
+        _html,
+    )
+    mode.produce(("full",), _full)
     mode.produce(("iocs.default", "iocs.all"), _iocs)
     mode.produce(("stix", "stix.notice"), _stix)
     mode.produce(("stix.note",), _stix_note)
@@ -1414,24 +1665,15 @@ def _render(
             "bundle.html.notes",
             "bundle.html.body",
             "bundle.html.attrs",
+            "bundle.html.tags",
         ),
         _bundle_html,
     )
 
 
 def _json(value: Any) -> str:
-    return json.dumps(value, indent=1, sort_keys=True, ensure_ascii=False, default=str) + "\n"
-
-
-def _misp_event(report: Any, mr: Mapping[str, Any], owner_id: str | None, report_id: str) -> Any:
-    """The MISP event as ``/reports/{id}/misp-event`` builds it."""
-    build_misp_event = entry("platform.reporting.misp", "build_misp_event")
-    misp_owner = entry("platform.reporting.misp", "misp_owner")
-    with_current_iocs = entry("app.services.report_service", "with_current_iocs")
-    built = mr.get("misp_attributes") is not None
-    owner = misp_owner(report, owner_id) if built else report_id
-    served, _note = with_current_iocs(dict(mr), owner)
-    return build_misp_event(report, served.get("misp_attributes") or [], owner=owner)
+    """A served JSON value written in its served key order: never sorted, nothing coerced."""
+    return json.dumps(value, indent=1, ensure_ascii=False) + "\n"
 
 
 def _serve(stored: _Stored) -> _Mode:
@@ -1458,11 +1700,11 @@ def _serve(stored: _Stored) -> _Mode:
             if "stix_bundle" not in stored.byjob:
                 raise Absent("report-byjob.json holds no stix_bundle column")
             judge = stored.judge_column if stored.judge_view is not None else None
-            return _routed_stix(stored.byjob.get("stix_bundle"), judge, "export", stored.report_id)
+            return _routed_stix(stored.byjob.get("stix_bundle"), judge, "export", stored)
 
         def _judge() -> Any:
             return _routed_stix(
-                stored.byjob.get("stix_bundle"), stored.judge_column, "judge", stored.report_id
+                stored.byjob.get("stix_bundle"), stored.judge_column, "judge", stored
             )
 
         def _mitre() -> Any:
@@ -1470,20 +1712,7 @@ def _serve(stored: _Stored) -> _Mode:
                 raise Absent("report-byjob.json holds no mitre_techniques column")
             return stored.byjob.get("mitre_techniques")
 
-        def _misp(typed: Any) -> Any:
-            return _misp_event(typed, mr, stored.job_id, stored.report_id)
-
-        _render(
-            mode,
-            stored,
-            report,
-            mr,
-            untyped=untyped,
-            stix=_stix,
-            judge=_judge,
-            mitre=_mitre,
-            misp=_misp,
-        )
+        _render(mode, stored, report, mr, untyped=untyped, stix=_stix, judge=_judge, mitre=_mitre)
     return mode
 
 
@@ -1535,7 +1764,47 @@ def pin_clock(report: Any, stored: Mapping[str, Any] | None, clock: datetime) ->
             row.date = pinned
 
 
+@contextmanager
+def pinned_stix_clock(clock: datetime) -> Iterator[None]:
+    """The tree's STIX models dated by ``clock`` while the block runs, and as they were after.
+
+    Every timestamp a model fills by default is read from the models' own
+    clock (``stix_models.get_utcnow``, which asks the module's ``datetime``
+    for the time): that clock answers ``clock``, so an object built at render
+    time and validated again, which freezes the default into the fields set,
+    carries the stored report's time. A tree without the clock is left as it is.
+    """
+    moment = clock if clock.tzinfo is not None else clock.replace(tzinfo=UTC)
+    try:
+        source = entry("platform.schemas.stix_models", "get_utcnow")
+    except Absent:
+        yield
+        return
+    held = getattr(source, "__globals__", {})
+    real = held.get("datetime")
+    if not isinstance(real, type) or not issubclass(real, datetime):
+        yield
+        return
+
+    class _Pinned(real):  # type: ignore[misc, valid-type]
+        @classmethod
+        def now(cls, tz: Any = None) -> Any:
+            return moment.astimezone(tz) if tz is not None else moment.replace(tzinfo=None)
+
+    held["datetime"] = _Pinned
+    try:
+        yield
+    finally:
+        held["datetime"] = real
+
+
 def _build(run_dir: Path, stored: _Stored) -> _Mode:
+    """The report the replay rebuilds, under the stored report's clock (``pinned_stix_clock``)."""
+    with pinned_stix_clock(_clock(stored)):
+        return _rebuilt(run_dir, stored)
+
+
+def _rebuilt(run_dir: Path, stored: _Stored) -> _Mode:
     """The report the replay rebuilds, captured where the export decided its values."""
     mode = _Mode("build")
     try:
@@ -1629,19 +1898,16 @@ def _build(run_dir: Path, stored: _Stored) -> _Mode:
             return {**draft, flag: False, "x_malspark_notice": notice}
 
         def _stix() -> Any:
-            return _routed_stix(_export_column(), None, "export", stored.report_id)
+            return _routed_stix(_export_column(), None, "export", stored)
 
         def _judge() -> Any:
-            return _routed_stix(None, _judge_column(), "judge", stored.report_id)
+            return _routed_stix(None, _judge_column(), "judge", stored)
 
         def _mitre() -> Any:
             extract = entry("app.worker.analysis_worker", "_extract_mitre")
             return extract({"malware_report": mr, "stix_bundle_extended": mr.get("stix_bundle")})
 
-        def _misp(typed: Any) -> Any:
-            return _misp_event(typed, mr, stored.job_id, stored.report_id)
-
-        _render(mode, stored, report, mr, stix=_stix, judge=_judge, mitre=_mitre, misp=_misp)
+        _render(mode, stored, report, mr, stix=_stix, judge=_judge, mitre=_mitre)
     return mode
 
 
@@ -1712,6 +1978,8 @@ def render_run(
         shutil.rmtree(cache, ignore_errors=True)
     if _digests(run_dir) != before:
         raise RuntimeError(f"the stored run {run_dir} changed while it was rendered")
+    for mode in done:
+        file_line_units(mode.files, mode.units)
     record = {
         "schema": SCHEMA,
         # A repeat's directory is named by its number alone: the run is named with its parent.
@@ -1724,7 +1992,7 @@ def render_run(
         "limits": list(LIMITS),
         "excluded": [list(row) for row in EXCLUDED],
         "units": [row for mode in done for row in mode.units.rows],
-        # Each rendered file's digest: a file that differs where no unit does is a change.
+        # Each rendered file's digest: a file that differs is a change of its own.
         "file_digests": {
             mode.mode: {name: digest(text) for name, text in sorted(mode.files.items())}
             for mode in done
@@ -1810,7 +2078,7 @@ def compare_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any
                         news[index] if index < len(news) else None,
                     )
                 )
-    changes += _file_changes(a, b, changes)
+    changes += _file_changes(a, b)
     compared: dict[str, int] = {}
     for mode, surface, _key in {(r["mode"], r["surface"], r["key"]) for r in [*rows_a, *rows_b]}:
         compared[f"{mode} {surface}"] = compared.get(f"{mode} {surface}", 0) + 1
@@ -1848,34 +2116,27 @@ def compare_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any
     return out
 
 
-def _file_surfaces(name: str) -> set[str]:
-    return {s for s, patterns in SURFACE_FILES.items() if any(fnmatch(name, p) for p in patterns)}
+def _file_changes(a: Mapping[str, Any], b: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Each rendered file that differs, or is on one side only, whatever else changed in it.
 
-
-def _file_changes(
-    a: Mapping[str, Any], b: Mapping[str, Any], changes: Sequence[Mapping[str, Any]]
-) -> list[dict[str, Any]]:
-    """Each rendered file that differs, or is on one side only, while no unit read from it does.
-
-    What the units leave to the file (an attribute, the whitespace, the order
-    of rows) is compared this way, so nothing a file holds goes unseen.
+    A change on another surface never stands for the file: its every line is a
+    unit of ``file.lines`` besides, so what changed in it is said line by line.
     """
     out: list[dict[str, Any]] = []
     digests_a = a.get("file_digests") or {}
     digests_b = b.get("file_digests") or {}
-    moved = {(c["mode"], c["surface"]) for c in changes}
     for mode in sorted(set(digests_a) & set(digests_b)):
         held_a, held_b = digests_a[mode], digests_b[mode]
         for name in sorted(set(held_a) | set(held_b)):
             old, new = held_a.get(name), held_b.get(name)
-            if old == new or any((mode, s) in moved for s in _file_surfaces(name)):
+            if old == new:
                 continue
             out.append(
                 {
                     "change": "changed" if old and new else "removed" if old else "added",
                     "mode": mode,
                     "surface": FILE_SURFACE,
-                    "group": "the file differs where no unit read from it does",
+                    "group": "the file differs",
                     "key": name,
                     "old": f"sha256:{old}" if old else None,
                     "new": f"sha256:{new}" if new else None,
@@ -1974,13 +2235,16 @@ def render_under(
     """This driver run against ``tree`` in a process of its own; the records it wrote.
 
     ``tree`` and its API come first on the import path and nothing of this
-    checkout is put on it, so every entry point is the tree's own.
+    checkout is put on it, so every entry point is the tree's own. The process
+    hashes strings with :data:`HASH_SEED`, so an order the tree takes from a
+    set is the same on every render of it.
     """
     from malspark.core.previous_name import CURRENT_NAME, PREVIOUS_NAME
 
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join([str(tree / "src"), str(tree / "apps" / "api"), str(tree)])
     env[TREE_VARIABLE] = str(tree.resolve())
+    env["PYTHONHASHSEED"] = HASH_SEED
     env[PACKAGES_VARIABLE] = f"{CURRENT_NAME},{PREVIOUS_NAME}"
     cache = out.with_name(f"{out.name}-attck")
     cache.mkdir(parents=True, exist_ok=True)
@@ -2195,8 +2459,9 @@ def _parser() -> argparse.ArgumentParser:
             "rebuilds, rendered and exported), and compare two git refs unit by unit."
         ),
         epilog=(
-            "Every value of every surface is compared, and a rendered file that differs where "
-            "no unit does is a change of its own. Excluded from the comparison: "
+            "Every value of every surface is compared, every line of every rendered file is a "
+            "unit (file.lines), and a rendered file that differs is a change of its own "
+            "whatever else changed in it. Excluded from the comparison: "
             + ("; ".join(f"[{s}] {what}: {proof}" for s, what, proof in EXCLUDED) or "nothing")
             + ". Limits: "
             + " ".join(f"({n}) {limit}." for n, limit in enumerate(LIMITS, 1))

@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess  # nosec B404 — git, argument lists only
+import uuid
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -177,6 +178,11 @@ def stored_run(at: Path, **row: Any) -> Path:
         else:
             byjob[key] = value
     (run / "report-byjob.json").write_text(json.dumps(byjob), encoding="utf-8")
+    # Each ledger row with the id every stored row has, as the evidence page serves it.
+    ledger = json.loads((run / "evidence.json").read_text(encoding="utf-8"))
+    for row in ledger["items"]:
+        row.setdefault("id", str(uuid.uuid5(uuid.NAMESPACE_URL, f"ledger:{row['entry_id']}")))
+    (run / "evidence.json").write_text(json.dumps(ledger), encoding="utf-8")
     return run
 
 

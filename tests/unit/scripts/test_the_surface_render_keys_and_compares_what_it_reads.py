@@ -260,8 +260,11 @@ class TestHtmlTooltipsAndAttributes:
         base = self._record()
         [tooltip] = rs.compare_records(base, self._record(tooltip=" seeded"))["changes"]
         assert (tooltip["surface"], tooltip["key"]) == ("html.figure", "fig-flow title")
-        [alt] = rs.compare_records(base, self._record(alt="another chart"))["changes"]
-        assert (alt["surface"], alt["new"]) == ("html.attrs", "another chart")
+        changes = rs.compare_records(base, self._record(alt="another chart"))["changes"]
+        assert sorted((c["surface"], c["new"]) for c in changes) == [
+            ("html.attrs", "another chart"),
+            ("html.tags", '<img src="x.png" alt="another chart">'),
+        ]
 
 
 class TestTheFileIsCompared:
@@ -285,7 +288,7 @@ class TestTheFileIsCompared:
             'line 1: <rect fill="blue"/>',
         )
 
-    def test_a_file_whose_change_a_unit_shows_is_not_reported_twice(self) -> None:
+    def test_a_file_that_differs_is_a_change_even_where_a_unit_shows_a_change(self) -> None:
         old = rs._Units("serve")
         old.add("html.body", "block", "First.", group="1. A")
         new = rs._Units("serve")
@@ -293,9 +296,9 @@ class TestTheFileIsCompared:
         diff = rs.compare_records(
             self._record(old.rows, "<p>First.</p>"), self._record(new.rows, "<p>Second.</p>")
         )
-        assert [c["surface"] for c in diff["changes"]] == ["html.body"]
+        assert [c["surface"] for c in diff["changes"]] == ["html.body", rs.FILE_SURFACE]
         text = rs.render_comparison([diff], ("A", "B"), [])
-        assert "summary: 2 unit(s) compared on 2 surface(s), 1 difference(s)" in text
+        assert "summary: 2 unit(s) compared on 2 surface(s), 2 difference(s)" in text
         assert "serve html.body: 1 compared, changed 1" in text
         assert "excluded from the comparison: nothing" in text
 

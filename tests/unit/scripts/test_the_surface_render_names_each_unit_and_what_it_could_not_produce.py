@@ -50,7 +50,7 @@ class TestEachSurfaceIsUnits:
         self, rendered: tuple[Path, dict[str, Any], Any]
     ) -> None:
         _run, record, _files = rendered
-        assert set(rs.counts(record)["serve"]) == set(rs.SURFACES)
+        assert set(rs.counts(record)["serve"]) == {*rs.SURFACES, rs.FILE_LINES}
         assert [r for r in record["not_produced"] if r["mode"] == "serve"] == []
 
     def test_the_build_mode_renders_the_rebuilt_report_and_says_which_mode_made_each_unit(
@@ -117,15 +117,15 @@ class TestNotProduced:
     def test_an_entry_point_the_tree_lacks_is_not_produced_with_its_name(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from malspark.reporting import navigator_layer
+        from app.api.v1 import reports
 
-        monkeypatch.delattr(navigator_layer, "build_layer")
+        monkeypatch.delattr(reports, "get_attack_navigator_layer")
         record, _files = rs.render_run(stored_run(tmp_path), modes=("serve",))
         assert record["not_produced"] == [
             {
                 "mode": "serve",
                 "surface": "navigator",
-                "reason": "this tree's malspark.reporting.navigator_layer has no build_layer",
+                "reason": "this tree's app.api.v1.reports has no get_attack_navigator_layer",
             }
         ]
 
@@ -164,7 +164,9 @@ class TestFigureText:
         units = rs._Units("serve")
         rs.html_units(document, units)
         got = [
-            (u["surface"], u["key"], u["text"]) for u in units.rows if u["surface"] != "html.body"
+            (u["surface"], u["key"], u["text"])
+            for u in units.rows
+            if u["surface"] not in {"html.body", "html.tags"}
         ]
         assert got == [
             ("html.figure", "fig-x label", "first label"),

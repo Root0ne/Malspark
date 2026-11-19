@@ -10,9 +10,12 @@ process tree, the reason the export publishes an indicator with, the
 description of the export's identity and of a relationship it adds, the ends
 of a relationship, an indicator's ``valid_from`` timestamp, the namespace the
 export's ids are derived in, a MISP comment, the event's threat level and an
-object attribute's category, and a ``/mitre`` description. Each is reported as
-a change, in the mode and on the surface that prints it, and every surface is
-produced by both refs.
+object attribute's category, a ``/mitre`` description, a table-of-contents
+href, a citation's class, a data attribute and its href pointed off-site, a
+field the IOC row model drops, the rules the printed download serves and the
+owner the MISP event is derived from in the service. Each is reported as a
+change, in the mode and on the surface that prints it, every changed file is
+a change of its own, and every surface is produced by both refs.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ from tests.unit.scripts._surfaces_render_run import (
 )
 
 R = "src/malspark/reporting"
+SERVICE = "apps/api/app/services/report_service.py"
 Change = Mapping[str, Any]
 
 
@@ -42,6 +46,18 @@ def _says(word: str) -> Callable[[Change], bool]:
 
 def _id_changed(c: Change) -> bool:
     return c["change"] == "changed" and str(c["key"]).endswith(" id")
+
+
+def _lost_source(c: Change) -> bool:
+    return '"source": ' in str(c["old"]) and '"source": ' not in str(c["new"])
+
+
+def _printed_gone(c: Change) -> bool:
+    return c["change"] == "removed" and c["group"] == "sigma printed"
+
+
+def _event_uuid_moved(c: Change) -> bool:
+    return c["change"] == "changed" and c["key"] == "event" and '"uuid"' in str(c["new"])
 
 
 def _ends_swapped(c: Change) -> bool:
@@ -209,14 +225,71 @@ SEEDS: tuple[tuple[str, str, str, str, frozenset[str], Callable[[Change], bool]]
         frozenset({"mitre"}),
         _says("SEED-MITRE"),
     ),
+    (
+        f"{R}/renderers/html.py",
+        'entries.append(f\'<li><a href="#{match.group(1)}">',
+        'entries.append(f\'<li><a href="#seed-{match.group(1)}">',
+        "serve",
+        frozenset({"html.tags", "file.lines"}),
+        _says('href="#seed-'),
+    ),
+    (
+        f"{R}/renderers/html.py",
+        'f\'<sup class="cite"><a href="{BUNDLE_HTML}#cite-',
+        'f\'<sup class="citex" data-seed="1"><a href="https://evil.example/{BUNDLE_HTML}#cite-',
+        "build",
+        frozenset({"html.tags", "file.lines"}),
+        _says("evil.example"),
+    ),
+    (
+        f"{R}/figures.py",
+        'caption="MITRE ATT&CK tactic coverage"',
+        'caption="MITRE ATT&CK tactic coverage SEED-CAPTION"',
+        "build",
+        frozenset({"html.figure"}),
+        _says("SEED-CAPTION"),
+    ),
+    (
+        "apps/api/app/schemas/job.py",
+        "    source: str | None = None\n",
+        "",
+        "serve",
+        frozenset({"iocs.all", "iocs.default"}),
+        _lost_source,
+    ),
+    (
+        SERVICE,
+        "        if not (printed or every):",
+        "        if not every:",
+        "serve",
+        frozenset({"rules.download"}),
+        _printed_gone,
+    ),
+    (
+        SERVICE,
+        "        owner = misp_owner(typed, report.job_id) if built else str(report.id)",
+        "        owner = str(report.id)",
+        "build",
+        frozenset({"misp"}),
+        _event_uuid_moved,
+    ),
 )
+# A rule the analyst report prints, so the printed download holds it.
+SIGMA = {
+    "kind": "sigma",
+    "name": "fixture_sigma",
+    "body": "title: fixture\nlogsource: {product: windows}\ndetection: {s: {Image: x}, "
+    "condition: s}\n",
+}
 
 
 @pytest.mark.slow
 def test_each_seeded_value_is_a_reported_change(tmp_path: Path) -> None:
     repo, first = platform_repository(tmp_path, extra=("scripts/replay",))
     second = commit_edits(repo, [(name, old, new) for name, old, new, *_rest in SEEDS])
-    run = stored_run(tmp_path, malware_report=full_report())
+    stored = full_report()
+    stored["detection_signatures"] = [*stored["detection_signatures"], SIGMA]
+    run = stored_run(tmp_path, malware_report=stored)
     out = tmp_path / "diff.json"
     argv = [str(run), "--repo", str(repo), "--work", str(tmp_path / "work"), "--quiet"]
 
@@ -231,6 +304,9 @@ def test_each_seeded_value_is_a_reported_change(tmp_path: Path) -> None:
         if not {(mode, surface) for surface in surfaces} <= hits:
             missed.append((old[:60], sorted(hits)))
     assert missed == []
+    # The off-site href and the caption in one report.html are two changes, and the file a third.
+    surfaces = {c["surface"] for c in diff["changes"] if c["mode"] == "build"}
+    assert {"html.figure", "html.tags", "file.lines", "file"} <= surfaces
     # The figure the build draws without the sandbox report is compared all the same.
     assert diff["dynamic_compared"] > 0
     assert any(
