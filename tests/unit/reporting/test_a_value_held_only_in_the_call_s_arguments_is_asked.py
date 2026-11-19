@@ -216,7 +216,18 @@ class TestTheCheck:
 
         searched = f"{MATCHED} delete {QUILL}"
 
-        assert searched in _without_call_echoes(json.dumps([searched]), [searched])
+        assert searched in _without_call_echoes(json.dumps([searched]), {"pattern": searched})
+
+    def test_an_answer_that_writes_a_key_twice_is_not_read(self) -> None:
+        # A parser keeps the last of two equal keys only: what the first one
+        # held would be said to be absent. Such an answer gives no finding.
+        searched = f"{QUILL} /c|{MARROW}"
+        answer = f'{{"pattern":"{searched}","rows":"{QUILL} /c","rows":[]}}'
+        texts = EntryTexts.from_ledger(
+            [_entry("ev_0070", "strings", answer, args={"pattern": searched})]
+        )
+
+        assert _body(f"The routine runs '{QUILL} /c' [ev_0070].", texts) == []
 
     def test_a_sub_object_repeating_the_arguments_whole_is_an_echo(self) -> None:
         texts = EntryTexts.from_ledger(

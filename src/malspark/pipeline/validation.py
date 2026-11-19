@@ -10890,12 +10890,20 @@ def _without_call_echoes(text: str, arguments: Any = None) -> str:
     other place, under the same key name or not, is what the answer holds (a
     match row equal to the pattern it was asked for) and stays. A text that is
     no JSON object or array is returned as it is: without key paths an echo
-    cannot be told from a match.
+    cannot be told from a match. So is one that writes a key twice in one
+    object: a parser keeps the last of the two, and what the first held would
+    be read as absent.
     """
     import json as _json
 
+    def _each_key_once(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        read = dict(pairs)
+        if len(read) != len(pairs):
+            raise ValueError("a key written twice")
+        return read
+
     try:
-        parsed: Any = _json.loads(text)
+        parsed: Any = _json.loads(text, object_pairs_hook=_each_key_once)
     except (ValueError, TypeError):
         parsed = None
     if isinstance(parsed, dict | list):
