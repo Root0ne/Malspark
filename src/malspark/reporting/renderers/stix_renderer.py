@@ -28,7 +28,7 @@ import ipaddress
 import json
 import re
 import uuid
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -4786,40 +4786,42 @@ def emulation_kwargs(
     }
 
 
-def _recovery_words(how: RecoveredValue, entries: Sequence[str] = ()) -> str:
+def _recovery_words(
+    how: RecoveredValue, entries: Sequence[str] = (), word: Callable[[str], str] = str
+) -> str:
     """One tool's recovery of a value, as the IOC table states it.
 
     ``entries`` are the entries that recorded this same recovery, the place
     and all, in place of ``how.entry`` alone: the place is stated once after
-    them.
+    them; ``word`` writes each name, entry and place (:func:`recovered_by_words`).
     """
-    named = ", ".join(entries) if entries else how.entry
-    head = f"{_named(how)}, {named}" if named else _named(how)
-    where = _recovery_place(how)
+    named = ", ".join(map(word, entries)) if entries else (word(how.entry) if how.entry else "")
+    head = f"{word(_named(how))}, {named}" if named else word(_named(how))
+    where = _recovery_place(how, word)
     return f"{head} ({', '.join(where)})" if where else head
 
 
-def _recovery_place(how: RecoveredValue) -> list[str]:
-    """Where in the file one tool's recovery of a value stands."""
+def _recovery_place(how: RecoveredValue, word: Callable[[str], str] = str) -> list[str]:
+    """Where in the file one tool's recovery of a value stands, each value by ``word``."""
     where: list[str] = []
     if how.scheme:
-        where.append(f"{how.scheme} string" if _is_emulated(how) else how.scheme)
+        where.append(f"{word(how.scheme)} string" if _is_emulated(how) else word(how.scheme))
     if how.offset:
-        where.append(f"at file offset {how.offset}")
+        where.append(f"at file offset {word(str(how.offset))}")
     if _is_emulated(how) and how.scheme == "decoded":
         # An emulator's decoded string names the routine that decoded it and where
         # that routine was called, which is the emulator's own wording.
         if how.functions:
-            where.append("routine " + ", ".join(how.functions))
+            where.append("routine " + ", ".join(map(word, how.functions)))
         if how.sites:
-            where.append("called at " + ", ".join(how.sites))
+            where.append("called at " + ", ".join(map(word, how.sites)))
     else:
         if how.functions:
-            where.append("in function " + ", ".join(how.functions))
+            where.append("in function " + ", ".join(map(word, how.functions)))
         if how.sites:
-            where.append("used at " + ", ".join(how.sites))
+            where.append("used at " + ", ".join(map(word, how.sites)))
         if how.passed_to:
-            where.extend(how.passed_to)
+            where.extend(map(word, how.passed_to))
     return where
 
 
@@ -4839,7 +4841,9 @@ def recovered_entries(record: EmulatedStrings, kind: str, value: str) -> list[st
     return list(dict.fromkeys(listed or [entry]))
 
 
-def recovered_by_words(record: EmulatedStrings, kind: str, value: str) -> str:
+def recovered_by_words(
+    record: EmulatedStrings, kind: str, value: str, word: Callable[[str], str] = str
+) -> str:
     """Which tools recovered a network value the sample hid, and where; ``""`` for any other.
 
     Read from the run's record (:func:`emulation_record`): every tool that
@@ -4847,7 +4851,8 @@ def recovered_by_words(record: EmulatedStrings, kind: str, value: str) -> str:
     functions around the code that uses it. A value the static sweep also read
     is the sweep's and states none. A record stored before ``recovered_by``
     existed names the entry and FLOSS, the only tool such a record was built
-    from.
+    from. ``word`` writes each name, entry and place a recovery holds, as
+    recorded unless a renderer writes it by its own rule.
     """
     if kind not in ("domain", "ip", "url"):
         return ""
@@ -4864,7 +4869,7 @@ def recovered_by_words(record: EmulatedStrings, kind: str, value: str) -> str:
         _first, entries = places.setdefault((_named(how), tuple(_recovery_place(how))), (how, []))
         if how.entry and how.entry not in entries:
             entries.append(how.entry)
-    return "; ".join(_recovery_words(how, entries) for how, entries in places.values())
+    return "; ".join(_recovery_words(how, entries, word) for how, entries in places.values())
 
 
 _WHOLE_DIGEST_RE = re.compile(r"^[0-9a-fA-F]+$")

@@ -2263,9 +2263,9 @@ class _Analyst:
             role = "; ".join(
                 part
                 for part in (
-                    ctx.inline(ioc.context) if ioc.context else "",
+                    ctx.context(ioc),
                     origin,
-                    f"recovered by {ctx.inline(ioc.recovered_by)}" if ioc.recovered_by else "",
+                    f"recovered by {ctx.recovered(ioc)}" if ioc.recovered_by else "",
                     _observed_cell(ioc.observed_in, ctx),
                 )
                 if part
@@ -2419,20 +2419,25 @@ class _Analyst:
         bound = bound_value(self.report, str(ioc.kind or ""), ioc.value)
         if bound is None or not bound.site:
             return ""
-        said = "decoded" + (f" from the blob at file offset {bound.offset}" if bound.offset else "")
-        said += f", loaded at {bound.site}"
-        said += f" in the function at {bound.function}" if bound.function else ""
+        # Each place and name the binding holds by the inline rule, set into
+        # the platform's words.
+        v = self.ctx.value
+        said = "decoded" + (
+            f" from the blob at file offset {v(bound.offset)}" if bound.offset else ""
+        )
+        said += f", loaded at {v(bound.site)}"
+        said += f" in the function at {v(bound.function)}" if bound.function else ""
         said += (
-            f" and given to the routine called at {bound.decoder_call}"
+            f" and given to the routine called at {v(bound.decoder_call)}"
             if bound.decoder_call
             else ""
         )
         # How the call is named, which the context's API name does not say.
         if bound.imported_as:
-            said += f", the call made through the import {bound.imported_as}"
+            said += f", the call made through the import {v(bound.imported_as)}"
         elif bound.slot:
-            said += f", the call made through the slot {bound.slot}"
-        return self.ctx.inline(said) + self.notes.marker([bound.entry] if bound.entry else [])
+            said += f", the call made through the slot {v(bound.slot)}"
+        return said + self.notes.marker([bound.entry] if bound.entry else [])
 
     @staticmethod
     def _printed(rule: Any) -> bool:
@@ -2733,13 +2738,13 @@ class _Analyst:
 
         report = self.report
         ctx = self.ctx
-        # A tool's name, a sandbox's section name and a reason the run recorded are
-        # escaped as the bundle escapes its rows, an entry the row names by the inline
-        # rule; the template's citations become notes.
+        # A tool's name, a sandbox's section name, a reason the run recorded and an
+        # entry the row names are each written by the inline rule, as the bundle
+        # writes them; the template's citations become notes.
         rows = printed_rows(
             inventory,
-            quote=lambda text: f'"{ctx.inline(" ".join(str(text).split()))}"',
-            name=ctx.inline,
+            quote=lambda text: f'"{ctx.value(" ".join(str(text).split()))}"',
+            name=ctx.value,
             entry=lambda held: ctx.value(held, pipes=True),
             claims_not_discussed=len(getattr(report, "claims_not_discussed", None) or []),
         )

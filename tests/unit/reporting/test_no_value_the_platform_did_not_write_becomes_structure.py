@@ -47,6 +47,7 @@ from malspark.reporting.models import (
 from malspark.reporting.renderers.html import HtmlRenderer
 from malspark.reporting.renderers.markdown import (
     MarkdownRenderer,
+    _absent_mark,
     _code_span,
     _Context,
     _escaped_references,
@@ -486,28 +487,35 @@ def test_a_mediation_note_carrying_a_provider_s_text_forms_no_structure() -> Non
             assert _same_words(note) in _shown(reading), layout
 
 
-# Every character a placeholder of a quoted claim could be made of.
+# Every character a placeholder of a quoted claim could be made of, and the
+# shapes of the placeholders themselves.
 MARK_CHARACTERS = "".join(
     chr(code) for code in (*range(0x09), *range(0x0E, 0x20), *range(0xFDD0, 0xFDF0))
 )
+MARK_SHAPES = "\x00claim0\x00 \x00\x00claim0\x00\x00 \x000\x00v0\x000\x00 \x001\x00v1\x001\x00"
 
 
-def test_a_coverage_record_holding_every_mark_character_prints_each_value_whole() -> None:
-    kind = f"{MARK_CHARACTERS} \x00claim0\x00 \x00\x00claim0\x00\x00 kind"
-    record = {
-        "v": 1,
-        "tools": [{"tool": "probe", "kind": kind, "calls": 1}],
-        "negatives": [
-            {"agent": "static", "negative": "No mutex zc0z \x00claim1\x00", "coverage": "unknown"},
-            {"agent": "static", "negative": "No pipe zc1z", "coverage": "unknown"},
-        ],
-    }
+def _coverage_report(record: dict) -> str:
     report = MalwareReport(
         identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
         verdict="Malware",
         run_summary={"coverage": record},
     )
-    markdown = MarkdownRenderer().render(report)
+    return MarkdownRenderer().render(report)
+
+
+def _negatives(claims: list[str]) -> list[dict]:
+    return [{"agent": "static", "negative": claim, "coverage": "unknown"} for claim in claims]
+
+
+def test_a_coverage_record_holding_every_mark_character_prints_each_value_whole() -> None:
+    kind = f"{MARK_CHARACTERS} {MARK_SHAPES} kind"
+    record = {
+        "v": 1,
+        "tools": [{"tool": "probe", "kind": kind, "calls": 1}],
+        "negatives": _negatives([f"No mutex zc0z {MARK_SHAPES}", "No pipe zc1z"]),
+    }
+    markdown = _coverage_report(record)
     assert "rendering failed" not in markdown
     assert COVERAGE_NEGATIVES_INTRO in markdown
     # A coverage value stays on its line (:func:`_one_line`); every other character is its own.
@@ -515,5 +523,23 @@ def test_a_coverage_record_holding_every_mark_character_prints_each_value_whole(
     lines = markdown.splitlines()
     (first,) = [line for line in lines if "zc0z" in line]
     (second,) = [line for line in lines if "zc1z" in line]
-    assert "No mutex zc0z \x00claim1\x00" in first and "zc1z" not in first
+    assert f"No mutex zc0z {MARK_SHAPES}" in first and "zc1z" not in first
     assert "No pipe zc1z" in second and "zc0z" not in second
+
+
+def test_the_mark_of_a_quoted_claim_stays_short_whatever_the_record_holds() -> None:
+    nuls = "\x00" * 100_000
+    claims = [f"No value zc{n}z" for n in range(50)]
+    record = {
+        "v": 1,
+        "tools": [{"tool": "probe", "kind": f"{nuls} {MARK_SHAPES}", "calls": 1}],
+        "negatives": _negatives(claims),
+    }
+    assert len(_absent_mark(record)) < 32
+    markdown = _coverage_report(record)
+    assert "rendering failed" not in markdown
+    lines = markdown.splitlines()
+    for n, claim in enumerate(claims):
+        (line,) = [held for held in lines if f"zc{n}z" in held]
+        assert claim in line
+        assert len(line) < 2 * len(claim) + 400

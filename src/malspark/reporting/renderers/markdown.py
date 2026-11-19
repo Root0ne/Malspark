@@ -36,10 +36,13 @@ import secrets
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import partial
 from html.entities import html5
 from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlparse
+
+from pydantic import BaseModel
 
 from malspark.analysis.coverage import ABSENCE_POINTER as COVERAGE_POINTER
 from malspark.analysis.coverage import LOOKED_INTRO as COVERAGE_LOOKED_INTRO
@@ -1827,7 +1830,7 @@ class MarkdownRenderer:
                         "; ".join(
                             part
                             for part in (
-                                ctx.inline(row.context) if row.context else "",
+                                ctx.context(row),
                                 _observed_cell(row.observed_in, ctx),
                             )
                             if part
@@ -1865,10 +1868,8 @@ class MarkdownRenderer:
                         part
                         for part in (
                             # "the host of <url>": the URL is defanged too.
-                            ctx.inline(row.context) if row.context else "",
-                            f"recovered by {ctx.inline(row.recovered_by)}"
-                            if row.recovered_by
-                            else "",
+                            ctx.context(row),
+                            f"recovered by {ctx.recovered(row)}" if row.recovered_by else "",
                             _observed_cell(row.observed_in, ctx),
                         )
                         if part
@@ -2225,10 +2226,27 @@ class MarkdownRenderer:
             # from, the ones it leaves to this bundle too, in the same words.
             from malspark.reporting.limitation_inventory import inventory_rows, reason_label
 
-            rows = inventory_rows(report.limitation_inventory, reason_as=reason_label)
+            inventory = report.limitation_inventory
+
+            # Each tool's, sandbox's or entry's name and each recorded reason
+            # written by itself by the inline rule, set into the row's own
+            # words after they are written (:func:`_placed`).
+            def rows_of(word: Callable[[Any], str]) -> list[str]:
+                return [
+                    row.text
+                    for row in inventory_rows(
+                        inventory,
+                        quote=lambda text: f'"{word(" ".join(str(text).split()))}"',
+                        name=word,
+                        reason_as=reason_label,
+                        entry=word,
+                    )
+                ]
+
+            rows = _placed(rows_of, ctx.inline, ctx.value, inventory)
             if rows:
                 lines.extend([f"**{INVENTORY_HEADING}:**", ""])
-                lines.extend(_item(ctx.inline(row.text)) for row in rows)
+                lines.extend(_item(row) for row in rows)
                 lines.append("")
 
         if report.degradation_reasons:
@@ -2547,7 +2565,10 @@ class MarkdownRenderer:
                     )
         for row in run_summary.get("server_rests") or []:
             if isinstance(row, dict):
-                lines.append(_item(inline(server_rest_sentence(row))))
+                # The server's names and the reason it gave, each by the inline rule.
+                lines.extend(
+                    _item(line) for line in _placed(partial(_rested, row), inline, value, row)
+                )
         corroboration = run_summary.get("corroboration") or {}
         if corroboration:
             from malspark.analysis.corroboration import (
@@ -2645,36 +2666,35 @@ class MarkdownRenderer:
         states = _AnalystStates(report) if isinstance(recorded, dict) else None
         plain = ctx.plain if ctx is not None else _defanged_text
         # A model's claim is quoted by the inline rule and set into its line
-        # after the line's own writing, so no character of it is escaped twice.
-        # Its place is marked by a run of NULs no text of the record holds,
-        # alone or beside another (:func:`_absent_mark`), and every mark is
-        # filled in one pass: a value prints its own characters, never another
-        # claim's.
-        claims: list[str] = []
+        # after the line's own writing (:func:`_placed`): a value prints its own
+        # characters, never another claim's.
         held = (states.failed, states.skipped, states.silent) if states is not None else None
-        mark = _absent_mark((recorded, held))
-        placed = re.compile(re.escape(mark) + r"claim(\d+)" + re.escape(mark))
+        blocks: list[list[str]] = [[], [], []]
 
-        def quote(text: str) -> str:
-            claims.append(_inline_safe(_one_line(text), plain=plain))
-            return f"{mark}claim{len(claims) - 1}{mark}"
+        def built(quote: Callable[[Any], str]) -> list[str]:
+            blocks[:] = coverage_lines(
+                recorded, lambda text: _code_span(_one_line(text)), quote, held
+            )
+            return [line for block in blocks for line in block]
 
-        def written(line: str) -> str:
-            return placed.sub(lambda found: claims[int(found.group(1))], inline(line))
-
-        missing, looked, negatives = coverage_lines(
-            recorded, lambda text: _code_span(_one_line(text)), quote, held
+        written = iter(
+            _placed(
+                built,
+                inline,
+                lambda text: _inline_safe(_one_line(text), plain=plain),
+                (recorded, held),
+            )
         )
         if unbuilt := not_built_line("coverage", recorded):
             lines.extend(["", unbuilt])
-        for intro, block in (
-            (COVERAGE_MISSING_INTRO, missing),
-            (COVERAGE_LOOKED_INTRO, looked),
-            (COVERAGE_NEGATIVES_INTRO, negatives),
+        for intro, block in zip(
+            (COVERAGE_MISSING_INTRO, COVERAGE_LOOKED_INTRO, COVERAGE_NEGATIVES_INTRO),
+            [len(block) for block in blocks],
+            strict=True,
         ):
             if block:
                 lines.extend(["", intro, ""])
-                lines.extend(_item(written(line)) for line in block)
+                lines.extend(_item(next(written)) for _ in range(block))
         return "\n".join(lines)
 
     def _appendix_references(self, report: MalwareReport, ctx: _Context) -> str:
@@ -2896,9 +2916,12 @@ class _Context:
                 ranked[str(row.tool)] = _analysis_rank(row)
         # The analysis tools first, the identity and parsing tools after.
         self.file_tools = sorted(ranked, key=lambda tool: ranked[tool])
-        read = _indicator_rows(report)
+        # The table is built once, each value its rows' contexts name marked;
+        # the rows read as built, the marks kept for the printed contexts.
+        self._row_words = _RowWords(report)
+        read = _indicator_rows(report, self._row_words.place)
         self._table_read = read is not None
-        self.iocs = read or []
+        self.iocs = self._row_words.rows(read or [])
         indicators = run_network_values(report, self.iocs)
         self.indicators = indicators
         run_values = ProseDefanger(indicators)
@@ -3209,6 +3232,21 @@ class _Context:
         the table separator is left to the row (:func:`_cell`).
         """
         return _emphasis_escaped(self._defang(_escaped_keeping_spans(text)))
+
+    def context(self, row: Any) -> str:
+        """An IOC row's context: the platform's words, each value in it by the inline rule.
+
+        The table is built with each value a context names marked
+        (``ioc_table``'s ``word``, :class:`_RowWords`): the context's own words
+        are written by their rule and each value by itself by the inline rule,
+        set in after (:func:`_placed_with`). A row the build did not mark is
+        written by the inline rule whole.
+        """
+        return self._row_words.written(row, "context", self.inline, self.value)
+
+    def recovered(self, row: Any) -> str:
+        """Which tools recovered an IOC row's value, written as :meth:`context` writes."""
+        return self._row_words.written(row, "recovered_by", self.inline, self.value)
 
     def value(self, text: Any, *, pipes: bool = False) -> str:
         """A value of the sample, a sandbox, a tool or the operator, by the inline rule.
@@ -4900,7 +4938,9 @@ def _family_voice(report: MalwareReport) -> str:
     return ASSESSED
 
 
-def _indicator_rows(report: MalwareReport) -> list[ConsolidatedIOC] | None:
+def _indicator_rows(
+    report: MalwareReport, word: Callable[[str], str] = str
+) -> list[ConsolidatedIOC] | None:
     """The IOC table's rows, answered by the publish rule on this render; ``None`` when unread.
 
     Built on request from the stored report by the reader
@@ -4916,7 +4956,7 @@ def _indicator_rows(report: MalwareReport) -> list[ConsolidatedIOC] | None:
     from malspark.reporting.builder import ioc_table
 
     try:
-        return ioc_table(report, raise_unread=True)
+        return ioc_table(report, raise_unread=True, word=word)
     except Exception:  # noqa: BLE001 — the table is then unread
         logger.exception(
             "markdown: the IOC table could not be rebuilt and no stored row holds one."
@@ -7079,26 +7119,167 @@ def _cell(value: Any) -> str:
     return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
 
 
-def _absent_mark(record: Any) -> str:
-    """A run of NULs one longer than all the NULs the texts of ``record`` hold together.
-
-    No text of the record holds it, nor any texts of it set side by side, so a
-    place it fences is the renderer's own; a record of any content has one.
-    """
-    held = 0
+def _texts_of(record: Any) -> list[str]:
+    """Every text ``record`` holds, its mappings' keys and its models' fields among them."""
+    texts: list[str] = []
     stack = [record]
     while stack:
         item = stack.pop()
         if isinstance(item, str):
-            held += item.count("\x00")
+            texts.append(item)
+        elif isinstance(item, BaseModel):
+            stack.append(item.model_dump())
         elif isinstance(item, dict):
             stack.extend(item.keys())
             stack.extend(item.values())
         elif isinstance(item, (list, tuple, set, frozenset)):
             stack.extend(item)
         elif item is not None:
-            held += str(item).count("\x00")
-    return "\x00" * (held + 1)
+            texts.append(str(item))
+    return texts
+
+
+def _absent_mark(record: Any, start: int = 0) -> str:
+    """A short fence no text of ``record`` holds: a NUL, a number from ``start`` up, a NUL.
+
+    The number is raised until no text holds the fence, so there is always one,
+    and it stays a few characters long whatever the record holds.
+    """
+    texts = _texts_of(record)
+    number = start
+    while any(f"\x00{number}\x00" in text for text in texts):
+        number += 1
+    return f"\x00{number}\x00"
+
+
+def _placed(
+    build: Callable[[Callable[[Any], str]], list[str]],
+    line: Callable[[str], str],
+    value: Callable[[str], str],
+    record: Any,
+) -> list[str]:
+    """The lines ``build`` writes, each value it names written by itself and set in after.
+
+    ``build`` is handed the writer of a value's place: it returns a mark for
+    the value, and each line is written by ``line`` (the platform's sentence
+    rule) with the marks in it; each value is written by ``value`` (the inline
+    rule) and set into its marks in one pass, so no character of it is escaped
+    twice and no two values pair. The mark is a fence no text of ``record``
+    holds (:func:`_absent_mark`); where a line's writing does not keep every
+    mark as built, the next fence is taken.
+    """
+    start = 0
+    while True:
+        mark = _absent_mark(record, start)
+        done = _placed_with(mark, build, line, value)
+        if done is not None:
+            return done
+        start = int(mark.strip("\x00")) + 1
+
+
+class _RowWords:
+    """The values the IOC table's contexts name, each marked where the table built it.
+
+    :meth:`place` is the table's ``word``: it hands out a fence no text of the
+    report holds (:func:`_absent_mark`) around the value's number. :meth:`rows`
+    gives the rows as a build with each value as recorded gives them, and
+    keeps the marked text of each row's context and recovery for
+    :meth:`written`.
+    """
+
+    def __init__(self, report: MalwareReport) -> None:
+        self.mark = _absent_mark(report)
+        self.placed = re.compile(re.escape(self.mark) + r"v(\d+)" + re.escape(self.mark))
+        self.values: list[str] = []
+        self.index: dict[str, int] = {}
+        self.marked: dict[tuple[str, str, str], str] = {}
+
+    def place(self, held: Any) -> str:
+        text = str(held if held is not None else "")
+        if text not in self.index:
+            self.index[text] = len(self.values)
+            self.values.append(text)
+        return f"{self.mark}v{self.index[text]}{self.mark}"
+
+    def _plain(self, text: str | None) -> str | None:
+        if not text or self.mark not in text:
+            return text
+        return self.placed.sub(lambda found: self.values[int(found.group(1))], text)
+
+    def rows(self, rows: list[ConsolidatedIOC]) -> list[ConsolidatedIOC]:
+        out: list[ConsolidatedIOC] = []
+        for row in rows:
+            key = (row.type, str(row.value).strip().lower())
+            changed: dict[str, Any] = {}
+            for part in ("context", "description", "recovered_by"):
+                held = getattr(row, part, None)
+                if isinstance(held, str) and self.mark in held:
+                    self.marked[(part, *key)] = held
+                    changed[part] = self._plain(held)
+            out.append(row.model_copy(update=changed) if changed else row)
+        return out
+
+    def written(
+        self,
+        row: Any,
+        part: str,
+        line: Callable[[str], str],
+        value: Callable[[str], str],
+    ) -> str:
+        """``row``'s context or recovery: its words by ``line``, each value by ``value``."""
+        plain = getattr(row, part, None)
+        if not plain:
+            return ""
+        held = self.marked.get((part, row.type, str(row.value).strip().lower()))
+        if held is not None:
+            done = _placed_with(
+                self.mark,
+                lambda word: [self.placed.sub(lambda f: word(self.values[int(f.group(1))]), held)],
+                line,
+                value,
+            )
+            if done is not None:
+                return done[0]
+        return value(plain)
+
+
+def _rested(row: dict[str, Any], word: Callable[[Any], str]) -> list[str]:
+    """One rested tool server's sentence, its names and the reason it gave each by ``word``."""
+    held = dict(row)
+    for key in ("server", "label"):
+        if str(row.get(key) or ""):
+            held[key] = word(str(row[key]))
+    if str(row.get("reason") or "").strip():
+        held["reason"] = word(str(row["reason"]).strip())
+    return [server_rest_sentence(held)]
+
+
+def _placed_with(
+    mark: str,
+    build: Callable[[Callable[[Any], str]], list[str]],
+    line: Callable[[str], str],
+    value: Callable[[str], str],
+) -> list[str] | None:
+    """:func:`_placed` with one fence; ``None`` where a line's writing did not keep its marks."""
+    placed = re.compile(re.escape(mark) + r"v(\d+)" + re.escape(mark))
+    values: list[str] = []
+    index: dict[str, int] = {}
+
+    def place(held: Any) -> str:
+        text = str(held if held is not None else "")
+        if text not in index:
+            index[text] = len(values)
+            values.append(value(text))
+        return f"{mark}v{index[text]}{mark}"
+
+    built = build(place)
+    written = [line(text) for text in built]
+    if any(
+        placed.findall(text) != placed.findall(done)
+        for text, done in zip(built, written, strict=True)
+    ):
+        return None
+    return [placed.sub(lambda found: values[int(found.group(1))], done) for done in written]
 
 
 # What would end a link's target, escape its end, open a title or a tag inside it.

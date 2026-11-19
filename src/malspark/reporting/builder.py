@@ -21,7 +21,7 @@ after this deterministic phase.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from malspark.analysis.run_summary import NOT_APPLICABLE
@@ -755,7 +755,9 @@ def _build_version_history(front_matter: ReportFrontMatter) -> list[VersionHisto
     ]
 
 
-def build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
+def build_consolidated_iocs(
+    report: MalwareReport, *, word: Callable[[str], str] = str
+) -> list[ConsolidatedIOC]:
     """Every indicator the report holds, typed, deduplicated and live, in one table.
 
     Host indicators first — the sample's own hashes, then carved and dropped
@@ -766,14 +768,18 @@ def build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
     with the arguments ``/reports/{id}/iocs`` and the STIX export ask it with.
     Values are stored live; the human-readable renderings defang them by kind.
     The report's lookups are built once for the whole table (``one_reading``).
+    ``word`` writes each value of the sample, a tool or a sandbox a row's
+    context names, as recorded unless a renderer writes it by its own rule.
     """
     from malspark.reporting.renderers.stix_renderer import one_reading
 
     with one_reading(report):
-        return _build_consolidated_iocs(report)
+        return _build_consolidated_iocs(report, word)
 
 
-def ioc_table(report: MalwareReport, *, raise_unread: bool = False) -> list[ConsolidatedIOC]:
+def ioc_table(
+    report: MalwareReport, *, raise_unread: bool = False, word: Callable[[str], str] = str
+) -> list[ConsolidatedIOC]:
     """The IOC table the report's §9 prints and ``/reports/{id}/iocs`` serves, from one source.
 
     Rebuilt from the stored report by the current rule
@@ -783,10 +789,11 @@ def ioc_table(report: MalwareReport, *, raise_unread: bool = False) -> list[Cons
     (``narrative_agent.published_answers``). The stored rows that carry a
     kind are read only when the rebuild fails; with ``raise_unread`` and no
     such row, the rebuild's error is raised, so a caller that fails closed
-    can tell a table it could not read from a table with no rows.
+    can tell a table it could not read from a table with no rows. ``word``
+    writes each value a row's context names (:func:`build_consolidated_iocs`).
     """
     try:
-        return build_consolidated_iocs(report)
+        return build_consolidated_iocs(report, word=word)
     except Exception:  # noqa: BLE001 — the stored rows are the fallback
         stored = [row for row in report.consolidated_iocs if row.kind]
         if raise_unread and not stored:
@@ -870,7 +877,9 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
     return [*rows, *with_record(added, report)]
 
 
-def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
+def _build_consolidated_iocs(
+    report: MalwareReport, word: Callable[[str], str] = str
+) -> list[ConsolidatedIOC]:
     from malspark.extractors.network_extractor import url_host
     from malspark.reporting.call_bindings import BOUND_SOURCE, binding_context
     from malspark.reporting.detonation_marks import entry_marks
@@ -1012,7 +1021,13 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
         for res in static.embedded_resources:
             if res.get("carved") and res.get("sha256"):
                 carved = str(res["sha256"])
-                _add(_digest_type(carved), "hash", carved, "static", f"carved at {res.get('id')}")
+                _add(
+                    _digest_type(carved),
+                    "hash",
+                    carved,
+                    "static",
+                    f"carved at {word(str(res.get('id')))}",
+                )
     for op in file_ops:
         if op.get("operation") == "write" and op.get("sha256"):
             name = str(op.get("path") or op.get("name") or "")
@@ -1022,7 +1037,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                 "hash",
                 digest,
                 "sandbox",
-                f"dropped {name}".strip(),
+                f"dropped {word(name)}".strip() if name.strip() else "dropped",
                 published=_sandbox_host("hash", digest),
             )
 
@@ -1042,7 +1057,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                 bound.kind,
                 bound.value,
                 BOUND_SOURCE,
-                binding_context(bound),
+                binding_context(bound, word),
                 published=publish_answer(
                     bound.kind,
                     bound.value,
@@ -1069,7 +1084,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
     for s in strings:
         if s.kind == "path" and not _is_pipe(s.value):
             ioc_type = "File path" if path_names_a_file(s.value) else "Directory"
-            _add(ioc_type, "path", s.value, "strings", s.notes or "")
+            _add(ioc_type, "path", s.value, "strings", word(s.notes) if s.notes else "")
 
     # The key is the row's value, as every surface carries it (a STIX
     # registry key, a MISP regkey, the Sigma selection); each value the sample
@@ -1079,7 +1094,9 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
     written: dict[str, tuple[str, dict[str, None]]] = {}
     for mod in dynamic.registry_mods if dynamic else []:
         if mod.operation in ("create", "modify") and mod.key.strip():
-            said = f"{mod.operation} value {mod.value_name}" if mod.value_name else mod.operation
+            said = (
+                f"{mod.operation} value {word(mod.value_name)}" if mod.value_name else mod.operation
+            )
             written.setdefault(mod.key.strip().lower(), (mod.key.strip(), {}))[1][said] = None
     run_keys = persistence_run_keys(report.persistence)
     for folded, (key, operations) in written.items():
@@ -1101,7 +1118,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
         _add("Registry key", "registry", target, "persistence", context)
     for s in strings:
         if s.kind == "registry":
-            _add("Registry key", "registry", s.value, "strings", s.notes or "")
+            _add("Registry key", "registry", s.value, "strings", word(s.notes) if s.notes else "")
 
     for op in file_ops:
         if op.get("operation") == "mutex" and op.get("name"):
@@ -1116,33 +1133,53 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
             )
     for s in strings:
         if s.kind == "mutex":
-            _add("Mutex", "mutex", s.value, "strings", s.notes or "")
+            _add("Mutex", "mutex", s.value, "strings", word(s.notes) if s.notes else "")
 
     for s in strings:
         if s.kind == "path" and _is_pipe(s.value):
-            _add("Named pipe", "path", s.value, "strings", s.notes or "")
+            _add("Named pipe", "path", s.value, "strings", word(s.notes) if s.notes else "")
 
     for mech in report.persistence:
         if mech.kind == "scheduled_task" and mech.target:
-            _add("Scheduled task", "scheduled_task", mech.target, "persistence", mech.payload)
+            _add(
+                "Scheduled task",
+                "scheduled_task",
+                mech.target,
+                "persistence",
+                word(mech.payload) if mech.payload else mech.payload,
+            )
     for mech in report.persistence:
         if mech.kind in ("service", "systemd_service") and mech.target:
-            _add("Service", "service", mech.target, "persistence", mech.payload)
+            _add(
+                "Service",
+                "service",
+                mech.target,
+                "persistence",
+                word(mech.payload) if mech.payload else mech.payload,
+            )
 
     for node in _spawned(dynamic.process_tree if dynamic else []):
         if node.command_line:
             _add("Command line", "command", node.command_line, "sandbox", f"pid {node.pid}")
     for s in strings:
         if s.kind == "command":
-            _add("Command line", "command", s.value, "strings", s.notes or "")
+            _add("Command line", "command", s.value, "strings", word(s.notes) if s.notes else "")
 
     # Credentials and wallet addresses: no export carries them, and a
     # responder still needs to see them.
     for s in strings:
         if s.kind == "secret":
-            _add("Leaked credential", "secret", s.value, "strings", s.notes or "")
+            _add(
+                "Leaked credential", "secret", s.value, "strings", word(s.notes) if s.notes else ""
+            )
         elif s.kind == "crypto_wallet":
-            _add("Cryptocurrency address", "crypto_wallet", s.value, "strings", s.notes or "")
+            _add(
+                "Cryptocurrency address",
+                "crypto_wallet",
+                s.value,
+                "strings",
+                word(s.notes) if s.notes else "",
+            )
 
     # Every row is asked the one rule: a string row as the string sweep's,
     # with the run's second-source record, and a row the sandbox, a
@@ -1227,7 +1264,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                     ioc_kind,
                     value,
                     "analyst",
-                    f"listed by the {analyst} analyst" if analyst else "listed by an analyst",
+                    f"listed by the {word(analyst)} analyst" if analyst else "listed by an analyst",
                     published=publish_answer(
                         ioc_kind,
                         value,
@@ -1257,7 +1294,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                 "domain",
                 d.fqdn,
                 d.source,
-                _domain_context(d),
+                _domain_context(d, word),
                 published=publish_answer(
                     "domain",
                     d.fqdn,
@@ -1271,7 +1308,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
             where = [
                 f"port {ip.port}" if ip.port else "",
                 ip.transport or "",
-                f"AS {ip.asn}" if ip.asn else "",
+                f"AS {word(ip.asn)}" if ip.asn else "",
                 "public DNS resolver" if ip.public_resolver else "",
                 _process_tree_words(
                     ip.sample_process_tree,
@@ -1279,6 +1316,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                     ip.marked_only_processes,
                     ip.file_only_processes,
                     ip.marked_by,
+                    word,
                 )
                 if ip.source == "sandbox"
                 else "",
@@ -1288,7 +1326,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                 "ip",
                 ip.address,
                 ip.source,
-                "; ".join(part for part in [*where, ip.geo or ""] if part),
+                "; ".join(part for part in [*where, word(ip.geo) if ip.geo else ""] if part),
                 published=publish_answer(
                     "ip",
                     ip.address,
@@ -1308,7 +1346,12 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                 u.url,
                 source,
                 "; ".join(
-                    part for part in (u.method, f"HTTP {u.status}" if u.status else "") if part
+                    part
+                    for part in (
+                        word(u.method) if u.method else "",
+                        f"HTTP {u.status}" if u.status else "",
+                    )
+                    if part
                 ),
                 published=publish_answer(
                     "url",
@@ -1346,17 +1389,17 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                 s.kind,
                 s.value,
                 "strings",
-                s.notes or "",
+                word(s.notes) if s.notes else "",
                 published=_from_strings(s.kind, s.value),
                 is_network=True,
             )
 
-    table = _with_the_hosts_of_published_urls(_with_the_judge_s_values(rows, report), report)
+    table = _with_the_hosts_of_published_urls(_with_the_judge_s_values(rows, report), report, word)
     # Which tool recovered each network value the sample hid, and where: the
     # table states it on every row the record holds, whoever recorded the row.
     out: list[ConsolidatedIOC] = []
     for row in table:
-        said = recovered_by_words(emulated, row.kind or "", row.value)
+        said = recovered_by_words(emulated, row.kind or "", row.value, word)
         if said:
             recovered = recovered_entries(emulated, row.kind or "", row.value)
             row = row.model_copy(
@@ -1554,7 +1597,7 @@ def _with_the_judge_s_values(
 
 
 def _with_the_hosts_of_published_urls(
-    rows: list[ConsolidatedIOC], report: MalwareReport
+    rows: list[ConsolidatedIOC], report: MalwareReport, word: Callable[[str], str] = str
 ) -> list[ConsolidatedIOC]:
     """The table with a Domain row for the host of each URL it publishes.
 
@@ -1586,8 +1629,8 @@ def _with_the_hosts_of_published_urls(
                 kind="domain",
                 value=host,
                 source=source,
-                context=f"the host of {url}",
-                description=f"the host of {url}",
+                context=f"the host of {word(url)}",
+                description=f"the host of {word(url)}",
                 published=publish_answer(
                     "domain",
                     host,
@@ -1624,30 +1667,42 @@ def _process_tree_words(
     marked_only: list[str] | None = None,
     file_only: list[str] | None = None,
     marked_by: str | None = None,
+    word: Callable[[str], str] = str,
 ) -> str:
-    """What the sandbox report says about which process reached an address."""
+    """What the sandbox report says about which process reached an address.
+
+    ``word`` writes each process and sandbox name (:func:`build_consolidated_iocs`).
+    """
     if attributed is True:
         return "reached by the sample's process tree"
     if attributed is False:
-        named = f" ({', '.join(outside)})" if outside else ""
+        named = f" ({', '.join(map(word, outside))})" if outside else ""
         return f"reached by a process outside the sample's process tree{named}"
     if marked_only or file_only:
         from malspark.reporting.renderers.stix_renderer import disputed_flow_reason
 
-        return disputed_flow_reason(list(marked_only or []), list(file_only or []), marked_by)
+        sandbox = word(marked_by.strip()) if marked_by and marked_by.strip() else marked_by
+        return disputed_flow_reason(
+            [word(name) for name in marked_only or []],
+            [word(name) for name in file_only or []],
+            sandbox,
+        )
     return "the sandbox report does not say which process reached it"
 
 
-def _domain_context(d: Any) -> str:
-    """What else the network block knows about a name, for the IOC table's context cell."""
-    notes = [d.reason] if d.reason else []
+def _domain_context(d: Any, word: Callable[[str], str] = str) -> str:
+    """What else the network block knows about a name, for the IOC table's context cell.
+
+    ``word`` writes each value the record holds (:func:`build_consolidated_iocs`).
+    """
+    notes = [word(d.reason)] if d.reason else []
     if isinstance(d.dga_score, int | float) and d.dga_score > 0:
         notes.append(f"DGA score {float(d.dga_score):.2f}")
     if d.is_punycode:
-        target = f" resembling {d.homograph_target}" if d.homograph_target else ""
+        target = f" resembling {word(d.homograph_target)}" if d.homograph_target else ""
         notes.append(f"punycode{target}")
     if d.resolved_ips:
-        notes.append("resolved to " + ", ".join(d.resolved_ips[:4]))
+        notes.append("resolved to " + ", ".join(map(word, d.resolved_ips[:4])))
     if getattr(d, "resolved_ips_partial", False):
         notes.append(
             f"some addresses withheld for size ({d.resolved_ips_withheld} of its DNS "

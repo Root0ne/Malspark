@@ -18,9 +18,8 @@ run, method and limitation sections read, each with the provenance of its
 value: the mediator's and the analysts' quoted words, the negotiation keys
 listed in :data:`NEGOTIATION_QUOTES` and a negative claim are a model's and
 carry a plain token of their own); and the lists the scan checks against —
-the places carrying a balanced backtick pair (:data:`PAIRED`), the places
-whose spans a sentence keeps (:data:`SPANS_ACROSS_VALUES`) and the places
-no surface prints (:data:`NOT_PRINTED`). A key or a record the hand lists
+the places carrying a balanced backtick pair (:data:`PAIRED`) and the
+places no surface prints (:data:`NOT_PRINTED`). A key or a record the hand lists
 miss is not scanned.
 
 report.md, the evidence bundle's Markdown and the HTML of both are rendered by
@@ -178,18 +177,19 @@ def _payload(n: int, *, paired: bool = False) -> str:
 
     ``1. # `` opens a list and a heading at a line's start; the brackets a link,
     the stars and tildes emphasis and struck text, the tags raw HTML, the
-    pipes a cell; ``\\x00claim0\\x00`` is the shape of a placeholder; two
-    backtick runs of unequal length, a backslash before a star and ``&lt;``
-    are what a writer's code span, an escape and a character reference would
-    take instead of showing (:data:`_SHOWN_BEFORE`); the line after the break
-    opens a heading of its own. ``paired`` makes the runs equal, a code span
-    for any writer that keeps one (:data:`PAIRED`).
+    pipes a cell; ``\\x00claim0\\x00`` and ``\\x000\\x00v0\\x000\\x00`` are the
+    shapes of a placeholder; one backtick, a backslash before a star and
+    ``&lt;`` are what a writer's code span, an escape and a character reference
+    would take instead of showing (:data:`_SHOWN_BEFORE`) — one backtick in
+    each of two values a sentence carries would pair into a span; the line
+    after the break opens a heading of its own. ``paired`` closes the backtick
+    within the value, a code span for any writer that keeps one (:data:`PAIRED`).
     """
-    ticks = "``" if paired else "`"
+    close = "`" if paired else ""
     return (
         f"1. # zH{n}z [zL{n}z](#zT{n}z) **zB{n}z** ~~zS{n}z~~ <u>zU{n}z</u> "
-        f"<img src=zI{n}z> |zP{n}z| \x00claim0\x00 {ticks}zC{n}z`` \\*zK{n}z &lt;zE{n}z "
-        f"zZ{n}z\n# zN{n}z"
+        f"<img src=zI{n}z> |zP{n}z| \x00claim0\x00 \x000\x00v0\x000\x00 `zC{n}z{close} "
+        f"\\*zK{n}z &lt;zE{n}z zZ{n}z\n# zN{n}z"
     )
 
 
@@ -199,32 +199,9 @@ _SHOWN_BEFORE = {"C": "`", "K": "\\*", "E": "&lt;"}
 
 # The places whose value carries a balanced backtick pair: a section's text is
 # written with every backtick escaped. A platform sentence elsewhere keeps a
-# balanced pair as a span by its rule (``ctx.inline``), so its value carries none.
+# balanced pair within one value as a span by its rule (``ctx.inline``), so its
+# value carries one backtick only.
 PAIRED = re.compile(r"^report\.sections\[\]\.text$")
-
-# The places a platform sentence carries beside another value, the sentence
-# written by its rule with its spans kept (``ctx.inline``): a backtick run of
-# one value pairs with a run of the same length in the other and the two show
-# as a span. Listed so the scan states it; the backtick checks pass over them.
-SPANS_ACROSS_VALUES = frozenset(
-    f"report.{place}"
-    for place in (
-        "bound_values[].api",
-        "bound_values[].parameter",
-        "limitation_inventory.failed[].entry",
-        "limitation_inventory.failed[].tool",
-        "limitation_inventory.not_offered[].reason",
-        "limitation_inventory.not_offered[].tool",
-        "limitation_inventory.sandbox_entry",
-        "limitation_inventory.sandbox_sections[].name",
-        "limitation_inventory.short_analyses[].detonation",
-        "limitation_inventory.short_analyses[].task",
-        "network.domains[].reason",
-        "network.domains[].resolved_ips[]",
-        "network.ips[].asn",
-        "network.ips[].geo",
-    )
-)
 
 
 class _Tokens:
@@ -520,12 +497,18 @@ def _faults(surface: str, rendered: str, tokens: _Tokens) -> list[str]:
                 if found.group(1) in "HLTBSUIPZN":
                     faults.append(f"{surface}: {place} in <{tag} {name}>")
         text = " ".join("".join(texts).split())
+        if tag == "code":
+            # Two values' backticks never pair into a span: a span holding two
+            # values' words is the platform's span of a compound value (a DLL
+            # and its function), which shows each value's own backtick.
+            held = sorted({found.group(2) for found in _TOKEN.finditer(text)})
+            if len(held) > 1 and not all(f"`zC{n}z" in text for n in held):
+                names = sorted({tokens.places.get(int(n), "?") for n in held})
+                faults.append(f"{surface}: <code> holds the words of {', '.join(names)}")
         head = _TOKEN.match(text.lstrip("#").lstrip())
         if head is None:
             continue
         place = tokens.places.get(int(head.group(2)), "?")
-        if head.group(1) == "C" and place in SPANS_ACROSS_VALUES:
-            continue
         if tag in _MADE and head.group(1) == _MADE[tag] and place != "report.references[].source":
             faults.append(f"{surface}: {place} made <{tag}>")
         elif tag in _BLOCKS and head.group(1) in "HNP":
@@ -536,8 +519,6 @@ def _faults(surface: str, rendered: str, tokens: _Tokens) -> list[str]:
         if shown[: found.start()].endswith(before):
             continue
         place = tokens.places.get(int(found.group(2)), "?")
-        if found.group(1) == "C" and place in SPANS_ACROSS_VALUES:
-            continue
         faults.append(f"{surface}: {place} lost {before!r} before its token")
     for first in re.finditer(r"zH(\d+)z", shown):
         n = first.group(1)
@@ -567,8 +548,10 @@ def _surfaces(report: MalwareReport) -> dict[str, str]:
 
 # The places whose value no surface prints for this report: a field the
 # renderers do not print, or print only for a value of its kind's shape, which
-# a payload is not. Written by hand from the scan's own run; a listed place
-# that is printed, or an unlisted one that is not, fails the scan.
+# a payload is not. A hand-written list, taken from the scan's own run: each
+# listed place is asserted not printed on any surface (report.md, the bundle's
+# Markdown and the HTML of both), so a place that starts being printed fails
+# until it is classed, and an unlisted place that is not printed fails too.
 NOT_PRINTED = frozenset(
     f"report.{place}"
     for place in (
@@ -713,9 +696,10 @@ def test_no_value_the_platform_did_not_write_makes_structure_on_any_surface() ->
     # Each place written is printed somewhere, or listed as one no surface prints.
     places = {tokens.places[n] for n, kind in tokens.kinds.items() if kind == "V"}
     shown = {tokens.places[n] for n in printed if n in tokens.places}
-    assert sorted(places - shown - NOT_PRINTED) == []
-    assert sorted(NOT_PRINTED & shown) == []
-    assert NOT_PRINTED <= places
+    assert sorted(places - shown - NOT_PRINTED) == [], "written, printed nowhere, not listed"
+    for place in sorted(NOT_PRINTED):
+        assert place in places, f"{place}: listed, not written"
+        assert place not in shown, f"{place}: listed as printed nowhere, printed"
 
 
 def test_the_operator_s_reference_is_one_link_on_every_markdown_surface() -> None:
