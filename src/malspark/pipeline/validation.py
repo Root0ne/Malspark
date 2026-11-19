@@ -11244,7 +11244,8 @@ def call_count_violations(
     sentence is not what the count counts. Callers and call sites count
     places across the image, not the calls one function's code writes, and
     are not read. Only a cited entry whose tool lists code
-    (:func:`entry_lists_any_code`) is read: the calls (``name(``) of the
+    (:func:`entry_lists_any_code`) and that was not stored cut
+    (``EntryTexts.partial``) is read: the calls (``name(``) of the
     named routine its text writes — an address read as the decompiler names
     it — are counted (:func:`_calls_of`). Where the stated number is neither
     one entry's count nor their sum, the model is asked once. The finding
@@ -11267,6 +11268,7 @@ def call_count_violations(
             entry_id
             for entry_id in cited
             if entries.has_text(entry_id)
+            and str(entry_id).strip().lower() not in entries.partial
             and (entry := entries.entries.get(str(entry_id).strip().lower())) is not None
             and entry_lists_any_code(entry)
         ]

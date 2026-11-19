@@ -153,6 +153,35 @@ class TestTheCheck:
 
         assert found.message.startswith("The text states '3 calls' and names FUN_00401900; ")
 
+    def test_an_entry_stored_cut_is_not_read(self) -> None:
+        """A listing the platform stored cut may write more lines than it holds here: it is
+        not counted and not named, and where every cited listing is cut nothing is asked."""
+        cut = LedgerEntry(
+            id="ev_0099",
+            agent="code",
+            server="code",
+            tool="decompile_function",
+            output=json.dumps({"code": CODE}),
+            truncated=True,
+        )
+        whole = _texts()
+        texts = EntryTexts.from_ledger([*whole.entries.values(), cut])
+
+        assert (
+            call_count_violations(
+                {"body": "The routine calls FUN_00401900 three times [ev_0099]."},
+                texts,
+                prose=("body",),
+            )
+            == []
+        )
+        (found,) = call_count_violations(
+            {"body": "The routine calls FUN_00401900 three times [ev_0095, ev_0099]."},
+            texts,
+            prose=("body",),
+        )
+        assert "ev_0099" not in found.message
+
     def test_an_entry_that_lists_no_code_is_not_read(self) -> None:
         assert _body("The routine calls seed 2 times [ev_0097].") == []
         assert _body("The routine calls FUN_00401900 three times [ev_0097].") == []
