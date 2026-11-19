@@ -52,11 +52,12 @@ the same comparison: the first turn as sent (``first_turn_sent_reproduced``) and
 correction turn (``retry_reproduced``, ``retry_first_difference``,
 ``retry_blocks_differing``). A run whose prompt differs in any block, in their order or
 outside them, or whose retry turn differs, is replayed only under ``--allow-differing``, and
-such a replay is a comparison of refs on a rebuilt input, not a reproduction of what the run
-did, said once per run and in the summary line; without the flag the run is refused, and so
-is a log holding more requests than the round's two (more than one job's round). A label of
-a refused run says why. The command ends with status 3 where a run is refused, and 5 where
-a run is refused and a difference no expectation excuses is found as well, printed under the
+such a replay is a replay on a rebuilt input, not a reproduction of what the run did (under
+``--compare``, a comparison of refs on a rebuilt input), said once per run and in the summary
+line; without the flag the run is refused, and so is a log holding more requests than the
+round's two (more than one job's round). A label of a refused run says why, and one of a run
+not replayed says so. The command ends with status 3 where a run is refused, and 5 where a
+run is refused and a difference no expectation excuses is found as well, printed under the
 refusals. The command refuses to start, with status 4, where the round's code is imported
 from another tree than this one.
 
@@ -74,8 +75,9 @@ excuses differences; the command ends with status 1 on any difference no entry m
 0 otherwise. Each ref's round checks every human turn it sends against the logged one,
 printed per ref; the pre-round report is rebuilt, and a run refused, by the code this
 command runs from. With ``--check-stored``, ref A's differences from the stored round on a
-run with no marks count toward the status (the harness testing itself); ref B's, the change
-measured, are printed only.
+run whose first turn is reproduced count toward the status (the harness testing itself),
+whatever its retry and re-serialised answers, whose marks are printed beside them; ref B's,
+the change measured, are printed only.
 
 ``--labels FILE`` (a JSON list of labelled sentences kept outside git, each with ``run``,
 ``text``, ``label`` ``false`` or ``true``, and ``passage`` where it is known) states, per
@@ -144,7 +146,8 @@ STATUSES = (
     "Exit status: 0 where every replayed run ends as expected; 1 where a difference no "
     "expectation excuses is found (under --check-stored, any difference from the stored "
     "round; under --compare with --check-stored, also any difference of ref A's replay from "
-    "the stored round on a run with no marks, ref B's being printed and never counted); 2 on "
+    "the stored round on a run whose first turn is reproduced, whatever its retry and "
+    "re-serialised answers, ref B's being printed and never counted); 2 on "
     "a usage error; 3 where a run is refused and no such difference is found; "
     "4 where the round's code is imported from another tree than this one; 5 where a run is "
     "refused and such a difference is found as well."
@@ -156,8 +159,9 @@ COMPARE_NOTE = (
     "the same position (printed per ref); the pre-round report is rebuilt, and a run refused, "
     "by the code this command runs from"
 )
-# What a replay of a rebuilt input is, and what a retry the run never had measures: said once
-# per such run and in the summary line.
+# What a replay of a rebuilt input is, of one tree and under two refs, and what a retry the
+# run never had measures: said once per such run and in the summary line.
+REPLAY_NOTE = "a replay on a rebuilt input, not a reproduction of what the run did"
 REBUILT_NOTE = "a comparison of refs on a rebuilt input, not a reproduction of what the run did"
 EMPTY_RETRY_NOTE = (
     "any difference in how a retry is handled is measured on a turn the run never had"
@@ -191,7 +195,8 @@ LIMITS = (
     "model was not shown, and a run whose first turn differs in any block (a written passage, "
     "a fact, the judge's decision, a debate mediation), in the blocks' order or outside them, "
     "or whose retry turn differs, is replayed only under --allow-differing, every line of it "
-    "marked with the kinds that differ and how many: such a replay is " + REBUILT_NOTE + "; "
+    "marked with the kinds that differ and how many, and said to be " + REPLAY_NOTE + " "
+    "(under --compare, " + REBUILT_NOTE + "); "
     "under --compare the pre-round report is rebuilt and a run refused by the code this "
     "command runs from, while each ref checks the turns its own round sends; the harness "
     "shows what the code does with a given answer, not what a model would answer to a "
@@ -1248,18 +1253,24 @@ def rebuilt_input(record: Mapping[str, Any]) -> bool:
     )
 
 
+def first_turn_reproduced(record: Mapping[str, Any]) -> bool:
+    """Whether a replay's first turn, as rebuilt and as sent, is the logged one, whatever its
+    retry and re-serialised answers."""
+    return bool(record.get("prompt_reproduced") and record.get("first_turn_sent_reproduced"))
+
+
 def empty_retry(record: Mapping[str, Any]) -> bool:
     """Whether the replay's retry was answered by the harness's own empty answer."""
     return bool(record.get("first_turn_only") and record.get("turns_unanswered"))
 
 
-def run_notes(record: Mapping[str, Any]) -> list[str]:
-    """What a run's replay is, said once per run: a comparison on a rebuilt input, and a retry
-    the run never had."""
+def run_notes(record: Mapping[str, Any], compared: bool = False) -> list[str]:
+    """What a run's replay is, said once per run: a replay on a rebuilt input (a comparison
+    of refs on one where ``compared``), and a retry the run never had."""
     return [
         note
         for note, holds in (
-            (REBUILT_NOTE, rebuilt_input(record)),
+            (REBUILT_NOTE if compared else REPLAY_NOTE, rebuilt_input(record)),
             (EMPTY_RETRY_NOTE, empty_retry(record)),
         )
         if holds
@@ -1494,6 +1505,19 @@ def _printed(label: Mapping[str, Any], texts: Mapping[str, Mapping[str, Any]]) -
     return any(said in _plain(t.get("text")) for t in texts.values())
 
 
+# Why a label's run has no replay where it was not refused: it was not on the command line,
+# or gave nothing to replay.
+NOT_REPLAYED = "run not replayed"
+
+
+def _label_value(value: Any) -> str:
+    """A label as printed and kept: a JSON boolean as ``true`` or ``false``, any other value
+    as its text."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value or "")
+
+
 def label_lines(
     labels: Sequence[Mapping[str, Any]],
     records: Mapping[str, Mapping[str, Mapping[str, Any]]],
@@ -1501,18 +1525,21 @@ def label_lines(
 ) -> list[dict[str, Any]]:
     """Per label, whether its text is printed as stored before the round and under each ref
     (``records``: ref name to the replays of each run by name), and why its run was not
-    replayed where it was refused (``refused``: run name to the refusal)."""
+    replayed where it was refused (``refused``: run name to the refusal), or that it was not
+    replayed where no ref holds it otherwise."""
     out: list[dict[str, Any]] = []
     for label in labels:
         run = str(label.get("run") or "")
         row: dict[str, Any] = {
             "run": run,
             "passage": label.get("passage"),
-            "label": str(label.get("label") or ""),
+            "label": _label_value(label.get("label")),
             "text": str(label.get("text") or ""),
             "printed": {},
             "refused": (refused or {}).get(run, ""),
         }
+        if not row["refused"] and not any(run in by_run for by_run in records.values()):
+            row["not_replayed"] = NOT_REPLAYED
         given = next((by_run[run] for by_run in records.values() if run in by_run), {})
         row.update(marks_of(given))
         for ref, by_run in records.items():
@@ -1710,6 +1737,7 @@ def _print_labels(lines: Sequence[Mapping[str, Any]]) -> None:
             f"{' ' + _safe(line['passage']) if line['passage'] else ''}] printed: {printed}"
             + mark_text(line)
             + (f" (refused: {_safe(line['refused'])})" if line.get("refused") else "")
+            + (f" ({_safe(line['not_replayed'])})" if line.get("not_replayed") else "")
         )
 
 
@@ -1843,13 +1871,14 @@ def main(argv: list[str] | None = None) -> int:
             mine = by_ref[side].get(run)
             if mine is not None:
                 print(f"{_safe(run)} under {_safe(ref)}: {_safe(checks_text(mine))}")
-        for note in run_notes(under_a):
+        for note in run_notes(under_a, compared=True):
             print(f"{_safe(run)}: note: {note}")
     stored_left: list[str] = []
     if args.check_stored:
         # Each ref's replay against the round as stored, where its answers are stored. Ref A's
-        # differences on a run with no marks are the harness testing itself and are counted;
-        # ref B's are the change measured and are printed only.
+        # differences on a run whose first turn is reproduced are the harness testing itself
+        # and are counted, whatever its retry and re-serialised answers, with its marks beside
+        # them; ref B's are the change measured and are printed only.
         for row in cases:
             if not row.final_answers_stored or row.case is None:
                 continue
@@ -1861,8 +1890,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{_safe(row.run)} under {_safe(ref)} {against_line(found, replayed)}")
                 for line in found:
                     print(f"   {_safe(line)}{mark_text(replayed)}")
-                if side == "A" and not mark_text(replayed):
-                    stored_left.extend(f"{row.run} under {ref}: {line}" for line in found)
+                if side == "A" and first_turn_reproduced(replayed):
+                    stored_left.extend(
+                        f"{row.run} under {ref}: {line}{mark_text(replayed)}" for line in found
+                    )
     print(f"== {args.compare[0]} (A) against {args.compare[1]} (B)")
     print(COMPARE_NOTE)
     for d in differences:

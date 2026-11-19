@@ -282,6 +282,47 @@ def test_each_label_says_whether_its_sentence_is_printed_under_each_version(
     assert lines[2]["printed"] == {"A": None, "B": None}
 
 
+@pytest.mark.parametrize(("given", "said"), [(False, "false"), (True, "true")])
+def test_a_boolean_label_is_printed_and_kept_as_true_or_false(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], given: bool, said: str
+) -> None:
+    run, _after, _done, _given = _stored_run(tmp_path, keep_answers=True)
+    labels = tmp_path / "labels.json"
+    labels.write_text(
+        json.dumps([{"run": "family-r1/1", "text": FIRST, "label": given}]), encoding="utf-8"
+    )
+    out = tmp_path / "out"
+
+    harness.main([str(run), "--out", str(out), "--labels", str(labels)])
+
+    (line,) = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith(" - label")]
+    assert line.startswith(f" - label {said} [family-r1/1]")
+    (kept,) = json.loads((out / "labels.json").read_text(encoding="utf-8"))
+    assert kept["label"] == said
+
+
+def test_a_label_of_a_run_not_replayed_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run, _after, _done, _given = _stored_run(tmp_path, keep_answers=True)
+    labels = tmp_path / "labels.json"
+    labels.write_text(
+        json.dumps([{"run": "another/1", "text": FIRST, "label": "true"}]), encoding="utf-8"
+    )
+
+    harness.main([str(run), "--labels", str(labels)])
+
+    (line,) = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith(" - label")]
+    assert "printed: HEAD: -" in line and line.endswith(f"({harness.NOT_REPLAYED})")
+    assert "refused" not in line
+    # A run that is replayed carries no such reason.
+    (replayed,) = harness.label_lines(
+        [{"run": "family-r1/1", "text": FIRST, "label": "true"}],
+        {"A": {"family-r1/1": harness.recover(run).record or {}}},
+    )
+    assert "not_replayed" not in replayed
+
+
 def test_the_limits_are_stated_in_the_help() -> None:
     said = " ".join(harness._parser().format_help().split())
     doc = " ".join((harness.__doc__ or "").split())
@@ -295,7 +336,8 @@ def test_the_limits_are_stated_in_the_help() -> None:
     assert "shortened stored ledger" in said and "shortened stored ledger" in doc
     assert "re-serialised" in said and "answer_reserialised" in said
     # What a replay of a rebuilt input and a retry the run never had are.
-    assert harness.REBUILT_NOTE in said
+    assert harness.REPLAY_NOTE in said and harness.REBUILT_NOTE in said
+    assert "said to be " + harness.REPLAY_NOTE + " (under --compare, " in said
     assert harness.EMPTY_RETRY_NOTE in said
     # The help's first paragraph says what the tool is on the stored runs as they stand.
     first = " ".join(str(harness._parser().description or "").split())
@@ -730,7 +772,7 @@ def test_two_refs_each_check_their_own_turns_and_ref_a_s_stored_differences_coun
     assert "under B:" not in closing
 
 
-def test_ref_b_s_differences_from_the_stored_round_and_a_marked_run_s_are_not_counted(
+def test_ref_b_s_differences_from_the_stored_round_are_not_counted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     clean, _after, _done, _given = _stored_run(tmp_path / "a", keep_answers=True)
@@ -747,20 +789,58 @@ def test_ref_b_s_differences_from_the_stored_round_and_a_marked_run_s_are_not_co
     assert "0 difference(s), 0 not expected" in said
     # Ref B is the change measured: printed, never counted.
     assert status == 0
-    # A run whose retry answer is fed re-serialised carries a mark: its differences under A
-    # are printed, not counted.
-    marked, _after, _done, _given = _stored_run(tmp_path / "b", keep_answers=True)
-    _without_a_stored_record(marked)
+    helped = " ".join(harness._parser().format_help().split())
+    assert "ref A's replay from the stored round on a run whose first turn is reproduced" in helped
+    assert "ref B's being printed and never counted" in helped
+
+
+def test_ref_a_s_stored_differences_count_where_the_first_turn_is_reproduced_whatever_the_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The retry turn differs and the retry's answer is fed re-serialised: both are marked.
+    run, _after, _done, _given = _stored_run(tmp_path, keep_answers=True)
+    _without_a_stored_record(run)
+    _rewrite_retry(run)
     _two_refs(monkeypatch)
+
     status = harness.main(
-        [str(marked), "--check-stored", "--compare", "A", "B", "--out", str(tmp_path / "o2")]
+        [str(run), "--allow-differing", "--check-stored", "--compare", "A", "B"]
+        + ["--out", str(tmp_path / "out")]
     )
+
     said = capsys.readouterr().out
     assert "under A against the stored round: 2 difference(s), 2 of them on marked input" in said
+    assert status == harness.DIFFERENCES
+    # The counted differences carry the run's marks.
+    lines = said.splitlines()
+    head = next(i for i, ln in enumerate(lines) if "under A against the stored round:" in ln)
+    counted = lines[head + 1 : head + 3]
+    assert len(counted) == 2 and all(
+        ln.startswith("   ") and "retry turn not reproduced" in ln and "re-serialised" in ln
+        for ln in counted
+    )
+    # Under two refs the run's replay is said to be a comparison of refs.
+    assert said.count(f"family-r1/1: note: {harness.REBUILT_NOTE}") == 1
+    assert harness.REPLAY_NOTE not in said
+
+
+def test_ref_a_s_stored_differences_do_not_count_where_the_first_turn_is_not_reproduced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run, _after, _done, _given = _stored_run(tmp_path, keep_answers=True)
+    _without_a_stored_record(run)
+    _differing(monkeypatch)
+    _two_refs(monkeypatch)
+
+    status = harness.main(
+        [str(run), "--allow-differing", "--check-stored", "--compare", "A", "B"]
+        + ["--out", str(tmp_path / "out")]
+    )
+
+    said = capsys.readouterr().out
+    line = next(ln for ln in said.splitlines() if "under A against the stored round:" in ln)
+    assert "prompt not reproduced" in line and " 0 difference(s)" not in line
     assert status == 0
-    helped = " ".join(harness._parser().format_help().split())
-    assert "ref A's replay from the stored round on a run with no marks" in helped
-    assert "ref B's being printed and never counted" in helped
 
 
 def _rewrite_retry(run: Path) -> None:
@@ -844,8 +924,9 @@ def test_a_run_whose_retry_turn_differs_is_marked_on_every_line_when_allowed(
     said = capsys.readouterr().out
     printed = [ln for ln in said.splitlines() if ln.startswith(("==", "   turn", " - label"))]
     assert printed and all("retry turn not reproduced" in ln for ln in printed)
-    # Said once for the run: what its replay is.
-    assert said.count(f"note: {harness.REBUILT_NOTE}") == 1
+    # Said once for the run: what its replay is, with no refs compared.
+    assert said.count(f"note: {harness.REPLAY_NOTE}") == 1
+    assert harness.REBUILT_NOTE not in said
     summary = harness.summary_line(differences, [], [record])
     assert f"{harness.REBUILT_NOTE}: family-r1/1" in summary
 
@@ -907,7 +988,7 @@ def test_a_retry_the_run_never_had_is_said_once_per_run_and_in_the_summary(
     said = capsys.readouterr().out
 
     assert said.count(f"note: {harness.EMPTY_RETRY_NOTE}") == 1
-    assert harness.REBUILT_NOTE not in said
+    assert harness.REBUILT_NOTE not in said and harness.REPLAY_NOTE not in said
     with monkeypatch.context() as patched:
         _stubbed(patched)
         second = harness.replay_case(found.case)
@@ -1044,7 +1125,7 @@ def test_a_stored_run_whose_first_turn_is_reproduced_replays_to_its_stored_repor
                 continue
             found = harness.recover(run, allow_differing=True)
             assert found.case is not None and found.record is not None
-            assert harness.REBUILT_NOTE in harness.run_notes(found.record)
+            assert harness.REPLAY_NOTE in harness.run_notes(found.record)
         record = found.record
         assert found.case is not None and record is not None
         assert harness.against_stored(run, found.case, record) == [], found.run
