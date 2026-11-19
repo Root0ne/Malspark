@@ -7506,14 +7506,7 @@ def _rewrite_violations(
     items: Any,
     entries: EntryTexts | None,
 ) -> list[Violation]:
-    """A rewrite read as the report rounds read their prose.
-
-    Any finding here refuses the rewrite, and a refused rewrite of a closing
-    sentence is left out of its section, so a check whose finding only asks
-    the model what its number counts (``call_count_violations``) is not read
-    here: it is read on the report's sections, the narrative and the question
-    round, where a sentence asked about is kept with its finding.
-    """
+    """A rewrite read as the report rounds read their prose."""
     prose = {"rewrite": text}
     return [
         *citation_violations(prose, citable, prose=("rewrite",), items=items),

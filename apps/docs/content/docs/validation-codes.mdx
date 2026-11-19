@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**140 codes in 12 families:** [agreement](#agreement) 21 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 25 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**139 codes in 12 families:** [agreement](#agreement) 21 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 24 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -584,14 +584,6 @@ A report sentence that says a routine was not read (or its decompile not obtaine
 - **Raised at** `malspark.pipeline.validation:ledger_absence_contradictions`
 - **Constant** `malspark.pipeline.validation:ABSENCE_CONTRADICTS_LEDGER_CODE`
 - **Docs** [Architecture](/docs/architecture/)
-
-### `report.call_count_differs`
-
-A cited sentence whose count of calls names a routine in the count's own words, where a cited code listing writes another number of calls of it (`call_count_violations`). Asked once; the finding states the count as the text writes it, the name the text writes, and how many lines of each code listing read write the name and a bracket. A sentence kept after it stands with the finding.
-
-- **Raised at** `malspark.pipeline.validation:call_count_violations._ask_count`
-- **Constant** `malspark.pipeline.validation:CALL_COUNT_DIFFERS_CODE`
-- **Docs** none
 
 ### `report.category_type_unstated`
 

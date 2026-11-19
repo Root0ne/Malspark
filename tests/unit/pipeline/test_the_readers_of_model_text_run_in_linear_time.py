@@ -40,7 +40,6 @@ from malspark.pipeline.limit_rulings import REASON_LIMIT, clean_quote, read_ruli
 from malspark.pipeline.validation import (
     EntryTexts,
     absence_holders_note,
-    call_count_violations,
     citation_violations,
     ledger_absence_contradictions,
 )
@@ -357,34 +356,6 @@ EXITS = exit_branches(
         pytest.param(lambda t: ClaimRepeatReader(None).feed("CLAIM R1: " + t), id="streaming"),
         pytest.param(
             lambda t: ledger_absence_contradictions({"body": t}, ENTRIES), id="absence sentences"
-        ),
-        pytest.param(
-            lambda t: call_count_violations({"body": t + " [ev_0001]."}, ENTRIES, prose=("body",)),
-            id="call counts",
-        ),
-        pytest.param(
-            lambda t: call_count_violations(
-                {"body": "calls the " * (len(t) // 10) + "FUN_00001800 3 times [ev_0001]."},
-                ENTRIES,
-                prose=("body",),
-            ),
-            id="call counts after many verbs",
-        ),
-        pytest.param(
-            lambda t: call_count_violations(
-                {"body": "It calls FUN_00001800 3 times [ev_0001]. " * (len(t) // 42)},
-                ENTRIES,
-                prose=("body",),
-            ),
-            id="call counts of many sentences",
-        ),
-        pytest.param(
-            lambda t: call_count_violations(
-                {"body": "1,1,1,1 " * (len(t) // 8) + "calls to FUN_00001800 [ev_0001]."},
-                ENTRIES,
-                prose=("body",),
-            ),
-            id="call counts after a run of separated digits",
         ),
         pytest.param(
             lambda t: citation_violations({"body": "[" * len(t)}, ["ev_0001"]),
