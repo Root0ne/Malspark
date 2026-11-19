@@ -15,6 +15,7 @@ the browser and in WeasyPrint, and is theme-neutral (uses
 
 from __future__ import annotations
 
+import math
 from html import escape
 from typing import Any
 
@@ -26,22 +27,6 @@ from malspark.reporting.defang import defang
 from malspark.reporting.models import Figure, MalwareReport, ProcessNode
 from malspark.schemas.sandbox_report import staged_words
 from malspark.utils.marked_cut import marked_cut
-
-# Kill-chain tactic order for the ATT&CK matrix / infection chain.
-_TACTIC_ORDER: list[tuple[str, str]] = [
-    ("TA0001", "Initial Access"),
-    ("TA0002", "Execution"),
-    ("TA0003", "Persistence"),
-    ("TA0004", "Priv. Esc."),
-    ("TA0005", "Defense Evasion"),
-    ("TA0006", "Credential Access"),
-    ("TA0007", "Discovery"),
-    ("TA0008", "Lateral Movement"),
-    ("TA0009", "Collection"),
-    ("TA0011", "Command & Control"),
-    ("TA0010", "Exfiltration"),
-    ("TA0040", "Impact"),
-]
 
 _INK = "#1b1f24"
 _MUTED = "#57606a"
@@ -59,7 +44,7 @@ def _svg(width: int, height: int, body: str) -> str:
 
 
 # What one figure holds: a drawing, not the record. Whatever a figure leaves
-# out its legend counts, and the report's tables and its JSON form carry.
+# out its legend counts, and the report's JSON form carries.
 _TREE_ROWS = 40
 _NETWORK_ENDPOINTS = 12
 _MATRIX_CELLS = 8
@@ -69,14 +54,37 @@ _LISTINGS = 4
 
 
 def _figure_left_out(total: int, shown: int, what: str) -> str:
-    """The legend's sentence for what a figure did not draw, or ``""``."""
+    """The legend's sentence for what a figure did not draw, or ``""``.
+
+    It points at the JSON report alone: one stored figure is printed by layouts
+    that print different tables, and the JSON report holds every row.
+    """
     rest = int(total) - int(shown)
     if rest <= 0:
         return ""
-    return (
-        f" {rest:,} more {what} are not drawn; the report's tables and the JSON report "
-        "carry every one."
-    )
+    return f" {rest:,} more {what} are not drawn; the JSON report holds all {int(total):,}."
+
+
+# A label's width is reckoned at 0.62 em per character, a wide mean for the
+# figures' font, so a box sized by it holds its label.
+_EM_PER_CHAR = 0.62
+
+
+def _label_width(text: str, size: int) -> int:
+    """How wide ``text`` is drawn at ``size`` px, at :data:`_EM_PER_CHAR`."""
+    return math.ceil(len(text) * size * _EM_PER_CHAR)
+
+
+def _tactic_columns() -> tuple[tuple[str, str], ...]:
+    """The enterprise tactics in ATT&CK order, read from the vendored catalogue.
+
+    ``capability_matrix.tactic_order``: a tactic the catalogue gives no column
+    position, a mobile or ICS one among them, is not in it, so a figure never
+    places it; it is counted as not drawn.
+    """
+    from malspark.extractors.capability_matrix import tactic_order
+
+    return tactic_order("enterprise")
 
 
 def _text(
@@ -126,6 +134,7 @@ def build_process_tree(report: MalwareReport) -> Figure | None:
         _walk(root, 0)
     # A figure holds forty rows; the rest are counted in its legend.
     rows = every[:_TREE_ROWS]
+    injecting = any(node.injected_into for _depth, node in rows)
     row_h = 24
     height = max(40, len(rows) * row_h + 20)
     parts: list[str] = []
@@ -150,8 +159,12 @@ def build_process_tree(report: MalwareReport) -> Figure | None:
         caption="Process tree (sandbox execution)",
         kind="process_tree",
         content=_svg(720, height, "".join(parts)),
-        legend="Red node = process injection target."
-        + _figure_left_out(len(every), len(rows), "processes"),
+        # The red key is printed only where a red node is drawn.
+        legend=(
+            ("Red node = a process injecting into another." if injecting else "")
+            + _figure_left_out(len(every), len(rows), "processes")
+        ).strip()
+        or None,
     )
 
 
@@ -170,14 +183,15 @@ def build_attack_matrix(report: MalwareReport) -> Figure | None:
         tid = m.technique_id or ""
         if tid and tid not in by_tactic[tac]:
             by_tactic[tac].append(tid)
-    cols = [(tid, name) for tid, name in _TACTIC_ORDER if tid in by_tactic]
+    cols = [(tid, name) for tid, name in _tactic_columns() if tid in by_tactic]
     if not cols:
         return None
-    # A mapping whose tactic is not one of the twelve columns, or one past a
-    # column's eight cells, is not drawn; the legend counts it.
+    # A mapping whose tactic has no column in the catalogue's order, or one
+    # past a column's eight cells, is not drawn; the legend counts it.
     mapped = sum(len(techniques) for techniques in by_tactic.values())
     drawn = sum(min(len(by_tactic[t]), _MATRIX_CELLS) for t, _ in cols)
-    col_w = 118
+    # A column is as wide as its longest header needs, never narrower than 118.
+    col_w = max(118, max(8 + _label_width(name, 11) for _tid, name in cols))
     gap = 8
     width = len(cols) * (col_w + gap) + gap
     max_rows = max((len(by_tactic[t]) for t, _ in cols), default=0)
@@ -186,7 +200,7 @@ def build_attack_matrix(report: MalwareReport) -> Figure | None:
     for i, (tid, name) in enumerate(cols):
         x = gap + i * (col_w + gap)
         parts.append(_rect(x, 12, col_w, 34, fill="#f6f8fa"))
-        parts.append(_text(x + 8, 32, name, fill=_INK, size=11, weight="bold"))
+        parts.append(_text(x + 8, 32, _written(name), fill=_INK, size=11, weight="bold"))
         for j, tech in enumerate(by_tactic[tid][:_MATRIX_CELLS]):
             ty = 52 + j * 22
             parts.append(_rect(x, ty, col_w, 18, fill="#ddf4ff", stroke=_ACCENT))
@@ -215,7 +229,7 @@ def build_entropy_chart(report: MalwareReport) -> Figure | None:
     width = 620
     axis_x = 130
     max_w = width - axis_x - 60
-    parts: list[str] = [_text(12, 20, "Section entropy (0–8, ≥7 suspicious)", fill=_MUTED, size=11)]
+    parts: list[str] = [_text(12, 20, "Section entropy (0–8)", fill=_MUTED, size=11)]
     for i, sec in enumerate(sections):
         y = 34 + i * (bar_h + 8)
         ent = max(0.0, min(8.0, float(sec.entropy or 0.0)))
@@ -232,7 +246,7 @@ def build_entropy_chart(report: MalwareReport) -> Figure | None:
         caption="Section entropy",
         kind="entropy_chart",
         content=_svg(width, height, "".join(parts)),
-        legend="Red ≥ 7.0 (packed/encrypted), orange ≥ 6.0. A name ending in … is cut to fit."
+        legend="Red ≥ 7.0 bits per byte, orange ≥ 6.0. A name ending in … is cut to fit."
         + _figure_left_out(len(every), len(sections), "sections"),
     )
 
@@ -242,16 +256,47 @@ def build_entropy_chart(report: MalwareReport) -> Figure | None:
 # ---------------------------------------------------------------------------
 
 
-def _published_addresses(report: MalwareReport) -> set[str]:
-    """The addresses the report publishes as network indicators (the IOC section's set)."""
+def _published_values(report: MalwareReport) -> set[tuple[str, str]]:
+    """The network values the report publishes as ``(kind, key)`` (the IOC section's set)."""
     from malspark.reporting.detection_signatures import _published_rows
     from malspark.reporting.ledger_projection import value_key
 
     try:
-        return {value_key("ip", row.value) for row in _published_rows(report) if row.kind == "ip"}
+        return {
+            (str(row.kind), value_key(str(row.kind), row.value))
+            for row in _published_rows(report)
+            if row.kind in ("domain", "ip")
+        }
     except Exception as exc:  # noqa: BLE001 — a figure is never worth a report
-        logger.warning("The published addresses were not read (%s).", type(exc).__name__)
+        logger.warning("The published network values were not read (%s).", type(exc).__name__)
         return set()
+
+
+def _source_word(source: str | None, capture_only: bool = False) -> str:
+    """Where a network row's value was read from, in the words its box prints.
+
+    Read from the row's ``source`` and ``capture_only`` alone. ``network
+    record`` is a resolution, a request or a flow a sandbox or a capture
+    recorded (an address read only from a capture's conversations among them);
+    ``TLS name only`` a name only a capture's TLS names hold; ``text only, no
+    network record`` a value read from text (the file's strings, a decoder's or
+    any tool's printed answer); ``analyst listing only`` a value only an
+    agent's own listing holds.
+    """
+    if source == "sandbox":
+        return "TLS name only" if capture_only else "network record"
+    if source == "strings":
+        return "text only, no network record"
+    if source == "analyst":
+        return "analyst listing only"
+    return "source not recorded"
+
+
+# A network box: its value, cut at 44 characters, then the source word in a
+# column of its own; the box holds the longest of both at :data:`_EM_PER_CHAR`.
+_NETWORK_LABEL_CHARS = 44
+_NETWORK_WORD_AT = 320
+_NETWORK_BOX_W = 504
 
 
 def build_network_graph(report: MalwareReport) -> Figure | None:
@@ -260,39 +305,64 @@ def build_network_graph(report: MalwareReport) -> Figure | None:
     net = report.network
     if not net or not (net.domains or net.ips):
         return None
-    held = _published_addresses(report) if net.ips else set()
-    every: list[tuple[str, bool]] = []
+    held = _published_values(report)
+    # ``(label, red, source word, the sample's processes reached it)``.
+    every: list[tuple[str, bool, str, bool]] = []
     for d in net.domains:
-        every.append((defang(d.fqdn, "domain"), bool(getattr(d, "is_suspicious", False))))
+        flagged = bool(getattr(d, "is_suspicious", False)) or (
+            ("domain", value_key("domain", d.fqdn)) in held
+        )
+        word = _source_word(d.source, bool(d.capture_only))
+        every.append((defang(d.fqdn, "domain"), flagged, word, d.sample_process_tree is True))
     for ip in net.ips:
         address = defang(ip.address, "ip")
-        flagged = bool(getattr(ip, "is_suspicious", False)) or value_key("ip", ip.address) in held
-        every.append((f"{address}:{ip.port}" if ip.port else address, flagged))
+        flagged = bool(getattr(ip, "is_suspicious", False)) or (
+            ("ip", value_key("ip", ip.address)) in held
+        )
+        label = f"{address}:{ip.port}" if ip.port else address
+        every.append((label, flagged, _source_word(ip.source), ip.sample_process_tree is True))
     # A figure holds twelve endpoints; the rest are counted in its legend.
     endpoints = every[:_NETWORK_ENDPOINTS]
     if not endpoints:
         return None
     row_h = 30
     height = max(80, len(endpoints) * row_h + 30)
-    width = 620
+    # The sample's node, and a line from it, only where a row says the
+    # sample's own processes reached the endpoint.
+    hub = any(reached for *_rest, reached in endpoints)
     cx, cy = 90, height // 2
-    parts: list[str] = [
-        f'<circle cx="{cx}" cy="{cy}" r="26" fill="#ddf4ff" stroke="{_ACCENT}"/>',
-        _text(cx - 20, cy + 4, "sample", fill=_ACCENT, size=11, weight="bold"),
-    ]
-    for i, (label, suspicious) in enumerate(endpoints):
+    bx = 160 if hub else 12
+    width = bx + _NETWORK_BOX_W + 12
+    parts: list[str] = []
+    if hub:
+        parts.append(f'<circle cx="{cx}" cy="{cy}" r="26" fill="#ddf4ff" stroke="{_ACCENT}"/>')
+        parts.append(_text(cx - 20, cy + 4, "sample", fill=_ACCENT, size=11, weight="bold"))
+    for i, (label, red, word, reached) in enumerate(endpoints):
         y = 20 + i * row_h
-        bx = 300
-        parts.append(f'<line x1="{cx + 26}" y1="{cy}" x2="{bx}" y2="{y + 11}" stroke="{_LINE}"/>')
-        col = _DANGER if suspicious else _MUTED
-        parts.append(_rect(bx, y, 300, 22, fill="#fff", stroke=col))
-        parts.append(_text(bx + 8, y + 15, marked_cut(label, 44), fill=_INK, size=11))
+        if reached:
+            parts.append(
+                f'<line x1="{cx + 26}" y1="{cy}" x2="{bx}" y2="{y + 11}" stroke="{_LINE}"/>'
+            )
+        col = _DANGER if red else _MUTED
+        parts.append(_rect(bx, y, _NETWORK_BOX_W, 22, fill="#fff", stroke=col))
+        parts.append(
+            _text(bx + 8, y + 15, marked_cut(label, _NETWORK_LABEL_CHARS), fill=_INK, size=11)
+        )
+        parts.append(_text(bx + _NETWORK_WORD_AT, y + 15, _written(word), fill=_MUTED, size=10))
+    joined = (
+        " A line from the sample joins an endpoint the sandbox records the sample's process "
+        "tree reaching."
+        if hub
+        else ""
+    )
     return Figure(
         id="fig-network",
-        caption="Network endpoints (observed)",
+        caption="Network endpoints",
         kind="network_graph",
         content=_svg(width, height, "".join(parts)),
-        legend="Red border = flagged suspicious or published. A label ending in … is cut to fit."
+        legend="Red border = flagged suspicious or published. Each box names where its value "
+        "was read from. A label ending in … is cut to fit."
+        + joined
         + _figure_left_out(len(every), len(endpoints), "endpoints"),
     )
 
@@ -302,12 +372,18 @@ def build_network_graph(report: MalwareReport) -> Figure | None:
 # ---------------------------------------------------------------------------
 
 
+# A chain box holds the longest tactic name at :data:`_EM_PER_CHAR`.
+_CHAIN_BOX_W = 150
+
+
 def build_infection_chain(report: MalwareReport) -> Figure | None:
     present = {m.tactic for m in report.ttp_mappings if m.tactic}
-    stages = [(tid, name) for tid, name in _TACTIC_ORDER if tid in present]
+    # A tactic with no column in the catalogue's order is never placed; the
+    # legend counts it.
+    stages = [(tid, name) for tid, name in _tactic_columns() if tid in present]
     if len(stages) < 2:
         return None
-    box_w, box_h, gap = 118, 40, 26
+    box_w, box_h, gap = _CHAIN_BOX_W, 40, 26
     per_row = 4
     width = per_row * box_w + (per_row - 1) * gap + 24
     rows = (len(stages) + per_row - 1) // per_row
@@ -318,7 +394,7 @@ def build_infection_chain(report: MalwareReport) -> Figure | None:
         x = 12 + c * (box_w + gap)
         y = 12 + r * (box_h + gap)
         parts.append(_rect(x, y, box_w, box_h, fill="#f6f8fa", stroke=_ACCENT))
-        parts.append(_text(x + 8, y + 24, name, fill=_INK, size=11))
+        parts.append(_text(x + 8, y + 24, _written(name), fill=_INK, size=11))
         if i < len(stages) - 1 and c < per_row - 1:
             ax = x + box_w
             parts.append(
@@ -331,10 +407,12 @@ def build_infection_chain(report: MalwareReport) -> Figure | None:
     )
     return Figure(
         id="fig-infection-chain",
-        caption="Observed tactics in kill-chain order",
+        caption="Tactics of the mapped techniques, in ATT&CK order",
         kind="infection_chain",
         content=_svg(width, height, defs + "".join(parts)),
-        legend="Tactics are drawn in ATT&CK order, not the order the run observed them.",
+        legend="Tactics are drawn in ATT&CK order, not the order read from the run: neither the "
+        "order nor the arrows come from the run's events."
+        + _figure_left_out(len(present), len(stages), "tactics"),
     )
 
 
@@ -380,9 +458,9 @@ def build_execution_flow(report: MalwareReport) -> Figure | None:
         caption="Execution flow, entry point to steady state",
         kind="execution_flow",
         content=_svg(width, height, defs + "".join(parts)),
-        legend="A step a sandbox watched is outlined in blue; every other step is read from "
-        "the code. Each box holds its step's first sentence, shortened at a word where it is "
-        "long; the box's title and the numbered steps hold it whole.",
+        legend="A step the report marks observed is outlined in blue; every other step is "
+        "marked assessed. Each box holds its step's first sentence, shortened at a word where "
+        "it is long; the box's title and the numbered steps hold it whole.",
     )
 
 
@@ -491,10 +569,13 @@ def _build_code_listings(report: MalwareReport) -> list[Figure]:
             notes.append(LISTING_CUT_FOR_STORAGE)
         if after:
             notes.append(ANSWER_CUT_AFTER_LISTING)
+        # An answer cut for storage is held whole nowhere: beside its note the
+        # pointer names the listing as it was stored.
         if len(body) > _LISTING_CHARS:
+            held = "as it was stored" if cut else "whole"
             notes.append(
                 f"Cut at {_LISTING_CHARS:,} of {len(body):,} characters; the evidence "
-                "ledger and the JSON report carry the listing whole."
+                f"ledger and the JSON report carry the listing {held}."
             )
         if seq == _LISTINGS - 1 and len(drawn) > _LISTINGS:
             notes.append(

@@ -794,11 +794,22 @@ class VendoredTechnique:
 
 @dataclass(frozen=True)
 class VendoredTactic:
-    """One matrix column as the vendored table carries it."""
+    """One matrix column as the vendored table carries it.
+
+    ``position`` is the column's index in the bundle's matrix, as the update
+    script wrote it (the ``_parse_tactics`` rule); ``None`` where the table
+    carries none.
+    """
 
     tactic_id: str
     shortname: str
     name: str
+    position: int | None = None
+
+
+def _position(value: object) -> int | None:
+    """A vendored column position, or ``None`` for anything but a whole number."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _read_technique_table(
@@ -834,6 +845,7 @@ def _read_technique_table(
                 tactic_id=str(row.get("id") or ""),
                 shortname=str(slug),
                 name=str(row.get("name") or ""),
+                position=_position(row.get("position")),
             )
             for slug, row in rows.items()
             if isinstance(row, dict)
