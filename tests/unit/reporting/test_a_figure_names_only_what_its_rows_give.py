@@ -42,16 +42,42 @@ from malspark.reporting.models import (
 
 _RED = 'stroke="#cf222e"'
 _TEXT = re.compile(r"<text\b([^>]*)>(.*?)</text>", re.S)
-# Widths in px, measured from the font files of DejaVu Sans, the only font the
-# backend image installs, with PIL's ``ImageFont.getlength`` at the size drawn.
-_W_11 = 9.0  # one "w" at 11 px: "w" * 44 is 396.0 px
+# Widths in px, the largest over the fonts the figure's width tables cover
+# (DejaVu Sans, Inter, Liberation Sans) measured from their font files with
+# PIL's ``ImageFont.getlength`` at the size drawn, in both layout engines,
+# with FreeType's default hinting and unhinted, rounded up to a tenth.
+_W_11 = 9.1  # one "w" at 11 px: "w" * 44 is 396.1 px
 _CUT_MARK_11 = 11.0  # "…" at 11 px
 _SOURCE_WORD_10 = {
-    "network record": 75.8,
-    "TLS name only": 73.9,
-    "text only, no network record": 141.8,
+    "network record": 76.2,
+    "TLS name only": 74.0,
+    "text only, no network record": 142.4,
     "analyst listing only": 94.1,
-    "source not recorded": 100.4,
+    "source not recorded": 101.0,
+}
+# Labels a review found drawn past the source word under the earlier tables,
+# each with its width in px at 11 px per font, the larger of PIL's two layout
+# engines, hinted (FreeType's default) or unhinted: the whole value, and the
+# label the figure now draws for it.
+_OVERLAPPING_11 = {
+    # Overlapped in DejaVu Sans, hinted (basic engine): 324.0 px.
+    "m" * 4 + "v" * 40: (
+        {"DejaVu Sans": 324.0, "Inter": 285.91, "Liberation Sans": 276.0},
+        "m" * 4 + "v" * 34 + "…",
+        {"DejaVu Sans": 293.0, "Inter": 258.2, "Liberation Sans": 251.0},
+    ),
+    # Overlapped in Inter (raqm engine): 313.31 px.
+    "w" * 23 + "-" * 21: (
+        {"DejaVu Sans": 291.0, "Inter": 313.31, "Liberation Sans": 268.0},
+        "w" * 23 + "-" * 13 + "…",
+        {"DejaVu Sans": 270.0, "Inter": 282.4, "Liberation Sans": 247.0},
+    ),
+    # Overlapped in Inter (raqm engine): 375.76 px.
+    "%" * 22 + "J" * 22: (
+        {"DejaVu Sans": 301.47, "Inter": 375.76, "Liberation Sans": 352.0},
+        "%" * 22 + "J" + "…",
+        {"DejaVu Sans": 244.3, "Inter": 258.0, "Liberation Sans": 237.0},
+    ),
 }
 _BRACKET = re.compile(r"\[[.:@]\]")
 
@@ -141,6 +167,23 @@ class TestANetworkBoxSaysWhereItsValueWasRead:
         right = _number(label_attrs, "x") + (len(label) - 1) * _W_11 + _CUT_MARK_11
         assert right <= _number(word_attrs, "x")
 
+    @pytest.mark.parametrize("value", sorted(_OVERLAPPING_11))
+    def test_a_label_a_review_found_overlapping_ends_before_its_source_word(
+        self, value: str
+    ) -> None:
+        whole, drawn, widths = _OVERLAPPING_11[value]
+        fig = build_network_graph(
+            _report(network=NetworkIOCs(domains=[NetworkDomain(fqdn=value, source="strings")]))
+        )
+        assert fig is not None
+        (label_attrs, label), (word_attrs, _word) = _TEXT.findall(fig.content)
+        assert unescape(label) == drawn
+        start = _number(label_attrs, "x")
+        word_at = _number(word_attrs, "x")
+        assert max(start + w for w in whole.values()) > word_at - figures._LABEL_PAD
+        for font, width in widths.items():
+            assert start + width + figures._LABEL_PAD <= word_at, font
+
     @pytest.mark.parametrize("lead", range(6))
     def test_a_cut_keeps_every_defang_bracket_whole(self, lead: int) -> None:
         host = "a" * lead + "WWW." * 12 + "com"
@@ -194,6 +237,12 @@ class TestAnAddressWithAPortReadsAsOneAddress:
             ("203.0.113.7", 443, "203[.]0[.]113[.]7:443"),
             ("2001:db8::1", None, "2001[:]db8::1"),
             ("2001:db8::1", 443, "[2001[:]db8::1]:443"),
+            ("fe80::1%eth0", 443, "[fe80[:]:1%eth0]:443"),
+            ("::ffff:192.0.2.1", 8080, "[[:]:ffff:192.0.2.1]:8080"),
+            # Written in brackets already: the pair is kept and not doubled.
+            # The inner "[:]" of "::1" is the defang of its first colon.
+            ("[2001:db8::1]", 443, "[2001[:]db8::1]:443"),
+            ("[::1]", 443, "[[:]:1]:443"),
         ],
     )
     def test_an_address_holding_a_colon_is_bracketed_before_its_port(

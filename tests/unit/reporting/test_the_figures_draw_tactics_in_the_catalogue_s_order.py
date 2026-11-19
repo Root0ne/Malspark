@@ -25,42 +25,44 @@ from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity,
 
 _TEXT = re.compile(r"<text\b([^>]*)>(.*?)</text>", re.S)
 # Each enterprise tactic name's width in px at 11 px, bold (the matrix header)
-# and normal (the chain box), measured from the font files of DejaVu Sans and
-# DejaVu Sans Bold, the only font the backend image installs, with PIL's
-# ``ImageFont.getlength``.
+# and normal (the chain box): the largest over the fonts the figure's width
+# tables cover (DejaVu Sans, Inter, Liberation Sans, each regular and bold),
+# measured from their font files with PIL's ``ImageFont.getlength`` in both
+# layout engines, with FreeType's default hinting and unhinted, rounded up to
+# a tenth.
 _BOLD_11 = {
-    "Reconnaissance": 99.2,
-    "Resource Development": 143.5,
-    "Initial Access": 81.8,
-    "Execution": 60.8,
-    "Persistence": 72.3,
-    "Privilege Escalation": 122.2,
-    "Defense Evasion": 102.3,
-    "Defense Impairment": 126.5,
-    "Credential Access": 110.2,
-    "Discovery": 60.7,
+    "Reconnaissance": 100.0,
+    "Resource Development": 143.6,
+    "Initial Access": 84.0,
+    "Execution": 62.0,
+    "Persistence": 72.4,
+    "Privilege Escalation": 123.0,
+    "Defense Evasion": 103.0,
+    "Defense Impairment": 126.6,
+    "Credential Access": 111.0,
+    "Discovery": 61.0,
     "Lateral Movement": 112.8,
-    "Collection": 61.6,
+    "Collection": 63.0,
     "Command and Control": 138.0,
-    "Exfiltration": 69.1,
-    "Impact": 42.6,
+    "Exfiltration": 70.0,
+    "Impact": 42.7,
 }
 _NORMAL_11 = {
-    "Reconnaissance": 88.4,
-    "Resource Development": 128.0,
-    "Initial Access": 71.6,
-    "Execution": 54.0,
-    "Persistence": 62.9,
-    "Privilege Escalation": 107.0,
-    "Defense Evasion": 91.5,
-    "Defense Impairment": 112.7,
-    "Credential Access": 97.8,
-    "Discovery": 54.4,
-    "Lateral Movement": 100.0,
-    "Collection": 54.4,
-    "Command and Control": 124.0,
-    "Exfiltration": 60.1,
-    "Impact": 38.0,
+    "Reconnaissance": 91.0,
+    "Resource Development": 132.0,
+    "Initial Access": 73.0,
+    "Execution": 55.0,
+    "Persistence": 65.0,
+    "Privilege Escalation": 110.0,
+    "Defense Evasion": 94.0,
+    "Defense Impairment": 115.0,
+    "Credential Access": 101.0,
+    "Discovery": 56.0,
+    "Lateral Movement": 102.0,
+    "Collection": 55.0,
+    "Command and Control": 128.0,
+    "Exfiltration": 61.0,
+    "Impact": 38.1,
 }
 # A box keeps as much room right of its text as left of it.
 _PAD = 8

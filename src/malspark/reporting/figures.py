@@ -65,37 +65,47 @@ def _figure_left_out(total: int, shown: int, what: str) -> str:
     return f" {rest:,} more {what} are not drawn; the JSON report holds all {int(total):,}."
 
 
-# A label's width is reckoned from the font the PDF is printed in: the backend
-# image installs DejaVu alone (docker/Dockerfile.backend), so the figures'
-# sans-serif is DejaVu Sans. Each entry is a character's width, ' ' to '~', in
-# thousandths of an em, rounded up: its advance in DejaVu Sans (Bold), unhinted
-# and hinted at 9 to 12 px, plus the largest positive kerning it takes before
-# any of these characters, read from the font files with PIL and fontTools.
-# The sum is an upper bound, so a box sized by it holds its label.
+# A label's width is reckoned from every font a figure can be drawn in that
+# this machine can measure: DejaVu Sans, the font the PDF is printed in (the
+# backend image installs DejaVu alone, docker/Dockerfile.backend); Inter, the
+# first name in the SVG's font stack, which a viewer that has it draws with;
+# and Liberation Sans, metric-compatible with Arial, the second name. Each
+# entry is a character's width, ' ' to '~', in thousandths of an em, rounded
+# up, for the regular and the bold face: the largest of its advance unhinted
+# and as PIL measures it with FreeType's default hinting at 9, 10, 11 and
+# 12 px, in both of PIL's layout engines (basic, which reads the kern table,
+# and raqm, which reads GPOS), over the three fonts; plus the largest positive
+# kerning it takes before any of these characters or the cut mark, measured
+# the same ways. The sum is an upper bound for those fonts at those sizes, so
+# a box sized by it holds its label. It bounds nothing else: a viewer that
+# substitutes another font, or a character none of these fonts has (drawn in
+# a fallback font), can be wider than the estimate.
 # fmt: off
 _ASCII_WIDTHS: dict[str, tuple[int, ...]] = {
     "normal": (
-        319, 402, 461, 839, 637, 951, 780, 276, 391, 391, 500, 839, 319, 417, 319, 338,
-        637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 338, 338, 839, 839, 839, 532,
-        1000, 713, 687, 699, 771, 633, 576, 776, 753, 296, 296, 657, 581, 864, 749, 816,
-        604, 816, 696, 654, 612, 733, 685, 990, 686, 612, 686, 391, 338, 391, 839, 500,
-        500, 614, 636, 551, 636, 616, 353, 636, 635, 279, 279, 580, 279, 975, 635, 632,
-        636, 636, 412, 522, 393, 635, 593, 819, 593, 593, 526, 637, 338, 637, 839,
+        364, 589, 500, 889, 811, 1145, 963, 334, 474, 445, 700, 889, 364, 557, 364, 400,
+        811, 811, 811, 811, 811, 811, 811, 811, 811, 811, 364, 364, 889, 889, 889, 745,
+        1016, 839, 872, 922, 945, 845, 811, 963, 945, 478, 745, 812, 712, 1061, 945, 963,
+        845, 963, 922, 845, 778, 922, 832, 1145, 827, 805, 872, 474, 421, 445, 889, 697,
+        556, 667, 678, 611, 682, 678, 415, 667, 667, 334, 334, 600, 348, 1000, 667, 686,
+        678, 667, 471, 556, 465, 667, 652, 834, 657, 652, 600, 696, 508, 667, 889,
     ),
     "bold": (
-        349, 457, 522, 839, 697, 1003, 873, 307, 458, 458, 524, 839, 381, 416, 381, 366,
-        697, 697, 697, 697, 697, 697, 697, 697, 697, 697, 401, 401, 839, 839, 839, 581,
-        1000, 793, 763, 758, 850, 684, 684, 822, 838, 373, 373, 776, 638, 996, 838, 870,
-        752, 870, 790, 721, 706, 813, 775, 1104, 772, 725, 726, 458, 366, 458, 839, 500,
-        500, 676, 717, 593, 717, 679, 436, 717, 713, 343, 343, 666, 343, 1043, 713, 688,
-        717, 717, 494, 596, 479, 713, 653, 925, 646, 653, 583, 713, 366, 713, 839,
+        364, 615, 600, 889, 842, 1131, 1024, 364, 519, 500, 715, 889, 417, 500, 417, 454,
+        842, 842, 842, 842, 842, 842, 842, 842, 842, 842, 445, 445, 889, 889, 889, 782,
+        1017, 900, 915, 893, 948, 842, 842, 948, 1004, 515, 715, 900, 749, 1115, 1004, 1015,
+        893, 1015, 915, 865, 809, 948, 894, 1226, 870, 854, 893, 519, 460, 500, 889, 697,
+        556, 700, 761, 647, 769, 711, 476, 760, 750, 364, 364, 709, 383, 1084, 750, 738,
+        761, 760, 521, 637, 523, 750, 718, 925, 681, 718, 600, 769, 515, 750, 889,
     ),
 }
 # fmt: on
-# Any other character counts the font's widest advance (``hhea``
-# advanceWidthMax); the cut mark counts its own, which no kerning widens.
-_OTHER_WIDTH = {"normal": 1875, "bold": 2017}
-_CUT_MARK_WIDTH = 1000
+# Any other character counts the widest advance of any glyph in the three
+# fonts, measured the same ways; a glyph a fallback font draws can exceed it
+# (the limit above). The cut mark counts its own, measured as the table's
+# entries are.
+_OTHER_WIDTH = {"normal": 2728, "bold": 2728}
+_CUT_MARK_WIDTH = {"normal": 1000, "bold": 1003}
 # A box keeps as much room right of its label as left of it.
 _LABEL_PAD = 8
 
@@ -110,7 +120,7 @@ def _label_width(text: str, size: int, weight: str = "normal") -> int:
         if 32 <= code < 127:
             milli += table[code - 32]
         else:
-            milli += _CUT_MARK_WIDTH if char == CUT_MARK else other
+            milli += _CUT_MARK_WIDTH[weight] if char == CUT_MARK else other
     return math.ceil(milli * size / 1000)
 
 
