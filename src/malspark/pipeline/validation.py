@@ -8331,15 +8331,16 @@ def command_value_violations(payload: Any, compared: Sequence[ComparedValues]) -
 
 CITATION_WRONG_ENTRY_CODE = "report.citation_wrong_entry"
 # A quoted value that its cited entries hold only inside the echo of their own
-# call's arguments, nowhere in the rest of the answer, letter case aside and not
-# inside a longer text either (``echoed_argument_citations``):
-# a search answer repeats the pattern it was given. Read for a quoted value of
-# three characters or more that is no number (digits with separators, a hex run
-# holding a digit, or ``0x`` hex) and holds no token the reader of unquoted
-# values takes for a value by its shape (``literal_values``: for example a whole
-# digest, a URL, a mailbox, a host name, a file name, a token with a backslash).
-# Asked once with the fact; a sentence kept after it is marked where it stands
-# with the entry named.
+# call's arguments, nowhere in the rest of a JSON answer, letter case aside and
+# not inside a longer text either (``echoed_argument_citations``): a search
+# answer repeats the pattern it was given. Only a JSON answer is read, since only
+# its key paths tell the echo from a match; an answer in text or in pages is not.
+# Read for a quoted value of three characters or more that is no number (digits
+# with separators, a hex run holding a digit, or ``0x`` hex) and holds no token
+# the reader of unquoted values takes for a value by its shape
+# (``literal_values``: for example a whole digest, a URL, a mailbox, a host name,
+# a file name, a token with a backslash). Asked once with the fact; a sentence
+# kept after it is marked where it stands with the entry named.
 VALUE_ONLY_IN_CALL_ARGUMENTS_CODE = "report.value_only_in_call_arguments"
 # A recommendation or hunting note that acts on a value this run does not
 # publish. Asked once with the IOC table's own answer; a value kept after it
@@ -10713,9 +10714,12 @@ def echoed_argument_citations(
     taken out (:func:`_call_echoes`, :func:`_without_call_echoes`), not even,
     letter case aside, inside a longer text; and in at
     least one cited entry the echo that holds it is longer than the value — a
-    value that is a whole argument is the call's own target. A cited entry
-    whose text is not the whole answer says nothing of what the answer lacks,
-    and nothing is asked over it. Read as :func:`wrong_entry_citations` reads
+    value that is a whole argument is the call's own target. Only a JSON
+    answer is read: its key paths tell the echo of the call from a match
+    equal to it, so a holder whose text, or any text it was read in, is not
+    a JSON object or array gives no finding. A cited entry whose text is not
+    the whole answer says nothing of what the answer lacks, and nothing is
+    asked over it. Read as :func:`wrong_entry_citations` reads
     a text: ``prose`` fields sentence by sentence under each sentence's
     brackets, every other string under its own brackets or its record's
     citations. Asked once; the sentence is never rewritten, and one kept is
@@ -10838,12 +10842,21 @@ def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tupl
     a cited entry holds the value on its whole text, none holds it once its
     call's echoes are out (not even, case aside, inside a longer text), no
     other cited entry holds it inside a longer text, none is a part of its
-    answer only, and in one of them the echo that holds it is longer than
-    the value.
+    answer only, each holder's text and every text it was read in (the
+    answer, each page: :meth:`EntryTexts.parts_of`) is a JSON object or array,
+    and in one of them the echo that holds it is longer than the value. Only
+    the key paths of a JSON answer tell the echo of the call from a match
+    equal to it.
     """
     known = [entry_id for entry_id in cited if entries.has_text(entry_id)]
     holding = [entry_id for entry_id in known if entries.holds(entry_id, value, fields=True)]
     if not holding or any(entry_id in entries.partial for entry_id in known):
+        return ()
+    if not all(
+        _a_json_document(text)
+        for entry_id in holding
+        for text in (entries.text_of(entry_id), *entries.parts_of(entry_id))
+    ):
         return ()
     if any(value.lower() in entries.text_of(e).lower() for e in known if e not in holding):
         # Another cited entry holds it inside a longer text.

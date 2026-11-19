@@ -8,8 +8,9 @@ once: the fact is that the answer does not hold it, and the question asks the
 model to say what the answer holds or to state the value without attributing
 it to the entry. A value that is the whole of an argument is the call's own
 target and is not asked; a value the sentence names as absent is not asked; an
-entry whose text is not the whole answer says nothing of what it lacks. The
-sentence is never rewritten.
+entry whose text is not the whole answer says nothing of what it lacks. Only a
+JSON answer's key paths tell the echo from a match, so an answer in text or read
+in pages asks nothing. The sentence is never rewritten.
 """
 
 from __future__ import annotations
@@ -265,22 +266,61 @@ class TestTheCheck:
 
         assert _body(sentence, _texts(truncated=True)) == []
 
-    def test_an_echo_in_a_text_answer_is_masked_as_written(self) -> None:
-        argument = r"re:cmd\.exe|loom /c|wmic"
-        texts = EntryTexts.from_ledger(
-            [
-                _entry(
-                    "ev_0050",
-                    "grep",
-                    f'searched "{json.dumps(argument)[1:-1]}" and {argument}\nline 1: wmic.bat',
-                    args={"pattern": argument},
-                )
-            ]
-        )
+    def test_an_answer_that_is_not_json_asks_nothing(self) -> None:
+        # Only a JSON answer's key paths tell the echo of the call from a match:
+        # in a text answer, a match row equal to the pattern reads as the echo.
+        for tool, argument, output, sentence in (
+            (
+                "search",
+                "Accept-Language en",
+                "pattern: Accept-Language en\n0x41200 Accept-Language en",
+                "The strings hold 'Accept-Language' [ev_0001].",
+            ),
+            (
+                "search",
+                "Accept-Language: en",
+                "pattern: Accept-Language: en\n0x41200 Accept-Language: en-US",
+                "The strings hold 'Accept-Language' [ev_0001].",
+            ),
+            (
+                "grep",
+                r"re:cmd\.exe|loom /c|wmic",
+                'searched "re:cmd\\\\.exe|loom /c|wmic" and re:cmd\\.exe|loom /c|wmic\n'
+                "line 1: wmic.bat",
+                "The routine runs 'loom /c' [ev_0001].",
+            ),
+        ):
+            texts = EntryTexts.from_ledger(
+                [_entry("ev_0001", tool, output, args={"pattern": argument})]
+            )
 
-        (found,) = _body("The routine runs 'loom /c' [ev_0050].", texts)
+            assert _body(sentence, texts) == [], output
 
-        assert found.values == ("loom /c",)
+    def test_an_answer_read_in_pages_asks_nothing(self) -> None:
+        # The text read is the answer and each page read of it, joined: no JSON
+        # reading of the whole, so nothing tells the echo from a match.
+        class _Paged:
+            def __init__(self, *parts: str) -> None:
+                self._parts = tuple(part.lower() for part in parts)
+
+            def text_of_entry(self, entry_id: str) -> str:
+                return "\n".join(self._parts) if entry_id == "ev_0030" else ""
+
+            def parts_of_entry(self, entry_id: str) -> tuple[str, ...]:
+                return self._parts if entry_id == "ev_0030" else ()
+
+        sentence = f"The string evidence contains the term '{QUILL}' [ev_0030]."
+        for page in (
+            f"0x1000 the {MATCHED} table is ready",
+            json.dumps({"strings": [{"offset": 8192, "text": f"the {MATCHED} row"}]}),
+        ):
+            texts = EntryTexts.from_ledger(
+                [_entry("ev_0030", "strings", _search_answer(), args={"pattern": PATTERN})],
+                corpus=_Paged(_search_answer(), page),
+            )
+
+            assert texts.parts_of("ev_0030")[1:] == (page.lower(),)
+            assert _body(sentence, texts) == [], page
 
     def test_a_row_string_is_read_under_its_row_s_citations(self) -> None:
         row = {"name": f"Wipe through '{QUILL}'", "evidence_refs": ["ev_0030"]}
