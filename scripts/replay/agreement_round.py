@@ -33,13 +33,21 @@ and after, every outcome record of the round (``agreement.*``), its counts and f
 statements, and every row of the answers with what became of it: applied, kept, left out,
 or replaced by the retry's row, with the records that name it.
 
-Where the rebuilt prompt is not the logged one, the round is given an input the model was
-not shown: every record, difference and label line carries ``prompt_reproduced``,
-``first_difference`` and ``passages_differing``. A run whose written passages differ is
-replayed only under ``--allow-differing``; without it the run is refused, and so is a log
-holding more requests than the round's two (more than one job's round), and the command
-ends with status 3, ahead of any other status. The command refuses to start, with status 4,
-where the round's code is imported from another tree than this one.
+The two prompts are compared block by block and by kind: the written passages, the facts
+(which the round reads as sources), the judge's decision and the debate's mediations, each
+block with the lines asked under it, and the text outside them; per kind, the blocks shown
+in the logged prompt only, in the rebuilt one only, and in both with another text are named
+(``blocks_differing``, with ``passages_differing`` and ``facts_differing``). Where the
+rebuilt prompt is not the logged one, the round is given an input the model was not shown:
+every record, difference and label line carries ``prompt_reproduced``,
+``first_difference`` and the differing blocks, and says which kinds differ and how many. A
+run whose prompt differs in any block, or outside them, is replayed only under
+``--allow-differing``; without it the run is refused, and so is a log holding more requests
+than the round's two (more than one job's round). A label of a refused run says why. The
+command ends with status 3 where a run is refused, and 5 where a run is refused and a
+difference no expectation excuses is found as well, printed under the refusals. The command
+refuses to start, with status 4, where the round's code is imported from another tree than
+this one.
 
 ``--check-stored`` also compares, for a run whose record keeps the round's answers, the
 replay's passages, records and whole report with the stored ones, and names every
@@ -52,7 +60,8 @@ lists the sentences whose final text differs, the sentences left out under one r
 and the outcome codes gained and lost. ``--expect FILE`` (a JSON list of expected
 differences, kept outside git, each matching every difference whose fields it gives)
 excuses differences; the command ends with status 1 on any difference no entry matches,
-0 otherwise.
+0 otherwise. Each ref rebuilds its own facts inside the round, but no ref checks its own
+prompt against the logged one; the output says so once.
 
 ``--labels FILE`` (a JSON list of labelled sentences kept outside git, each with ``run``,
 ``text``, ``label`` ``false`` or ``true``, and ``passage`` where it is known) states, per
@@ -99,14 +108,36 @@ _ROOT = Path(__file__).resolve().parents[2]
 # ``src`` stands first, ahead of any installed copy of the package elsewhere.
 TREE_VARIABLE = "AGREEMENT_REPLAY_TREE"
 _TREE = Path(os.environ.get(TREE_VARIABLE) or _ROOT).resolve()
-for _path in (str(_ROOT), str(_ROOT / "apps" / "api"), str(_TREE / "src")):
-    if _path in sys.path:
-        sys.path.remove(_path)
-    sys.path.insert(0, _path)
 
-# The command's status where a run is refused, and where the round's code is another tree's.
+
+def _put_tree_first() -> None:
+    """Put this checkout and the measured tree's ``src`` first on the path: done when the
+    harness runs as a program, never on import, so an importing process keeps its own."""
+    for path in (str(_ROOT), str(_ROOT / "apps" / "api"), str(_TREE / "src")):
+        if path in sys.path:
+            sys.path.remove(path)
+        sys.path.insert(0, path)
+
+
+# The command's statuses: a difference no expectation excuses, a run refused, the round's
+# code another tree's, and a difference no expectation excuses with a run refused.
+DIFFERENCES = 1
 REFUSED = 3
 WRONG_TREE = 4
+REFUSED_AND_DIFFERING = 5
+STATUSES = (
+    "Exit status: 0 where every replayed run ends as expected; 1 where a difference no "
+    "expectation excuses is found (under --check-stored, any difference from the stored "
+    "round); 2 on a usage error; 3 where a run is refused and no such difference is found; "
+    "4 where the round's code is imported from another tree than this one; 5 where a run is "
+    "refused and such a difference is found as well."
+)
+
+# Said once in the output of two refs: what each ref checks of its own input.
+COMPARE_NOTE = (
+    "note: each ref rebuilds its own facts inside the round, but no ref checks its own prompt "
+    "against the logged one; the prompt is checked by the code this command runs from only"
+)
 
 # What selects the round's requests in a worker log: its system text (``SYSTEM_PROMPT``).
 SYSTEM_MARK = "reading one analysis report for agreement between its parts"
@@ -128,21 +159,36 @@ LIMITS = (
     "have, and the run is marked first_turn_only; a first answer is recovered only where the "
     "retry request repeats it; a text the prompt does not show is the stored one; where the "
     "rebuilt prompt is not the logged one the round acts on an input the model was not shown, "
-    "and a run whose written passages differ is replayed only under --allow-differing, every "
-    "line of it marked; the ledger is the stored one and no sandbox report or evidence corpus "
-    "is stored; under --compare the pre-round report is rebuilt and the prompt checked by the "
-    "code this command runs from, not each ref's; the harness shows what the code does with "
-    "a given answer, not what a model would answer to a changed question; results are judged "
-    "by the labels, not by the code's own reading."
+    "and a run whose prompt differs in any block (a written passage, a fact, the judge's "
+    "decision, a debate mediation) or outside them is replayed only under --allow-differing, "
+    "every line of it marked with the kinds that differ and how many; the ledger is the "
+    "stored one and no sandbox report or evidence corpus is stored; under --compare the "
+    "pre-round report is rebuilt and the prompt checked by the code this command runs from, "
+    "not each ref's, while each ref rebuilds its own facts inside the round; the harness "
+    "shows what the code does with a given answer, not what a model would answer to a "
+    "changed question; results are judged by the labels, not by the code's own reading."
 )
 # What a replay's input is, carried by every record, difference and label line of its run.
 MARKS = (
     "prompt_reproduced",
     "first_difference",
     "passages_differing",
+    "facts_differing",
+    "blocks_differing",
     "first_turn_only",
     "first_answer_matches_record",
 )
+# The kinds of block a prompt is compared by, as ``blocks_differing`` names them, and what
+# each block's difference is: present in the logged prompt only, in the rebuilt one only, or
+# in both with another text. ``outside`` is the prompt's text outside every block.
+BLOCK_KINDS = ("written", "fact", "judge", "debate", "outside")
+_WHERE = ("only_logged", "only_rebuilt", "text")
+_KIND_NAMES = {
+    "written": "written passage(s)",
+    "fact": "fact block(s)",
+    "judge": "judge block(s)",
+    "debate": "debate block(s)",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +342,75 @@ def shown_of(prompt: str) -> dict[str, Shown]:
             marked="(read only)" in head or "(verbatim" in head,
         )
     return out
+
+
+def blocks_of(prompt: str) -> tuple[dict[str, tuple[str, str]], str]:
+    """Every block the prompt shows, by id: its kind and its whole text, the passage's line
+    with the lines asked under it up to the next passage, heading or empty line; and the
+    prompt's text outside every block."""
+    from scripts.replay.agreement_names import _KINDS, _PASSAGE
+
+    kind = ""
+    blocks: dict[str, tuple[str, str]] = {}
+    outside: list[str] = []
+    current: str | None = None
+    for line in prompt.split("\n"):
+        if line.strip() in _KINDS:
+            kind, current = _KINDS[line.strip()], None
+            outside.append(line)
+            continue
+        found = _PASSAGE.match(line) if kind else None
+        if found:
+            current = found.group(1)
+            while current in blocks:
+                # The same id shown twice: each block is compared on its own.
+                current += "#"
+            blocks[current] = (kind, line)
+            continue
+        if current is not None and line.strip():
+            held, text = blocks[current]
+            blocks[current] = (held, f"{text}\n{line}")
+            continue
+        current = None
+        outside.append(line)
+    return blocks, "\n".join(outside)
+
+
+def block_differences(logged: str, rebuilt: str) -> dict[str, dict[str, list[str]]]:
+    """Where two prompts differ, block by block and by kind (``BLOCK_KINDS``): per kind, the
+    ids of the blocks shown in the logged prompt only, in the rebuilt one only, and in both
+    with another text. Empty where the two are the same."""
+    one, outside_one = blocks_of(logged)
+    two, outside_two = blocks_of(rebuilt)
+    out: dict[str, dict[str, list[str]]] = {}
+    for pid in sorted(set(one) | set(two)):
+        if one.get(pid) == two.get(pid):
+            continue
+        held = (one.get(pid) or two.get(pid) or ("", ""))[0]
+        kind = "written" if held in _WRITTEN else held
+        where = "only_rebuilt" if pid not in one else "only_logged" if pid not in two else "text"
+        out.setdefault(kind, {w: [] for w in _WHERE})[where].append(pid)
+    if outside_one != outside_two or (logged != rebuilt and not out):
+        out["outside"] = {"only_logged": [], "only_rebuilt": [], "text": ["outside"]}
+    return out
+
+
+def _differing_text(blocks: Mapping[str, Mapping[str, Sequence[str]]]) -> list[str]:
+    """Per kind that differs, how many blocks and where, as a printed line says it."""
+    said = []
+    for kind in BLOCK_KINDS:
+        held = blocks.get(kind)
+        if not held:
+            continue
+        if kind == "outside":
+            said.append("the text outside the passages differs")
+            continue
+        counts = [len(held.get(w) or []) for w in _WHERE]
+        said.append(
+            f"{sum(counts)} {_KIND_NAMES[kind]} differ ({counts[0]} only logged, "
+            f"{counts[1]} only rebuilt, {counts[2]} in text)"
+        )
+    return said
 
 
 def discussion_of(shown: Mapping[str, Shown]) -> list[dict[str, str]]:
@@ -457,6 +572,9 @@ class Recovery:
     first_difference: int | None = None
     difference_context: tuple[str, str] = ("", "")
     passages_differing: list[str] = field(default_factory=list)
+    # The fact, judge and debate blocks that differ, and every differing block by kind.
+    facts_differing: list[str] = field(default_factory=list)
+    blocks_differing: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     not_found: list[str] = field(default_factory=list)
     not_writable: list[str] = field(default_factory=list)
     ids_taken_out: list[str] = field(default_factory=list)
@@ -595,14 +713,18 @@ def recover(run: Path, name: str | None = None, *, allow_differing: bool = False
     found.not_found, found.not_writable = pre.not_found, pre.not_writable
     found.ids_taken_out = pre.ids_taken_out
     rebuilt = rebuilt_prompt(pre, run)
-    # The passages the round may answer, each as shown in the two prompts: a prompt an older
-    # build wrote differs in its facts wherever the facts' code changed since.
-    logged, again = shown_of(prompt), shown_of(rebuilt)
+    # Every block as shown in the two prompts, by kind: a prompt an older build wrote
+    # differs in its facts wherever the facts' code changed since, and the round reads its
+    # facts as sources.
+    found.blocks_differing = block_differences(prompt, rebuilt)
     found.passages_differing = sorted(
+        pid for w in _WHERE for pid in found.blocks_differing.get("written", {}).get(w, [])
+    )
+    found.facts_differing = sorted(
         pid
-        for pid in set(logged) | set(again)
-        if (logged.get(pid) or again.get(pid)).kind in _WRITTEN  # type: ignore[union-attr]
-        and logged.get(pid) != again.get(pid)
+        for kind in ("fact", "judge", "debate")
+        for w in _WHERE
+        for pid in found.blocks_differing.get(kind, {}).get(w, [])
     )
     at = _first_difference(rebuilt, prompt)
     found.prompt_reproduced = at is None
@@ -625,12 +747,18 @@ def recover(run: Path, name: str | None = None, *, allow_differing: bool = False
     if not turns:
         return found
     found.first_turn_only = len(turns) < 2
-    if found.passages_differing and not allow_differing:
+    if found.blocks_differing and not allow_differing:
+        named = "; ".join(
+            f"{kind}: " + ", ".join(pid for w in _WHERE for pid in held.get(w, []))
+            for kind, held in found.blocks_differing.items()
+            if kind != "outside"
+        )
         found.refused = (
-            f"{len(found.passages_differing)} written passage(s) the round's code builds here "
-            "differ from the ones the logged prompt showed, so the round would act on passages "
-            "the model was not shown; replay it with --allow-differing to have every line "
-            "of it marked"
+            "the prompt the round's code builds here is not the logged one: "
+            + "; ".join(_differing_text(found.blocks_differing))
+            + (f" ({named})" if named else "")
+            + ", so the round would act on an input the model was not shown; replay it with "
+            "--allow-differing to have every line of it marked"
         )
         return found
     found.case = {
@@ -897,8 +1025,13 @@ def mark_text(record: Mapping[str, Any]) -> str:
     said = []
     if record.get("prompt_reproduced") is False:
         said.append(f"prompt not reproduced (differs at {record.get('first_difference')})")
-    if record.get("passages_differing"):
-        said.append(f"{len(record['passages_differing'])} written passage(s) differ")
+    if record.get("blocks_differing"):
+        said.extend(_differing_text(record["blocks_differing"]))
+    else:
+        if record.get("passages_differing"):
+            said.append(f"{len(record['passages_differing'])} written passage(s) differ")
+        if record.get("facts_differing"):
+            said.append(f"{len(record['facts_differing'])} fact, judge or debate block(s) differ")
     if record.get("first_turn_only"):
         said.append("first turn only")
     if record.get("first_answer_matches_record") is False:
@@ -1115,10 +1248,13 @@ def _printed(label: Mapping[str, Any], texts: Mapping[str, Mapping[str, Any]]) -
 
 
 def label_lines(
-    labels: Sequence[Mapping[str, Any]], records: Mapping[str, Mapping[str, Mapping[str, Any]]]
+    labels: Sequence[Mapping[str, Any]],
+    records: Mapping[str, Mapping[str, Mapping[str, Any]]],
+    refused: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Per label, whether its text is printed as stored before the round and under each ref
-    (``records``: ref name to the replays of each run by name)."""
+    (``records``: ref name to the replays of each run by name), and why its run was not
+    replayed where it was refused (``refused``: run name to the refusal)."""
     out: list[dict[str, Any]] = []
     for label in labels:
         run = str(label.get("run") or "")
@@ -1128,6 +1264,7 @@ def label_lines(
             "label": str(label.get("label") or ""),
             "text": str(label.get("text") or ""),
             "printed": {},
+            "refused": (refused or {}).get(run, ""),
         }
         given = next((by_run[run] for by_run in records.values() if run in by_run), {})
         row.update(marks_of(given))
@@ -1189,10 +1326,21 @@ def _yes(value: bool | None) -> str:
     return "-" if value is None else "yes" if value else "no"
 
 
+def _block_counts(row: Recovery) -> str:
+    """Per kind of block, how many differ: only logged / only rebuilt / in text."""
+    if row.prompt_reproduced is None:
+        return "-"
+    return ", ".join(
+        f"{kind} "
+        + "/".join(str(len(row.blocks_differing.get(kind, {}).get(w, []))) for w in _WHERE)
+        for kind in BLOCK_KINDS[:-1]
+    ) + (", outside" if "outside" in row.blocks_differing else "")
+
+
 def _print_recovery(rows: Sequence[Recovery]) -> None:
     print(
         "run | requests | request | first answer | final answers | prompt reproduced | "
-        "written passages differing | first turn only | replay"
+        "blocks differing per kind (only logged/only rebuilt/in text) | first turn only | replay"
     )
     for row in rows:
         where = "" if row.first_difference is None else f" (differs at {row.first_difference})"
@@ -1200,10 +1348,51 @@ def _print_recovery(rows: Sequence[Recovery]) -> None:
         print(
             f"{_safe(row.run)} | {row.requests} | {_yes(row.request_found)} | "
             f"{_yes(row.first_answer_found)} | {_yes(row.final_answers_stored)} | "
-            f"{_yes(row.prompt_reproduced)}{where} | "
-            f"{len(row.passages_differing) if row.prompt_reproduced is not None else '-'} | "
+            f"{_yes(row.prompt_reproduced)}{where} | {_block_counts(row)} | "
             f"{_yes(row.first_turn_only)} | {replay}"
         )
+
+
+def against_line(found: Sequence[str], record: Mapping[str, Any]) -> str:
+    """The line heading a run's differences from the stored round, with the run's marks and
+    how many of the differences rest on marked input."""
+    marked = mark_text(record)
+    return (
+        f"against the stored round: {len(found)} difference(s), "
+        f"{len(found) if marked else 0} of them on marked input{marked}"
+    )
+
+
+def summary_line(
+    differences: Sequence[Mapping[str, Any]], left: Sequence[Mapping[str, Any]]
+) -> str:
+    """The closing line of two refs' differences: how many, how many not expected, how many
+    rest on marked input, and each marked run's marks."""
+    marked = [d for d in differences if mark_text(d)]
+    runs = {str(d.get("run")): mark_text(d) for d in marked}
+    return (
+        f"{len(differences)} difference(s), {len(left)} not expected, {len(marked)} on marked "
+        "input" + "".join(f"; {_safe(run)}{said}" for run, said in sorted(runs.items()))
+    )
+
+
+def _closing(refused: Sequence[Recovery], left: Sequence[str]) -> None:
+    """Under the refusals, the differences no expectation excuses, so neither hides the
+    other."""
+    if not refused:
+        return
+    print(f"{len(refused)} run(s) refused:")
+    for row in refused:
+        print(f"   {_safe(row.run)}: {_safe(row.refused)}")
+    print(f"{len(left)} difference(s) not expected in the runs replayed" + (":" if left else ""))
+    for line in left:
+        print(f"   {_safe(line)}")
+
+
+def _status(refused: Sequence[Recovery], differing: bool) -> int:
+    if refused:
+        return REFUSED_AND_DIFFERING if differing else REFUSED
+    return DIFFERENCES if differing else 0
 
 
 def _print_record(record: Mapping[str, Any]) -> None:
@@ -1249,6 +1438,7 @@ def _print_labels(lines: Sequence[Mapping[str, Any]]) -> None:
             f" - label {_safe(line['label'])} [{_safe(line['run'])}"
             f"{' ' + _safe(line['passage']) if line['passage'] else ''}] printed: {printed}"
             + mark_text(line)
+            + (f" (refused: {_safe(line['refused'])})" if line.get("refused") else "")
         )
 
 
@@ -1256,7 +1446,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python scripts/replay/agreement_round.py",
         description=(__doc__ or "").split("\n", 1)[0],
-        epilog=LIMITS,
+        epilog=f"{LIMITS} {STATUSES}",
     )
     parser.add_argument("runs", nargs="*", type=Path, help="stored run directories")
     parser.add_argument("--out", type=Path, default=None, help="write each record here")
@@ -1269,7 +1459,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--allow-differing",
         action="store_true",
-        help="replay a run whose written passages differ from the logged ones, every line marked",
+        help="replay a run whose prompt differs from the logged one, every line marked",
     )
     parser.add_argument("--compare", nargs=2, metavar=("REF_A", "REF_B"), default=None)
     parser.add_argument("--expect", type=Path, default=None, help="expected differences (JSON)")
@@ -1327,9 +1517,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"refused {_safe(row.run)}: {_safe(row.refused)}")
     cases = [row for row in recovered if row.case is not None]
     labels = _read_list(args.labels)
+    why_refused = {row.run: row.refused for row in refused}
     if args.compare is None:
         records: dict[str, dict[str, Any]] = {}
-        status = 0
+        left_lines: list[str] = []
         for row in cases:
             assert row.case is not None
             record = replay_case(row.case)
@@ -1338,18 +1529,19 @@ def main(argv: list[str] | None = None) -> int:
             if args.check_stored and row.final_answers_stored:
                 found = against_stored(Path(row.path), row.case, record)
                 record["against_stored"] = found
-                print(f"   against the stored round: {len(found)} difference(s)")
+                print(f"   {against_line(found, record)}")
                 for line in found:
-                    print(f"     {_safe(line)}")
-                status = status or (1 if found else 0)
+                    print(f"     {_safe(line)}{mark_text(record)}")
+                left_lines.extend(f"{row.run}: {line}{mark_text(record)}" for line in found)
             if out is not None:
                 _write(out / f"{row.run.replace('/', '-')}.json", record)
         if labels:
-            lines = label_lines(labels, {"HEAD": records})
+            lines = label_lines(labels, {"HEAD": records}, why_refused)
             _print_labels(lines)
             if out is not None:
                 _write(out / "labels.json", lines)
-        return REFUSED if refused else status
+        _closing(refused, left_lines)
+        return _status(refused, bool(left_lines))
     if out is None:
         _parser().error("--compare needs --out, where each ref's tree and records are written")
     from scripts.replay.compare import materialise
@@ -1383,32 +1575,33 @@ def main(argv: list[str] | None = None) -> int:
                 if replayed is None:
                     continue
                 found = against_stored(Path(row.path), row.case, replayed)
-                print(
-                    f"{_safe(row.run)} under {_safe(ref)} against the stored round: "
-                    f"{len(found)} difference(s)"
-                )
+                print(f"{_safe(row.run)} under {_safe(ref)} {against_line(found, replayed)}")
                 for line in found:
-                    print(f"   {_safe(line)}")
+                    print(f"   {_safe(line)}{mark_text(replayed)}")
     print(f"== {args.compare[0]} (A) against {args.compare[1]} (B)")
+    print(COMPARE_NOTE)
     for d in differences:
-        mark = "  " if d not in left else "! "
-        if d["kind"] == "code":
-            print(
-                f"{mark}{_safe(d['run'])}: {_safe(d['code'])} {d['change']} ({d['A']} -> {d['B']})"
-                + mark_text(d)
-            )
-        else:
-            print(
-                f"{mark}{_safe(d['run'])} [{_safe(d['passage'])}] {d['kind']} under "
-                f"{d['only']} only: {_safe(d['sentence'][:160])}" + mark_text(d)
-            )
+        print(f"{'  ' if d not in left else '! '}{_safe(_difference_text(d))}")
     if labels:
-        lines = label_lines(labels, by_ref)
+        lines = label_lines(labels, by_ref, why_refused)
         _print_labels(lines)
         _write(out / "labels.json", lines)
-    print(f"{len(differences)} difference(s), {len(left)} not expected")
-    return REFUSED if refused else 1 if left else 0
+    print(summary_line(differences, left))
+    _closing(refused, [_difference_text(d) for d in left])
+    return _status(refused, bool(left))
+
+
+def _difference_text(d: Mapping[str, Any]) -> str:
+    """One difference between two refs as a line, its run's marks after it."""
+    if d["kind"] == "code":
+        said = f"{d['run']}: {d['code']} {d['change']} ({d['A']} -> {d['B']})"
+    else:
+        said = (
+            f"{d['run']} [{d['passage']}] {d['kind']} under {d['only']} only: {d['sentence'][:160]}"
+        )
+    return said + mark_text(d)
 
 
 if __name__ == "__main__":
+    _put_tree_first()
     raise SystemExit(main())
