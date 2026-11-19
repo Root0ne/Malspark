@@ -545,6 +545,9 @@ class TestTheReport:
         # what only an undeclared tool confirmed (T-704); the Markdown did not.
         # The dump re-pinned when each IOC row came to carry its role and the
         # type an export carries it under (T-716); the Markdown did not.
+        # The hostile Markdown re-pinned when a tool's section title came to be
+        # written by the inline rule (T-735): its "|" gains a backslash, and the
+        # HTML read from it did not change; the dump did not move.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the

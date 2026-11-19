@@ -111,7 +111,12 @@ STORED_EXPORTS = {
 # matches", and a mapping that stores its sources (haiku4) lists
 # the entries among them. The STIX is rendered with the stored ledger's ids
 # (see ``STORED_EXPORTS``).
-HAIKU4_RENDERS = ("f2b01c295b9813f0", "7e7c99ce92d9ede7", "ff5607de575fb489")
+# The Markdown re-pinned when text of the sample, a tool, a sandbox or the
+# operator came to be written by the inline rule and every list item and step
+# by the block-start rule (T-735): characters Markdown reads gain a backslash
+# in the evidence appendix and the run summary, and the HTML, read from it,
+# did not change.
+HAIKU4_RENDERS = ("a13070fbc05b971a", "7e7c99ce92d9ede7", "ff5607de575fb489")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

@@ -270,12 +270,17 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # run5's Markdown and HTML re-pinned when a count of trimmed ledger entries came
 # to take the verb its number takes (T-749): "1 of 350 ledger entries was
 # trimmed" is the only change; no other stored run prints a count of one.
+# The Markdown re-pinned when text of the sample, a tool, a sandbox or the
+# operator came to be written by the inline rule and every list item and step
+# by the block-start rule (T-735): characters Markdown reads gain a backslash
+# in the evidence appendix and the run summary, and the HTML, read from it,
+# did not change.
 STORED_RENDERS = {
-    "run7": ("0c85258e0bc3f825", "5d209181f98213e8"),
-    "run5": ("8f6a96e40d09f13e", "156a645b3d568bd2"),
-    "run4": ("6645defcf074ad3d", "60cfad50c120e58b"),
-    "local8": ("d59ab7b6c10001fa", "b78721cb9ba4f766"),
-    "haiku4": ("f2b01c295b9813f0", "7e7c99ce92d9ede7"),
+    "run7": ("37b6c8f69b2cb19e", "5d209181f98213e8"),
+    "run5": ("87bb84a09091c0de", "156a645b3d568bd2"),
+    "run4": ("de3f3fc895e0ef55", "60cfad50c120e58b"),
+    "local8": ("08d6d34474336223", "b78721cb9ba4f766"),
+    "haiku4": ("a13070fbc05b971a", "7e7c99ce92d9ede7"),
 }
 
 

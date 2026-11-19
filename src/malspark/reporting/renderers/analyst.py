@@ -80,14 +80,16 @@ from malspark.reporting.renderers.markdown import (
     _observed_cell,
     _one_line,
     _paragraph_line,
+    _prose_item,
+    _prose_step,
     _ransomware_block,
     _reputation_line,
     _resolved_only,
     _row,
     _sample_check_line,
     _states_ransomware,
-    _step,
     _title_heading,
+    _titled_format,
     _whole,
     confidence_word,
     dropped_size_cell,
@@ -1417,14 +1419,19 @@ class _Analyst:
 
     def title(self) -> str:
         report, ctx = self.report, self.ctx
-        lines = [_title_heading(report_title(report)), ""]
+        lines = [_title_heading(report_title(report, _titled_format(ctx.plain))), ""]
         fm = report.front_matter
         if fm is not None:
             parts = [f"**TLP:{fm.tlp}**"]
+            # The operator's configuration, by the inline rule.
             if fm.report_number:
-                parts.append(f"Report {fm.report_number}")
-            parts.append(fm.report_date or report.generated_at.date().isoformat())
-            parts.append(f"{fm.publisher} {fm.product_type}")
+                parts.append(f"Report {ctx.value(fm.report_number, pipes=True)}")
+            parts.append(
+                ctx.value(fm.report_date, pipes=True) or report.generated_at.date().isoformat()
+            )
+            parts.append(
+                f"{ctx.value(fm.publisher, pipes=True)} {ctx.value(fm.product_type, pipes=True)}"
+            )
             lines.append(" · ".join(parts) + "  ")
         else:
             lines.append(f"{report.generated_at.date().isoformat()}  ")
@@ -1507,9 +1514,9 @@ class _Analyst:
             if self._flagged_whole(bullet.text):
                 self.left += 1
             else:
-                lines.append(_item(self._line(bullet.text, bullet.evidence_refs)))
+                lines.append(_prose_item(self._line(bullet.text, bullet.evidence_refs)))
         for finding in findings:
-            lines.append(_item(self._line(finding.text, finding.evidence_ids)))
+            lines.append(_prose_item(self._line(finding.text, finding.evidence_ids)))
         summary = report.executive_summary.strip()
         if bullets:
             summary = " ".join(self._kept_sentences(summary))
@@ -1589,9 +1596,9 @@ class _Analyst:
         lines = [_heading(3, "Sample metadata"), "", _row("Field", "Value"), _divider(2)]
         lines.append(_row("File name", _code_span(ctx.plain(ident.file_name or "unknown"))))
         lines.append(_row("Size", f"{ident.file_size_bytes:,} bytes"))
-        kind = ident.file_type
+        kind = ctx.value(ident.file_type)
         if header["architecture"]:
-            kind += f", {header['architecture']}"
+            kind += f", {ctx.value(header['architecture'])}"
         if header["is_dll"] is not None:
             kind += ", DLL" if header["is_dll"] else ", executable"
         lines.append(_row("Type", kind))
@@ -1606,7 +1613,7 @@ class _Analyst:
         signing = ident.signing
         signed = "yes" if signing.is_signed else "no"
         if signing.signer_subject:
-            signed += f", {signing.signer_subject}"
+            signed += f", {ctx.value(signing.signer_subject)}"
         lines.append(_row("Signed", signed + self.notes.marker([signing.evidence_id or ""])))
         reputation = _reputation_line(report)
         if reputation:
@@ -1614,7 +1621,7 @@ class _Analyst:
         static = report.static
         if static is not None and (static.packer_matches or static.packer_hint):
             names = ", ".join(str(m.get("name") or "not recorded") for m in static.packer_matches)
-            lines.append(_row("Packer signatures", names or static.packer_hint))
+            lines.append(_row("Packer signatures", ctx.value(names or static.packer_hint)))
         for algo, value in (
             ("MD5", ident.hashes.md5),
             ("SHA-1", ident.hashes.sha1),
@@ -1714,7 +1721,7 @@ class _Analyst:
             )
             mark = "observed" if observed else "assessed"
             said = f"{self._line(step.action, step.evidence_refs)} _({mark})_"
-            lines.append(_step(index, said))
+            lines.append(_prose_step(index, said))
         return "\n".join([*lines, "", _behind("flow")])
 
     # -- 5. functionality --------------------------------------------------
@@ -2197,7 +2204,7 @@ class _Analyst:
         if hunting or query:
             lines.extend(["### 8.3 Hunting guidance", ""])
             lines.extend(
-                _item(
+                _prose_item(
                     self._line(rec.detection)
                     + (f" ({_one_line(rec.technique_id)})" if rec.technique_id else "")
                 )
@@ -2265,7 +2272,7 @@ class _Analyst:
             if not exported:
                 answer = ctx.plain(_one_line(ioc.published or "")).strip() or "not exported"
                 role += f" _({_inline_safe(answer, pipes=False, plain=ctx.plain)})_"
-            rows.append((ioc.type, value, role or "-"))
+            rows.append((ctx.value(ioc.type), value, role or "-"))
         identifiers = list(self.ta.host_identifiers) if self.ta is not None else []
         answers = _identifier_answers(report)
         left = 0
@@ -2363,7 +2370,7 @@ class _Analyst:
             every = [_one_line(row[at]) for row in section.rows if len(row) > at]
             names = ", ".join(_code_span(self.ctx.plain(n)) for n in every[:20]) or "none"
             more = f" and {len(every) - 20} more (in the bundle)" if len(every) > 20 else ""
-            title = _one_line(section.title)
+            title = self.ctx.value(_one_line(section.title), pipes=True)
             lines.append(
                 _item(
                     f"Matched the sample, {title}: {names}{more}"
@@ -2387,7 +2394,7 @@ class _Analyst:
                 said += _stored_left_out(self.report)
             lines.append(_item(said))
         lines.extend(
-            _item(self.ctx.plain(_one_line(not_drafted_sentence(item)))) for item in not_built
+            _item(self.ctx.inline(_one_line(not_drafted_sentence(item)))) for item in not_built
         )
         if any(self._printed(rule) for rule in rules):
             lines.extend(
@@ -2715,7 +2722,7 @@ class _Analyst:
         from malspark.analysis.disclosure import left_the_machine
 
         record = (self.report.run_summary or {}).get("disclosure")
-        return _one_line(left_the_machine(record, self.ctx.host_kept))
+        return self.ctx.inline(_one_line(left_the_machine(record, self.ctx.host_kept)))
 
     def _measured_limitations(self, inventory: LimitationInventory, said: list[str]) -> str:
         """Section 11 of a report that holds the limitations inventory: each row of it that
@@ -2991,8 +2998,8 @@ class _Analyst:
         if report.references:
             lines.extend(["### References", ""])
             for ref in report.references:
-                note = f" — {ref.note}" if ref.note else ""
-                lines.append(_item(f"[{ref.source}]({ref.url}){note}"))
+                note = f" — {self.ctx.inline(ref.note)}" if ref.note else ""
+                lines.append(_item(f"[{self.ctx.inline(ref.source)}]({ref.url}){note}"))
             lines.append("")
         bundle = self.ctx.keep(f"[{BUNDLE_HTML}]({BUNDLE_HTML}) and [{BUNDLE_JSON}]({BUNDLE_JSON})")
         lines.extend(

@@ -105,11 +105,16 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # is added to the observed-data, and the process and report objects name the
 # new ids; directory joined to name is each stored name, and nothing else
 # changed. The Markdown and HTML did not change.
+# The Markdown re-pinned when text of the sample, a tool, a sandbox or the
+# operator came to be written by the inline rule and every list item and step
+# by the block-start rule (T-735): characters Markdown reads gain a backslash
+# in the evidence appendix and the run summary, and the HTML, read from it,
+# did not change.
 STORED_RENDERS = {
-    "run7": ("0c85258e0bc3f825", "5d209181f98213e8", "af1240b0f29bfd9c"),
-    "run5": ("8f6a96e40d09f13e", "156a645b3d568bd2", "2e717357e24fbfe2"),
-    "run4": ("6645defcf074ad3d", "60cfad50c120e58b", "0a90e4edd679e2be"),
-    "local8": ("d59ab7b6c10001fa", "b78721cb9ba4f766", "75d022862e3237de"),
+    "run7": ("37b6c8f69b2cb19e", "5d209181f98213e8", "af1240b0f29bfd9c"),
+    "run5": ("87bb84a09091c0de", "156a645b3d568bd2", "2e717357e24fbfe2"),
+    "run4": ("de3f3fc895e0ef55", "60cfad50c120e58b", "0a90e4edd679e2be"),
+    "local8": ("08d6d34474336223", "b78721cb9ba4f766", "75d022862e3237de"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

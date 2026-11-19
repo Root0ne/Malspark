@@ -428,7 +428,9 @@ class MarkdownRenderer:
             self._safe_section("limitations", lambda: self._section_limitations(report, ctx)),
             self._safe_section("appendix_evidence", lambda: self._appendix_evidence(report, ctx)),
             self._safe_section("appendix_run_summary", lambda: self._appendix_run(report, ctx)),
-            self._safe_section("appendix_references", lambda: self._appendix_references(report)),
+            self._safe_section(
+                "appendix_references", lambda: self._appendix_references(report, ctx)
+            ),
             self._safe_section("appendix_methodology", lambda: self._appendix_method(report, ctx)),
         ]
         return sections
@@ -478,14 +480,20 @@ class MarkdownRenderer:
     def _section_title(self, report: MalwareReport, ctx: _Context) -> str:
         ident = report.identity
         sha256 = ident.hashes.sha256 or "unknown"
-        lines = [_title_heading(report_title(report)), ""]
+        lines = [_title_heading(report_title(report, _titled_format(ctx.plain))), ""]
         fm = report.front_matter
         if fm is not None:
             parts = [f"**TLP:{fm.tlp}**"]
+            # The operator's configuration, by the inline rule.
             if fm.report_number:
-                parts.append(f"Report {fm.report_number}")
-            parts.append(fm.report_date or report.generated_at.date().isoformat())
-            parts.append(f"{fm.publisher} report version {fm.version}")
+                parts.append(f"Report {ctx.value(fm.report_number, pipes=True)}")
+            parts.append(
+                ctx.value(fm.report_date, pipes=True) or report.generated_at.date().isoformat()
+            )
+            parts.append(
+                f"{ctx.value(fm.publisher, pipes=True)} report version "
+                f"{ctx.value(fm.version, pipes=True)}"
+            )
             lines.append(" · ".join(parts) + "  ")
         else:
             lines.append(f"Generated {report.generated_at.isoformat()}  ")
@@ -548,8 +556,11 @@ class MarkdownRenderer:
         if profile.get("name") and profile["name"] != "default":
             analysts = profile.get("analysts") or []
             custom = set(profile.get("custom") or [])
-            names = ", ".join(f"{a} (custom)" if a in custom else a for a in analysts)
-            lines.append(f"\nProfile: {profile['name']} — analysts: {names}")
+            names = ", ".join(
+                f"{ctx.value(a, pipes=True)} (custom)" if a in custom else ctx.value(a, pipes=True)
+                for a in analysts
+            )
+            lines.append(f"\nProfile: {ctx.value(profile['name'], pipes=True)} — analysts: {names}")
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
@@ -567,9 +578,9 @@ class MarkdownRenderer:
             return ""
         lines = [_lead_heading("Questions asked of this run", REPORT_MODEL), "", QUESTIONS_NOTE]
         for number, answer in enumerate(answers, 1):
-            # The analyst's words: escaped as inline text, a "#" included, so
-            # a trailing run of them cannot close the heading early.
-            asked = _HEADING_HASH.sub("\\\\", ctx.inline(answer.question))
+            # The analyst's words: escaped as inline text; the heading escapes
+            # each "#", so a trailing run of them cannot close it early.
+            asked = ctx.inline(answer.question)
             lines.extend(["", _plain_heading(f"Q{number}. {asked}"), ""])
             outcome = f"**Outcome:** {outcome_words(answer.outcome)}"
             if answer.answered:
@@ -606,7 +617,7 @@ class MarkdownRenderer:
         lines = [_heading(1, "Key findings", REPORT_MODEL if written else PER_ROW), ""]
         for finding in findings:
             lines.append(
-                _item(
+                _prose_item(
                     _cited(ctx.line(finding.text), finding.evidence_ids, finding.text)
                     + ctx.cited_row_mark(finding)
                 )
@@ -636,7 +647,7 @@ class MarkdownRenderer:
         lines.append(
             f"No summary is printed: {left}. _({MEASURED})_"
             if left
-            else f"No summary was written: {_one_line(reason)}. _({MEASURED})_"
+            else f"No summary was written: {ctx.inline(_one_line(reason))}. _({MEASURED})_"
         )
         if any(r in _INCONCLUSIVE for r in report.degradation_reasons):
             lines.extend(
@@ -679,9 +690,9 @@ class MarkdownRenderer:
         )
         lines.append(_row("Size", f"{ident.file_size_bytes:,} bytes"))
         header = _header_facts(report)
-        kind = ident.file_type
+        kind = ctx.value(ident.file_type)
         if header["architecture"]:
-            kind += f", {header['architecture']}"
+            kind += f", {ctx.value(header['architecture'])}"
         if header["is_dll"] is not None:
             kind += ", DLL" if header["is_dll"] else ", executable"
         lines.append(_row("Type", kind))
@@ -694,7 +705,7 @@ class MarkdownRenderer:
         if header["is_dll"] and name.endswith(".exe"):
             lines.append(_row("Name and type", "a DLL submitted under an .exe name"))
         if ident.mime_type:
-            lines.append(_row("MIME", ident.mime_type))
+            lines.append(_row("MIME", ctx.value(ident.mime_type)))
         if ident.magic_bytes:
             lines.append(_row("Magic bytes", _code_span(ctx.plain(str(ident.magic_bytes)))))
         if header["compile_timestamp"]:
@@ -713,18 +724,18 @@ class MarkdownRenderer:
         if ident.internal_name:
             lines.append(_row("Internal name", _code_span(ctx.plain(str(ident.internal_name)))))
         signing = ident.signing
-        cited = f" ({signing.evidence_id})" if signing.evidence_id else ""
+        cited = f" ({ctx.value(signing.evidence_id)})" if signing.evidence_id else ""
         lines.append(_row("Signed", f"{'yes' if signing.is_signed else 'no'}{cited}"))
         if signing.signer_subject:
-            lines.append(_row("Signer", signing.signer_subject))
+            lines.append(_row("Signer", ctx.value(signing.signer_subject)))
         if signing.signer_issuer:
-            lines.append(_row("Signer issuer", signing.signer_issuer))
+            lines.append(_row("Signer issuer", ctx.value(signing.signer_issuer)))
         if signing.signature_valid is not None:
             lines.append(_row("Signature chain", "valid" if signing.signature_valid else "invalid"))
         static = report.static
         if static is not None and (static.packer_matches or static.packer_hint):
             names = ", ".join(str(m.get("name") or "not recorded") for m in static.packer_matches)
-            lines.append(_row("Packer signatures", names or static.packer_hint))
+            lines.append(_row("Packer signatures", ctx.value(names or static.packer_hint)))
         lines.append(_row("Reputation", _reputation_line(report)))
         lines.append(_row("Report generated", report.generated_at.isoformat()))
         lines.append("")
@@ -857,7 +868,7 @@ class MarkdownRenderer:
             else:
                 note = ""
             lines.append(
-                _step(
+                _prose_step(
                     index,
                     # A step whose only sentence the agreement question left out reads
                     # "-", as the analyst report prints it (T-600).
@@ -946,7 +957,11 @@ class MarkdownRenderer:
             measured.append(_row("Name", "Severity", "Description"))
             measured.append(_divider(3))
             for sig in evasive[:10]:
-                measured.append(_row(sig.name, _severity_cell(sig), _whole(sig.description)))
+                measured.append(
+                    _row(
+                        ctx.value(sig.name), _severity_cell(sig), ctx.value(_whole(sig.description))
+                    )
+                )
             measured.extend(_left_out(len(evasive), 10, "evasion signatures"))
         blocks.append(
             _subsection(
@@ -980,7 +995,9 @@ class MarkdownRenderer:
         ]
         if resolving:
             names = ", ".join(
-                f"{_one_line(h.get('name'))} ({_one_line(h.get('source'))})" for h in resolving
+                f"{ctx.value(_one_line(h.get('name')), pipes=True)} "
+                f"({ctx.value(_one_line(h.get('source')), pipes=True)})"
+                for h in resolving
             )
             measured.append(f"_{MEASURED}:_ rule hits {names}.")
         measured.extend(
@@ -1441,6 +1458,7 @@ class MarkdownRenderer:
                         stated_marks(marks.get(signature_identity_without_processes(sig), [])),
                         ctx,
                     ),
+                    ctx.plain,
                 )
                 for sig in signatures[:30]
             )
@@ -1481,12 +1499,13 @@ class MarkdownRenderer:
                 lines.append(
                     _row(
                         _code_span(ctx.plain(str(sec.name))),
-                        sec.virtual_address,
+                        ctx.value(sec.virtual_address),
                         sec.virtual_size,
                         f"0x{sec.raw_offset:x}",
                         sec.raw_size,
                         f"{sec.entropy:.2f}",
-                        " ".join(part for part in (sec.characteristics, flag) if part) or "-",
+                        " ".join(part for part in (ctx.value(sec.characteristics), flag) if part)
+                        or "-",
                     )
                 )
             lines.append("")
@@ -1507,12 +1526,12 @@ class MarkdownRenderer:
                 lines.append("")
             if static.api_capabilities:
                 ordered = sorted(static.api_capabilities.items(), key=lambda kv: -kv[1])
-                cited = _ids(static.api_capabilities_evidence_ids)
+                cited = _ids(ctx.value(i, pipes=True) for i in static.api_capabilities_evidence_ids)
                 rates = static.api_capability_rates
 
                 def _profile(category: str, count: int) -> str:
                     share = rates.get(category)
-                    return f"{_one_line(category)} ×{count}" + (
+                    return f"{ctx.value(_one_line(category), pipes=True)} ×{count}" + (
                         f" ({share:.1f}%)" if share is not None else ""
                     )
 
@@ -1527,7 +1546,8 @@ class MarkdownRenderer:
                         [
                             "",
                             "_The bracketed share is how much of "
-                            f"{_one_line(static.api_capability_corpus)} the category appears "
+                            f"{ctx.value(_one_line(static.api_capability_corpus), pipes=True)} "
+                            "the category appears "
                             "on; it says nothing about how likely this sample is to be benign._",
                         ]
                     )
@@ -1536,12 +1556,16 @@ class MarkdownRenderer:
             from malspark.tools.knowledge import RESOLVED_AT_RUNTIME
 
             ordered = sorted(static.api_capabilities_resolved.items(), key=lambda kv: -kv[1])
-            cited = _ids(static.api_capabilities_resolved_evidence_ids)
+            cited = _ids(
+                ctx.value(i, pipes=True) for i in static.api_capabilities_resolved_evidence_ids
+            )
             lines.append(
                 f"**Capability profile of the names {RESOLVED_AT_RUNTIME}** (not imports"
                 + (f"; {cited}" if cited else "")
                 + "): "
-                + ", ".join(f"{_one_line(cat)} ×{count}" for cat, count in ordered)
+                + ", ".join(
+                    f"{ctx.value(_one_line(cat), pipes=True)} ×{count}" for cat, count in ordered
+                )
             )
             lines.append("")
 
@@ -1556,7 +1580,7 @@ class MarkdownRenderer:
                         _row(
                             _code_span(ctx.plain(exp.name or "(unnamed)")),
                             exp.ordinal or "-",
-                            exp.rva or "-",
+                            ctx.value(exp.rva) or "-",
                         )
                     )
                 lines.extend(_left_out(len(distinct), 60, "exports"))
@@ -1567,7 +1591,11 @@ class MarkdownRenderer:
                 ]
                 if len(rvas) > 1 and len(set(rvas)) == 1:
                     lines.extend(
-                        ["", f"All {len(rvas)} exports share one address, {_one_line(rvas[0])}."]
+                        [
+                            "",
+                            f"All {len(rvas)} exports share one address, "
+                            f"{ctx.value(_one_line(rvas[0]), pipes=True)}.",
+                        ]
                     )
             else:
                 names = list(dict.fromkeys(static.exports))
@@ -1602,7 +1630,7 @@ class MarkdownRenderer:
         if rules:
             lines.extend([_plain_heading("Rule hits"), ""])
             for section in rules:
-                lines.extend([f"{_one_line(section.title)}:", ""])
+                lines.extend([f"{ctx.value(_one_line(section.title), pipes=True)}:", ""])
                 lines.extend(_evidence_rows(section, ctx.plain))
                 if section.evidence_ids:
                     lines.extend(["", f"_Evidence: {_ids(section.evidence_ids)}_"])
@@ -1619,12 +1647,12 @@ class MarkdownRenderer:
             lines.append(_row("Value", "Kind", "Notes", "Published"))
             lines.append(_divider(4))
             for ioc in static.interesting_strings[:60]:
-                published = ctx.plain(answers.get((ioc.kind, ioc.value.strip().lower())) or "-")
+                published = ctx.inline(answers.get((ioc.kind, ioc.value.strip().lower())) or "-")
                 value = _whole(_defanged_text(ctx.plain(ioc.value)))
                 lines.append(
                     _row(
                         _code_span(value),
-                        ioc.kind,
+                        ctx.value(ioc.kind),
                         ctx.inline(ioc.notes) if ioc.notes else "-",
                         published,
                     )
@@ -1786,7 +1814,7 @@ class MarkdownRenderer:
             for row in host:
                 lines.append(
                     _row(
-                        row.type,
+                        ctx.value(row.type),
                         # A file or host value that holds a network value
                         # ("//relay.example.net/path/" read as a path) holds
                         # it defanged; any other is printed as it is.
@@ -1800,8 +1828,8 @@ class MarkdownRenderer:
                             if part
                         )
                         or "-",
-                        row.source or "-",
-                        ctx.plain(row.published or "-"),
+                        ctx.value(row.source) or "-",
+                        ctx.inline(row.published or "-"),
                     )
                 )
             if any(not row.published for row in host):
@@ -1825,7 +1853,7 @@ class MarkdownRenderer:
             lines.append(_divider(len(head)))
             for row in network:
                 cells = [
-                    row.type,
+                    ctx.value(row.type),
                     _code_span(defang(row.value, row.kind or "")),
                     _port_or_path(row, report),
                     "; ".join(
@@ -1833,14 +1861,16 @@ class MarkdownRenderer:
                         for part in (
                             # "the host of <url>": the URL is defanged too.
                             ctx.inline(row.context) if row.context else "",
-                            f"recovered by {row.recovered_by}" if row.recovered_by else "",
+                            f"recovered by {ctx.inline(row.recovered_by)}"
+                            if row.recovered_by
+                            else "",
                             _observed_cell(row.observed_in, ctx),
                         )
                         if part
                     )
                     or "-",
-                    row.source or "-",
-                    ctx.plain(row.published or "-"),
+                    ctx.value(row.source) or "-",
+                    ctx.inline(row.published or "-"),
                 ]
                 if reputation:
                     cells.append(reputation.get(row.value.strip().lower().rstrip("."), "-"))
@@ -1878,7 +1908,7 @@ class MarkdownRenderer:
                 )
                 body.append(
                     _item(
-                        f"{section.title}{ids}: "
+                        f"{ctx.value(section.title, pipes=True)}{ids}: "
                         + ((", ".join(_code_span(ctx.plain(n)) for n in names) + more) or "none")
                     )
                 )
@@ -1936,7 +1966,9 @@ class MarkdownRenderer:
                 body.extend([*fenced, ""])
             # A format left without a draft says why (``drafts_not_built``).
             body.extend(
-                line for item in report.drafts_not_built for line in (_not_drafted(item, ctx), "")
+                line
+                for item in report.drafts_not_built
+                for line in (_paragraph_line(_not_drafted(item, ctx)), "")
             )
             blocks.append("\n".join(body).rstrip())
         else:
@@ -1956,7 +1988,7 @@ class MarkdownRenderer:
         if hunting:
             body = [_subheading("10.3", "Hunting notes", REPORT_MODEL), ""]
             body.extend(
-                _item(
+                _prose_item(
                     ctx.line(rec.detection)
                     + (f" ({_one_line(rec.technique_id)})" if rec.technique_id else "")
                 )
@@ -2163,9 +2195,17 @@ class MarkdownRenderer:
             lines.extend(["**What ran:**", ""])
             for row in ran:
                 state = "ran" if row.get("ran") else "did not run"
-                why = f": {row['reason']}" if row.get("reason") and not row.get("ran") else ""
+                why = (
+                    f": {ctx.inline(str(row['reason']))}"
+                    if row.get("reason") and not row.get("ran")
+                    else ""
+                )
                 agents = row.get("agent_reasons") or {}
-                said = "; ".join(f"{agent}: {reason}" for agent, reason in agents.items() if reason)
+                said = "; ".join(
+                    f"{ctx.value(agent, pipes=True)}: {ctx.inline(str(reason))}"
+                    for agent, reason in agents.items()
+                    if reason
+                )
                 lines.append(
                     _item(
                         f"{_code_span(str(row.get('key', 'stage')))} {state}{why}"
@@ -2191,14 +2231,14 @@ class MarkdownRenderer:
             # where the reason carries one: the header says only what they mean
             # for the verdict.
             lines.extend(["**What limited this run:**", ""])
-            lines.extend(_item(reason) for reason in report.degradation_reasons)
+            lines.extend(_item(ctx.inline(reason)) for reason in report.degradation_reasons)
             lines.append("")
         if report.operator_choices:
             # What the operator's configuration left out: listed whole, apart
             # from what limited the run, since it cost no evidence the run's
             # configuration would have given.
             lines.extend([f"**{OPERATOR_CHOICES_HEADING}:**", ""])
-            lines.extend(_item(reason) for reason in report.operator_choices)
+            lines.extend(_item(ctx.inline(reason)) for reason in report.operator_choices)
             lines.append("")
 
         evidence = summary.get("evidence") or {}
@@ -2222,11 +2262,11 @@ class MarkdownRenderer:
             lines.extend(["**Tool failures:**", ""])
             for row in failures:
                 tool = str(row.get("tool") or "tool")
-                server = f" ({row['server']})" if row.get("server") else ""
+                server = f" ({ctx.value(row['server'], pipes=True)})" if row.get("server") else ""
                 count = int(row.get("count") or 1)
                 times = f" ×{count}" if count > 1 else ""
                 message = ctx.inline(str(row.get("error") or "").strip()) or "failed"
-                remedy = str(row.get("remediation") or "").strip()
+                remedy = ctx.inline(str(row.get("remediation") or "").strip())
                 lines.append(
                     _item(
                         f"{_code_span(tool)}{server}{times}: {message}"
@@ -2282,14 +2322,16 @@ class MarkdownRenderer:
                 advisory = " (advisory)" if row.get("advisory") else ""
                 lines.append(
                     _item(
-                        f"{_code_span(str(row.get('code', '')))} ({row.get('agent', '')}){advisory}"
+                        f"{_code_span(str(row.get('code', '')))} "
+                        f"({ctx.inline(str(row.get('agent', '')))}){advisory}"
                         f"{_times(row)}: {_finding_text(row, ctx.plain)}"
                     )
                 )
             for row in answered:
                 lines.append(
                     _item(
-                        f"{_code_span(str(row.get('code', '')))} ({row.get('agent', '')})"
+                        f"{_code_span(str(row.get('code', '')))} "
+                        f"({ctx.inline(str(row.get('agent', '')))})"
                         " (answered)"
                         f"{_times(row)}: {_finding_text(row, ctx.plain)}"
                     )
@@ -2303,7 +2345,9 @@ class MarkdownRenderer:
                 lines.extend(["**Items a kept validation retry left out:**", ""])
                 from malspark.pipeline.validation import retry_drop_sentences
 
-                lines.extend(_item(ctx.plain(sentence)) for sentence in retry_drop_sentences(drops))
+                lines.extend(
+                    _prose_item(ctx.plain(sentence)) for sentence in retry_drop_sentences(drops)
+                )
                 lines.append("")
             # What a retry withdrew with a WITHDRAW line, with its reason.
             withdrawn = [
@@ -2311,7 +2355,9 @@ class MarkdownRenderer:
             ]
             if withdrawn:
                 lines.extend(["**Items a validation retry withdrew:**", ""])
-                lines.extend(_item(ctx.plain(str(row.get("sentence") or ""))) for row in withdrawn)
+                lines.extend(
+                    _prose_item(ctx.plain(str(row.get("sentence") or ""))) for row in withdrawn
+                )
                 lines.append("")
         if exports:
             lines.extend(["**Export decisions:**", ""])
@@ -2352,9 +2398,9 @@ class MarkdownRenderer:
                 lines.append(
                     _row(
                         row.id,
-                        row.agent or "-",
-                        row.server or "-",
-                        row.tool or "-",
+                        ctx.value(row.agent) or "-",
+                        ctx.value(row.server) or "-",
+                        ctx.value(row.tool) or "-",
                         _ran_column(row),
                         f"{row.duration_ms} ms",
                         "yes" if row.truncated else "no",
@@ -2362,7 +2408,7 @@ class MarkdownRenderer:
                 )
             lines.append("")
         for section in report.sections:
-            lines.extend([_evidence_heading(section), ""])
+            lines.extend([_evidence_heading(section, ctx.plain), ""])
             analysts = listed_by(section)
             if analysts:
                 # A model's table, said as one before its rows: nothing in it
@@ -2385,6 +2431,14 @@ class MarkdownRenderer:
 
     def _appendix_run(self, report: MalwareReport, ctx: _Context | None = None) -> str:
         run_summary = report.run_summary or {}
+        # A platform sentence that carries a tool's or the operator's text: its
+        # spans kept, every other character Markdown reads escaped.
+        inline = ctx.inline if ctx is not None else _escaped_spelling
+
+        def value(text: Any) -> str:
+            """A tool's or the operator's name, by the inline rule; the row keeps its separator."""
+            return ctx.value(text) if ctx is not None else _inline_safe(text, pipes=False)
+
         lines = [_appendix_heading("B", "Run summary", MEASURED), ""]
         if not run_summary:
             lines.append("No run summary was stored with this report.")
@@ -2422,9 +2476,9 @@ class MarkdownRenderer:
                 except (TypeError, ValueError):
                     pass
             for sentence in negotiation.get("revision_replacements") or []:
-                lines.append(_item(str(sentence)))
+                lines.append(_item(inline(str(sentence))))
             for sentence in negotiation.get("mediation_notes") or []:
-                lines.append(_item(str(sentence)))
+                lines.append(_item(inline(str(sentence))))
             # What the platform recorded of the debate: how many values each
             # revision states nowhere (the claims themselves are in the run
             # summary), the lines the mediator marked not blocking, the marks
@@ -2434,30 +2488,33 @@ class MarkdownRenderer:
                 if isinstance(row, dict):
                     lines.append(
                         _item(
-                            f"{row.get('agent')}, round {row.get('round')}: "
+                            f"{inline(str(row.get('agent')))}, round {row.get('round')}: "
                             f"{row.get('values')} value{'' if row.get('values') == 1 else 's'} "
                             f"from {row.get('claims')} earlier "
                             f"claim{'' if row.get('claims') == 1 else 's'} "
                             f"{'is' if row.get('values') == 1 else 'are'} no longer stated"
                         )
                     )
+            # A line that quotes the mediator's words keeps the writing of model prose.
             for sentence in negotiation.get("not_blocking") or []:
-                lines.append(_item(f"Marked not blocking by the mediator: {sentence}"))
+                lines.append(_prose_item(f"Marked not blocking by the mediator: {sentence}"))
             for sentence in negotiation.get("unread_marks") or []:
-                lines.append(_item(f"A mark that was not read; the line blocked: {sentence}"))
+                lines.append(
+                    _item(f"A mark that was not read; the line blocked: {inline(sentence)}")
+                )
             for sentence in negotiation.get("ledger_facts") or []:
                 # The rule-match fact was the mediator's; the report prints counts.
                 if not is_rule_fact(sentence):
-                    lines.append(_item(str(sentence)))
+                    lines.append(_item(inline(str(sentence))))
             for sentence in negotiation.get("ledger_stated") or []:
-                lines.append(_item(str(sentence)))
+                lines.append(_item(inline(str(sentence))))
             for sentence in negotiation.get("limit_rulings") or []:
-                lines.append(_item(str(sentence)))
+                lines.append(_prose_item(str(sentence)))
         # A model's configured endpoint prints as configured, set aside where
         # this line writes it and nowhere else.
         model_name = ctx.endpoint_kept if ctx is not None else None
         for line in generation_lines(run_summary.get("generation"), model_name):
-            lines.append(_item(line))
+            lines.append(_item(inline(line)))
         ungrounded = run_summary.get("sections_without_evidence")
         if ungrounded:
             lines.append(_item(f"Report sections with no evidence: {ungrounded}"))
@@ -2469,10 +2526,12 @@ class MarkdownRenderer:
         for agent, block in sorted((run_summary.get("models") or {}).items()):
             for row in (block or {}).get("fallbacks") or []:
                 if isinstance(row, dict):
-                    lines.append(_item(f"Model fallback ({agent}): {row.get('reason', '')}"))
+                    lines.append(
+                        _item(f"Model fallback ({agent}): {inline(str(row.get('reason', '')))}")
+                    )
         for row in run_summary.get("server_rests") or []:
             if isinstance(row, dict):
-                lines.append(_item(server_rest_sentence(row)))
+                lines.append(_item(inline(server_rest_sentence(row))))
         corroboration = run_summary.get("corroboration") or {}
         if corroboration:
             from malspark.analysis.corroboration import (
@@ -2508,12 +2567,15 @@ class MarkdownRenderer:
             )
             for tid, row in sorted(corroboration.items()):
                 if isinstance(row, dict):
-                    asserted_by = ", ".join(row.get("asserted_by") or []) or "—"
-                    claimed_by = ", ".join(row.get("claimed_by") or []) or "—"
-                    associated = ", ".join(row.get("associated_by") or []) or "—"
+                    asserted_by = ", ".join(map(value, row.get("asserted_by") or [])) or "—"
+                    claimed_by = ", ".join(map(value, row.get("claimed_by") or [])) or "—"
+                    associated = ", ".join(map(value, row.get("associated_by") or [])) or "—"
                 else:
-                    asserted_by, claimed_by = "—", ", ".join(str(s) for s in row) or "—"
+                    asserted_by, claimed_by = "—", ", ".join(value(str(s)) for s in row) or "—"
                     associated = "—"
+                # A retired id's reason is the catalogue's sentence, written as one.
+                if isinstance(row, dict) and row.get("retired_reason"):
+                    row = {**row, "retired_reason": inline(str(row["retired_reason"]))}
                 label = technique_label(str(tid), row if isinstance(row, dict) else None)
                 # The reason an id was not published, a judge's words among them: each
                 # sentence a check left standing marked as every other place marks it.
@@ -2529,7 +2591,7 @@ class MarkdownRenderer:
         disclosed = disclosure_lines(held, code)
         if disclosed:
             lines.extend(["", DISCLOSURE_INTRO, ""])
-            lines.extend(_item(line) for line in disclosed)
+            lines.extend(_item(inline(line)) for line in disclosed)
             # Where the sample's bytes were read and what kept each reader
             # from the worker (``analysis.isolation``); a record stored before
             # the part existed shows none.
@@ -2537,7 +2599,7 @@ class MarkdownRenderer:
             isolated = isolation_lines(part, code)
             if isolated:
                 lines.extend(["", ISOLATION_INTRO, ""])
-                lines.extend(_item(line) for line in isolated)
+                lines.extend(_item(inline(line)) for line in isolated)
             # What each tool the run called is declared to do beyond answering
             # (``analysis.tool_effects``); a record stored before the part
             # existed shows none.
@@ -2545,7 +2607,7 @@ class MarkdownRenderer:
             effected = effects_lines(effects, code)
             if effected:
                 lines.extend(["", EFFECTS_INTRO, ""])
-                lines.extend(_item(line) for line in effected)
+                lines.extend(_item(inline(line)) for line in effected)
             lines.extend(["", DISCLOSURE_FOOTNOTE])
         # What the run spent its input on, where its summary records it
         # (``analysis.efficiency``); a summary stored without it shows none.
@@ -2554,7 +2616,7 @@ class MarkdownRenderer:
         )
         if counted:
             lines.extend(["", EFFICIENCY_INTRO, ""])
-            lines.extend(_item(line) for line in counted)
+            lines.extend(_item(inline(line)) for line in counted)
         elif unbuilt := not_built_line("efficiency", run_summary.get("efficiency")):
             lines.extend(["", unbuilt])
         # What the run could not establish, what each tool looked for and over
@@ -2566,10 +2628,25 @@ class MarkdownRenderer:
         recorded = run_summary.get("coverage")
         states = _AnalystStates(report) if isinstance(recorded, dict) else None
         plain = ctx.plain if ctx is not None else _defanged_text
+        # A model's claim is quoted by the inline rule and set into its line
+        # after the line's own writing, so no character of it is escaped twice.
+        claims: dict[str, str] = {}
+
+        def quote(text: str) -> str:
+            token = f"\x00claim{len(claims)}\x00"
+            claims[token] = _inline_safe(_one_line(text), plain=plain)
+            return token
+
+        def written(line: str) -> str:
+            line = inline(line)
+            for token, claim in claims.items():
+                line = line.replace(token, claim)
+            return line
+
         missing, looked, negatives = coverage_lines(
             recorded,
             lambda text: _code_span(_one_line(text)),
-            lambda text: _inline_safe(_one_line(text), plain=plain),
+            quote,
             (states.failed, states.skipped, states.silent) if states is not None else None,
         )
         if unbuilt := not_built_line("coverage", recorded):
@@ -2581,17 +2658,19 @@ class MarkdownRenderer:
         ):
             if block:
                 lines.extend(["", intro, ""])
-                lines.extend(_item(line) for line in block)
+                lines.extend(_item(written(line)) for line in block)
         return "\n".join(lines)
 
-    def _appendix_references(self, report: MalwareReport) -> str:
+    def _appendix_references(self, report: MalwareReport, ctx: _Context) -> str:
         lines = [_appendix_heading("C", "References", REFERENCE), ""]
         if not report.references:
             lines.append("_No external references._")
             return "\n".join(lines)
+        # The source and the note are a tool's or the operator's words; the link
+        # is the platform's, to the target the reference holds.
         for ref in report.references:
-            note = f" — {ref.note}" if ref.note else ""
-            lines.append(_item(f"[{ref.source}]({ref.url}){note}"))
+            note = f" — {ctx.inline(ref.note)}" if ref.note else ""
+            lines.append(_item(f"[{ctx.inline(ref.source)}]({ref.url}){note}"))
         return "\n".join(lines)
 
     def _appendix_method(self, report: MalwareReport, ctx: _Context) -> str:
@@ -2616,9 +2695,9 @@ class MarkdownRenderer:
             )
         lines.append("")
         profile = summary.get("profile") or {}
-        analysts = ", ".join(profile.get("analysts") or [])
+        analysts = ", ".join(ctx.value(name, pipes=True) for name in profile.get("analysts") or [])
         if profile.get("name"):
-            team = str(profile["name"]) + (f" ({analysts})" if analysts else "")
+            team = ctx.value(profile["name"], pipes=True) + (f" ({analysts})" if analysts else "")
         else:
             team = "not recorded in this report"
         lines.append(_item(f"Team: {team}"))
@@ -2634,13 +2713,15 @@ class MarkdownRenderer:
             lines.append(_item(f"Models: {model}"))
         servers = sorted({row.server for row in report.evidence_index if row.server})
         if servers:
-            lines.append(_item(f"Tool servers called: {', '.join(servers)}"))
+            named = ", ".join(ctx.value(server, pipes=True) for server in servers)
+            lines.append(_item(f"Tool servers called: {named}"))
         lines.append(_item(f"Sandbox: {_SANDBOX_STATES[ctx.sandbox_state]}"))
         lines.append(_item(f"Report generated: {report.generated_at.isoformat()}"))
         if report.version_history:
             lines.extend(["", _row("Version", "Date", "Authors", "Description"), _divider(4)])
             for row in report.version_history:
-                lines.append(_row(row.version, row.date, row.authors, row.description))
+                cells = (row.version, row.date, row.authors, row.description)
+                lines.append(_row(*(ctx.value(cell) for cell in cells)))
         if report.disclaimer:
             lines.extend(["", f"_{_one_line(report.disclaimer)}_"])
         if report.acknowledgements:
@@ -2885,8 +2966,8 @@ class _Context:
         row = self._tools.get(str(evidence_id or ""))
         if row is None:
             return "not recorded"
-        tool = row.tool or "tool"
-        return f"{row.agent} ({tool})" if row.agent else tool
+        tool = self.value(row.tool) or "tool"
+        return f"{self.value(row.agent)} ({tool})" if row.agent else tool
 
     def left_out(self, subject: str) -> bool:
         """Whether the agreement question left a sentence of the passage ``subject`` out
@@ -2948,7 +3029,10 @@ class _Context:
             self.left_out_clause(*subjects, on=" on it") or "the report model wrote nothing on it"
         )
         tools = self.file_tools
-        named = ", ".join(tools[:6]) + (f" and {len(tools) - 6} more" if len(tools) > 6 else "")
+        # A tool's name is the tool's text, by the inline rule.
+        named = ", ".join(self.value(tool, pipes=True) for tool in tools[:6]) + (
+            f" and {len(tools) - 6} more" if len(tools) > 6 else ""
+        )
         blind = sandbox and not self.sandbox_observed
         if not tools:
             said = (
@@ -3109,6 +3193,15 @@ class _Context:
         the table separator is left to the row (:func:`_cell`).
         """
         return _emphasis_escaped(self._defang(_escaped_keeping_spans(text)))
+
+    def value(self, text: Any, *, pipes: bool = False) -> str:
+        """A value of the sample, a sandbox, a tool or the operator, by the inline rule.
+
+        Every character Markdown reads escaped, then the run's own defang
+        (:func:`_inline_safe`); no backtick of the value opens a span. A cell
+        leaves the table separator to the row; anywhere else ``pipes`` escapes it.
+        """
+        return _inline_safe(text, pipes=pipes, plain=self.plain)
 
     def line(self, text: Any) -> str:
         """Model prose that has to stay on one line: a list item, a step."""
@@ -3642,9 +3735,10 @@ _IPV6_WITH_A_TAIL = re.compile(
 # A mailbox: GFM's name characters (``_`` among them) and a dotted domain.
 _EMAIL_IN_TEXT = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 # The characters that make Markdown of a sample's text: a code span, a link or
-# image, an HTML tag, a table cell, emphasis, and the backslash itself.
-_INLINE_META = re.compile(r"([\\`\[\]<>*" + _PIPE + r"])")
-_INLINE_META_NO_PIPE = re.compile(r"([\\`\[\]<>*])")
+# image, an HTML tag, a table cell, emphasis, struck text, and the backslash
+# itself. A cell and any other place differ only in the table separator.
+_INLINE_META = re.compile(r"([\\`\[\]<>*~" + _PIPE + r"])")
+_INLINE_META_NO_PIPE = re.compile(r"([\\`\[\]<>*~])")
 # An underscore that can open or close emphasis: one without a letter or digit
 # on both sides of it ("FUN_00401310" holds none). Escaped after the defanger
 # has read the value (:func:`_emphasis_escaped`), so a host such as
@@ -4464,12 +4558,24 @@ def _escaped_keeping_spans(text: Any, meta: re.Pattern[str] = _INLINE_META_NO_PI
             continue
         out += [
             meta.sub(r"\\\1", raw[at : runs[index][0]]),
-            _code_span(raw[runs[index][1] : runs[closer][0]]),
+            _code_span(_span_content(raw[runs[index][1] : runs[closer][0]])),
         ]
         at = runs[closer][1]
         index = closer + 1
     out.append(meta.sub(r"\\\1", raw[at:]))
     return "".join(out)
+
+
+def _span_content(inner: str) -> str:
+    """The text a kept span shows when it holds a backtick: less :func:`_code_span`'s padding.
+
+    A span whose text holds a backtick is written with a space inside each
+    fence, which the reader takes off; written again by :func:`_code_span`, it
+    is the span it was. Any other span's text is kept as it stands.
+    """
+    if len(inner) > 2 and inner[0] == inner[-1] == " " and "`" in inner[1:-1]:
+        return inner[1:-1]
+    return inner
 
 
 # What stands around the run of backticks that closes a code span: no backtick.
@@ -4603,7 +4709,7 @@ def _not_drafted(item: DraftNotBuilt, ctx: _Context) -> str:
     """The sentence for a format the run drafted nothing in (``not_drafted_sentence``)."""
     from malspark.reporting.detection_signatures import not_drafted_sentence
 
-    return ctx.plain(_one_line(not_drafted_sentence(item)))
+    return ctx.inline(_one_line(not_drafted_sentence(item)))
 
 
 def _sample_check_line(rule: DetectionRule, ctx: _Context) -> str | None:
@@ -4788,7 +4894,8 @@ def _reputations(report: MalwareReport) -> dict[str, str]:
             total = sum(
                 int(rep.get(k) or 0) for k in ("malicious", "suspicious", "harmless", "undetected")
             )
-            name = rep.get("source") or "reputation"
+            # The service's name is its answer's text, by the inline rule.
+            name = _inline_safe(rep.get("source"), pipes=False) or "reputation"
             said = (
                 f"{name}: {int(rep.get('malicious') or 0)} of {total} engines flag it as malicious"
             )
@@ -5071,12 +5178,15 @@ OPEN_QUESTIONS_NOTE = (
 )
 
 
-def _evidence_heading(section: Any) -> str:
-    """An Appendix A section's H3 with its voice: a tool's is Measured, an analyst's Assessed."""
+def _evidence_heading(section: Any, plain: Callable[[str], str] = _defanged_text) -> str:
+    """An Appendix A section's H3 with its voice: a tool's is Measured, an analyst's Assessed.
+
+    The title is a tool's or an analyst's words, written by the inline rule.
+    """
     source = str(getattr(section, "source", "") or "").strip().lower()
     assessed = source.startswith(ANALYST_SECTION_SOURCES) or is_open_question_section(section)
     voice = ASSESSED if assessed else MEASURED
-    return f"{_plain_heading(section.title)} · _{voice}_"
+    return f"{_plain_heading(_inline_safe(section.title, plain=plain))} · _{voice}_"
 
 
 def analyst_list_note(analysts: list[str], kind: str = "") -> str:
@@ -5098,24 +5208,46 @@ def analyst_list_note(analysts: list[str], kind: str = "") -> str:
 
 
 def _plain_heading(title: Any) -> str:
-    """An unnumbered H3 whose title may be a tool's or a model's words: one line."""
-    return f"### {_one_line(title)}"
+    """An unnumbered H3 on one line, each ``#`` of its title escaped.
+
+    The title is written by its caller (a value by the inline rule); a
+    trailing run of ``#`` would otherwise close the heading and not be shown.
+    """
+    return "### " + _HEADING_HASH.sub("\\\\", _one_line(title))
 
 
 def _item(text: Any) -> str:
-    """One list item, on one line whatever its value carries.
+    """One list item, on one line, opening no block whatever its text begins with.
 
     The list counterpart of :func:`_row`: a newline in a value from the
     sample, a tool or a model would end the item and could start a heading
-    or a fence on the next line. Every bullet in this renderer is built here,
-    and ``test_a_list_item_is_never_assembled_by_hand`` fails the build if a
-    new one is not.
+    or a fence on the next line, and a value at the item's start would open a
+    rule, a nested list, a heading, a quote or a code block. The text is
+    written by its caller (a value by the inline rule) and here by the
+    block-start rule (:func:`_paragraph_line`). A model's line keeps its own
+    writing (:func:`_prose_item`). Every bullet in this renderer is built
+    here, and ``test_a_list_item_is_never_assembled_by_hand`` fails the build
+    if a new one is not.
+    """
+    return f"- {_paragraph_line(text)}"
+
+
+def _step(number: int, text: Any) -> str:
+    """One numbered step, on one line, opening no block (:func:`_item`)."""
+    return f"{number}. {_paragraph_line(text)}"
+
+
+def _prose_item(text: Any) -> str:
+    """One list item that begins with a model's line: on one line, its quote opener escaped.
+
+    A model's line keeps the writing the recorded reading gives model prose;
+    only the line break and the quote opener are the item's.
     """
     return f"- {_unquoted(_one_line(text))}"
 
 
-def _step(number: int, text: Any) -> str:
-    """One numbered step, on one line."""
+def _prose_step(number: int, text: Any) -> str:
+    """One numbered step that begins with a model's line (:func:`_prose_item`)."""
     return f"{number}. {_unquoted(_one_line(text))}"
 
 
@@ -5153,14 +5285,26 @@ def _escape_block(text: str) -> str:
     """
     # What opens a heading or a code fence at the start of a Markdown line; a
     # block quote's ``>`` is escaped after any list markers (:func:`_unquoted`).
-    openers = ("#", "```", "~~~")
+    # A run of backticks opens a fence only where no backtick follows it on the
+    # line: otherwise it opens a code span, which an escape would break.
+    openers = ("#", "~~~")
     out: list[str] = []
     for line in str(text or "").splitlines():
         body = line.lstrip()
-        if body.startswith(openers) or _is_setext_underline(body) or _is_delimiter_row(body):
+        fence = _BACKTICK_FENCE.match(body)
+        if (
+            body.startswith(openers)
+            or (fence is not None and "`" not in body[fence.end() :])
+            or _is_setext_underline(body)
+            or _is_delimiter_row(body)
+        ):
             line = line[: len(line) - len(body)] + "\\" + body
         out.append(_unquoted(line))
     return "\n".join(out)
+
+
+# The run of three or more backticks a fence opens with.
+_BACKTICK_FENCE = re.compile(r"`{3,}")
 
 
 def _is_setext_underline(line: str) -> bool:
@@ -5405,7 +5549,7 @@ def _ransomware_block(ta: Any, ctx: _Context, *, ransomware: bool) -> str:
                     ]
                 )
         elif note.sections:
-            lines.extend(_item(ctx.line(part)) for part in note.sections)
+            lines.extend(_prose_item(ctx.line(part)) for part in note.sections)
             lines.append("")
     if not lines:
         return ""
@@ -5415,12 +5559,13 @@ def _ransomware_block(ta: Any, ctx: _Context, *, ransomware: bool) -> str:
     return "\n".join([_subheading("5.9", title, REPORT_MODEL), "", *lines]).rstrip()
 
 
-def report_title(report: MalwareReport) -> str:
+def report_title(report: MalwareReport, write: Callable[[str], str] = str) -> str:
     """``<Family> <category> analysis`` when the judge named a family with evidence.
 
     A family the judge named without citing anything is often a placeholder
     label ("generic packed malware") and does not title the report; neither
-    does one only a sandbox's classification named.
+    does one only a sandbox's classification named. ``write`` writes the
+    sample's format where the title names it (:func:`_titled_format`).
     """
     attr = report.attribution
     family = stated_family(_one_line(attr.family))
@@ -5434,7 +5579,14 @@ def report_title(report: MalwareReport) -> str:
     fmt = _one_line(report.identity.file_type).strip()
     # A format tag is an acronym ("pe", "elf") however the identity spelled it.
     fmt = fmt.upper() if len(fmt) <= 6 else fmt
-    return f"{fmt} sample {sha} analysis" if fmt and fmt != "unknown" else f"Sample {sha} analysis"
+    if fmt and fmt != "unknown":
+        return f"{write(fmt)} sample {sha} analysis"
+    return f"Sample {sha} analysis"
+
+
+def _titled_format(plain: Callable[[str], str]) -> Callable[[str], str]:
+    """How a heading writes the sample's format: by the inline rule, each ``#`` escaped."""
+    return lambda text: _HEADING_HASH.sub("\\\\", _inline_safe(text, plain=plain))
 
 
 def _verdict_voice(report: MalwareReport) -> str:
@@ -5499,7 +5651,10 @@ def _reputation_line(report: MalwareReport) -> str:
     by_tool: dict[str, list[str]] = {}
     for lookup in entries:
         by_tool.setdefault(lookup.tool, []).append(lookup.id)
-    where = ", ".join(f"{tool}, {', '.join(named)}" for tool, named in by_tool.items())
+    # A tool's name is the tool's text, by the inline rule; the row keeps its separator.
+    where = ", ".join(
+        f"{_inline_safe(tool, pipes=False)}, {', '.join(named)}" for tool, named in by_tool.items()
+    )
     rows: dict[str, str] = {}
     for section in report.sections:
         if not ids.intersection(section.evidence_ids) or section.kind != "kv":
@@ -5848,12 +6003,16 @@ def _attack_row(
         if _resolved_only(hit)
         and all(_resolved_only(h) for h in rules if h.get("source") == hit.get("source"))
     }
+    # Each producer's name is a tool's or the operator's text, by the inline rule.
     named = [
-        f"{source} ({RESOLVED_ONLY_RULE_LABEL if source in runtime_only else 'rule match'})"
+        f"{ctx.value(source)} "
+        f"({RESOLVED_ONLY_RULE_LABEL if source in runtime_only else 'rule match'})"
         for source in dict.fromkeys(asserted + rule_sources)
     ]
     named += [
-        str(x) for x in [*claimed, *cell.contributing_layers] if x not in asserted + rule_sources
+        ctx.value(str(x))
+        for x in [*claimed, *cell.contributing_layers]
+        if x not in asserted + rule_sources
     ]
     source = ", ".join(dict.fromkeys(named)) or "-"
     # No number, or the 0.0 a row stored before ``None`` existed carried for
@@ -5929,7 +6088,8 @@ def _technique_evidence_cell(
     ids = technique_evidence_ids(row)
     items = technique_sandbox_items(row)
     ruled = [eid for eid in _rule_ids(rules, capability_ids) if eid not in (ids or ())]
-    rule_words = f"rule matches: {', '.join(ruled)}"
+    # A rule hit's entry ids are the tool's text, written by the inline rule.
+    rule_words = f"rule matches: {', '.join(_inline_safe(eid, pipes=False) for eid in ruled)}"
     if ids is None and not items and ruled:
         return rule_words
     words = evidence_words(ids, items)
@@ -5942,13 +6102,15 @@ def _rule_words(hit: dict[str, Any]) -> str:
         ", ".join(_code_span(_defanged_text(str(a))) for a in (hit.get("matched_apis") or [])[:6])
         or "-"
     )
-    rule = str(hit.get("rule") or hit.get("name") or "").strip()
+    rule = _inline_safe(str(hit.get("rule") or hit.get("name") or "").strip(), pipes=False)
     # A capability-rule tool names the namespace a rule lives in; the knowledge table names the
     # imports its rule matched, and the names it matched that the run resolved
     # at runtime from stored values apart from them: those are not imports.
     where = f"namespace {matched}" if _capability_rule_hit(hit) else _matched_names(hit)
-    said = (f"rule {rule} ({hit.get('source') or 'rule'}), " if rule else "") + where
-    return said + f"; base rate {hit.get('benign_rate') or 'not measured'}"
+    source = _inline_safe(hit.get("source") or "rule", pipes=False)
+    said = (f"rule {rule} ({source}), " if rule else "") + where
+    rate = _inline_safe(hit.get("benign_rate"), pipes=False) or "not measured"
+    return said + f"; base rate {rate}"
 
 
 # How a rule that matched only names resolved at runtime is named as a source:
@@ -6201,17 +6363,21 @@ def _rule_only_row(
         else "not published: a rule matched it and no producer claimed it"
     )
     sources = ", ".join(
-        dict.fromkeys(f"{hit.get('source') or 'rule'} (rule match)" for hit in rules)
+        dict.fromkeys(
+            f"{_inline_safe(hit.get('source') or 'rule', pipes=False)} (rule match)"
+            for hit in rules
+        )
     )
     return _row(
         tactic,
-        tid or "-",
+        _inline_safe(tid, pipes=False) or "-",
         name,
         _with_rules("-", rules),
         sources,
         "rule match",
         status,
-        ", ".join(_rule_ids(rules, capability_ids)) or "-",
+        ", ".join(_inline_safe(eid, pipes=False) for eid in _rule_ids(rules, capability_ids))
+        or "-",
     )
 
 
@@ -6555,7 +6721,11 @@ def _evidence_rows(
         columns = list(section.columns or [])
         widest = max(len(row) for row in section.rows)
         columns += [f"Column {i + 1}" for i in range(len(columns), widest)]
-        out += [_row(*columns), _divider(len(columns))]
+        # A column's name is the tool's, written as its cells are.
+        out += [
+            _row(*(_emphasis_escaped(write(_escaped(name))) for name in columns)),
+            _divider(len(columns)),
+        ]
         # The columns of a section that hold the sample's or a sandbox's own
         # text, each written as one code span after its cut, so the value
         # cannot open a link, a tag or a fence (``ledger_report``).
@@ -7002,12 +7172,19 @@ def _severity_cell(sig: SandboxSignature) -> Any:
     return "unknown" if sig.severity is None else sig.severity
 
 
-def _signature_row(sig: SandboxSignature, observed: str = "") -> str:
-    ttps = ", ".join(sig.technique_ids) if sig.technique_ids else "-"
-    described = _whole(sig.description or "-")
+def _signature_row(
+    sig: SandboxSignature, observed: str = "", plain: Callable[[str], str] = _defanged_text
+) -> str:
+    """A sandbox signature's row: its name, techniques and description are the sandbox's text."""
+
+    def value(text: str) -> str:
+        return _inline_safe(text, pipes=False, plain=plain)
+
+    ttps = ", ".join(value(tid) for tid in sig.technique_ids) if sig.technique_ids else "-"
+    described = value(_whole(sig.description or "-"))
     if observed:
-        described = f"{sig.description}; {observed}" if sig.description else observed
-    return _row(sig.name, _severity_cell(sig), ttps, described)
+        described = f"{value(sig.description)}; {observed}" if sig.description else observed
+    return _row(value(sig.name), _severity_cell(sig), ttps, described)
 
 
 def _observed_cell(marks: Any, ctx: Any) -> str:
