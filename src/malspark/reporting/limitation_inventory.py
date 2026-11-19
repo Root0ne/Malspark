@@ -414,18 +414,26 @@ def redone_rows(inv: LimitationInventory) -> list[dict[str, Any]]:
     ]
 
 
-def _call(call: InventoryCall, bases: Sequence[int], name: Callable[[str], str]) -> str:
+def _call(
+    call: InventoryCall,
+    bases: Sequence[int],
+    name: Callable[[str], str],
+    entry: Callable[[str], str] = str,
+) -> str:
     """A failed call as a row names it: its tool, the addresses it asked for, its entry."""
     asked = f" for {_hexes(call.asked, bases)}" if call.asked else ""
-    later = ", ".join(dict.fromkeys(entry for _address, entry in call.answered))
+    later = ", ".join(dict.fromkeys(entry(held) for _address, held in call.answered))
     if later:
         return (
-            f"{name(call.tool)}{asked} ({call.entry}; a later call for the same address: {later})"
+            f"{name(call.tool)}{asked} ({entry(call.entry)}; a later call for the same address: "
+            f"{later})"
         )
-    return f"{name(call.tool)}{asked} ({call.entry})"
+    return f"{name(call.tool)}{asked} ({entry(call.entry)})"
 
 
-def _failed_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[InventoryRow]:
+def _failed_rows(
+    inv: LimitationInventory, name: Callable[[str], str], entry: Callable[[str], str] = str
+) -> list[InventoryRow]:
     left = [call for call in inv.failed if not call.redone_by]
     redone = [call for call in inv.failed if call.redone_by]
     out: list[InventoryRow] = []
@@ -434,7 +442,7 @@ def _failed_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[I
     if not left and trimmed:
         out.append(InventoryRow(FAILED, f"Tool calls: {trimmed}", printed=True))
     if left:
-        named = "; ".join(_call(call, inv.image_bases, name) for call in left[:_CALLS_NAMED])
+        named = "; ".join(_call(call, inv.image_bases, name, entry) for call in left[:_CALLS_NAMED])
         more = len(left) - _CALLS_NAMED
         text = (
             "Tool calls: "
@@ -462,7 +470,7 @@ def _failed_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[I
         pairs = "; ".join(
             f"{name(call.tool)}"
             + (f" for {_hexes(call.asked, inv.image_bases)}" if call.asked else "")
-            + f" ({call.entry}) by {', '.join(call.redone_by)}"
+            + f" ({entry(call.entry)}) by {', '.join(map(entry, call.redone_by))}"
             for call in redone
         )
         text = (
@@ -538,7 +546,9 @@ def _recorded_rows(
     return out
 
 
-def _sandbox_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[InventoryRow]:
+def _sandbox_rows(
+    inv: LimitationInventory, name: Callable[[str], str], written: Callable[[str], str] = str
+) -> list[InventoryRow]:
     out: list[InventoryRow] = []
     entry = inv.sandbox_entry
     held = [s for s in inv.sandbox_sections if s.items is not None]
@@ -546,7 +556,7 @@ def _sandbox_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[
         out.append(
             InventoryRow(
                 SANDBOX_HELD,
-                f"Sandbox report [{entry}]: holds "
+                f"Sandbox report [{written(entry)}]: holds "
                 + ", ".join(f"{name(s.name)} ({_number(s.items or 0)})" for s in held)
                 + ".",
                 (entry,),
@@ -569,7 +579,9 @@ def _sandbox_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[
         )
     said.extend(_short_clauses(inv, name))
     if said:
-        head = f"Sandbox report [{entry}]" if entry and (unavailable or absent) else "Sandbox"
+        head = (
+            f"Sandbox report [{written(entry)}]" if entry and (unavailable or absent) else "Sandbox"
+        )
         out.append(
             InventoryRow(SANDBOX, f"{head}: {'; '.join(said)}.", (entry,) if entry else (), True)
         )
@@ -631,7 +643,7 @@ def _time_said(value: int | float, decimals: int | None) -> str:
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
-def _capture_row(inv: LimitationInventory) -> list[InventoryRow]:
+def _capture_row(inv: LimitationInventory, entry: Callable[[str], str] = str) -> list[InventoryRow]:
     capture = inv.capture
     if capture is None:
         return []
@@ -644,7 +656,7 @@ def _capture_row(inv: LimitationInventory) -> list[InventoryRow]:
     return [
         InventoryRow(
             CAPTURE,
-            f"Packet capture [{capture.entry}] covers {capture.duration_s:.1f} s{packets}; "
+            f"Packet capture [{entry(capture.entry)}] covers {capture.duration_s:.1f} s{packets}; "
             "traffic outside that window was not captured.",
             (capture.entry,),
             printed=True,
@@ -725,23 +737,25 @@ def inventory_rows(
     quote: Callable[[str], str] = _plain_quote,
     name: Callable[[str], str] = str,
     reason_as: Callable[[str], str] = str,
+    entry: Callable[[str], str] = str,
     claims_not_discussed: int | None = None,
 ) -> list[InventoryRow]:
     """Every row of the inventory, in a fixed order, each from its fixed template.
 
     ``quote`` writes a reason the run recorded (a tool's or a server's words), ``name`` a
     tool's name or a sandbox section's (recorded words), ``reason_as`` an open question's
-    reason (its code, or :func:`reason_label` on a printed line);
+    reason (its code, or :func:`reason_label` on a printed line), ``entry`` a ledger entry
+    the row names (as recorded, unless a renderer writes it by its own rule);
     ``claims_not_discussed``, the count of analyst claims in force the report's body
     neither cites nor discusses, adds the row saying so (read after the body is
     written, so only the renderers know it).
     """
     rows = [
-        *_failed_rows(inv, name),
+        *_failed_rows(inv, name, entry),
         *_code_row(inv),
         *_recorded_rows(inv, quote, name),
-        *_sandbox_rows(inv, name),
-        *_capture_row(inv),
+        *_sandbox_rows(inv, name, entry),
+        *_capture_row(inv, entry),
         *_question_rows(inv, reason_as),
     ]
     if claims_not_discussed:
@@ -763,6 +777,7 @@ def printed_rows(
     *,
     quote: Callable[[str], str] = _plain_quote,
     name: Callable[[str], str] = str,
+    entry: Callable[[str], str] = str,
     claims_not_discussed: int | None = None,
 ) -> list[InventoryRow]:
     """The rows section 11 prints: each one that states a limit, at most seven, an open
@@ -772,6 +787,7 @@ def printed_rows(
         quote=quote,
         name=name,
         reason_as=reason_label,
+        entry=entry,
         claims_not_discussed=claims_not_discussed,
     )
     return [row for row in rows if row.printed]

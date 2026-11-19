@@ -943,15 +943,22 @@ def stage_duration_lines(stages: Any) -> list[str]:
     its time. A stage that did not run contributes nothing: an absent row and a
     zero are different facts, and the rollup's own ``reason`` says which.
     """
+    spent = ", ".join(f"{key} {seconds}" for key, seconds in stage_durations(stages))
+    return [f"**Per stage**: {spent}  "] if spent else []
+
+
+def stage_durations(stages: Any) -> list[tuple[str, str]]:
+    """Each stage that ran and took time, with its duration as the lines print it.
+
+    The rows :func:`stage_duration_lines` reads; a renderer writes the key by
+    its own rule.
+    """
     rows = [
         (str(row.get("key") or ""), float(row.get("duration_ms") or 0.0))
         for row in (stages or [])
         if isinstance(row, dict) and row.get("ran") and float(row.get("duration_ms") or 0.0) > 0
     ]
-    if not rows:
-        return []
-    spent = ", ".join(f"{key} {ms / 1000.0:.1f}s" for key, ms in rows if key)
-    return [f"**Per stage**: {spent}  "] if spent else []
+    return [(key, f"{ms / 1000.0:.1f}s") for key, ms in rows if key]
 
 
 def generation_lines(generation: Any, model_name: Callable[[str], str] | None = None) -> list[str]:

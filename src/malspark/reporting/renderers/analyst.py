@@ -77,6 +77,7 @@ from malspark.reporting.renderers.markdown import (
     _inline_safe,
     _item,
     _left_out,
+    _link_target,
     _observed_cell,
     _one_line,
     _paragraph_line,
@@ -2733,11 +2734,13 @@ class _Analyst:
         report = self.report
         ctx = self.ctx
         # A tool's name, a sandbox's section name and a reason the run recorded are
-        # escaped as the bundle escapes its rows; the template's citations become notes.
+        # escaped as the bundle escapes its rows, an entry the row names by the inline
+        # rule; the template's citations become notes.
         rows = printed_rows(
             inventory,
             quote=lambda text: f'"{ctx.inline(" ".join(str(text).split()))}"',
             name=ctx.inline,
+            entry=lambda held: ctx.value(held, pipes=True),
             claims_not_discussed=len(getattr(report, "claims_not_discussed", None) or []),
         )
         lines = [_heading(11, ANALYST_LIMITATIONS_TITLE), ""]
@@ -2999,7 +3002,8 @@ class _Analyst:
             lines.extend(["### References", ""])
             for ref in report.references:
                 note = f" — {self.ctx.inline(ref.note)}" if ref.note else ""
-                lines.append(_item(f"[{self.ctx.inline(ref.source)}]({ref.url}){note}"))
+                target = _link_target(ref.url)
+                lines.append(_item(f"[{self.ctx.inline(ref.source)}]({target}){note}"))
             lines.append("")
         bundle = self.ctx.keep(f"[{BUNDLE_HTML}]({BUNDLE_HTML}) and [{BUNDLE_JSON}]({BUNDLE_JSON})")
         lines.extend(
