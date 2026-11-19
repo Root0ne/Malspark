@@ -198,6 +198,19 @@ class TestThePlainSpellingsAreTheOnlyOnesAskedElsewhere:
 
         assert "ev_0010" not in texts.code_listings
 
+    def test_a_failed_call_of_a_declared_listing_tool_is_no_listing(self) -> None:
+        echo = json.dumps({"error": f"cannot lift 0x401000: p = {_c(PATH)};"})
+        listing = json.dumps({"0x401000": f"p = {_c(PATH)};"})
+        for failed in (
+            _entry("ev_0010", "batch_decompile", listing, ok=False),
+            _entry("ev_0010", "batch_decompile", echo),
+        ):
+            texts = _texts(failed)
+
+            assert "ev_0010" in texts.failed
+            assert "ev_0010" not in texts.code_listings
+            assert not texts.holds("ev_0010", PATH)
+
 
 class TestALiteralInAnotherConventionIsNotHeld:
     def test_a_hex_escape_and_a_doubled_quote_are_asked_with_the_spellings_named(self) -> None:

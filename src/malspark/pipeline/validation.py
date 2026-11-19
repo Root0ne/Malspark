@@ -10004,7 +10004,8 @@ class EntryTexts:
         code_listings = frozenset(
             entry_id
             for entry_id, text in texts.items()
-            if _declares_a_code_listing(entries.get(holders.get(entry_id, entry_id)))
+            if entry_id not in failed
+            and _declares_a_code_listing(entries.get(holders.get(entry_id, entry_id)))
             and all(_a_json_document(part) for part in (text, *parts[entry_id]))
         )
         return cls(
@@ -10078,6 +10079,14 @@ class EntryTexts:
     def has_text(self, cited: str) -> bool:
         """Whether a citation names an entry or an item whose text this run holds."""
         return bool(self.text_of(cited))
+
+    def of_the_run(self, cited: str) -> bool:
+        """Whether a citation names an entry of this run's ledger or an item of its sandbox."""
+        key = str(cited).strip().lower()
+        if key in self.entries:
+            return True
+        known = getattr(self.items, "known", None)
+        return bool(known is not None and is_item_id(key) and known(key))
 
     def may_hold(self, value: str, *, fields: bool = False) -> set[str]:
         """The entries that may hold ``value`` for :meth:`holds`: never fewer, often far fewer.
@@ -10223,6 +10232,30 @@ class EntryTexts:
         """``ev_0012 (floss)``: an id with the tool that answered it."""
         tool = self.tools.get(entry_id, "") or ("sandbox report" if is_item_id(entry_id) else "")
         return f"{entry_id} ({tool})" if tool else entry_id
+
+    def named_whole(self, entry_id: str) -> str:
+        """:meth:`named` with the id and the tool each through :func:`safe_finding_value`.
+
+        Each part is bounded on its own, so a long tool name never cuts the id it follows.
+        """
+        tool = self.tools.get(entry_id, "") or ("sandbox report" if is_item_id(entry_id) else "")
+        shown = safe_finding_value(entry_id)
+        return f"{shown} ({safe_finding_value(tool)})" if tool else shown
+
+
+def _named_entries(entries: EntryTexts, ids: Iterable[str]) -> str:
+    """Entries a finding names, each with its tool, bounded by count and never cut by length.
+
+    At most :data:`_MAX_NAMED_IDS`, then ``and N more``, as :func:`_named_ids`;
+    each id and tool name is written through :func:`safe_finding_value` on its own
+    (:meth:`EntryTexts.named_whole`), and the caller writes the joined list with
+    ``whole=True``, which masks and does not cut.
+    """
+    listed = list(ids)
+    shown = ", ".join(entries.named_whole(entry_id) for entry_id in listed[:_MAX_NAMED_IDS])
+    if len(listed) > _MAX_NAMED_IDS:
+        shown += f" and {len(listed) - _MAX_NAMED_IDS} more"
+    return shown
 
 
 def _declares_a_code_listing(entry: Any) -> bool:
@@ -10664,7 +10697,14 @@ def wrong_entry_citations(
         holders = entries.holding(value, fields=True)
         if not holders:
             return
-        blank = tuple(dict.fromkeys(entry_id for entry_id in cited if entry_id not in known))
+        # An id the run never issued is left to :func:`citation_violations`.
+        blank = tuple(
+            dict.fromkeys(
+                entry_id
+                for entry_id in cited
+                if entry_id not in known and entries.of_the_run(entry_id)
+            )
+        )
         placed = (value, tuple(known))
         if placed not in runs:
             for entry_id in known:
@@ -10794,18 +10834,14 @@ def _wrong_entry_message(
     shown = values[:_MAX_NAMED_IDS]
     more = len(values) - _MAX_NAMED_IDS
     extra = f" (with {safe_finding_value(more)} more)" if more > 0 else ""
-    beyond = len(holders) - _MAX_NAMED_IDS
-    holding = safe_finding_value(
-        ", ".join(entries.named(i) for i in holders[:_MAX_NAMED_IDS])
-        + (f" and {safe_finding_value(beyond)} more" if beyond > 0 else "")
-    )
+    holding = safe_finding_value(_named_entries(entries, holders), whole=True)
     found = f"{was} found whole in {holding}."
     unread = ""
     if blank:
         holds = "holds" if len(blank) == 1 else "hold"
         unread = (
-            f" {safe_finding_value(', '.join(blank))}, also cited, {holds} no text this check "
-            "reads."
+            f" {safe_finding_value(_named_ids(blank), whole=True)}, also cited, {holds} no text "
+            "this check reads."
         )
     if inside:
         listed = ""
@@ -10813,7 +10849,8 @@ def _wrong_entry_message(
             ref, run = runs[(value, cited)]
             where = (
                 f"{listed}{'; ' if listed else ''}{safe_finding_value(repr(value))} stands in "
-                f"the answer of {safe_finding_value(entries.named(ref))}, which {citing}, only "
+                f"the answer of {safe_finding_value(entries.named_whole(ref), whole=True)}, "
+                f"which {citing}, only "
                 "inside a longer run of text"
             )
             if run is None:
@@ -10825,14 +10862,14 @@ def _wrong_entry_message(
         return f"{listed}{extra}; {found}{unread} {INSIDE_A_TOKEN_ENDS}"
     quoted = safe_finding_value(", ".join(repr(value) for value in shown))
     answers = "the answer of" if len(cited) == 1 else "the answers of"
-    named = safe_finding_value(", ".join(entries.named(i) for i in cited))
+    named = safe_finding_value(_named_entries(entries, cited), whole=True)
     spellings = SEARCHED_SPELLINGS.format(it=it)
     listings = [i for i in cited if str(i).strip().lower() in entries.code_listings]
     if listings and len(listings) == len(cited):
         spellings += f", or {CODE_LITERAL_SPELLING.format(it=it)}"
     elif listings:
         spellings += (
-            f", or, in {safe_finding_value(', '.join(entries.named(i) for i in listings))}, "
+            f", or, in {safe_finding_value(_named_entries(entries, listings), whole=True)}, "
             f"{CODE_LITERAL_SPELLING.format(it=it)}"
         )
     searched = "was not found as a whole value" if one else "were not found as whole values"
@@ -12639,7 +12676,7 @@ def misstated_entry_contents(
         if entry_id in seen:
             continue
         seen.add(entry_id)
-        named = safe_finding_value(entries.named(entry_id))
+        named = safe_finding_value(entries.named_whole(entry_id), whole=True)
         violations.append(
             Violation(
                 code=ENTRY_CONTENTS_MISSTATED_CODE,
@@ -13410,7 +13447,7 @@ def ledger_absence_contradictions(payload: Any, entries: EntryTexts | None) -> l
                     f"The text says {safe_finding_value(_named_ids(whats))} "
                     f"{safe_finding_value(said[found.kind][len(whats) > 1])} "
                     f"({safe_finding_value(marked_cut(found.sentence, 200))!r}); "
-                    f"{safe_finding_value(_named_ids(entries.named(i) for i in holders))} "
+                    f"{safe_finding_value(_named_entries(entries, holders), whole=True)} "
                     f"{safe_finding_value('holds' if len(holders) == 1 else 'hold')} "
                     f"{safe_finding_value('it' if len(whats) == 1 else 'them')} in this run. "
                     "State what that entry shows, or say exactly what is absent."

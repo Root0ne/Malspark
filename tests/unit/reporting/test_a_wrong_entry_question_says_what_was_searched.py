@@ -20,8 +20,10 @@ import json
 from typing import Any
 
 from malspark.pipeline.validation import (
+    CITATION_NOT_EVIDENCE_CODE,
     INSIDE_A_TOKEN_ENDS,
     EntryTexts,
+    citation_violations,
     wrong_entry_citations,
 )
 from malspark.schemas.evidence import LedgerEntry
@@ -84,6 +86,18 @@ class TestEachStateOfTheCitedEntry:
             f"which the sentence cites, {PLAIN}; it was found whole in ev_0012 (floss). "
             f"ev_0030, also cited, holds no text this check reads. {ENDS}"
         )
+
+    def test_an_id_the_run_never_issued_is_left_to_the_check_that_asks_about_it(self) -> None:
+        sentence = "The sample loads `advapi32.dll` [ev_0004, ev_0999]."
+        (found,) = _asked(sentence)
+
+        assert "ev_0999" not in found.message
+        assert "also cited" not in found.message
+        (asked,) = citation_violations(
+            {"body": sentence}, ["ev_0004", "ev_0012", "ev_0030"], prose=["body"]
+        )
+        assert asked.code == CITATION_NOT_EVIDENCE_CODE
+        assert "[ev_0999] is not an entry this answer was shown." in asked.message
 
     def test_only_blank_entries_ask_nothing(self) -> None:
         assert _asked("The sample loads `advapi32.dll` [ev_0030].") == []
