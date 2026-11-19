@@ -1,8 +1,8 @@
 """The agreement harness re-runs a stored round on its stored answers, at zero cost.
 
 A stored run keeps the report after the agreement round, the round's requests in the worker
-log (the retry request repeating the model's first answer) and, since T-736, the round's
-answers in its record. The harness recovers the first answer from the retry request, puts
+log (the retry request repeating the model's first answer) and, where its record keeps them,
+the round's answers. The harness recovers the first answer from the retry request, puts
 each passage back to what the first request showed so that the round's own code builds the
 logged prompt again, replays the answers through the round with a stub in place of the
 model, names every end that differs between two versions of the code, and says of each
@@ -206,6 +206,11 @@ def _stubbed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(section_agreement, "apply_rows", _applies_nothing)
 
 
+def _holding(rows: list[dict[str, Any]], wanted: dict[str, Any]) -> bool:
+    """Whether a row holds every field of ``wanted`` with the value it gives."""
+    return any(all(row.get(k) == v for k, v in wanted.items()) for row in rows)
+
+
 def test_an_end_that_differs_between_two_versions_is_named(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -219,20 +224,26 @@ def test_an_end_that_differs_between_two_versions_is_named(
 
     differences = harness.diff_records(first, second)
 
-    assert {
-        "run": "family-r1/1",
-        "kind": "text",
-        "passage": "introduction",
-        "only": "B",
-        "sentence": _UNKNOWN,
-    } in differences
-    assert {
-        "run": "family-r1/1",
-        "kind": "left_out",
-        "passage": "introduction",
-        "only": "A",
-        "sentence": _UNKNOWN,
-    } in differences
+    assert _holding(
+        differences,
+        {
+            "run": "family-r1/1",
+            "kind": "text",
+            "passage": "introduction",
+            "only": "B",
+            "sentence": _UNKNOWN,
+        },
+    )
+    assert _holding(
+        differences,
+        {
+            "run": "family-r1/1",
+            "kind": "left_out",
+            "passage": "introduction",
+            "only": "A",
+            "sentence": _UNKNOWN,
+        },
+    )
     assert any(
         d["kind"] == "code" and d["code"] == "agreement.rewritten" and d["change"] == "lost"
         for d in differences
@@ -269,11 +280,20 @@ def test_each_label_says_whether_its_sentence_is_printed_under_each_version(
 
 
 def test_the_limits_are_stated_in_the_help() -> None:
-    said = harness._parser().format_help()
+    said = " ".join(harness._parser().format_help().split())
+    doc = " ".join((harness.__doc__ or "").split())
 
-    assert "two runs only" in " ".join(said.split())
-    assert "not what a model" in " ".join(said.split())
-    assert "two runs only" in (harness.__doc__ or "")
+    assert "two runs only" in said
+    assert "not what a model" in said
+    assert "two runs only" in doc
+    # Results are judged by the labels, never by the code's own reading.
+    assert "judged by the labels, not by the code's own reading" in said
+    # The empty retry of a run whose retry answer is not stored.
+    assert "answered with no rows" in said
+    # A run whose written passages differ is replayed only on request, and marked.
+    assert "--allow-differing" in said
+    # Under --compare the pre-round report and the prompt check are the parent's code.
+    assert "the code this command runs from, not each ref's" in said
 
 
 def test_the_rows_are_masked_as_the_worker_masks_them_and_the_registry_put_back() -> None:
@@ -286,3 +306,218 @@ def test_the_rows_are_masked_as_the_worker_masks_them_and_the_registry_put_back(
         assert events._rows_kept_as_written()
         assert url in events.safe_finding_value(f"fetched {url}")
     assert events._SECRET_SCOPES == before
+
+
+def _differing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The round's code under this tree builds one written passage unlike the logged one."""
+    built = harness.rebuilt_prompt
+
+    def _rebuilt(pre: Any, run: Path) -> str:
+        return built(pre, run).replace("reads a host mode", "reads a guest mode", 1)
+
+    monkeypatch.setattr(harness, "rebuilt_prompt", _rebuilt)
+
+
+def test_a_run_whose_written_passages_differ_is_refused_without_the_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run, _after, _done, _given = _stored_run(tmp_path, keep_answers=True)
+    _differing(monkeypatch)
+
+    found = harness.recover(run)
+
+    assert len(found.passages_differing) == 1
+    assert found.prompt_reproduced is False
+    assert found.case is None
+    assert "--allow-differing" in found.refused
+    out = tmp_path / "out"
+    assert harness.main([str(run), "--out", str(out)]) == harness.REFUSED
+    said = capsys.readouterr().out
+    assert "refused" in said and "--allow-differing" in said
+    # Nothing is replayed for the refused run.
+    assert not (out / "family-r1-1.json").exists()
+
+
+def test_a_run_whose_written_passages_differ_is_marked_on_every_line_when_allowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run, _after, _done, _given = _stored_run(tmp_path, keep_answers=True)
+    _differing(monkeypatch)
+    found = harness.recover(run, allow_differing=True)
+    assert found.case is not None and not found.refused
+
+    record = harness.replay_case(found.case)
+
+    marks = {
+        "prompt_reproduced": False,
+        "first_difference": found.first_difference,
+        "passages_differing": found.passages_differing,
+    }
+    assert len(found.passages_differing) == 1
+    assert isinstance(found.first_difference, int)
+    assert _holding([record], marks)
+    with monkeypatch.context() as patched:
+        _stubbed(patched)
+        second = harness.replay_case(found.case)
+    differences = harness.diff_records(record, second)
+    assert differences and all(_holding([d], marks) for d in differences)
+    labels = [{"run": "family-r1/1", "text": FIRST, "label": "true"}]
+    (line,) = harness.label_lines(labels, {"A": {"family-r1/1": record}})
+    assert _holding([line], marks)
+    # Every printed line of the run says its prompt is not the logged one.
+    out = tmp_path / "out"
+    capsys.readouterr()
+    harness.main(
+        [str(run), "--allow-differing", "--out", str(out), "--labels", str(_labels(tmp_path))]
+    )
+    printed = [
+        ln
+        for ln in capsys.readouterr().out.splitlines()
+        if ln.startswith(("==", "   turn", " - label"))
+    ]
+    assert printed and all("written passage(s) differ" in ln for ln in printed)
+    kept = json.loads((out / "family-r1-1.json").read_text(encoding="utf-8"))
+    assert _holding([kept], marks)
+
+
+def _labels(tmp_path: Path) -> Path:
+    path = tmp_path / "labels.json"
+    path.write_text(
+        json.dumps([{"run": "family-r1/1", "text": FIRST, "label": "true"}]), encoding="utf-8"
+    )
+    return path
+
+
+def test_a_run_whose_retry_answer_is_not_stored_is_marked_first_turn_only_everywhere(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run, _after, _done, _given = _stored_run(tmp_path, keep_answers=False)
+    found = harness.recover(run)
+    assert found.case is not None and found.first_turn_only
+
+    record = harness.replay_case(found.case)
+    with monkeypatch.context() as patched:
+        _stubbed(patched)
+        second = harness.replay_case(found.case)
+    differences = harness.diff_records(second, record)
+    labels = [{"run": "family-r1/1", "text": FIRST, "label": "true"}]
+    (line,) = harness.label_lines(labels, {"A": {"family-r1/1": record}})
+
+    assert record["first_turn_only"]
+    assert differences and all(d["first_turn_only"] for d in differences)
+    assert line["first_turn_only"]
+    capsys.readouterr()
+    harness.main([str(run), "--labels", str(_labels(tmp_path))])
+    printed = [
+        ln
+        for ln in capsys.readouterr().out.splitlines()
+        if ln.startswith(("==", "   turn", " - label"))
+    ]
+    assert printed and all("first turn only" in ln for ln in printed)
+
+
+def test_the_harness_refuses_to_start_on_the_round_s_code_of_another_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import malspark
+
+    elsewhere = tmp_path / "another-checkout" / "src" / "malspark" / "__init__.py"
+    monkeypatch.setattr(malspark, "__file__", str(elsewhere))
+
+    status = harness.main([str(tmp_path)])
+
+    assert status == harness.WRONG_TREE
+    said = capsys.readouterr().err
+    assert str(elsewhere.parent) in said
+    assert str(harness._TREE) in said
+
+
+def test_the_tree_the_round_ran_under_is_in_every_record(tmp_path: Path) -> None:
+    import malspark
+
+    run, _after, _done, _given = _stored_run(tmp_path, keep_answers=True)
+    found = harness.recover(run)
+    assert found.case is not None
+
+    record = harness.replay_case(found.case)
+
+    tree = str(Path(malspark.__file__).resolve().parents[1])
+    assert record["tree"] == tree
+    assert found.row()["tree"] == tree
+
+
+def test_a_log_with_more_than_the_round_s_two_requests_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run, _after, _done, _given = _stored_run(tmp_path, keep_answers=True)
+    log = run / "worker.log"
+    lines = log.read_text(encoding="utf-8").splitlines(keepends=True)
+    # A second job's round in the same log.
+    log.write_text("".join(lines) + "".join(lines[2:]), encoding="utf-8")
+
+    found = harness.recover(run)
+
+    assert found.requests == 4
+    assert found.case is None
+    assert "4 agreement requests" in found.refused
+    assert harness.main([str(run)]) == harness.REFUSED
+    assert "4 agreement requests" in capsys.readouterr().out
+
+
+def test_a_stored_first_answer_is_the_one_replayed_and_a_differing_log_is_said(
+    tmp_path: Path,
+) -> None:
+    run, _after, _done, _given = _stored_run(tmp_path, keep_answers=True)
+    stored = json.loads((run / "report.json").read_bytes())
+    kept = stored["run_summary"]["section_agreement"]
+    kept["answers"][0] = {"sentences": [], "note": "kept by the record"}
+    (run / "report.json").write_text(json.dumps(stored), encoding="utf-8")
+
+    found = harness.recover(run)
+
+    assert found.first_answer_matches_record is False
+    assert found.case is not None
+    assert found.case["answers"][0] == {"sentences": [], "note": "kept by the record"}
+    record = harness.replay_case(found.case)
+    assert record["first_answer_matches_record"] is False
+
+
+def test_the_check_against_the_stored_round_compares_the_whole_report(tmp_path: Path) -> None:
+    run, _after, _done, _given = _stored_run(tmp_path, keep_answers=True)
+    found = harness.recover(run)
+    assert found.case is not None
+    record = harness.replay_case(found.case)
+    assert harness.against_stored(run, found.case, record) == []
+
+    # A field no passage, record, count or flagged statement shows.
+    record["report"]["malware_category"] = "another category"
+    found_now = harness.against_stored(run, found.case, record)
+
+    assert found_now and all(line.startswith("report") for line in found_now)
+    assert any("malware_category" in line for line in found_now)
+
+
+def _stored_runs() -> Path:
+    """The benchmark's stored runs: beside this checkout, or beside the main checkout of a
+    worktree."""
+    tail = Path(".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek")
+    git = harness._ROOT / ".git"
+    roots = [harness._ROOT]
+    if git.is_file():
+        pointed = git.read_text(encoding="utf-8").split("gitdir:", 1)[-1].strip()
+        roots.append(Path(pointed).resolve().parents[2])
+    return next((r / tail for r in roots if (r / tail).is_dir()), roots[0] / tail)
+
+
+@pytest.mark.skipif(
+    not (_stored_runs() / "plink-r4" / "1" / "worker.log").is_file(),
+    reason="the stored benchmark runs are not in this checkout (they are kept outside git)",
+)
+def test_a_stored_run_with_its_answers_replays_to_its_stored_report() -> None:
+    run = _stored_runs() / "plink-r4" / "1"
+    found = harness.recover(run)
+    assert found.case is not None and found.prompt_reproduced
+
+    record = harness.replay_case(found.case)
+
+    assert harness.against_stored(run, found.case, record) == []

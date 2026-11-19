@@ -1,10 +1,10 @@
 """The replay reads the passages under THE JUDGE'S DECISION as the judge's, never as facts.
 
 The round's prompt shows the judge's decision under a heading of its own, between the facts
-and section 5 (T-717). The replay's reading of a stored prompt knew four headings, so a judge
-passage read as a fact of the heading before it. Each is now read as the round's own judge
-passage: its kind, its text as shown (a judge passage, like a fact, is not quoted) and no
-writer. Every value here is a neutral synthetic one.
+and section 5 (T-717). The replay reads every heading the round writes, so a passage under
+the judge's heading is the round's own judge passage: its kind, its text as shown (a judge
+passage, like a fact, is not quoted) and no writer, never a fact of the heading before it.
+Every value here is a neutral synthetic one.
 """
 
 from __future__ import annotations

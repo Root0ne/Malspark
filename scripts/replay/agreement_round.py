@@ -24,13 +24,26 @@ place of the model:
 The replay hands the stub the first answer for the first turn and, for the retry, the
 retry's stored answer; where none is stored the run is marked "first turn only" and the
 retry is answered with no rows, as the round's own re-applier answers a turn it holds no
-answer for (``section_agreement.StoredAnswers``). It records every passage's text before
+answer for (``section_agreement.StoredAnswers``); the round then acts on an empty retry the
+run did not have, and every record, difference and label line of such a run says
+``first_turn_only``. Where the record keeps the answers, its first answer is the one
+replayed, and a first answer the log repeats differently is said
+(``first_answer_matches_record``). It records every passage's text before
 and after, every outcome record of the round (``agreement.*``), its counts and flagged
 statements, and every row of the answers with what became of it: applied, kept, left out,
 or replaced by the retry's row, with the records that name it.
 
+Where the rebuilt prompt is not the logged one, the round is given an input the model was
+not shown: every record, difference and label line carries ``prompt_reproduced``,
+``first_difference`` and ``passages_differing``. A run whose written passages differ is
+replayed only under ``--allow-differing``; without it the run is refused, and so is a log
+holding more requests than the round's two (more than one job's round), and the command
+ends with status 3, ahead of any other status. The command refuses to start, with status 4,
+where the round's code is imported from another tree than this one.
+
 ``--check-stored`` also compares, for a run whose record keeps the round's answers, the
-replay's passages and records with the stored ones, and names every difference.
+replay's passages, records and whole report with the stored ones, and names every
+difference.
 
 ``--compare REF_A REF_B`` replays the same recovered input under two git refs, in the manner
 of ``scripts/replay/compare.py``: each ref's ``src`` and ``data`` are written out of the
@@ -52,9 +65,11 @@ round's answers since T-736); a first answer is recovered only where the retry r
 repeats it (a first answer the retry left out, and a round that needed no retry, give
 none); the passages are put back from the prompt, so a text the prompt does not show is the
 stored one; the ledger is the stored one, after its byte budget, and no sandbox report nor
-evidence corpus is stored, so an item's or an entry's text is read as stored. The harness
-shows what the code does with a given answer, not what a model would answer to a changed
-question.
+evidence corpus is stored, so an item's or an entry's text is read as stored. Under
+``--compare`` the pre-round report is rebuilt and the prompt checked by the code this
+command runs from, not by each ref's. The harness shows what the code does with a given
+answer, not what a model would answer to a changed question; results are judged by the
+labels, not by the code's own reading.
 
 Read-only over the runs: nothing is written beside them, no network is reached, no
 credential is read; every file of a run is digested before and after.
@@ -79,8 +94,19 @@ from pathlib import Path
 from typing import Any
 
 _ROOT = Path(__file__).resolve().parents[2]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+# The tree whose ``src`` the round's code is imported from: this checkout's, or, in a ref's
+# own process under ``--compare``, that ref's tree as written out of the object store. Its
+# ``src`` stands first, ahead of any installed copy of the package elsewhere.
+TREE_VARIABLE = "AGREEMENT_REPLAY_TREE"
+_TREE = Path(os.environ.get(TREE_VARIABLE) or _ROOT).resolve()
+for _path in (str(_ROOT), str(_ROOT / "apps" / "api"), str(_TREE / "src")):
+    if _path in sys.path:
+        sys.path.remove(_path)
+    sys.path.insert(0, _path)
+
+# The command's status where a run is refused, and where the round's code is another tree's.
+REFUSED = 3
+WRONG_TREE = 4
 
 # What selects the round's requests in a worker log: its system text (``SYSTEM_PROMPT``).
 SYSTEM_MARK = "reading one analysis report for agreement between its parts"
@@ -97,11 +123,25 @@ _SUMMARY_SKIP = ("answers", "answers_masked", "verbatim_unseen")
 _NO_ROWS = '{"sentences": []}'
 
 LIMITS = (
-    "Limits: the answers after the retry are stored for two runs only; a first answer is "
-    "recovered only where the retry request repeats it; a text the prompt does not show is "
-    "the stored one; the ledger is the stored one and no sandbox report or evidence corpus "
-    "is stored; the harness shows what the code does with a given answer, not what a model "
-    "would answer to a changed question."
+    "Limits: the answers after the retry are stored for two runs only; where the retry's "
+    "answer is not stored the retry is answered with no rows, an empty retry the run did not "
+    "have, and the run is marked first_turn_only; a first answer is recovered only where the "
+    "retry request repeats it; a text the prompt does not show is the stored one; where the "
+    "rebuilt prompt is not the logged one the round acts on an input the model was not shown, "
+    "and a run whose written passages differ is replayed only under --allow-differing, every "
+    "line of it marked; the ledger is the stored one and no sandbox report or evidence corpus "
+    "is stored; under --compare the pre-round report is rebuilt and the prompt checked by the "
+    "code this command runs from, not each ref's; the harness shows what the code does with "
+    "a given answer, not what a model would answer to a changed question; results are judged "
+    "by the labels, not by the code's own reading."
+)
+# What a replay's input is, carried by every record, difference and label line of its run.
+MARKS = (
+    "prompt_reproduced",
+    "first_difference",
+    "passages_differing",
+    "first_turn_only",
+    "first_answer_matches_record",
 )
 
 
@@ -188,6 +228,9 @@ def agreement_requests(log: Path) -> Requests:
             if not isinstance(data, dict) or SYSTEM_MARK not in _system_text(data):
                 continue
             found.count += 1
+            if found.count > 2:
+                # A second job's round: counted, its turns not kept.
+                continue
             turns = _turns(data)
             if found.first is None:
                 found.first = turns
@@ -417,7 +460,12 @@ class Recovery:
     not_found: list[str] = field(default_factory=list)
     not_writable: list[str] = field(default_factory=list)
     ids_taken_out: list[str] = field(default_factory=list)
+    first_turn_only: bool | None = None
     why: list[str] = field(default_factory=list)
+    # Why the run is not replayed although it gives a case; empty where it is.
+    refused: str = ""
+    # The ``src`` the recovery's code was imported from.
+    tree: str = ""
     # What the replay is given: absent where the run gives it nothing to replay.
     case: dict[str, Any] | None = None
 
@@ -488,12 +536,22 @@ def _first_difference(a: str, b: str) -> int | None:
     return min(len(a), len(b))
 
 
-def recover(run: Path, name: str | None = None) -> Recovery:
+def _tree_of() -> str:
+    """The ``src`` the round's code is imported from in this process."""
+    import malspark
+
+    return str(Path(malspark.__file__).resolve().parents[1])
+
+
+def recover(run: Path, name: str | None = None, *, allow_differing: bool = False) -> Recovery:
     """What one stored run gives the replay: its requests, its answers, and the report as the
-    round was given it, checked against the logged prompt."""
+    round was given it, checked against the logged prompt.
+
+    A log holding more requests than the round's two is refused, and so, unless
+    ``allow_differing``, is a run whose written passages differ from the logged ones."""
     from scripts.replay.stored import read_run
 
-    found = Recovery(run=name or _name(run), path=str(run))
+    found = Recovery(run=name or _name(run), path=str(run), tree=_tree_of())
     log = run / "worker.log"
     if not log.is_file():
         found.why.append("no worker.log is stored")
@@ -504,6 +562,13 @@ def recover(run: Path, name: str | None = None) -> Recovery:
     found.retry_found = requests.retry is not None
     if requests.first is None:
         found.why.append("the worker log holds no agreement request")
+        return found
+    if requests.count > 2:
+        found.refused = (
+            f"the worker log holds {requests.count} agreement requests, more than the round's "
+            "two (a first request and one retry): it holds more than one job's round, and "
+            "which answer belongs to which is not known"
+        )
         return found
     answer = first_answer(requests.retry)
     found.first_answer_found = answer is not None
@@ -549,16 +614,24 @@ def recover(run: Path, name: str | None = None) -> Recovery:
         )
     turns: list[Any] = []
     source = ""
-    if answer is not None:
+    if answers:
+        # The record's own copy of what the round parsed; a log that repeats it differently
+        # is said (``first_answer_matches_record``), never read in its place.
+        turns.extend(answers)
+        source = "answers from the run's record"
+    elif answer is not None:
         turns.append(answer)
         source = "first answer from the retry request"
-    elif answers:
-        turns.append(answers[0])
-        source = "first answer from the run's record"
-    if turns and answers and len(answers) > 1:
-        turns.extend(answers[1:])
-        source += "; retry answer from the run's record"
     if not turns:
+        return found
+    found.first_turn_only = len(turns) < 2
+    if found.passages_differing and not allow_differing:
+        found.refused = (
+            f"{len(found.passages_differing)} written passage(s) the round's code builds here "
+            "differ from the ones the logged prompt showed, so the round would act on passages "
+            "the model was not shown; replay it with --allow-differing to have every line "
+            "of it marked"
+        )
         return found
     found.case = {
         "run": found.run,
@@ -568,8 +641,8 @@ def recover(run: Path, name: str | None = None) -> Recovery:
         "discussion": pre.discussion,
         "answers": turns,
         "answer_source": source,
-        "first_turn_only": len(turns) < 2,
         "settings": stored.settings,
+        **{mark: getattr(found, mark) for mark in MARKS},
     }
     return found
 
@@ -629,7 +702,7 @@ def texts_of(report: Any, narrative_written: bool, discussion: Any) -> dict[str,
     try:
         from malspark.reporting.section_agreement import left_out_of
     except ImportError:  # a tree from before verbatim passages were asked (T-613)
-        left_out_of = None
+        left_out_of = None  # type: ignore[assignment]
     dropped: dict[str, list[str]] = {}
     for row in getattr(report, "flagged_statements", None) or []:
         if str(getattr(row, "code", "")) == "agreement.dropped":
@@ -761,7 +834,6 @@ def replay_case(case: Mapping[str, Any]) -> dict[str, Any]:
     from scripts.replay.guard import replay_environment
     from scripts.replay.stored import check_unchanged, digests
 
-    import malspark
     from malspark.reporting.models import MalwareReport
     from malspark.reporting.section_agreement import ask_section_agreement
 
@@ -792,9 +864,9 @@ def replay_case(case: Mapping[str, Any]) -> dict[str, Any]:
     records = [dict(row) for row in tally.get("unresolved") or []]
     return {
         "run": case.get("run"),
-        "tree": str(Path(malspark.__file__).resolve().parents[1]),
+        "tree": _tree_of(),
         "answer_source": case.get("answer_source"),
-        "first_turn_only": bool(case.get("first_turn_only")),
+        **marks_of(case),
         "turns_asked": stub.asked,
         "turns_unanswered": stub.unanswered,
         "before": before,
@@ -810,7 +882,28 @@ def replay_case(case: Mapping[str, Any]) -> dict[str, Any]:
         "degradations": list(done.degradations),
         "settings": settings,
         "rows": _row_ends(case.get("answers") or [], before, after, records),
+        "report": report.model_dump(mode="json"),
     }
+
+
+def marks_of(record: Mapping[str, Any]) -> dict[str, Any]:
+    """What a replay's input is (``MARKS``), as a case or a record carries it."""
+    return {mark: copy.deepcopy(record.get(mark)) for mark in MARKS}
+
+
+def mark_text(record: Mapping[str, Any]) -> str:
+    """The marks a printed line of a run carries: empty for a replay of the logged input with
+    both turns' answers, the logged first answer the record's."""
+    said = []
+    if record.get("prompt_reproduced") is False:
+        said.append(f"prompt not reproduced (differs at {record.get('first_difference')})")
+    if record.get("passages_differing"):
+        said.append(f"{len(record['passages_differing'])} written passage(s) differ")
+    if record.get("first_turn_only"):
+        said.append("first turn only")
+    if record.get("first_answer_matches_record") is False:
+        said.append("the log's first answer is not the record's")
+    return f" [{'; '.join(said)}]" if said else ""
 
 
 # ---------------------------------------------------------------------------
@@ -894,6 +987,43 @@ def against_stored(run: Path, case: Mapping[str, Any], record: Mapping[str, Any]
             f"flagged statements: {len(record['flagged'])} replayed, {len(flagged)} stored, "
             "not the same"
         )
+    if "report" not in record:
+        out.append("report: the replay kept no report to compare")
+    else:
+        out.extend(
+            f"report {where}: {what}"
+            for where, what in _dump_differences(record["report"], report.model_dump(mode="json"))
+        )
+    return out
+
+
+def _dump_differences(a: Any, b: Any, where: str = "", limit: int = 20) -> list[tuple[str, str]]:
+    """Where two dumps differ, by path, the first ``limit`` of them (replay ``a``, stored
+    ``b``)."""
+    out: list[tuple[str, str]] = []
+
+    def walk(one: Any, two: Any, at: str) -> None:
+        if len(out) >= limit or one == two:
+            return
+        if isinstance(one, dict) and isinstance(two, dict):
+            for key in sorted(set(one) | set(two), key=str):
+                if key not in one or key not in two:
+                    out.append(
+                        (f"{at}.{key}", "only stored" if key not in one else "only replayed")
+                    )
+                else:
+                    walk(one[key], two[key], f"{at}.{key}")
+            return
+        if isinstance(one, list) and isinstance(two, list):
+            if len(one) != len(two):
+                out.append((at or ".", f"{len(one)} item(s) replayed, {len(two)} stored"))
+                return
+            for index, (x, y) in enumerate(zip(one, two, strict=True)):
+                walk(x, y, f"{at}[{index}]")
+            return
+        out.append((at or ".", f"replay {_cut(repr(one), 0)!r}, stored {_cut(repr(two), 0)!r}"))
+
+    walk(a, b, where)
     return out
 
 
@@ -913,6 +1043,7 @@ def diff_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> list[dict[str, A
     differs (printed under one ref only), each sentence of the passage as given left out
     under one ref only, and each outcome code gained or lost (B against A)."""
     run = str(a.get("run") or b.get("run") or "")
+    marks = marks_of(a)
     out: list[dict[str, Any]] = []
     given = {**b.get("before", {}), **a.get("before", {})}
     for pid in sorted(set(a.get("after", {})) | set(b.get("after", {})) | set(given)):
@@ -957,7 +1088,8 @@ def diff_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> list[dict[str, A
                     "B": codes_b[code],
                 }
             )
-    return out
+    # Both replays are given the one recovered case: its marks are each difference's.
+    return [{**d, **copy.deepcopy(marks)} for d in out]
 
 
 def unexpected(
@@ -997,6 +1129,8 @@ def label_lines(
             "text": str(label.get("text") or ""),
             "printed": {},
         }
+        given = next((by_run[run] for by_run in records.values() if run in by_run), {})
+        row.update(marks_of(given))
         for ref, by_run in records.items():
             record = by_run.get(run)
             if record is None:
@@ -1015,6 +1149,7 @@ def _replay_under(
     """Each case replayed by this harness over ``tree``'s rules, in a process of its own."""
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join([str(tree / "src"), str(_ROOT)])
+    env[TREE_VARIABLE] = str(tree.resolve())
     command = [
         sys.executable,
         str(Path(__file__).resolve()),
@@ -1057,35 +1192,39 @@ def _yes(value: bool | None) -> str:
 def _print_recovery(rows: Sequence[Recovery]) -> None:
     print(
         "run | requests | request | first answer | final answers | prompt reproduced | "
-        "written passages differing"
+        "written passages differing | first turn only | replay"
     )
     for row in rows:
         where = "" if row.first_difference is None else f" (differs at {row.first_difference})"
+        replay = "refused" if row.refused else "yes" if row.case is not None else "-"
         print(
             f"{_safe(row.run)} | {row.requests} | {_yes(row.request_found)} | "
             f"{_yes(row.first_answer_found)} | {_yes(row.final_answers_stored)} | "
             f"{_yes(row.prompt_reproduced)}{where} | "
-            f"{len(row.passages_differing) if row.request_found else '-'}"
+            f"{len(row.passages_differing) if row.prompt_reproduced is not None else '-'} | "
+            f"{_yes(row.first_turn_only)} | {replay}"
         )
 
 
 def _print_record(record: Mapping[str, Any]) -> None:
     changed = [p for p in record["after"] if record["after"][p] != record["before"].get(p)]
     gone = [p for p in record["before"] if p not in record["after"]]
+    marked = mark_text(record)
     print(
         f"== {_safe(record['run'])}: {record['turns_asked']} turn(s) asked"
-        + (" (first turn only)" if record["first_turn_only"] else "")
         + f"; {len(changed)} passage(s) changed, {len(gone)} left out; "
         + ", ".join(
             f"{_safe(c)} x{n}"
             for c, n in sorted(Counter(r["code"] for r in record["records"]).items())
         )
+        + marked
     )
     for row in record["rows"]:
         print(
             f"   turn {row['turn']} row {row['row']} [{_safe(row['passage'])}] "
             f"{_safe(row['decision'])}: {_safe(row['end'])}"
             + (f" ({', '.join(_safe(c) for c in row['codes'])})" if row["codes"] else "")
+            + marked
         )
 
 
@@ -1109,6 +1248,7 @@ def _print_labels(lines: Sequence[Mapping[str, Any]]) -> None:
         print(
             f" - label {_safe(line['label'])} [{_safe(line['run'])}"
             f"{' ' + _safe(line['passage']) if line['passage'] else ''}] printed: {printed}"
+            + mark_text(line)
         )
 
 
@@ -1126,6 +1266,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="compare the replay with the stored round where its answers are stored",
     )
+    parser.add_argument(
+        "--allow-differing",
+        action="store_true",
+        help="replay a run whose written passages differ from the logged ones, every line marked",
+    )
     parser.add_argument("--compare", nargs=2, metavar=("REF_A", "REF_B"), default=None)
     parser.add_argument("--expect", type=Path, default=None, help="expected differences (JSON)")
     parser.add_argument("--labels", type=Path, default=None, help="labelled sentences (JSON)")
@@ -1138,8 +1283,26 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def tree_refusal(module_file: str, tree: Path) -> str:
+    """Why the round's code imported from ``module_file`` is not ``tree``'s; empty where it
+    is."""
+    where = Path(module_file).resolve()
+    if where.is_relative_to(tree.resolve()):
+        return ""
+    return (
+        f"the round's code is imported from {where.parent}, not from this tree {tree}: put "
+        f"{tree / 'src'} first on the path, or run the harness of the tree to be measured"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    import malspark
+
+    refusal = tree_refusal(str(malspark.__file__), _TREE)
+    if refusal:
+        print(f"agreement_round: {refusal}", file=sys.stderr)
+        return WRONG_TREE
     if args.replay_cases is not None:
         # One ref's process: each recovered case replayed under the tree it imports.
         cases = [json.loads(p.read_text(encoding="utf-8")) for p in args.replay_cases]
@@ -1148,7 +1311,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.runs:
         _parser().error("name at least one stored run")
     out: Path | None = args.out
-    recovered = [recover(run) for run in args.runs]
+    recovered = [recover(run, allow_differing=args.allow_differing) for run in args.runs]
     _print_recovery(recovered)
     for row in recovered:
         if row.not_found or row.not_writable:
@@ -1159,6 +1322,9 @@ def main(argv: list[str] | None = None) -> int:
         _write(out / "recovery.json", [row.row() for row in recovered])
     if args.recover_only:
         return 0
+    refused = [row for row in recovered if row.refused]
+    for row in refused:
+        print(f"refused {_safe(row.run)}: {_safe(row.refused)}")
     cases = [row for row in recovered if row.case is not None]
     labels = _read_list(args.labels)
     if args.compare is None:
@@ -1183,7 +1349,7 @@ def main(argv: list[str] | None = None) -> int:
             _print_labels(lines)
             if out is not None:
                 _write(out / "labels.json", lines)
-        return status
+        return REFUSED if refused else status
     if out is None:
         _parser().error("--compare needs --out, where each ref's tree and records are written")
     from scripts.replay.compare import materialise
@@ -1229,18 +1395,19 @@ def main(argv: list[str] | None = None) -> int:
         if d["kind"] == "code":
             print(
                 f"{mark}{_safe(d['run'])}: {_safe(d['code'])} {d['change']} ({d['A']} -> {d['B']})"
+                + mark_text(d)
             )
         else:
             print(
                 f"{mark}{_safe(d['run'])} [{_safe(d['passage'])}] {d['kind']} under "
-                f"{d['only']} only: {_safe(d['sentence'][:160])}"
+                f"{d['only']} only: {_safe(d['sentence'][:160])}" + mark_text(d)
             )
     if labels:
         lines = label_lines(labels, by_ref)
         _print_labels(lines)
         _write(out / "labels.json", lines)
     print(f"{len(differences)} difference(s), {len(left)} not expected")
-    return 1 if left else 0
+    return REFUSED if refused else 1 if left else 0
 
 
 if __name__ == "__main__":
