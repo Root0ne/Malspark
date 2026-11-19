@@ -358,7 +358,7 @@ class OllamaProvider(LLMProvider):
             str(getattr(block, "expert_model", "") or ""),
             str(getattr(block, "judge_model", "") or ""),
         }
-        missing = [m for m in named if m and m not in listed]
+        missing = [m for m in sorted(named) if m and m not in listed]
         return f"{len(listed)} models available; missing {missing}" if missing else None
 
     @classmethod
