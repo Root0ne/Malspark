@@ -9,8 +9,8 @@ checkout's driver against it with that tree first on the import path: the
 first commit against itself renders the same units, and the build mode, which
 needs the tree's replay, is a surface produced by neither ref, listed with the
 reason on both sides and ending the comparison with its own status unless it is
-accepted; against the second, the one sentence is the one change (status 1),
-and an expectation naming it makes the status 0.
+accepted; against the second, the one sentence is the one change on each surface that
+prints it (status 1), and an expectation naming it makes the status 0.
 """
 
 from __future__ import annotations
@@ -70,24 +70,25 @@ def test_each_tree_is_rendered_by_this_driver_and_the_one_sentence_is_the_one_ch
         == 1
     )
     [diff] = json.loads(out.read_text(encoding="utf-8"))["runs"]
-    [change] = diff["changes"]
-    assert (change["mode"], change["surface"], change["change"]) == (
-        "serve",
-        "bundle.lines",
-        "changed",
-    )
-    assert change["old"].startswith(OLD) and change["new"].startswith(NEW)
+    # The one sentence, on each surface that prints it: the bundle's JSON and its HTML cover.
+    assert sorted((c["mode"], c["surface"], c["change"]) for c in diff["changes"]) == [
+        ("serve", "bundle.html.header", "changed"),
+        ("serve", "bundle.lines", "changed"),
+    ]
+    for change in diff["changes"]:
+        assert OLD.lstrip("_") in change["old"] and NEW.lstrip("_") in change["new"]
 
     expect = tmp_path / "expect.json"
     expect.write_text(
         json.dumps(
             [
                 {
-                    "surface": "bundle.lines",
-                    "old": "^_The record behind",
-                    "new": "^_The evidence behind",
+                    "surface": surface,
+                    "old": "The record behind",
+                    "new": "The evidence behind",
                     "reason": "the bundle's opening line is reworded",
                 }
+                for surface in ("bundle.lines", "bundle.html.header")
             ]
         ),
         encoding="utf-8",

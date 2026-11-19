@@ -6,44 +6,75 @@ Over one or more stored runs, each a directory in the benchmark's layout::
 
 renders what a reader of the run is shown, at zero cost, and writes a surface
 record (``DIR/surfaces.json``) beside the rendered files (``DIR/<run>/<mode>/``:
-``report.md``, ``report.html``, ``iocs.json``, ``iocs-default.json``,
-``stix-bundle.json``, ``stix-judge.json``, ``mitre.json``, ``misp-event.json``,
-``attack-layer.json``, ``call-map.json``, ``evidence-bundle.json`` and one rule
-file per kind). Nothing is written into a run's directory: every file of it is
-digested before and after, and the command fails when a digest changed.
+``report.md``, ``report.html``, ``evidence-bundle.json``,
+``evidence-bundle.html``, ``iocs.json``, ``iocs-default.json``,
+``stix-bundle.json``, ``stix-judge.json``, ``stix-note.txt``, ``mitre.json``,
+``misp-event.json``, ``attack-layer.json``, ``call-map.json``,
+``signatures.json`` and one rule download per kind). Nothing is written into a
+run's directory: every file of it is digested before and after, and the
+command fails when a digest changed.
 
 The record is a list of units, each with its ``surface``, the ``mode`` that
 produced it, a ``group`` (a section path, a figure id, a rule kind), a stable
-``key`` and its ``text``:
+``key`` and its ``text``, and the digest of each rendered file. The rule is
+that everything a surface holds is compared, and what is not is named: no
+value is left out unless it is shown to vary without a code change (the same
+ref rendered twice, and once more with the clock moved), and each such
+exclusion is listed with its proof in :data:`EXCLUDED`, in the record and in
+the comparison's output. None is listed: rendered twice and with the clock
+moved five years on, every unit and every file of a run is byte-equal. What
+each surface compares:
 
-* ``report.md``: each line of the Markdown in the layout the API serves (the
-  run's ``reporting.full_report_in_one_file``), under its section path;
-  ``banner``: the title block's note and banner lines;
-* ``html.header`` (the cover's fields), ``html.figure`` (each figure's caption,
-  legend and every SVG ``<text>`` label), ``html.notes`` (a paragraph made of
-  notes alone, the self-contained report's note list), ``html.body`` (the text
-  of every other block outside the cover and the figures, a table row's cells
-  joined, under its section);
-* ``iocs.default`` and ``iocs.all``: each row of ``/iocs`` with every field it
-  is served with, by default and with ``include=all``; the kinds served only to
-  a ``kind`` filter naming them are rendered with that filter;
-* ``stix``: each object of the bundle ``/stix`` serves, keyed by its type and
-  identity (a relationship by its source, its type and its target), its text
-  every value but its id and timestamps as canonical JSON, each ref said as
-  its target's key; ``stix.notice``: the notice an unpublished bundle is served
-  with; ``stix.note``: the STIX note the report detail serves; ``stix.judge``
-  and ``stix.judge.notice``: the ``source=judge`` view, its objects and its
-  envelope;
-* ``mitre``: each row of ``/mitre``; ``misp``: the event's info and each
-  attribute; ``navigator``: the layer's own fields, its legend and each
-  technique with every field (score, colour, comment, metadata); ``call_map``:
-  each function of the call map and its roots;
-* ``rules``: each drafted detection rule as a digest of its body with its
-  compile error, and ``rules.comments``: every comment line of each kind's
-  download (``include=all``), the bodies' own comment lines among them;
-* ``bundle.notes``: the evidence bundle's numbered notes; ``bundle.lines``:
-  every line of its sections outside a fence, headings and the platform's
-  notes among them; ``bundle.index``: its header and each evidence entry.
+=====================  ==========================================================
+surface                compared
+=====================  ==========================================================
+``report.md``          every line as printed, blank and fenced ones too, under
+                       its section path, in the layout the API serves (the
+                       run's ``reporting.full_report_in_one_file``)
+``banner``             every line of the title block, before the first section
+``html.*``             ``report.html``: the cover's fields (``.header``); each
+                       figure's caption, legend, SVG ``<text>`` labels,
+                       ``<title>`` tooltips and any other text in it
+                       (``.figure``); note paragraphs (``.notes``); every other
+                       text node as a block, a table row's cells joined, each
+                       line of a style or a script (``.body``); every
+                       ``title``, ``aria-label`` and ``alt`` attribute
+                       (``.attrs``)
+``bundle.html.*``      the same, over ``/evidence-bundle.html``
+``bundle.lines``       every line of every section of ``/evidence-bundle.json``,
+                       blank and fenced ones too
+``bundle.notes``       each numbered note, every field, as canonical JSON
+``bundle.index``       each section's other fields, the header, the format, each
+                       evidence entry and every other field of the document, as
+                       canonical JSON
+``iocs.default``,      each row ``/iocs`` serves (by default; with
+``iocs.all``           ``include=all`` and the filter-only kinds), keyed by kind
+                       and value, every other field as canonical JSON
+``stix``,              the bundle ``/stix`` serves (export; ``source=judge``):
+``stix.judge``         its envelope, the bundle's own properties, and per object
+                       its ``id`` and every other property, timestamps included,
+                       as canonical JSON, each ref said as its target's key;
+                       keyed by type and identity, a relationship by its
+                       source, its type and its target
+``stix.notice``,       the notice an unpublished bundle is served with, the
+``stix.judge.notice``  judge view's envelope, the STIX note the report detail
+``stix.note``          serves
+``mitre``              each ``/mitre`` row keyed by technique, every other field
+``misp``               the event without its lists, each attribute, each object
+                       without its attributes and each object attribute, every
+                       field as canonical JSON
+``navigator``          the layer's own fields, each legend item and each
+                       technique, every field as canonical JSON
+``call_map``           the map's own fields and each function, every field
+``rules``              each drafted rule's every field but its body, as
+                       canonical JSON; ``rules.body``: every line of its body;
+                       ``rules.download``: every line of each kind's download
+``file``               each rendered file by digest: one that differs (or is on
+                       one side only) where no unit read from it does is a
+                       change, shown at its first differing line, so what the
+                       units do not hold (any other attribute, the whitespace,
+                       the order of rows and keys) is compared all the same
+=====================  ==========================================================
 
 The API's routes and writers are the tree's own: the ``/stix`` route is called
 with the tree's service reading a row of the stored (or rebuilt) columns.
@@ -76,8 +107,11 @@ driver resolves the tree's entry points by name at run time, so a ref from
 before this tool is rendered too, and an entry point it lacks is a surface not
 produced. The record says where the platform, the API and the replay scripts
 were imported from, and a package imported from outside the tree fails the
-comparison. It prints, per run and grouped by surface, every unit changed,
-added or removed with both texts, and a summary count. Every unit is compared,
+comparison (the plain ``--out`` render is checked the same way, against this
+checkout). It prints, per run and grouped by surface, every unit changed,
+added or removed with both texts; then the count of units compared, of
+differences and of surfaces not compared, the units compared per mode and
+surface beside their differences, and what was excluded. Every unit is compared,
 those marked ``dynamic`` too (see the limits). A surface produced by neither
 ref is listed NOT COMPARED with both reasons. ``--expect FILE`` (JSON: a list
 of ``{"surface", "mode"?, "key"?, "old"?, "new"?, "reason"}``, each pattern a
@@ -108,7 +142,13 @@ Limits:
   the job package and the console, which draws the API's JSON;
 * fields an older build lacked default to empty when typed under a newer
   model, so a re-render shows the differences between two refs only, and is
-  not what a new run would print.
+  not what a new run would print;
+* the findings the run's checks left unresolved are read as the run summary
+  stored them in serve mode, and build mode prints none of the narrative
+  findings: a finding's message changed in the code is reported by neither
+  mode. The replay comparison (``scripts/replay/run.py --compare``) does not
+  report it either: it keys a finding by its producer, answer, claim, path and
+  code, not by its words, so no tool here compares a finding's message.
 """
 
 from __future__ import annotations
@@ -127,6 +167,7 @@ import tempfile
 import traceback
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
+from fnmatch import fnmatch
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, NoReturn
@@ -167,6 +208,11 @@ LIMITS: tuple[str, ...] = (
     "package and the console are not rendered",
     "fields an older build lacked default to empty, so a re-render shows the differences "
     "between two refs only and is not what a new run would print",
+    "the run's unresolved findings are read as the run summary stored them in serve mode and "
+    "build mode prints none of the narrative findings, so a finding's message changed in the "
+    "code is reported by neither mode; the replay comparison (scripts/replay/run.py --compare) "
+    "keys a finding by its producer, answer, claim, path and code, not by its words, so no tool "
+    "here compares a finding's message",
 )
 
 # The surfaces of each mode, in the order they are rendered.
@@ -177,6 +223,7 @@ SURFACES: tuple[str, ...] = (
     "html.figure",
     "html.notes",
     "html.body",
+    "html.attrs",
     "iocs.default",
     "iocs.all",
     "stix",
@@ -189,10 +236,16 @@ SURFACES: tuple[str, ...] = (
     "navigator",
     "call_map",
     "rules",
-    "rules.comments",
+    "rules.body",
+    "rules.download",
     "bundle.notes",
     "bundle.lines",
     "bundle.index",
+    "bundle.html.header",
+    "bundle.html.figure",
+    "bundle.html.notes",
+    "bundle.html.body",
+    "bundle.html.attrs",
 )
 # The surfaces whose units are lines in order: compared by aligning each
 # group's texts, so a line put in does not move every key after it.
@@ -203,10 +256,57 @@ ORDERED: frozenset[str] = frozenset(
         "html.header",
         "html.notes",
         "html.body",
-        "rules.comments",
+        "html.attrs",
+        "rules.body",
+        "rules.download",
         "bundle.lines",
+        "bundle.html.header",
+        "bundle.html.notes",
+        "bundle.html.body",
+        "bundle.html.attrs",
     }
 )
+# The rendered file each surface is read from (shell patterns). A file that
+# differs between the refs while no unit of its surfaces does is a change all
+# the same (surface ``file``): what the units do not hold (an attribute, the
+# whitespace, the order of rows) is compared through the file.
+SURFACE_FILES: dict[str, tuple[str, ...]] = {
+    "report.md": ("report.md",),
+    "banner": ("report.md",),
+    "html.header": ("report.html",),
+    "html.figure": ("report.html",),
+    "html.notes": ("report.html",),
+    "html.body": ("report.html",),
+    "html.attrs": ("report.html",),
+    "iocs.default": ("iocs-default.json",),
+    "iocs.all": ("iocs.json",),
+    "stix": ("stix-bundle.json",),
+    "stix.notice": ("stix-bundle.json",),
+    "stix.note": ("stix-note.txt",),
+    "stix.judge": ("stix-judge.json",),
+    "stix.judge.notice": ("stix-judge.json",),
+    "mitre": ("mitre.json",),
+    "misp": ("misp-event.json",),
+    "navigator": ("attack-layer.json",),
+    "call_map": ("call-map.json",),
+    "rules": ("signatures.json",),
+    "rules.body": ("signatures.json",),
+    "rules.download": ("signatures-*.txt",),
+    "bundle.notes": ("evidence-bundle.json",),
+    "bundle.lines": ("evidence-bundle.json",),
+    "bundle.index": ("evidence-bundle.json",),
+    "bundle.html.header": ("evidence-bundle.html",),
+    "bundle.html.figure": ("evidence-bundle.html",),
+    "bundle.html.notes": ("evidence-bundle.html",),
+    "bundle.html.body": ("evidence-bundle.html",),
+    "bundle.html.attrs": ("evidence-bundle.html",),
+}
+# The surface a rendered file's own change is reported on.
+FILE_SURFACE = "file"
+# What is left out of the comparison, each with the proof that it varies
+# without a code change (the same ref rendered twice, and once more with the
+# clock moved): (surface, what, proof). Every other value is compared.
+EXCLUDED: tuple[tuple[str, str, str], ...] = ()
 # What only the sandbox report fills, which build mode rebuilds without: the
 # figures drawn from its process tree and its network block, the IOC rows it
 # is the source of, and the export's objects made from its process tree and
@@ -226,27 +326,8 @@ DYNAMIC_STIX_TYPES: frozenset[str] = frozenset(
 )
 # The IOC kinds ``/iocs`` serves only to a ``kind`` filter that names them.
 _FILTERED_IOC_KINDS: tuple[str, ...] = ("secret", "crypto_wallet")
-# The download comment of each rule kind, as the API writes it.
+# The rule kinds the API serves a download of.
 RULE_KINDS: tuple[str, ...] = ("yara", "sigma", "suricata", "snort")
-_RULE_COMMENT = {"yara": "//", "sigma": "#", "suricata": "#", "snort": "#"}
-# A STIX property that identifies or dates an object rather than says something:
-# every other value is part of the object's unit.
-_STIX_NOT_TEXT = frozenset(
-    {
-        "id",
-        "type",
-        "spec_version",
-        "created",
-        "modified",
-        "valid_from",
-        "valid_until",
-        "first_seen",
-        "last_seen",
-        "first_observed",
-        "last_observed",
-        "published",
-    }
-)
 # A STIX identifier: what a ``*_ref`` names.
 _STIX_ID = re.compile(r"^[a-z][a-z0-9-]*--[0-9a-fA-F-]{36}$")
 
@@ -352,14 +433,14 @@ _FENCE = re.compile(r"^\s*(```|~~~)")
 
 
 def markdown_units(markdown: str, units: _Units) -> None:
-    """Each non-blank line of the Markdown under its section path, and the title block's notes."""
+    """Every line of the Markdown as it is, blank and fenced ones too, under its section path.
+
+    ``banner``: every line of the title block, before the first section.
+    """
     path: list[str] = []
     fenced = False
     before_body = True
-    for line in markdown.splitlines():
-        text = line.rstrip()
-        if not text.strip():
-            continue
+    for text in markdown.splitlines():
         if _FENCE.match(text):
             fenced = not fenced
         heading = None if fenced else _HEADING.match(text)
@@ -371,18 +452,28 @@ def markdown_units(markdown: str, units: _Units) -> None:
                 before_body = False
         group = " > ".join(p for p in path if p)
         units.add("report.md", "line", text, group=group)
-        if before_body and heading is None and text.lstrip()[:1] in {">", "_"}:
-            units.add("banner", "line", text.strip(), group="title block")
+        if before_body:
+            units.add("banner", "line", text, group="title block")
+
+
+# The attributes whose value a reader is shown: a tooltip, a name read aloud, an
+# image's text. Each is a unit (``html.attrs``) wherever it stands.
+_SHOWN_ATTRIBUTES: tuple[str, ...] = ("title", "aria-label", "alt")
 
 
 class _HtmlReader(HTMLParser):
-    """The cover's fields, each figure's caption, legend and SVG labels, and note paragraphs."""
+    """The cover's fields, each figure's text, note paragraphs, and every shown attribute.
+
+    A figure's parts: its caption, its legend, each SVG ``<text>`` label, each
+    ``<title>`` (a tooltip) and any other text inside it.
+    """
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.header: list[str] = []
         self.figures: list[tuple[str, str, str]] = []  # (figure id, part, text)
         self.notes: list[tuple[str, str]] = []  # (section, text)
+        self.attributes: list[tuple[str, str, str]] = []  # (where, "tag attribute", value)
         self._in_header = 0
         self._chunk: list[str] = []
         self._section: list[str] = ["", ""]
@@ -391,6 +482,7 @@ class _HtmlReader(HTMLParser):
         self._figure: str | None = None
         self._figures_seen = 0
         self._svg_text: list[str] | None = None
+        self._title: list[str] | None = None
         self._caption: list[str] | None = None
         self._legend: list[str] | None = None
         self._paragraph: dict[str, Any] | None = None
@@ -406,6 +498,13 @@ class _HtmlReader(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         named = dict(attrs)
         classes = set(str(named.get("class") or "").split())
+        if tag == "figure":
+            self._figures_seen += 1
+            self._figure = str(named.get("id") or f"figure {self._figures_seen}")
+        where = self._figure or ("cover" if self._in_header or tag == "header" else self.section)
+        for name in _SHOWN_ATTRIBUTES:
+            if named.get(name) is not None:
+                self.attributes.append((where, f"{tag} {name}", str(named[name])))
         if tag == "header":
             self._in_header += 1
             self._chunk = []
@@ -418,10 +517,11 @@ class _HtmlReader(HTMLParser):
             self._heading = []
             self._heading_level = int(tag[1])
         elif tag == "figure":
-            self._figures_seen += 1
-            self._figure = str(named.get("id") or f"figure {self._figures_seen}")
+            pass
         elif self._figure is not None and tag == "text":
             self._svg_text = []
+        elif self._figure is not None and tag == "title":
+            self._title = []
         elif self._figure is not None and tag == "figcaption":
             self._caption = []
         elif self._caption is not None and tag == "span" and "fig-legend" in classes:
@@ -456,6 +556,9 @@ class _HtmlReader(HTMLParser):
         elif tag == "text" and self._svg_text is not None and self._figure is not None:
             self.figures.append((self._figure, "label", _space("".join(self._svg_text))))
             self._svg_text = None
+        elif tag == "title" and self._title is not None and self._figure is not None:
+            self.figures.append((self._figure, "title", _space("".join(self._title))))
+            self._title = None
         elif tag == "span" and self._legend is not None and self._figure is not None:
             self.figures.append((self._figure, "legend", _space("".join(self._legend))))
             self._legend = None
@@ -496,10 +599,15 @@ class _HtmlReader(HTMLParser):
             self._heading.append(data)
         if self._svg_text is not None:
             self._svg_text.append(data)
-        if self._legend is not None:
+        elif self._title is not None:
+            self._title.append(data)
+        elif self._legend is not None:
             self._legend.append(data)
         elif self._caption is not None:
             self._caption.append(data)
+        elif self._figure is not None and _space(data):
+            # Any other text inside a figure: a description, a styled block.
+            self.figures.append((self._figure, "text", _space(data)))
         if self._paragraph is not None:
             if self._paragraph["current"] is not None:
                 self._paragraph["current"].append(data)
@@ -513,8 +621,10 @@ class _HtmlBody(HTMLParser):
     """The text of every block of the body outside the cover and the figures, in order.
 
     A block (a paragraph, a list item, a heading, a preformatted block, a table
-    row, a quote, a definition, the document's title) is one text; the cells of
-    a row are joined with `` | ``. Styles and scripts say nothing a reader reads.
+    row, a quote, a definition, the document's title, an SVG outside a figure)
+    is one text; the cells of a row are joined with `` | ``. Each line of a
+    style or a script is a block of its own, grouped under ``<style>`` or
+    ``<script>``. The cover and the figures are :class:`_HtmlReader`'s.
     """
 
     _BLOCKS = frozenset(
@@ -552,13 +662,15 @@ class _HtmlBody(HTMLParser):
         }
     )
     _CELLS = frozenset({"td", "th"})
-    _SKIPPED = frozenset({"header", "figure", "style", "script", "svg"})
+    _SKIPPED = frozenset({"header", "figure"})
+    _RAW = frozenset({"style", "script"})
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.blocks: list[tuple[str, str]] = []  # (section, text)
         self._chunk: list[str] = []
         self._skipping: list[str] = []
+        self._raw: str | None = None
         self._section: list[str] = ["", ""]
         self._heading: list[str] | None = None
         self._heading_level = 0
@@ -582,6 +694,9 @@ class _HtmlBody(HTMLParser):
         if tag in self._SKIPPED:
             self._flush()
             self._skipping.append(tag)
+        elif tag in self._RAW:
+            self._flush()
+            self._raw = tag
         elif tag in self._CELLS:
             if _space("".join(self._chunk)):
                 self._chunk.append(" | ")
@@ -600,6 +715,9 @@ class _HtmlBody(HTMLParser):
             if tag == self._skipping[-1]:
                 self._skipping.pop()
             return
+        if tag == self._raw:
+            self._raw = None
+            return
         if tag in self._BLOCKS:
             if tag in {"h2", "h3"} and self._heading is not None:
                 title = _space("".join(self._heading))
@@ -614,6 +732,11 @@ class _HtmlBody(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._skipping:
             return
+        if self._raw is not None:
+            for line in data.splitlines():
+                if line.strip():
+                    self.blocks.append((f"<{self._raw}>", line.strip()))
+            return
         self._chunk.append(data)
         if self._heading is not None:
             self._heading.append(data)
@@ -623,8 +746,20 @@ class _HtmlBody(HTMLParser):
         self._flush()
 
 
-def html_units(document: str, units: _Units, *, dynamic_figures: Iterable[str] = ()) -> None:
-    """The HTML's cover fields, figure texts (SVG ``<text>`` nodes), note paragraphs and blocks."""
+def html_units(
+    document: str,
+    units: _Units,
+    *,
+    dynamic_figures: Iterable[str] = (),
+    prefix: str = "html",
+) -> None:
+    """Every text of the HTML and every shown attribute, under the surfaces ``prefix.*``.
+
+    The cover's fields (``.header``), each figure's caption, legend, SVG
+    labels, tooltips and other text (``.figure``), the note paragraphs
+    (``.notes``), every other block (``.body``) and each ``title``,
+    ``aria-label`` and ``alt`` attribute (``.attrs``).
+    """
     reader = _HtmlReader()
     reader.feed(document)
     reader.close()
@@ -632,18 +767,18 @@ def html_units(document: str, units: _Units, *, dynamic_figures: Iterable[str] =
     body.feed(document)
     body.close()
     for section, said in body.blocks:
-        units.add("html.body", "block", said, group=section)
+        units.add(f"{prefix}.body", "block", said, group=section)
     marked = set(dynamic_figures)
     for said in reader.header:
-        units.add("html.header", "field", said, group="cover")
+        units.add(f"{prefix}.header", "field", said, group="cover")
     for figure, part, said in reader.figures:
-        if part == "label":
-            key = f"{figure} label"
-        else:
-            key = f"{figure} {part}"
-        units.add("html.figure", key, said, group=figure, dynamic=figure in marked)
+        units.add(
+            f"{prefix}.figure", f"{figure} {part}", said, group=figure, dynamic=figure in marked
+        )
     for section, said in reader.notes:
-        units.add("html.notes", "note", said, group=section)
+        units.add(f"{prefix}.notes", "note", said, group=section)
+    for where, name, said in reader.attributes:
+        units.add(f"{prefix}.attrs", name, said, group=where, dynamic=where in marked)
 
 
 def canonical(value: Any) -> str:
@@ -722,16 +857,12 @@ def stix_keys(objects: Sequence[Mapping[str, Any]]) -> tuple[list[str], dict[str
 
 
 def _stix_value(value: Any, by_id: Mapping[str, str], *, top: bool = False) -> Any:
-    """``value`` with each id of the bundle said as its object's key.
+    """``value`` with each id of the bundle a ref names said as its object's key.
 
-    ``top``: the object itself, whose id, type and timestamps are left out.
+    ``top``: the object itself, whose ``id`` is a unit of its own.
     """
     if isinstance(value, Mapping):
-        return {
-            str(k): _stix_value(v, by_id)
-            for k, v in value.items()
-            if not (top and k in _STIX_NOT_TEXT)
-        }
+        return {str(k): _stix_value(v, by_id) for k, v in value.items() if not (top and k == "id")}
     if isinstance(value, list):
         return [_stix_value(v, by_id) for v in value]
     if isinstance(value, str) and _STIX_ID.match(value) and value in by_id:
@@ -740,7 +871,7 @@ def _stix_value(value: Any, by_id: Mapping[str, str], *, top: bool = False) -> A
 
 
 def _stix_text(obj: Mapping[str, Any], by_id: Mapping[str, str] | None = None) -> str:
-    """Every value of the object but its id and timestamps, as canonical JSON."""
+    """Every property of the object but its id (a unit of its own), timestamps too, as JSON."""
     return canonical(_stix_value(obj, by_id or {}, top=True))
 
 
@@ -752,22 +883,27 @@ def _stix_units(
     surface: str = "stix",
     notice_surface: str = "stix.notice",
 ) -> None:
-    """Each object of the bundle as served, and the notice served with an unpublished one."""
+    """The bundle as served: its envelope, its own properties, and each object and its id.
+
+    Each object is two units: its ``id``, and every other property as
+    canonical JSON, each ref said as its target's key. The bundle's own
+    properties (its id, its flags) are the unit ``bundle``; the envelope an
+    unpublished bundle is served in, the unit ``envelope``.
+    """
     found = served.get("bundle")
     bundle: Mapping[str, Any] = found if isinstance(found, Mapping) else served
     notice = served.get("notice") or bundle.get("x_malspark_notice")
     units.add(notice_surface, "notice", notice or "(none)")
+    if isinstance(found, Mapping):
+        units.add(surface, "envelope", canonical(_without(served, "bundle")))
+    units.add(surface, "bundle", canonical(_without(bundle, "objects")))
     objects = [o for o in bundle.get("objects") or [] if isinstance(o, Mapping)]
     keys, by_id = stix_keys(objects)
     for obj, key in zip(objects, keys, strict=True):
         kind = str(obj.get("type") or "")
-        units.add(
-            surface,
-            key,
-            _stix_text(obj, by_id),
-            group=kind,
-            dynamic=dynamic and kind in DYNAMIC_STIX_TYPES,
-        )
+        moving = dynamic and kind in DYNAMIC_STIX_TYPES
+        units.add(surface, key, _stix_text(obj, by_id), group=kind, dynamic=moving)
+        units.add(surface, f"{key} id", str(obj.get("id") or ""), group=kind, dynamic=moving)
 
 
 def _judge_view_units(view: Mapping[str, Any], units: _Units) -> None:
@@ -797,27 +933,31 @@ def _mitre_units(rows: Sequence[Mapping[str, Any]] | None, units: _Units) -> Non
 
 
 def _misp_units(event: Mapping[str, Any], units: _Units) -> None:
+    """The event without its lists, each attribute, each object and each object attribute.
+
+    Each as canonical JSON with every field it has: the event keyed ``event``,
+    an attribute by its type and value, an object by its name, an object's
+    attribute by its object's name and its relation.
+    """
     found = event.get("Event")
     body: Mapping[str, Any] = found if isinstance(found, Mapping) else event
-    units.add("misp", "info", body.get("info") or "")
-    tags = ", ".join(str(t.get("name") or "") for t in body.get("Tag") or [] if isinstance(t, dict))
-    units.add("misp", "tags", tags)
+    if isinstance(found, Mapping) and len(event) > 1:
+        units.add("misp", "envelope", canonical(_without(event, "Event")))
+    units.add("misp", "event", canonical(_without(body, "Attribute", "Object")))
     for attribute in body.get("Attribute") or []:
         if not isinstance(attribute, Mapping):
             continue
-        key = f"{attribute.get('type') or ''} {attribute.get('value') or ''}"
-        text = " | ".join(
-            f"{name}: {attribute.get(name) if attribute.get(name) is not None else ''}"
-            for name in ("category", "comment", "to_ids")
-        )
-        units.add("misp", key, text, group=str(attribute.get("type") or ""))
+        key = f"attribute {attribute.get('type') or ''} {attribute.get('value') or ''}"
+        units.add("misp", key, canonical(attribute), group=str(attribute.get("type") or ""))
     for obj in body.get("Object") or []:
         if not isinstance(obj, Mapping):
             continue
+        name = str(obj.get("name") or "")
+        units.add("misp", f"object {name}", canonical(_without(obj, "Attribute")), group="object")
         for attribute in obj.get("Attribute") or []:
             if isinstance(attribute, Mapping):
-                key = f"object {obj.get('name') or ''} {attribute.get('object_relation') or ''}"
-                units.add("misp", key, attribute.get("value") or "", group="object")
+                key = f"object {name} {attribute.get('object_relation') or ''}"
+                units.add("misp", key, canonical(attribute), group="object")
 
 
 def _layer_units(layer: Mapping[str, Any], units: _Units) -> None:
@@ -826,7 +966,7 @@ def _layer_units(layer: Mapping[str, Any], units: _Units) -> None:
     units.add("navigator", "layer", canonical(_without(layer, "techniques", "legendItems")))
     for item in layer.get("legendItems") or []:
         if isinstance(item, Mapping):
-            units.add("navigator", f"legend {item.get('label') or ''}", item.get("color") or "")
+            units.add("navigator", f"legend {item.get('label') or ''}", canonical(item))
     for row in layer.get("techniques") or []:
         if not isinstance(row, Mapping):
             continue
@@ -838,18 +978,13 @@ def _layer_units(layer: Mapping[str, Any], units: _Units) -> None:
 
 
 def _call_map_units(found: Mapping[str, Any], units: _Units) -> None:
-    roots = ", ".join(str(r) for r in found.get("roots") or [])
-    units.add("call_map", "roots", roots)
+    """The map without its functions, and each function with every field it has."""
+    units.add("call_map", "map", canonical(_without(found, "functions")))
     for function in found.get("functions") or []:
         if not isinstance(function, Mapping):
             continue
         key = str(function.get("address") or ", ".join(function.get("names") or []) or "?")
-        text = " | ".join(
-            f"{name}: {function.get(name)}"
-            for name in ("names", "read", "listed_in", "read_by", "calls", "called_by")
-            if name in function
-        )
-        units.add("call_map", f"function {key}", text)
+        units.add("call_map", f"function {key}", canonical(_without(function, "address")))
 
 
 def _rule_units(
@@ -857,30 +992,29 @@ def _rule_units(
     downloads: Mapping[str, str],
     units: _Units,
 ) -> None:
+    """Each drafted rule's every field, every line of its body, and every line of each download."""
     for rule in signatures:
         if not isinstance(rule, Mapping):
             continue
-        body = str(rule.get("body") or "")
-        text = f"body sha256:{digest(body)} ({len(body.splitlines())} lines)"
-        if rule.get("compile_error"):
-            text += f" | compile error: {rule['compile_error']}"
-        if rule.get("printed") is not None:
-            text += f" | printed: {rule.get('printed')}"
-        units.add("rules", f"{rule.get('kind') or ''} {rule.get('name') or ''}", text)
+        name = f"{rule.get('kind') or ''} {rule.get('name') or ''}"
+        units.add("rules", name, canonical(_without(rule, "body")))
+        for line in str(rule.get("body") or "").splitlines():
+            units.add("rules.body", "line", line, group=name)
     if not signatures:
         units.add("rules", "drafts", "(none)")
     for kind, download in downloads.items():
-        mark = _RULE_COMMENT[kind]
         for line in download.splitlines():
-            if line.lstrip().startswith(mark):
-                units.add("rules.comments", "line", line.strip(), group=kind)
+            units.add("rules.download", "line", line, group=kind)
 
 
 def _bundle_units(document: Mapping[str, Any], units: _Units) -> None:
-    """The bundle's numbered notes, every line of its sections outside a fence, and its index.
+    """The bundle's numbered notes, every line of its sections, and the rest of the document.
 
-    A line is a unit whether the model or the platform wrote it: a heading with
-    its tag, a note in italics, a quote, a table row, a list item.
+    A line is a unit whether the model or the platform wrote it, blank and
+    fenced ones too: a heading with its tag, a note in italics, a quote, a
+    table row, a list item, a line of a code block. Each section's other
+    fields, the header, each evidence entry and every other field of the
+    document are units of ``bundle.index``.
     """
     for note in document.get("notes") or []:
         if isinstance(note, Mapping):
@@ -894,19 +1028,15 @@ def _bundle_units(document: Mapping[str, Any], units: _Units) -> None:
         if not isinstance(section, Mapping):
             continue
         group = str(section.get("title") or section.get("anchor") or "")
-        fenced = False
+        units.add("bundle.index", f"section {group}", canonical(_without(section, "markdown")))
         for line in str(section.get("markdown") or "").splitlines():
-            said = line.rstrip()
-            if _FENCE.match(said):
-                fenced = not fenced
-                continue
-            if fenced or not said.strip():
-                continue
-            units.add("bundle.lines", "line", said, group=group)
+            units.add("bundle.lines", "line", line, group=group)
     header = document.get("report")
     if isinstance(header, Mapping):
         units.add("bundle.index", "report", canonical(header))
     units.add("bundle.index", "format", str(document.get("format") or ""))
+    rest = _without(document, "notes", "sections", "report", "format", "evidence_index")
+    units.add("bundle.index", "document", canonical(rest))
     for row in document.get("evidence_index") or []:
         if isinstance(row, Mapping):
             units.add("bundle.index", f"entry {row.get('id')}", canonical(_without(row, "id")))
@@ -1014,6 +1144,7 @@ class _Mode:
     def produce(self, surfaces: Sequence[str], make: Callable[[], None]) -> None:
         """Run ``make``; the surfaces it fills are not produced, with why, when it cannot."""
         before = len(self.units.rows)
+        written = set(self.files)
         try:
             make()
             # A surface rendered with nothing on it is said as one unit, so its
@@ -1023,11 +1154,17 @@ class _Mode:
                 if surface not in held:
                     self.units.add(surface, "(empty)", "(nothing printed)")
         except Absent as exc:
-            del self.units.rows[before:]
+            self._drop(before, written)
             self.lack(surfaces, str(exc))
         except Exception as exc:  # noqa: BLE001 — named as an error, the other surfaces stand
-            del self.units.rows[before:]
+            self._drop(before, written)
             self.lack(surfaces, f"raised: {_where(exc)}", error=True)
+
+    def _drop(self, before: int, written: set[str]) -> None:
+        """The units and the files a surface that could not be produced left behind."""
+        del self.units.rows[before:]
+        for name in set(self.files) - written:
+            del self.files[name]
 
 
 def _environment(stored: _Stored) -> Any:
@@ -1196,6 +1333,7 @@ def _render(
         # The note the detail endpoint serves beside the report (``with_current_iocs``).
         with_current_iocs = entry("app.services.report_service", "with_current_iocs")
         _served, note = with_current_iocs(dict(mr), stored.report_id)
+        mode.files["stix-note.txt"] = f"{note or '(none)'}\n"
         mode.units.add("stix.note", "note", note or "(none)")
 
     def _judge_view() -> None:
@@ -1232,6 +1370,7 @@ def _render(
         signatures = [r for r in mr.get("detection_signatures") or [] if isinstance(r, dict)]
         download = entry("app.services.report_service", "signature_download")
         downloads: dict[str, str] = {}
+        mode.files["signatures.json"] = _json(signatures)
         for kind in RULE_KINDS:
             downloads[kind] = str(download(signatures, kind, "all"))
             if downloads[kind]:
@@ -1243,8 +1382,21 @@ def _render(
         mode.files["evidence-bundle.json"] = text
         _bundle_units(json.loads(text), mode.units)
 
+    def _bundle_html() -> None:
+        # ``/reports/{id}/evidence-bundle.html``: the bundle layout, whatever the run's.
+        layout_name = entry("platform.reporting.renderers.layout", "BUNDLE")
+        renderer = entry("platform.reporting.renderers.html", "HtmlRenderer")(layout=layout_name)
+        text = str(renderer.render(_need()))
+        mode.files["evidence-bundle.html"] = text
+        html_units(
+            text,
+            mode.units,
+            dynamic_figures=DYNAMIC_FIGURES if dynamic else (),
+            prefix="bundle.html",
+        )
+
     mode.produce(("report.md", "banner"), _markdown)
-    mode.produce(("html.header", "html.figure", "html.notes", "html.body"), _html)
+    mode.produce(("html.header", "html.figure", "html.notes", "html.body", "html.attrs"), _html)
     mode.produce(("iocs.default", "iocs.all"), _iocs)
     mode.produce(("stix", "stix.notice"), _stix)
     mode.produce(("stix.note",), _stix_note)
@@ -1253,8 +1405,18 @@ def _render(
     mode.produce(("misp",), _misp)
     mode.produce(("navigator",), _layer)
     mode.produce(("call_map",), _call_map)
-    mode.produce(("rules", "rules.comments"), _rules)
+    mode.produce(("rules", "rules.body", "rules.download"), _rules)
     mode.produce(("bundle.notes", "bundle.lines", "bundle.index"), _bundle)
+    mode.produce(
+        (
+            "bundle.html.header",
+            "bundle.html.figure",
+            "bundle.html.notes",
+            "bundle.html.body",
+            "bundle.html.attrs",
+        ),
+        _bundle_html,
+    )
 
 
 def _json(value: Any) -> str:
@@ -1560,7 +1722,13 @@ def render_run(
         "modes": list(modes),
         "report_source": stored.report_source if stored.report is not None else None,
         "limits": list(LIMITS),
+        "excluded": [list(row) for row in EXCLUDED],
         "units": [row for mode in done for row in mode.units.rows],
+        # Each rendered file's digest: a file that differs where no unit does is a change.
+        "file_digests": {
+            mode.mode: {name: digest(text) for name, text in sorted(mode.files.items())}
+            for mode in done
+        },
         "not_produced": [row for mode in done for row in mode.not_produced],
     }
     return record, {mode.mode: mode.files for mode in done}
@@ -1642,6 +1810,13 @@ def compare_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any
                         news[index] if index < len(news) else None,
                     )
                 )
+    changes += _file_changes(a, b, changes)
+    compared: dict[str, int] = {}
+    for mode, surface, _key in {(r["mode"], r["surface"], r["key"]) for r in [*rows_a, *rows_b]}:
+        compared[f"{mode} {surface}"] = compared.get(f"{mode} {surface}", 0) + 1
+    files_a, files_b = a.get("file_digests") or {}, b.get("file_digests") or {}
+    for mode in set(files_a) & set(files_b):
+        compared[f"{mode} {FILE_SURFACE}"] = len(set(files_a[mode]) | set(files_b[mode]))
     reasons_a = {(r["mode"], r["surface"]): r for r in a.get("not_produced") or []}
     reasons_b = {(r["mode"], r["surface"]): r for r in b.get("not_produced") or []}
     not_compared = [
@@ -1663,6 +1838,7 @@ def compare_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any
     ]
     out: dict[str, Any] = {"run": a.get("run") or b.get("run"), "changes": changes}
     out["summary"] = _summary(changes)
+    out["compared"] = dict(sorted(compared.items()))
     out["dynamic_compared"] = dynamic
     out["neither"] = sum(1 for row in not_compared if row["neither"])
     if not_compared:
@@ -1670,6 +1846,56 @@ def compare_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any
     if errors:
         out["errors"] = errors
     return out
+
+
+def _file_surfaces(name: str) -> set[str]:
+    return {s for s, patterns in SURFACE_FILES.items() if any(fnmatch(name, p) for p in patterns)}
+
+
+def _file_changes(
+    a: Mapping[str, Any], b: Mapping[str, Any], changes: Sequence[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """Each rendered file that differs, or is on one side only, while no unit read from it does.
+
+    What the units leave to the file (an attribute, the whitespace, the order
+    of rows) is compared this way, so nothing a file holds goes unseen.
+    """
+    out: list[dict[str, Any]] = []
+    digests_a = a.get("file_digests") or {}
+    digests_b = b.get("file_digests") or {}
+    moved = {(c["mode"], c["surface"]) for c in changes}
+    for mode in sorted(set(digests_a) & set(digests_b)):
+        held_a, held_b = digests_a[mode], digests_b[mode]
+        for name in sorted(set(held_a) | set(held_b)):
+            old, new = held_a.get(name), held_b.get(name)
+            if old == new or any((mode, s) in moved for s in _file_surfaces(name)):
+                continue
+            out.append(
+                {
+                    "change": "changed" if old and new else "removed" if old else "added",
+                    "mode": mode,
+                    "surface": FILE_SURFACE,
+                    "group": "the file differs where no unit read from it does",
+                    "key": name,
+                    "old": f"sha256:{old}" if old else None,
+                    "new": f"sha256:{new}" if new else None,
+                }
+            )
+    return out
+
+
+def first_difference(old: str, new: str) -> tuple[str, str]:
+    """The first line at which two texts differ, each side said with its line number."""
+    lines_a, lines_b = old.splitlines(), new.splitlines()
+    for index in range(max(len(lines_a), len(lines_b))):
+        line_a = lines_a[index] if index < len(lines_a) else None
+        line_b = lines_b[index] if index < len(lines_b) else None
+        if line_a != line_b:
+            return (
+                f"line {index + 1}: {line_a if line_a is not None else '(no line)'}",
+                f"line {index + 1}: {line_b if line_b is not None else '(no line)'}",
+            )
+    return ("the same lines; the line ends differ", "the same lines; the line ends differ")
 
 
 def _summary(changes: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, int]]:
@@ -1819,6 +2045,21 @@ def check_imports(record: Mapping[str, Any], tree: Path) -> None:
                 raise RuntimeError(f"the render under {tree} imported {name} from {at}")
 
 
+def _show_file_changes(diff: Mapping[str, Any], at_a: Path, at_b: Path) -> None:
+    """Each changed file's first differing line beside its digests, read from the files written."""
+    for change in diff["changes"]:
+        if change["surface"] != FILE_SURFACE or change["change"] != "changed":
+            continue
+        try:
+            old = (at_a / change["mode"] / change["key"]).read_text(encoding="utf-8")
+            new = (at_b / change["mode"] / change["key"]).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        line_a, line_b = first_difference(old, new)
+        change["old"] = f"{change['old']}; {line_a}"
+        change["new"] = f"{change['new']}; {line_b}"
+
+
 def _compare(
     runs: list[Path],
     refs: tuple[str, str],
@@ -1839,7 +2080,14 @@ def _compare(
             records[side] = render_under(
                 tree, runs, base / f"{side}-out", modes=modes, timeout=timeout
             )
-        return [compare_records(a, b) for a, b in zip(records["a"], records["b"], strict=True)]
+        diffs: list[dict[str, Any]] = []
+        for a, b in zip(records["a"], records["b"], strict=True):
+            diff = compare_records(a, b)
+            _show_file_changes(
+                diff, base / "a-out" / str(a.get("files")), base / "b-out" / str(b.get("files"))
+            )
+            diffs.append(diff)
+        return diffs
     finally:
         if owned:
             shutil.rmtree(base, ignore_errors=True)
@@ -1908,12 +2156,21 @@ def render_comparison(
         total = sum(sum(per.values()) for per in diff["summary"].values())
         unexpected = sum(1 for c in diff["changes"] if not c.get("expected"))
         neither = int(diff.get("neither") or 0)
+        compared: Mapping[str, int] = diff.get("compared") or {}
         lines.append(
-            f"  summary: {total} difference(s), {unexpected} unexpected, "
+            f"  summary: {sum(compared.values())} unit(s) compared on {len(compared)} "
+            f"surface(s), {total} difference(s), {unexpected} unexpected, "
             f"{neither} surface(s) not compared"
         )
-        for surface, per in diff["summary"].items():
-            lines.append(f"    {surface}: " + ", ".join(f"{k} {v}" for k, v in sorted(per.items())))
+        for surface in sorted(set(compared) | set(diff["summary"])):
+            per = diff["summary"].get(surface) or {}
+            said = ", ".join(f"{k} {v}" for k, v in sorted(per.items())) or "no difference"
+            lines.append(f"    {surface}: {compared.get(surface, 0)} compared, {said}")
+        if EXCLUDED:
+            for surface, what, proof in EXCLUDED:
+                lines.append(f"  excluded [{surface}] {what}: {proof}")
+        else:
+            lines.append("  excluded from the comparison: nothing")
         if not diff["changes"] and not neither:
             lines.append("  no difference: both refs render the same units")
         elif not diff["changes"]:
@@ -1937,7 +2194,13 @@ def _parser() -> argparse.ArgumentParser:
             "the stored report rendered as the API renders it; build: the report the replay "
             "rebuilds, rendered and exported), and compare two git refs unit by unit."
         ),
-        epilog="Limits: " + " ".join(f"({n}) {limit}." for n, limit in enumerate(LIMITS, 1)),
+        epilog=(
+            "Every value of every surface is compared, and a rendered file that differs where "
+            "no unit does is a change of its own. Excluded from the comparison: "
+            + ("; ".join(f"[{s}] {what}: {proof}" for s, what, proof in EXCLUDED) or "nothing")
+            + ". Limits: "
+            + " ".join(f"({n}) {limit}." for n, limit in enumerate(LIMITS, 1))
+        ),
     )
     parser.add_argument("runs", nargs="+", type=Path, help="stored run directories")
     parser.add_argument(
@@ -2011,8 +2274,19 @@ def _write_text(path: Path, text: str) -> None:
     path.write_bytes(text.encode("utf-8", "backslashreplace"))
 
 
+def rendered_tree() -> Path:
+    """The tree this process renders under: the one named to it, else this checkout."""
+    named = os.environ.get(TREE_VARIABLE)
+    return Path(named).resolve() if named else _ROOT
+
+
 def write_out(out: Path, runs: Sequence[Path], modes: Sequence[str]) -> list[dict[str, Any]]:
-    """Each run rendered into ``out``: the records in ``surfaces.json``, the files per run."""
+    """Each run rendered into ``out``: the records in ``surfaces.json``, the files per run.
+
+    The record is written, then each is checked to have imported the
+    platform, the API and the replay scripts from the tree rendered under
+    (:func:`check_imports`): ``RuntimeError`` when one came from elsewhere.
+    """
     out.mkdir(parents=True, exist_ok=True)
     records: list[dict[str, Any]] = []
     for index, run in enumerate(runs):
@@ -2024,6 +2298,8 @@ def write_out(out: Path, runs: Sequence[Path], modes: Sequence[str]) -> list[dic
         record["files"] = name
         records.append(record)
     _write_text(out / RECORD_FILE, json.dumps(records, indent=1, ensure_ascii=True) + "\n")
+    for record in records:
+        check_imports(record, rendered_tree())
     return records
 
 
@@ -2070,7 +2346,10 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.out is None:
         parser.error("name --out DIR, or --compare REF_A REF_B")
-    records = write_out(args.out, runs, modes)
+    try:
+        records = write_out(args.out, runs, modes)
+    except RuntimeError as exc:
+        _error(f"refused: {exc}")
     raised = [row for record in records for row in record["not_produced"] if row.get("error")]
     if not args.quiet:
         for record in records:
@@ -2092,34 +2371,29 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _prepare_path() -> None:
-    """This checkout on the import path, unless the driver renders under another tree.
+    """The tree rendered under first on the import path, and nothing outside it that competes.
 
-    Under another tree, every entry of the path outside it that holds the
-    platform, the API or the scripts (an editable install's) is taken off, so
-    a module the tree lacks is a module not found, never this checkout's.
+    The tree is the one named in :data:`TREE_VARIABLE`, else this checkout:
+    its root, its ``src`` and its API come before every other entry, so an
+    editable install of another checkout is never what is imported, and every
+    entry outside the tree that holds the platform, the API or the scripts is
+    taken off, so a module the tree lacks is a module not found.
     """
-    here = str(Path(__file__).resolve().parent)
-    sys.path[:] = [p for p in sys.path if Path(p or ".").resolve() != Path(here)]
-    tree = os.environ.get(TREE_VARIABLE)
-    if tree:
-        root = Path(tree).resolve()
-        names = (*_packages(), "app", "scripts")
+    here = Path(__file__).resolve().parent
+    root = rendered_tree()
+    first = [str(root / "src"), str(root / "apps" / "api"), str(root)]
+    sys.path[:] = first + [
+        p for p in sys.path if p not in first and Path(p or ".").resolve() != here
+    ]
+    names = (*_packages(), "app", "scripts")
 
-        def _foreign(entry: str) -> bool:
-            at = Path(entry or ".").resolve()
-            if (
-                at == root
-                or root in at.parents
-                or {"site-packages", "dist-packages"} & set(at.parts)
-            ):
-                return False
-            return any((at / name).is_dir() for name in names)
+    def _foreign(entry: str) -> bool:
+        at = Path(entry or ".").resolve()
+        if at == root or root in at.parents or {"site-packages", "dist-packages"} & set(at.parts):
+            return False
+        return any((at / name).is_dir() for name in names)
 
-        sys.path[:] = [p for p in sys.path if not _foreign(p)]
-        return
-    for path in (_ROOT, _ROOT / "src", _ROOT / "apps" / "api"):
-        if str(path) not in sys.path:
-            sys.path.append(str(path))
+    sys.path[:] = [p for p in sys.path if not _foreign(p)]
 
 
 if __name__ == "__main__":

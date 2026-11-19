@@ -5,6 +5,8 @@ whose ledger, answers and judge's bundle the build mode rebuilds from, and
 writes a report row beside it that the serve mode reads: a small report that
 reads as today's model, with one figure of two SVG labels, one drafted rule
 and one published technique, the row's STIX bundle and its ``/mitre`` rows.
+``full_report()`` adds a process tree, execution-flow steps and an unresolved
+finding to it.
 
 ``platform_repository(at)`` is a git repository of the test's own holding this
 checkout's platform as its working tree has it, and ``commit_edits`` commits
@@ -103,6 +105,40 @@ def report() -> dict[str, Any]:
                 "body": "// the fixture's own rule\nrule fixture_rule { condition: true }\n",
             }
         ],
+    }
+
+
+def full_report() -> dict[str, Any]:
+    """:func:`report` with what the fuller surfaces print from: a process tree the sandbox
+    watched, two execution-flow steps (a figure whose boxes carry tooltips) and a finding
+    the validation loop left unresolved."""
+    return {
+        **report(),
+        "dynamic": {
+            "process_tree": [
+                {"pid": 1200, "ppid": 4, "name": "fixture.exe", "command_line": "fixture.exe /run"}
+            ]
+        },
+        "technical_analysis": {
+            "execution_flow": [
+                {
+                    "order": 1,
+                    "action": "The sample decodes its configuration.",
+                    "voice": "assessed",
+                },
+                {"order": 2, "action": "It starts a second process.", "voice": "observed"},
+            ]
+        },
+        "run_summary": {
+            "validation": {
+                "unresolved": [
+                    {
+                        "code": "narrative.ungrounded_finding",
+                        "message": "A key finding cites no evidence entry.",
+                    }
+                ]
+            }
+        },
     }
 
 

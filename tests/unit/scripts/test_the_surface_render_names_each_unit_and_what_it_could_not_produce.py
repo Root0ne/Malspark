@@ -72,13 +72,20 @@ class TestEachSurfaceIsUnits:
             "XOR-encoded" in line for line in lines
         )
         assert [u["key"] for u in _units(record, "serve", "mitre")] == ["T1027"]
-        assert [u["key"] for u in _units(record, "serve", "stix")] == ["attack-pattern T1027"]
+        assert [u["key"] for u in _units(record, "serve", "stix")] == [
+            "bundle",
+            "attack-pattern T1027",
+            "attack-pattern T1027 id",
+        ]
         rules = _units(record, "serve", "rules")
         assert [u["key"] for u in rules] == ["yara fixture_rule"]
-        assert rules[0]["text"].startswith("body sha256:")
-        comments = [u["text"] for u in _units(record, "serve", "rules.comments")]
-        assert "// fixture_rule" in comments and "// the fixture's own rule" in comments
+        assert json.loads(rules[0]["text"])["kind"] == "yara"
+        body = [u["text"] for u in _units(record, "serve", "rules.body")]
+        assert body == ["// the fixture's own rule", "rule fixture_rule { condition: true }"]
+        download = [u["text"] for u in _units(record, "serve", "rules.download")]
+        assert "// fixture_rule" in download and "rule fixture_rule { condition: true }" in download
         assert _units(record, "serve", "banner")
+        assert _units(record, "serve", "bundle.html.body")
 
     def test_nothing_is_written_into_the_run(self, tmp_path: Path) -> None:
         run = stored_run(tmp_path)
@@ -261,7 +268,7 @@ class TestCompare:
         assert self._main(monkeypatch, pair, argv) == 1
         printed = capsys.readouterr().out
         assert "CHANGED UNEXPECTED" in printed and "reads its settings" in printed
-        assert "summary: 1 difference(s), 1 unexpected" in printed
+        assert "1 difference(s), 1 unexpected" in printed
 
         expect = tmp_path / "expect.json"
         expect.write_text(
@@ -334,5 +341,8 @@ def test_the_help_states_the_limits(capsys: pytest.CaptureFixture[str]) -> None:
         "serve mode cannot change platform text that was written before rendering and stored",
         "build mode rebuilds without the sandbox report",
         "fields an older build lacked default to empty",
+        "a finding's message changed in the code is reported by neither mode",
+        "no tool here compares a finding's message",
     ):
         assert words in doc
+    assert "Excluded from the comparison: nothing" in said

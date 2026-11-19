@@ -1,12 +1,15 @@
 """The surface render keys each unit by what it is and compares every value a reader is served.
 
-A STIX object's unit holds every value but its id and timestamps, each ref
-said as its target's key, and a relationship is keyed by its source, its type
-and its target, so one pointed at another technique is another unit. A unit
-the build draws without the sandbox report (marked dynamic) is compared like
-any other. Every line of the evidence bundle's sections outside a fence is a
-unit, the platform's notes and heading tags among them, and so is every block
-of the HTML body. A surface neither ref produced is listed and ends the
+Every value a surface holds is compared. A STIX object is two units: its id,
+and every other property, timestamps included, each ref said as its target's
+key; a relationship is keyed by its source, its type and its target, so one
+pointed at another technique is another unit. A MISP event, each attribute,
+each object and each object attribute are whole JSON units. A unit the build
+draws without the sandbox report (marked dynamic) is compared like any other.
+Every line of the evidence bundle's sections is a unit, fenced and blank ones
+too, and so is every block of the HTML body, each figure's tooltip and each
+shown attribute. A rendered file that differs where no unit read from it does
+is a change of its own. A surface neither ref produced is listed and ends the
 comparison with its own status unless accepted, as an expectation nothing
 matched does. A render whose API or replay scripts came from outside the tree
 is refused. The build's clock and every value the builder dates from it are
@@ -92,7 +95,9 @@ class TestStix:
         diff = rs.compare_records(_stix_record(_bundle()), _stix_record(_bundle(target_ref=_T1105)))
         assert sorted((c["change"], c["key"]) for c in diff["changes"]) == [
             ("added", "relationship malware loader uses attack-pattern T1105"),
+            ("added", "relationship malware loader uses attack-pattern T1105 id"),
             ("removed", "relationship malware loader uses attack-pattern T1027"),
+            ("removed", "relationship malware loader uses attack-pattern T1027 id"),
         ]
 
     @pytest.mark.parametrize(
@@ -110,17 +115,31 @@ class TestStix:
         [change] = rs.compare_records(_stix_record(_bundle()), _stix_record(other))["changes"]
         assert change["key"] == "attack-pattern T1027"
 
-    def test_ids_and_timestamps_alone_are_no_change(self) -> None:
+    def test_an_id_or_a_timestamp_changed_is_a_change(self) -> None:
         other = copy.deepcopy(_bundle(created="2030-01-01T00:00:00Z"))
         renamed = "malware--11111111-1111-4111-8111-111111111111"
         other["objects"][0]["id"] = renamed
         other["objects"][-1]["source_ref"] = renamed
-        other["objects"][-1]["id"] = "relationship--22222222-2222-4222-8222-222222222222"
-        assert rs.compare_records(_stix_record(_bundle()), _stix_record(other))["changes"] == []
+        changes = rs.compare_records(_stix_record(_bundle()), _stix_record(other))["changes"]
+        assert sorted(c["key"] for c in changes) == [
+            "malware loader id",
+            "relationship malware loader uses attack-pattern T1027",
+        ]
+        [stamp] = [c for c in changes if c["key"].startswith("relationship")]
+        assert '"created": "2030-01-01T00:00:00Z"' in stamp["new"]
+
+    def test_the_bundle_s_own_properties_are_a_unit(self) -> None:
+        other = {**_bundle(), "id": "bundle--33333333-3333-4333-8333-333333333333"}
+        [change] = rs.compare_records(_stix_record(_bundle()), _stix_record(other))["changes"]
+        assert change["key"] == "bundle" and "bundle--3333" in change["new"]
 
     def test_a_ref_is_said_as_its_target_s_key(self) -> None:
         record = _stix_record(_bundle())
-        [unit] = [u for u in record["units"] if u["key"].startswith("relationship")]
+        [unit] = [
+            u
+            for u in record["units"]
+            if u["key"].startswith("relationship") and not u["key"].endswith(" id")
+        ]
         assert json.loads(unit["text"])["target_ref"] == "-> attack-pattern T1027"
 
 
@@ -143,26 +162,142 @@ class TestBundleLines:
         )
         return [u for u in units.rows if u["surface"] == "bundle.lines"]
 
-    def test_every_line_outside_a_fence_is_a_unit_headings_and_notes_among_them(self) -> None:
+    def test_every_line_is_a_unit_fenced_and_blank_ones_too(self) -> None:
         markdown = (
             "## Observed behaviour · _Written by the report model_\n\n"
             "_Observed in sandbox:_ a process started.\n"
-            "_Measured:_ 3 requests.\n"
-            "It wrote a file.\n"
-            "```\nquoted tool output\n```\n"
+            "```\npid=1200 ppid=4 fixture.exe\n```\n"
         )
         assert [u["text"] for u in self._units(markdown)] == [
             "## Observed behaviour · _Written by the report model_",
+            "",
             "_Observed in sandbox:_ a process started.",
-            "_Measured:_ 3 requests.",
-            "It wrote a file.",
+            "```",
+            "pid=1200 ppid=4 fixture.exe",
+            "```",
         ]
 
-    def test_a_changed_platform_line_is_a_change(self) -> None:
-        a = {"run": "r", "units": self._units("_Measured:_ 3 requests.\n"), "not_produced": []}
-        b = {"run": "r", "units": self._units("_Measured (seeded):_ 3 requests.\n")}
-        [change] = rs.compare_records(a, {**b, "not_produced": []})["changes"]
+    @pytest.mark.parametrize(
+        ("old", "new"),
+        [
+            ("_Measured:_ 3 requests.\n", "_Measured (seeded):_ 3 requests.\n"),
+            ("```\npid=1200 ppid=4\n```\n", "```\npid=1200 seeded ppid=4\n```\n"),
+        ],
+    )
+    def test_a_changed_line_is_a_change(self, old: str, new: str) -> None:
+        a = {"run": "r", "units": self._units(old), "not_produced": []}
+        b = {"run": "r", "units": self._units(new), "not_produced": []}
+        [change] = rs.compare_records(a, b)["changes"]
         assert change["surface"] == "bundle.lines" and "seeded" in change["new"]
+
+
+class TestMisp:
+    _EVENT = {
+        "Event": {
+            "info": "analysis",
+            "threat_level_id": "4",
+            "Attribute": [{"type": "domain", "value": "a.example", "comment": "c", "uuid": "u"}],
+            "Object": [
+                {
+                    "name": "file",
+                    "uuid": "o",
+                    "Attribute": [
+                        {"object_relation": "sha256", "value": SHA256, "category": "Other"}
+                    ],
+                }
+            ],
+        }
+    }
+
+    def _record(self, event: dict[str, Any]) -> dict[str, Any]:
+        units = rs._Units("build")
+        rs._misp_units(event, units)
+        return {"run": "r", "units": units.rows, "not_produced": []}
+
+    @pytest.mark.parametrize(
+        ("path", "value", "key"),
+        [
+            (("threat_level_id",), "1", "event"),
+            (("Attribute", 0, "uuid"), "v", "attribute domain a.example"),
+            (("Object", 0, "uuid"), "p", "object file"),
+            (("Object", 0, "Attribute", 0, "category"), "Payload delivery", "object file sha256"),
+        ],
+    )
+    def test_every_field_of_every_part_is_compared(
+        self, path: tuple[Any, ...], value: str, key: str
+    ) -> None:
+        other = copy.deepcopy(self._EVENT)
+        held: Any = other["Event"]
+        for step in path[:-1]:
+            held = held[step]
+        held[path[-1]] = value
+        [change] = rs.compare_records(self._record(self._EVENT), self._record(other))["changes"]
+        assert (change["surface"], change["key"]) == ("misp", key)
+
+
+class TestHtmlTooltipsAndAttributes:
+    _DOCUMENT = (
+        '<h2>1. A</h2><figure id="fig-flow"><svg><g><title>1. The sample decodes it. (assessed)'
+        "</title><text>1. The sample decodes it.</text></g></svg></figure>"
+        '<p><img src="x.png" alt="{alt}"><a href="#n" title="note">1</a></p>'
+        "<style>.a {{ color: red; }}</style>"
+    )
+
+    def _record(self, alt: str = "a chart", tooltip: str = "") -> dict[str, Any]:
+        units = rs._Units("serve")
+        document = self._DOCUMENT.format(alt=alt).replace("(assessed)", f"(assessed){tooltip}")
+        rs.html_units(document, units)
+        return {"run": "r", "units": units.rows, "not_produced": []}
+
+    def test_a_tooltip_is_a_part_of_its_figure_and_each_shown_attribute_a_unit(self) -> None:
+        rows = {(u["surface"], u["key"], u["text"]) for u in self._record()["units"]}
+        assert ("html.figure", "fig-flow title", "1. The sample decodes it. (assessed)") in rows
+        assert ("html.attrs", "1. A | img alt", "a chart") in rows
+        assert ("html.attrs", "1. A | a title", "note") in rows
+        assert ("html.body", "<style> | block", ".a { color: red; }") in rows
+
+    def test_a_changed_tooltip_or_attribute_is_a_change(self) -> None:
+        base = self._record()
+        [tooltip] = rs.compare_records(base, self._record(tooltip=" seeded"))["changes"]
+        assert (tooltip["surface"], tooltip["key"]) == ("html.figure", "fig-flow title")
+        [alt] = rs.compare_records(base, self._record(alt="another chart"))["changes"]
+        assert (alt["surface"], alt["new"]) == ("html.attrs", "another chart")
+
+
+class TestTheFileIsCompared:
+    def _record(self, units: list[dict[str, Any]], html: str) -> dict[str, Any]:
+        return {
+            "run": "r",
+            "units": units,
+            "not_produced": [],
+            "file_digests": {"serve": {"report.html": rs.digest(html)}},
+        }
+
+    def test_a_file_that_differs_where_no_unit_does_is_a_change(self) -> None:
+        a = self._record([], '<rect fill="red"/>')
+        b = self._record([], '<rect fill="blue"/>')
+        diff = rs.compare_records(a, b)
+        [change] = diff["changes"]
+        assert (change["surface"], change["key"]) == (rs.FILE_SURFACE, "report.html")
+        assert diff["compared"] == {f"serve {rs.FILE_SURFACE}": 1}
+        assert rs.first_difference('<rect fill="red"/>', '<rect fill="blue"/>') == (
+            'line 1: <rect fill="red"/>',
+            'line 1: <rect fill="blue"/>',
+        )
+
+    def test_a_file_whose_change_a_unit_shows_is_not_reported_twice(self) -> None:
+        old = rs._Units("serve")
+        old.add("html.body", "block", "First.", group="1. A")
+        new = rs._Units("serve")
+        new.add("html.body", "block", "Second.", group="1. A")
+        diff = rs.compare_records(
+            self._record(old.rows, "<p>First.</p>"), self._record(new.rows, "<p>Second.</p>")
+        )
+        assert [c["surface"] for c in diff["changes"]] == ["html.body"]
+        text = rs.render_comparison([diff], ("A", "B"), [])
+        assert "summary: 2 unit(s) compared on 2 surface(s), 1 difference(s)" in text
+        assert "serve html.body: 1 compared, changed 1" in text
+        assert "excluded from the comparison: nothing" in text
 
 
 class TestHtmlBody:
