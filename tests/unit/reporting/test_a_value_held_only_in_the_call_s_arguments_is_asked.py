@@ -277,19 +277,34 @@ def _asked_over_an_echo(value: str) -> bool:
 
 class TestWhatIsRead:
     """The cases the code's register entry states: a number and a value holding a token
-    of an indicator's shape are not read; a common executable and a forward-slash path are.
+    the reader of unquoted values takes for a value are not read; any other value is.
     """
 
     @pytest.mark.parametrize(
         "value",
-        ["0x401000", "1234567890", "a1b2c3d4e5", "fetch http://relay.example.com/gate now"],
+        [
+            "0x401000",
+            "1234567890",
+            "a1b2c3d4e5",
+            "fetch http://relay.example.com/gate now",
+            "GetProc\\w+",
+        ],
     )
     def test_a_number_or_a_value_holding_an_indicator_is_not_read(self, value: str) -> None:
         assert not _asked_over_an_echo(value)
 
-    @pytest.mark.parametrize("value", ["cmd.exe", "/tmp/x", QUILL])
+    @pytest.mark.parametrize("value", ["cmd.exe", "/tmp/x", "socket.io", QUILL])
     def test_a_value_of_no_indicator_s_shape_is_read(self, value: str) -> None:
         assert _asked_over_an_echo(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        ["fetch http://relay.example.com/gate now", "GetProc\\w+", "cmd.exe", "socket.io"],
+    )
+    def test_the_reader_of_unquoted_values_decides_it(self, value: str) -> None:
+        from malspark.pipeline.validation import literal_values
+
+        assert _asked_over_an_echo(value) is (not literal_values(value))
 
 
 class TestTheFindingAndItsQuestion:

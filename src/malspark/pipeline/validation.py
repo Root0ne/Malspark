@@ -8337,11 +8337,11 @@ CITATION_WRONG_ENTRY_CODE = "report.citation_wrong_entry"
 # call's arguments, never in what the answer found (``echoed_argument_citations``):
 # a search answer repeats the pattern it was given. Read for a quoted value of
 # three characters or more that is no number (digits with separators, a hex run
-# holding a digit, or ``0x`` hex) and holds no token of an indicator's shape (a
-# whole digest, a URL, a backslash path or registry key, a mailbox, a host under
-# a real top-level domain, or a file name with a file's extension other than an
-# executable every Windows host carries). Asked once with the fact; a sentence
-# kept after it is marked where it stands with the entry named.
+# holding a digit, or ``0x`` hex) and holds no token the reader of unquoted
+# values takes for a value by its shape (``literal_values``: for example a whole
+# digest, a URL, a mailbox, a host name, a file name, a token with a backslash).
+# Asked once with the fact; a sentence kept after it is marked where it stands
+# with the entry named.
 VALUE_ONLY_IN_CALL_ARGUMENTS_CODE = "report.value_only_in_call_arguments"
 # A recommendation or hunting note that acts on a value this run does not
 # publish. Asked once with the IOC table's own answer; a value kept after it
