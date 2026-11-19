@@ -117,15 +117,15 @@ class TestNotProduced:
     def test_an_entry_point_the_tree_lacks_is_not_produced_with_its_name(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from app.api.v1 import reports
-
-        monkeypatch.delattr(reports, "get_attack_navigator_layer")
+        served = rs._Application.of_this_tree()
+        kept = [r for r in served.routes if not r[1].endswith("/attack-layer")]
+        monkeypatch.setattr(served, "routes", kept)
         record, _files = rs.render_run(stored_run(tmp_path), modes=("serve",))
         assert record["not_produced"] == [
             {
                 "mode": "serve",
                 "surface": "navigator",
-                "reason": "this tree's app.api.v1.reports has no get_attack_navigator_layer",
+                "reason": "this tree's application serves no GET /reports/{id}/attack-layer",
             }
         ]
 

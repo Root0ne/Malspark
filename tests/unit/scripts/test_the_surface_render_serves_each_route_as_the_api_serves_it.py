@@ -1,15 +1,16 @@
-"""Each surface is the tree's route answering over the run's row, serialised as the API does.
+"""Each surface is what the tree's application serves over the run's row, through its HTTP stack.
 
-The render calls the tree's routes with the tree's service reading the
-stored row (``/markdown``, ``/html``, ``/evidence-bundle.*``, ``/full``,
-``/iocs``, ``/signatures/{kind}`` with both ``include`` values, ``/mitre``,
-``/misp-event``, ``/attack-layer``, ``/stix``) and the call map's route over the
-stored ledger rows, so a change in a service or a route is a change of the
-surface. A JSON answer passes through the route's ``response_model`` where it
-declares one and is written in its served key order: a field the model drops
-is gone, a key the service moves where no model fixes the order is a change,
-and a row model fixes the order of the keys it declares. The HTML is rendered
-with a fixed nonce.
+The render sends each request to the tree's application through a test
+client, the tree's service reading the stored row (``/markdown``, ``/html``,
+``/evidence-bundle.*``, ``/full``, ``/iocs``, ``/signatures/{kind}`` with its
+default and both ``include`` values, ``/mitre``, ``/misp-event``,
+``/attack-layer``, ``/stix``) and the call map's route over the stored ledger
+rows, so a change in a service or a route is a change of the surface. A JSON
+answer is what the route's response model serves, written in its served key
+order: a key the row model does not declare is never served, a key the
+service moves where no model fixes the order is a change, and a row model
+serves its keys in the order it declares them. The HTML is rendered with a
+fixed nonce.
 """
 
 from __future__ import annotations
@@ -19,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import create_model
 from scripts.replay import render_surfaces as rs
 
 from tests.unit.scripts._surfaces_render_run import report, stored_run
@@ -47,33 +47,26 @@ def run(tmp_path: Path) -> Path:
 
 
 class TestTheResponseModel:
-    def test_a_field_the_row_model_drops_is_gone_from_the_served_rows(
+    def test_a_key_the_row_model_does_not_declare_is_never_served(
         self, run: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from app.api.v1 import reports
-        from app.schemas.job import IOCEntry
+        from app.services import report_service
 
         before, _files = _render(run)
-        kept = {n: (f.annotation, f) for n, f in IOCEntry.model_fields.items() if n != "source"}
-        entry = create_model("IOCEntry", **kept)  # type: ignore[call-overload]
-        listed = create_model("IOCListResponse", items=(list[entry], ...), total=(int, ...))
-        monkeypatch.setattr(reports, "IOCEntry", entry)
-        monkeypatch.setattr(reports, "IOCListResponse", listed)
-        [route] = [
-            r
-            for r in reports.router.routes
-            if getattr(r, "endpoint", None) is reports.get_full_malware_report_iocs
-        ]
-        monkeypatch.setattr(route, "response_model", listed)
-        after, _files = _render(run)
-        changed = {(c["surface"], c["change"]) for c in _changes(before, after)}
-        assert {("iocs.all", "changed"), ("iocs.default", "changed")} <= changed
-        [row] = [json.loads(u["text"]) for u in after["units"] if u["surface"] == "iocs.all"]
-        assert "source" not in row
+        feed = report_service.ioc_feed_rows
 
-    def test_a_row_model_fixes_the_order_of_the_keys_it_declares(
+        def _with_more(mr: dict[str, Any], kind: str | None = None) -> list[dict[str, Any]]:
+            return [{**row, "x_undeclared": "seeded"} for row in feed(mr, kind)]
+
+        monkeypatch.setattr(report_service, "ioc_feed_rows", _with_more)
+        after, files = _render(run)
+        assert [c for c in _changes(before, after) if "seeded" in str(c["new"])] == []
+        assert "x_undeclared" not in files["serve"]["iocs.json"]
+
+    def test_a_row_model_serves_its_keys_in_the_order_it_declares(
         self, run: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        from app.schemas.job import IOCEntry
         from app.services import report_service
 
         before, _files = _render(run)
@@ -83,8 +76,17 @@ class TestTheResponseModel:
             return [dict(reversed(list(row.items()))) for row in feed(mr, kind)]
 
         monkeypatch.setattr(report_service, "ioc_feed_rows", _reordered)
-        after, _files = _render(run)
-        assert [c for c in _changes(before, after) if "iocs" in str(c["key"])] == []
+        after, files = _render(run)
+        rows = json.loads(files["serve"]["iocs.json"])["items"]
+        assert rows
+        for row in rows:
+            assert list(row) == [name for name in IOCEntry.model_fields if name in row]
+        moved = [
+            c
+            for c in _changes(before, after)
+            if str(c["group"]).startswith("iocs") or str(c["key"]).startswith("iocs")
+        ]
+        assert moved == []
 
     def test_a_key_moved_where_no_model_fixes_the_order_is_a_change(
         self, run: Path, monkeypatch: pytest.MonkeyPatch
@@ -101,8 +103,12 @@ class TestTheResponseModel:
         monkeypatch.setattr(misp, "build_misp_event", _reordered)
         after, _files = _render(run)
         changes = _changes(before, after)
-        assert {c["surface"] for c in changes} == {rs.FILE_LINES, rs.FILE_SURFACE}
+        assert {c["surface"] for c in changes} == {rs.FILE_LINES, rs.FILE_SURFACE, rs.HTTP_SURFACE}
         assert {c["group"] for c in changes if c["surface"] == rs.FILE_LINES} == {"misp-event.json"}
+        # The bytes served are others; their length is the same.
+        assert [c["key"] for c in changes if c["surface"] == rs.HTTP_SURFACE] == [
+            "GET /reports/{id}/misp-event body"
+        ]
 
     def test_the_call_map_is_served_through_its_response_model(self, run: Path) -> None:
         _record, files = _render(run)
@@ -126,7 +132,8 @@ class TestTheServiceIsCalled:
         monkeypatch.setattr(report_service, "signature_download", _printed_none)
         after, _files = _render(run)
         groups = {c["group"] for c in _changes(before, after) if c["surface"] == "rules.download"}
-        assert groups == {"sigma printed"}
+        # The route's default is the printed rules: asked with no query, the same.
+        assert groups == {"sigma default", "sigma printed"}
 
     def test_the_owner_the_service_derives_the_misp_event_from_is_compared(
         self, run: Path, monkeypatch: pytest.MonkeyPatch

@@ -7,14 +7,16 @@ Over one or more stored runs, each a directory in the benchmark's layout::
 renders what a reader of the run is shown, at zero cost, and writes a surface
 record (``DIR/surfaces.json``) beside the rendered files (``DIR/<run>/<mode>/``:
 ``report.md``, ``report.html``, ``evidence-bundle.json``,
-``evidence-bundle.html``, the headers each of the last three is served with
-(``*.headers``), ``full.json``, ``iocs.json``, ``iocs-default.json``, one
-``iocs-<kind>.json`` per kind served only to a filter naming it,
+``evidence-bundle.html``, ``full.json``, ``iocs.json``, ``iocs-default.json``,
+one ``iocs-<kind>.json`` per kind served only to a filter naming it,
 ``stix-bundle.json``, ``stix-judge.json``, ``stix-note.txt``, ``mitre.json``,
 ``misp-event.json``, ``attack-layer.json``, ``call-map.json``,
-``signatures.json`` and two rule downloads per kind, ``include=all`` and
-``include=printed``). Nothing is written into a run's directory: every file of
-it is digested before and after, and the command fails when a digest changed.
+``signatures.json`` and three rule downloads per kind: the route's default,
+``include=all`` and ``include=printed``; beside each served file, the status
+it was served with and every header, in order (``<file>.headers``), and a
+file a route refused holds the error it served). Nothing is written into a
+run's directory: every file of it is digested before and after, and the
+command fails when a digest changed.
 
 The record is a list of units, each with its ``surface``, the ``mode`` that
 produced it, a ``group`` (a section path, a figure id, a rule kind), a stable
@@ -24,11 +26,14 @@ value is left out unless it is shown to vary without a code change (the same
 ref rendered twice, and once more with the clock moved), and each such
 exclusion is listed with its proof in :data:`EXCLUDED`, in the record and in
 the comparison's output. None is listed: rendered twice and with the clock
-moved five years on, every unit and every file of a run is byte-equal. Two
-sources of variance are pinned rather than excluded: the build's clock (see
-build mode) and the string hash seed each tree is rendered under
-(:data:`HASH_SEED`), which fixes an order the tree takes from a set. What each
-surface compares:
+moved five years on, every unit and every file of a run is byte-equal. The
+build's clock is pinned (see build mode). The string hash seed is not: a
+comparison renders build mode under two seeds per ref, the same two for both
+refs, and a unit that differs between the two seeds of one ref is its own
+class, "order depends on the interpreter's hash seed", listed by surface and
+unit path; a difference between the refs in such a unit is left out of the
+comparison only when the refs agree under the other seed, and one they differ
+in under both seeds is a difference. What each surface compares:
 
 =====================  ==========================================================
 surface                compared
@@ -85,6 +90,10 @@ surface                compared
 ``file``               each rendered file by digest: one that differs (or is on
                        one side only) is a change, whatever else changed in it,
                        shown at its first differing line
+``http``               per request (route and variant): the status it was
+                       served with, each header in order, and its body: a
+                       success's digest and length, an error's text, compared
+                       whether or not the surface read from it was produced
 =====================  ==========================================================
 
 The units of a surface may read a file more loosely than it is written: an
@@ -94,18 +103,24 @@ break, a canonical JSON unit sorts its keys, and a STIX ref is said as its
 target's key. Each of these is kept for the unit's readability, and what it
 hides is a ``file.lines`` change of the same file.
 
-The API's routes and services are the tree's own: each route is called as the
-API calls it, with the tree's service reading a row of the stored (or rebuilt)
-columns (``/markdown``, ``/html``, ``/evidence-bundle.html``,
-``/evidence-bundle.json``, ``/full``, ``/iocs``, ``/signatures/{kind}``,
-``/stix``, ``/mitre``, ``/misp-event``, ``/attack-layer``) or the stored ledger
-rows (``/jobs/{id}/evidence/call-map``). A JSON answer is serialised as the
-API serialises it: through the route's ``response_model`` where it declares
-one (validated, then dumped in JSON mode with the route's options), else
-through FastAPI's encoder, and written in the served key order, never sorted,
-so a key moved or a value of another JSON type is a change. The HTML is
-rendered with a fixed nonce, so its ``<style nonce>`` and the policy header
-are the served ones.
+The API is the tree's own, served through its own HTTP stack: the tree's
+``create_app`` builds the application, and each request of :data:`REQUESTS`
+is sent to it through a test client, so its middleware, its request
+validation, each route's response model, response class and status all run,
+and what is compared is what a client is served: the status, every header
+and the body, for each route with its defaults (no query) and with each
+variant listed. The dependencies are overridden: the user, the reports'
+service (the tree's own, reading a row of the stored or rebuilt columns, for
+``/markdown``, ``/html``, ``/evidence-bundle.html``, ``/evidence-bundle.json``,
+``/full``, ``/iocs``, ``/signatures/{kind}``, ``/stix``, ``/mitre``,
+``/misp-event``, ``/attack-layer``), the jobs' service and the database
+(``/jobs/{id}/evidence/call-map``: the stored ledger rows in an in-memory
+SQLite database with the tree's own table, on which the route's own statement
+runs). A JSON body is written in its served key order, never sorted, so a key
+moved or a value of another JSON type is a change. The HTML is rendered with a
+fixed nonce, so its ``<style nonce>`` and the policy header are the served
+ones. Every GET route of the application's route table is served or named in
+:data:`NOT_RENDERED`.
 
 Two modes produce the units, and each unit says which:
 
@@ -136,23 +151,29 @@ equal. One that raised is listed there too, marked as an error.
 tree in a process of its own, with that tree first on the import path: the
 driver resolves the tree's entry points by name at run time, so a ref from
 before this tool is rendered too, and an entry point it lacks is a surface not
-produced. The record says where the platform, the API and the replay scripts
+produced. Build mode is rendered under two string hash seeds per ref
+(``--hash-seeds``, else two drawn afresh and printed). The record says where
+the platform, the API and the replay scripts
 were imported from, and a package imported from outside the tree fails the
 comparison (the plain ``--out`` render is checked the same way, against this
 checkout). It prints, per run and grouped by surface, every unit changed,
 added or removed with both texts; then the count of units compared, of
 differences and of surfaces not compared, the units compared per mode and
-surface beside their differences, and what was excluded. Every unit is compared,
-those marked ``dynamic`` too (see the limits). A surface produced by neither
-ref is listed NOT COMPARED with both reasons. ``--expect FILE`` (JSON: a list
+surface beside their differences, what was excluded and the units whose order
+depends on the hash seed. Every unit is compared, those marked ``dynamic`` too
+(see the limits). A surface produced by neither ref is listed NOT COMPARED
+with both reasons; when the reasons differ it is a difference, and what each
+route served (its status, its error) is compared in its ``http`` units either
+way. ``--expect FILE`` (JSON: a list
 of ``{"surface", "mode"?, "key"?, "old"?, "new"?, "reason"}``, each pattern a
 regular expression searched in the key or the text) names the changes
 expected: a difference no expectation matches is UNEXPECTED, and an
 expectation no difference matches is UNEXERCISED. The exit status is the first
 that applies of: 2 when a surface raised in either tree, a tree could not be
-written out or rendered, or on an error; 1 when a difference was not expected;
-3 when a surface was produced by neither ref (unless ``--accept-not-compared``);
-4 when an expectation was not exercised; 0 otherwise.
+written out or rendered, or on an error; 1 when a difference was not expected,
+a served status or error among them; 3 when a surface both refs lack for the
+same reason (unless ``--accept-not-compared``, which accepts nothing else); 4
+when an expectation was not exercised; 0 otherwise.
 
 Limits:
 
@@ -171,28 +192,56 @@ Limits:
   its other fields (the transcript, the findings, the verdict reading, the
   section tabs) are not rendered; nor are the PDF (the HTML through WeasyPrint),
   the job package and the console, which draws the API's JSON;
-* routes and variants not rendered (:data:`NOT_RENDERED`): ``/iocs`` with
+* GET routes and variants not rendered (:data:`NOT_RENDERED`): ``/iocs`` with
   ``include=unpublished`` or a ``kind`` filter other than the kinds served only
   when named, ``/attack-layer`` with a ``domain``, the ``download`` variant of
-  ``/html`` and ``/evidence-bundle.html``, ``/reports/{id}/timeline``,
-  ``/reports/diff``, ``/jobs/{id}/evidence``, ``/jobs/{id}/evidence/verify``,
-  ``/jobs/{id}/evidence/{entry_id}/objects/{part}``, ``/jobs/{id}/follow-ups``,
-  ``/jobs/{id}/usage`` and ``/jobs/{id}/events``;
-* the routes are called with a service reading one row and no settings store:
-  the layout the service reads from the store falls back to the process's
-  settings, which the replay guard sets to the run's;
-* stages of the report node build mode does not run (:data:`NOT_REBUILT`):
-  the section agreement round (``_ask_section_agreement``), the limitations as
-  recorded (``_limitations_as_recorded``), the notes on unlinked techniques and
-  on the export's findings (``_note_unlinked_techniques``,
-  ``_note_export_findings``), filing only the published family
-  (``_file_only_the_published_family``), the retry's additions
+  ``/html`` and ``/evidence-bundle.html``, the report list, the report detail
+  and the report by its job, ``/pdf``, ``/timeline``, ``/reports/diff``, the job
+  list, the job, its evidence, its evidence check, an evidence entry's objects,
+  its follow-ups, its package, its usage and its events, and every route of
+  the samples, the sandbox report formats, the dashboard, the accounts, the
+  audit, the system, the settings and the health checks; nor any route that
+  changes state (POST, PUT, PATCH, DELETE), nor the WebSocket routes;
+* the dependencies are overridden: the services read one row and no settings
+  store, so the layout a service reads from the store falls back to the
+  process's settings, which the replay guard sets to the run's; the router
+  dependency that reads the tool servers' declarations does nothing; the
+  stores the process is configured with are a closed local port;
+* the rate limiter is taken out of the stack (its headers count the caller's
+  requests in a shared store); a request carries no Origin, so no CORS header
+  is served, and carries a fixed request id, which the stack echoes;
+* the call map's database is SQLite: what only PostgreSQL answers fails the
+  surface rather than being answered;
+* functions of the report node build mode does not run (:data:`NOT_REBUILT`,
+  every function the node names that neither the replay's scripts nor the
+  render call, read from the node's code by :func:`report_node_stages`): the
+  section agreement round (``_ask_section_agreement``), the analyst question
+  round (``answer_questions``, ``asked_questions``), the verbatim record
+  (``record_verbatim_unseen``), the amended validation block
+  (``_amended_validation``), the limitations as recorded
+  (``_limitations_as_recorded``), the notes on unlinked techniques and on the
+  export's findings (``_note_unlinked_techniques``, ``_note_export_findings``),
+  filing only the published family (``_file_only_the_published_family``,
+  ``_remember_the_published_techniques``), the retry's additions
   (``retry_additions_report``), the corroboration with publication
   (``_corroboration_with_publication``), the sandbox degradation reason
-  (``sandbox_degradation_reason``) and fitting the structures to the budget
-  (``fit_structures_to_budget``); the run summary's blocks other than the
-  validation, the corroboration, the STIX counts, the evidence and the
-  sections without evidence are copied from the stored summary;
+  (``sandbox_degradation_reason``), fitting the structures to the budget
+  (``fit_structures_to_budget``), and the node's records of the run, its
+  budgets, its progress events and its helpers (``_generation_snapshot``,
+  ``_job_id_of``, ``_narrative_timeout``, ``_normalised_by_of``,
+  ``_noting_the_report_read``, ``_report_entry_texts``,
+  ``_reporter_ledger_reads``, ``_restart_reporter``, ``_rule_check_budget``,
+  ``_spend_snapshot``, ``_verdict_record``, ``announce_finished``,
+  ``announce_skipped``, ``announce_started``, ``citable_ids``,
+  ``efficiency_record``, ``environment_record``, ``evidence_entries``,
+  ``hold_the_report_in_progress``, ``kinds_declared_by``, ``pack_text``,
+  ``provider_source``, ``relabelled``, ``render_run_state``,
+  ``resolve_reporter_mode``, ``rules_already_recorded``, ``run_coverage``,
+  ``run_disclosure``, ``sandbox_item_citations``, ``spend_blocks``,
+  ``stage_rollup``, ``stage_runs``, ``static_pass_summary``,
+  ``summary_counts_line``, ``with_reasons``); the run summary's blocks other
+  than the validation, the corroboration, the STIX counts, the evidence and
+  the sections without evidence are copied from the stored summary;
 * fields an older build lacked default to empty when typed under a newer
   model, so a re-render shows the differences between two refs only, and is
   not what a new run would print;
@@ -201,7 +250,14 @@ Limits:
   findings: a finding's message changed in the code is reported by neither
   mode. The replay comparison (``scripts/replay/run.py --compare``) does not
   report it either: it keys a finding by its producer, answer, claim, path and
-  code, not by its words, so no tool here compares a finding's message.
+  code, not by its words, so no tool here compares a finding's message;
+* only the branches of the code the chosen runs reach are compared: text a
+  renderer prints under a condition no chosen run meets is never rendered, so
+  a change in it is not reported;
+* serve mode is rendered under the first hash seed only, so an order it takes
+  from the seed is not classed, and shows only when one ref takes it and the
+  other does not; a plain ``--out`` render runs under the process's own seed
+  and classes nothing.
 """
 
 from __future__ import annotations
@@ -229,9 +285,26 @@ _ROOT = Path(__file__).resolve().parents[2]
 # Set to the tree a run of this driver renders under: that tree's import path is
 # the process's own, and nothing of this checkout is put on it.
 TREE_VARIABLE = "MALSPARK_SURFACES_TREE"
-# The string hash seed each tree is rendered under: an order the tree takes from
-# iterating a set of strings is then the same on every render of it.
-HASH_SEED = "0"
+# The variable a process takes its string hash seed from. A comparison renders
+# build mode under two seeds per ref (:func:`apply_hash_seeds`); nothing pins one.
+HASH_SEED_VARIABLE = "PYTHONHASHSEED"
+# The class a unit is put in when it differs between two hash seeds of one ref.
+SEED_CLASS = "order depends on the interpreter's hash seed"
+# The stores a render under another tree is pointed at: a closed port on this
+# machine, so a call no dependency override answers fails rather than reaching
+# a database or a queue.
+CLOSED_STORES: dict[str, str] = {
+    "DATABASE_URL": "postgresql+asyncpg://render:render@127.0.0.1:9/render",
+    "REDIS_URL": "redis://127.0.0.1:9/0",
+}
+# The middleware taken out of the served stack: its headers count the caller's
+# requests in a shared store, so they say how often the route was asked, never
+# what the code serves.
+LEFT_OUT_MIDDLEWARE: tuple[str, ...] = ("RateLimitMiddleware",)
+# The request id every request carries; the stack echoes it in a header.
+REQUEST_ID = "render-surfaces"
+# The surface each served answer's status, headers and body are units of.
+HTTP_SURFACE = "http"
 # The package names the tree's platform may be imported under, current first.
 PACKAGES_VARIABLE = "MALSPARK_SURFACES_PACKAGES"
 # The ATT&CK loader's cache directory, read at import (``scripts.replay.guard``).
@@ -246,39 +319,141 @@ EXIT_NOT_COMPARED = 3
 EXIT_UNEXERCISED = 4
 EXIT_STATUSES: tuple[tuple[int, str], ...] = (
     (EXIT_ERROR, "a surface raised in either tree, a tree could not be written out or rendered"),
-    (EXIT_UNEXPECTED, "a difference no expectation names"),
-    (EXIT_NOT_COMPARED, "a surface neither ref produced, unless --accept-not-compared"),
+    (EXIT_UNEXPECTED, "a difference no expectation names, a served status or error among them"),
+    (EXIT_NOT_COMPARED, "a surface both refs lack alike, unless --accept-not-compared"),
     (EXIT_UNEXERCISED, "an expectation no difference matched"),
     (0, "the refs render the same, or every difference was expected"),
 )
 
-# The routes and variants the API serves that the render does not, each by its path.
+# The rule kinds the API serves a download of.
+RULE_KINDS: tuple[str, ...] = ("yara", "sigma", "suricata", "snort")
+# The IOC kinds ``/iocs`` serves only to a ``kind`` filter that names them.
+_FILTERED_IOC_KINDS: tuple[str, ...] = ("secret", "crypto_wallet")
+# Each request the render serves, by the file its body is written to: the
+# route's path as the route table has it, with the API's prefix left off and a
+# report's or a job's id said ``{id}``; the values of its other path
+# parameters; and its query. A route is asked once with no query (its
+# defaults), and once more for each variant listed.
+REQUESTS: dict[str, tuple[str, tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]] = {
+    "report.md": ("/reports/{id}/markdown", (), ()),
+    "report.html": ("/reports/{id}/html", (), ()),
+    "full.json": ("/reports/{id}/full", (), ()),
+    "iocs-default.json": ("/reports/{id}/iocs", (), ()),
+    "iocs.json": ("/reports/{id}/iocs", (), (("include", "all"),)),
+    **{
+        f"iocs-{kind}.json": ("/reports/{id}/iocs", (), (("include", "all"), ("kind", kind)))
+        for kind in _FILTERED_IOC_KINDS
+    },
+    "stix-bundle.json": ("/reports/{id}/stix", (), ()),
+    "stix-judge.json": ("/reports/{id}/stix", (), (("source", "judge"),)),
+    "mitre.json": ("/reports/{id}/mitre", (), ()),
+    "misp-event.json": ("/reports/{id}/misp-event", (), ()),
+    "attack-layer.json": ("/reports/{id}/attack-layer", (), ()),
+    "call-map.json": ("/jobs/{id}/evidence/call-map", (), ()),
+    **{
+        name: ("/reports/{id}/signatures/{kind}", (("kind", kind),), query)
+        for kind in RULE_KINDS
+        for name, query in (
+            (f"signatures-{kind}-default.txt", ()),
+            (f"signatures-{kind}.txt", (("include", "all"),)),
+            (f"signatures-{kind}-printed.txt", (("include", "printed"),)),
+        )
+    },
+    "evidence-bundle.json": ("/reports/{id}/evidence-bundle.json", (), ()),
+    "evidence-bundle.html": ("/reports/{id}/evidence-bundle.html", (), ()),
+}
+# The GET routes and variants the API serves that the render does not, each by
+# its path as :data:`REQUESTS` says one; ``/*`` names a path and every path
+# under it, ``?name=`` a query parameter. Every GET route of the application's
+# route table is in :data:`REQUESTS` or here.
 NOT_RENDERED: tuple[str, ...] = (
     "/reports/{id}/iocs?include=unpublished",
     "/reports/{id}/iocs?kind= (a kind other than the ones served only when named)",
     "/reports/{id}/attack-layer?domain=",
     "/reports/{id}/html?download=true",
     "/reports/{id}/evidence-bundle.html?download=true",
+    "/reports",
+    "/reports/{id}",
+    "/reports/job/{id}",
+    "/reports/{id}/pdf",
     "/reports/{id}/timeline",
     "/reports/diff",
+    "/jobs",
+    "/jobs/{id}",
     "/jobs/{id}/evidence",
     "/jobs/{id}/evidence/verify",
     "/jobs/{id}/evidence/{entry_id}/objects/{part}",
     "/jobs/{id}/follow-ups",
+    "/jobs/{id}/package",
     "/jobs/{id}/usage",
     "/jobs/{id}/events",
+    "/samples/*",
+    "/sandbox-report-formats/*",
+    "/dashboard/*",
+    "/auth/*",
+    "/audit/*",
+    "/system/*",
+    "/settings/*",
+    "/health",
+    "/healthz",
 )
-# The report node's stages build mode does not run (``malspark.pipeline.nodes``).
+# The report node's calls the render runs itself where the replay's build does
+# not: the figures, drawn as the node draws them when the rebuilt report has none.
+RERUN_BY_THE_RENDER: tuple[str, ...] = ("build_figures",)
+# The functions the report node names that build mode never runs: neither the
+# replay's scripts nor :data:`RERUN_BY_THE_RENDER` name them
+# (``malspark.pipeline.nodes``, derived by :func:`report_node_stages`), and
+# two more of the node's module the replay never calls.
 NOT_REBUILT: tuple[str, ...] = (
     "_ask_section_agreement",
+    "answer_questions",
+    "asked_questions",
+    "record_verbatim_unseen",
+    "_amended_validation",
     "_limitations_as_recorded",
     "_note_unlinked_techniques",
     "_note_export_findings",
     "_file_only_the_published_family",
+    "_remember_the_published_techniques",
     "retry_additions_report",
     "_corroboration_with_publication",
     "sandbox_degradation_reason",
     "fit_structures_to_budget",
+    "_generation_snapshot",
+    "_job_id_of",
+    "_narrative_timeout",
+    "_normalised_by_of",
+    "_noting_the_report_read",
+    "_report_entry_texts",
+    "_reporter_ledger_reads",
+    "_restart_reporter",
+    "_rule_check_budget",
+    "_spend_snapshot",
+    "_verdict_record",
+    "announce_finished",
+    "announce_skipped",
+    "announce_started",
+    "citable_ids",
+    "efficiency_record",
+    "environment_record",
+    "evidence_entries",
+    "hold_the_report_in_progress",
+    "kinds_declared_by",
+    "pack_text",
+    "provider_source",
+    "relabelled",
+    "render_run_state",
+    "resolve_reporter_mode",
+    "rules_already_recorded",
+    "run_coverage",
+    "run_disclosure",
+    "sandbox_item_citations",
+    "spend_blocks",
+    "stage_rollup",
+    "stage_runs",
+    "static_pass_summary",
+    "summary_counts_line",
+    "with_reasons",
 )
 
 LIMITS: tuple[str, ...] = (
@@ -291,14 +466,37 @@ LIMITS: tuple[str, ...] = (
     "build mode's judge view carries the stored record's label map",
     "the report detail is read for its STIX note only; its other fields, the PDF, the job "
     "package and the console are not rendered",
-    "routes and variants not rendered: " + ", ".join(NOT_RENDERED),
-    "the routes are called with a service reading one row and no settings store: the layout "
-    "the service reads from the store falls back to the process's settings, which the replay "
-    "guard sets to the run's",
-    "the report node's stages build mode does not run: "
+    "GET routes and variants not rendered: " + ", ".join(NOT_RENDERED),
+    "routes that change state (POST, PUT, PATCH, DELETE) and the WebSocket routes are not rendered",
+    "each route is served through the application's own HTTP stack (its middleware, request "
+    "validation, response model, response class and status), with dependency overrides for "
+    "the user, the report and job services and the database: the services read one row and "
+    "no settings store, so the layout a service reads from the store falls back to the "
+    "process's settings, which the replay guard sets to the run's; the router dependency that "
+    "reads the tool servers' declarations does nothing; the stores the process is configured "
+    "with are a closed local port",
+    "the rate limiter ("
+    + ", ".join(LEFT_OUT_MIDDLEWARE)
+    + ") is taken out of the stack: its headers count the caller's requests in a shared store; "
+    "a request carries no Origin, so no CORS header is served, and carries the request id "
+    f"{REQUEST_ID!r}, which the stack echoes",
+    "the call map's ledger is the stored rows loaded into an in-memory SQLite database with "
+    "the tree's own table, and the route's own statement runs on it: what only PostgreSQL "
+    "answers (a JSONB operator, a PostgreSQL function) fails the surface rather than being "
+    "answered",
+    "the report node's functions build mode does not run: "
     + ", ".join(NOT_REBUILT)
     + "; the run summary's blocks other than the validation, the corroboration, the STIX "
     "counts, the evidence and the sections without evidence are copied from the stored summary",
+    "only the branches of the code the chosen runs reach are compared: text a renderer prints "
+    "under a condition no chosen run meets is never rendered, so a change in it is not reported",
+    "a comparison renders build mode under two hash seeds per ref, the same two for both refs; "
+    f"a unit that differs between the two seeds of one ref is listed as {SEED_CLASS!r}, by "
+    "surface and unit path, and a difference between the refs in it is left out of the "
+    "comparison only when the refs agree under the other seed; serve mode is rendered under "
+    "the first seed only, so an order it takes from the seed is not classed, and shows only "
+    "when one ref takes it and the other does not; a plain --out render runs under the "
+    "process's own seed and classes nothing",
     "fields an older build lacked default to empty, so a re-render shows the differences "
     "between two refs only and is not what a new run would print",
     "the run's unresolved findings are read as the run summary stored them in serve mode and "
@@ -342,6 +540,7 @@ SURFACES: tuple[str, ...] = (
     "bundle.html.body",
     "bundle.html.attrs",
     "bundle.html.tags",
+    HTTP_SURFACE,
 )
 # The surface every line of every rendered file is a unit of, in order.
 FILE_LINES = "file.lines"
@@ -391,10 +590,6 @@ DYNAMIC_STIX_TYPES: frozenset[str] = frozenset(
         "network-traffic",
     }
 )
-# The IOC kinds ``/iocs`` serves only to a ``kind`` filter that names them.
-_FILTERED_IOC_KINDS: tuple[str, ...] = ("secret", "crypto_wallet")
-# The rule kinds the API serves a download of.
-RULE_KINDS: tuple[str, ...] = ("yara", "sigma", "suricata", "snort")
 # A STIX identifier: what a ``*_ref`` names.
 _STIX_ID = re.compile(r"^[a-z][a-z0-9-]*--[0-9a-fA-F-]{36}$")
 
@@ -453,6 +648,116 @@ def _where(exc: BaseException) -> str:
         return type(exc).__name__
     last = frames[-1]
     return f"{type(exc).__name__} at {Path(last.filename).name}:{last.lineno} ({last.name})"
+
+
+# ---------------------------------------------------------------------------
+# What the render covers, read from the code
+# ---------------------------------------------------------------------------
+
+
+def served_routes(app: Any) -> list[tuple[frozenset[str], str, Any]]:
+    """Every route of the application's route table: its methods, its path and its endpoint.
+
+    A router the application includes is read route by route, whether the
+    installed FastAPI flattens it on inclusion or keeps it whole; a route with
+    no methods (a WebSocket route) has none.
+    """
+    try:
+        from fastapi.routing import iter_route_contexts
+    except ImportError:
+        listed: Iterable[Any] = list(app.routes)
+    else:
+        listed = iter_route_contexts(app.routes)
+    return [
+        (
+            frozenset(getattr(route, "methods", None) or ()),
+            str(getattr(route, "path", "") or ""),
+            getattr(route, "endpoint", None),
+        )
+        for route in listed
+    ]
+
+
+def route_key(path: str) -> str:
+    """A route's path as :data:`REQUESTS` says it: the API's prefix off, an id said ``{id}``."""
+    return re.sub(r"\{(report|job)_id\}", "{id}", re.sub(r"^/api/v\d+(?=/)", "", path))
+
+
+def not_rendered_covers(path: str, named: Iterable[str] = NOT_RENDERED) -> bool:
+    """Whether :data:`NOT_RENDERED` names the route ``path`` (in :func:`route_key`'s form)."""
+    for said in named:
+        whole = said.split("?", 1)[0].split(" ", 1)[0]
+        if "?" in said:
+            continue
+        if whole.endswith("/*"):
+            if path == whole[:-2] or path.startswith(whole[:-1]):
+                return True
+        elif path == whole:
+            return True
+    return False
+
+
+def code_names(paths: Iterable[Path]) -> set[str]:
+    """Every name the code of ``paths`` reads, calls or imports: never one in a comment or text."""
+    import ast
+
+    out: set[str] = set()
+    for path in paths:
+        for node in ast.walk(ast.parse(Path(path).read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Name):
+                out.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                out.add(node.attr)
+            elif isinstance(node, ast.alias):
+                out.add(node.name.rsplit(".", 1)[-1])
+    return out
+
+
+def report_node_stages(nodes: Any, node: str = "make_report_node") -> list[str]:
+    """Each function the report node's code names, read from the code, never listed by hand.
+
+    A name the node reads that is a function of the node's module (``nodes``),
+    one the module imports from the platform, or one the node imports itself
+    from the platform, that resolves to a function: a class, a constant or a
+    model is left out.
+    """
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(nodes))
+    found = next(
+        n
+        for n in tree.body
+        if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == node
+    )
+    imported: dict[str, tuple[str, str]] = {}
+    for scope in (tree.body, list(ast.walk(found))):
+        for stmt in scope:
+            if isinstance(stmt, ast.ImportFrom) and stmt.module and stmt.level == 0:
+                for alias in stmt.names:
+                    imported[alias.asname or alias.name] = (stmt.module, alias.name)
+    read = {n.id for n in ast.walk(found) if isinstance(n, ast.Name)}
+    out: set[str] = set()
+    for name in read:
+        if name in imported:
+            module, real = imported[name]
+            if module.split(".", 1)[0] not in _packages():
+                continue
+            try:
+                value = getattr(importlib.import_module(module), real)
+            except (ImportError, AttributeError):
+                continue
+            label = real
+        elif name in vars(nodes):
+            value, label = vars(nodes)[name], name
+        else:
+            continue
+        if (
+            inspect.isfunction(value)
+            and str(getattr(value, "__module__", "")).split(".", 1)[0] in _packages()
+        ):
+            out.add(label)
+    return sorted(out)
 
 
 # ---------------------------------------------------------------------------
@@ -1229,6 +1534,9 @@ class _Mode:
         self.units = _Units(mode)
         self.not_produced: list[dict[str, Any]] = []
         self.files: dict[str, str] = {}
+        # The files that hold what a route served (its headers, an error's
+        # body): kept when the surface read from the answer is not produced.
+        self.served: set[str] = set()
 
     def lack(self, surfaces: Iterable[str], why: str, *, error: bool = False) -> None:
         for surface in surfaces:
@@ -1257,9 +1565,16 @@ class _Mode:
             self.lack(surfaces, f"raised: {_where(exc)}", error=True)
 
     def _drop(self, before: int, written: set[str]) -> None:
-        """The units and the files a surface that could not be produced left behind."""
-        del self.units.rows[before:]
-        for name in set(self.files) - written:
+        """The units and the files a surface that could not be produced left behind.
+
+        What a route served stays: its status, its headers and its body are
+        units of :data:`HTTP_SURFACE`, compared whether or not the surface read
+        from the answer was produced.
+        """
+        self.units.rows[before:] = [
+            row for row in self.units.rows[before:] if row["surface"] == HTTP_SURFACE
+        ]
+        for name in set(self.files) - written - self.served:
             del self.files[name]
 
 
@@ -1317,100 +1632,186 @@ def _uuid(said: Any) -> Any:
         return None
 
 
-def call_route(
-    module: str, name: str, given: Mapping[str, Any], query: Mapping[str, Any] | None = None
-) -> tuple[Any, Any]:
-    """The tree's route ``module.name`` called as the API calls it; its answer and its route.
+class _Served:
+    """What one request was served: its status, every header in order, and the body's bytes."""
 
-    ``given`` holds what the API's dependencies would hand it (the path's ids,
-    ``user``, ``svc``, ``db``), passed where the route asks for them; ``query``
-    the query parameters, each of which the route must take (else
-    :class:`Absent`). A parameter neither names takes its declared default. A
-    route that answers an HTTP error is :class:`Absent` with its status and
-    detail: no surface, never an empty one. The route's own ``secrets`` draws
-    are fixed while it runs (:class:`_FixedSecrets`).
+    def __init__(self, status: int, headers: Sequence[tuple[str, str]], body: bytes) -> None:
+        self.status = status
+        self.headers = list(headers)
+        self.body = body
+
+    @property
+    def ok(self) -> bool:
+        return 200 <= self.status < 300
+
+    @property
+    def text(self) -> str:
+        return self.body.decode("utf-8", "surrogateescape")
+
+    def json(self) -> Any:
+        return json.loads(self.body)
+
+
+class _Application:
+    """The tree's application, served through its own HTTP stack in this process.
+
+    Built once by the tree's ``app.main.create_app`` with the middleware of
+    :data:`LEFT_OUT_MIDDLEWARE` taken out; each request is sent through a test
+    client, so the middleware, the request validation, the response model, the
+    response class and the status all run. The dependencies a request is
+    served with are overridden for that request alone, and the ``secrets``
+    module of every route's module is fixed while it runs
+    (:class:`_FixedSecrets`), so a nonce is the same on each render.
     """
-    import asyncio
-    import inspect
 
-    from fastapi import params
+    _built: dict[int, _Application] = {}
 
-    route = entry(module, name)
-    parameters = inspect.signature(route).parameters
-    named: dict[str, Any] = {}
-    for key, value in (query or {}).items():
-        if key not in parameters:
-            raise Absent(f"this tree's {name} takes no {key}")
-        named[key] = value
-    for key, parameter in parameters.items():
-        if key in named:
-            continue
-        default = parameter.default
-        if key in given:
-            named[key] = given[key]
-        elif isinstance(default, params.Depends) or default is inspect.Parameter.empty:
-            raise Absent(f"this tree's {name} asks for {key}, which the render cannot hand it")
-        elif isinstance(default, params.Param):
-            if default.is_required():
-                raise Absent(f"this tree's {name} requires {key}")
-            named[key] = default.default
-        else:
-            named[key] = default
-    holder = sys.modules[route.__module__]
-    drawn = getattr(holder, "secrets", None)
-    if drawn is not None:
-        holder.secrets = _FixedSecrets()  # type: ignore[attr-defined]
-    try:
-        answer = asyncio.run(route(**named))
-    except Exception as exc:
-        status = getattr(exc, "status_code", None)
-        if status is None:
-            raise
-        raise Absent(f"the route answers {status}: {getattr(exc, 'detail', '')}") from exc
-    finally:
-        if drawn is not None:
-            holder.secrets = drawn  # type: ignore[attr-defined]
-    router = getattr(holder, "router", None)
-    declared = next(
-        (r for r in getattr(router, "routes", []) if getattr(r, "endpoint", None) is route), None
-    )
-    return answer, declared
+    def __init__(self, create_app: Any) -> None:
+        from fastapi.testclient import TestClient
 
-
-def served_json(answer: Any, declared: Any) -> Any:
-    """``answer`` as the API serialises it: through the route's ``response_model``, else encoded.
-
-    A route that declares a model has its answer prepared, validated by the
-    model and dumped in JSON mode with the route's options, as FastAPI does;
-    any other answer goes through FastAPI's ``jsonable_encoder``. The key
-    order is the served one.
-    """
-    from fastapi.encoders import jsonable_encoder
-    from pydantic import BaseModel
-
-    model = getattr(declared, "response_model", None)
-    if isinstance(model, type) and issubclass(model, BaseModel):
-        options: dict[str, Any] = {
-            "by_alias": bool(getattr(declared, "response_model_by_alias", True)),
-            "exclude_unset": bool(getattr(declared, "response_model_exclude_unset", False)),
-            "exclude_defaults": bool(getattr(declared, "response_model_exclude_defaults", False)),
-            "exclude_none": bool(getattr(declared, "response_model_exclude_none", False)),
-        }
-        prepared = answer.model_dump(**options) if isinstance(answer, BaseModel) else answer
-        return model.model_validate(prepared).model_dump(
-            mode="json",
-            include=getattr(declared, "response_model_include", None),
-            exclude=getattr(declared, "response_model_exclude", None),
-            **options,
+        self.app = create_app()
+        self.app.user_middleware[:] = [
+            m
+            for m in self.app.user_middleware
+            if getattr(getattr(m, "cls", None), "__name__", "") not in LEFT_OUT_MIDDLEWARE
+        ]
+        self.routes = served_routes(self.app)
+        self.modules = sorted(
+            {
+                str(getattr(endpoint, "__module__", ""))
+                for _methods, _path, endpoint in self.routes
+                if endpoint is not None
+            }
         )
-    return jsonable_encoder(answer)
+        self.client = TestClient(self.app)
+
+    @classmethod
+    def of_this_tree(cls) -> _Application:
+        create_app = entry("app.main", "create_app")
+        built = cls._built.get(id(create_app))
+        if built is None:
+            built = cls._built[id(create_app)] = cls(create_app)
+        return built
+
+    def path_of(self, key: str) -> str:
+        """The route table's path for a path as :data:`REQUESTS` says it, else :class:`Absent`."""
+        for methods, path, _endpoint in self.routes:
+            if "GET" in methods and route_key(path) == key:
+                return path
+        raise Absent(f"this tree's application serves no GET {key}")
+
+    def get(
+        self,
+        key: str,
+        path_values: Mapping[str, str],
+        query: Sequence[tuple[str, str]],
+        overrides: Mapping[Any, Callable[[], Any]],
+    ) -> _Served:
+        path = self.path_of(key)
+        for name, value in path_values.items():
+            path = path.replace("{" + name + "}", value)
+        held = [sys.modules[name] for name in self.modules if name in sys.modules]
+        drawn = {module: module.secrets for module in held if hasattr(module, "secrets")}
+        self.app.dependency_overrides.clear()
+        self.app.dependency_overrides.update(overrides)
+        for module in drawn:
+            module.secrets = _FixedSecrets()  # type: ignore[attr-defined]
+        try:
+            answer = self.client.get(path, params=list(query), headers={"X-Request-ID": REQUEST_ID})
+        finally:
+            for module, real in drawn.items():
+                module.secrets = real  # type: ignore[attr-defined]
+            self.app.dependency_overrides.clear()
+        return _Served(answer.status_code, answer.headers.multi_items(), answer.content)
 
 
-def _served_body(answer: Any) -> tuple[str, str]:
-    """A ``Response`` a route answers: its body as text, and its headers one per line."""
-    body = bytes(answer.body).decode("utf-8", "surrogateescape")
-    headers = "".join(f"{name}: {value}\n" for name, value in answer.headers.items())
-    return body, headers
+def request_label(file: str) -> str:
+    """The request a file's body was served by, as the units name it."""
+    key, path_values, query = REQUESTS[file]
+    for name, value in path_values:
+        key = key.replace("{" + name + "}", value)
+    return "GET " + key + ("?" + "&".join(f"{k}={v}" for k, v in query) if query else "")
+
+
+def _user() -> Any:
+    """The user every request is served as: one id, standing for the row's owner."""
+    import uuid
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id=uuid.UUID(int=0), is_active=True)
+
+
+def _overrides(**given: Any) -> dict[Any, Callable[[], Any]]:
+    """The tree's dependencies a request is served with, each overridden by what ``given`` holds.
+
+    ``report_svc`` stands for the reports' service, ``job_svc`` for the jobs'
+    and ``db`` for the database session; the user is :func:`_user`, and the
+    router dependency that reads the tool servers' declarations does nothing.
+    A dependency the tree does not have is left out.
+    """
+    out: dict[Any, Callable[[], Any]] = {}
+    wanted: list[tuple[str, str, Any]] = [
+        ("app.deps", "get_current_user", _user()),
+        ("app.deps", "reads_served_declarations", None),
+    ]
+    if "report_svc" in given:
+        wanted.append(("app.api.v1.reports", "_get_service", given["report_svc"]))
+    if "job_svc" in given:
+        wanted.append(("app.api.v1.jobs", "_get_service", given["job_svc"]))
+    if "db" in given:
+        wanted.append(("app.database", "get_db", given["db"]))
+    for module, name, value in wanted:
+        try:
+            dependency = entry(module, name)
+        except Absent:
+            continue
+        out[dependency] = _answering(value)
+    return out
+
+
+def _answering(value: Any) -> Callable[[], Any]:
+    """A dependency that takes nothing and answers ``value``."""
+
+    def _given() -> Any:
+        return value
+
+    return _given
+
+
+def serve(file: str, mode: _Mode, *, allow_error: bool = False, **given: Any) -> _Served:
+    """The request :data:`REQUESTS` names for ``file``, served; what it served is a unit.
+
+    Its status, each header in order and its body (an error's body as served,
+    a success's digest and length) are units of :data:`HTTP_SURFACE`, and the
+    status line and the headers are written to ``<file>.headers``. An answer
+    that is not a success writes its body to ``file`` and is :class:`Absent`
+    for the surface read from it, unless ``allow_error``: the surface is not
+    produced, and what was served is compared all the same.
+    """
+    key, path_values, query = REQUESTS[file]
+    ids = {"report_id": given.pop("report_id", ""), "job_id": given.pop("job_id", "")}
+    application = _Application.of_this_tree()
+    served = application.get(key, {**ids, **dict(path_values)}, query, _overrides(**given))
+    label = request_label(file)
+    mode.units.add(HTTP_SURFACE, f"{label} status", str(served.status), group=label)
+    for name, value in served.headers:
+        mode.units.add(HTTP_SURFACE, f"{label} header {name}", value, group=label)
+    said = (
+        f"sha256:{hashlib.sha256(served.body).hexdigest()} ({len(served.body)} bytes)"
+        if served.ok
+        else served.text
+    )
+    mode.units.add(HTTP_SURFACE, f"{label} body", said, group=label)
+    mode.files[f"{file}.headers"] = f"status: {served.status}\n" + "".join(
+        f"{name}: {value}\n" for name, value in served.headers
+    )
+    mode.served.add(f"{file}.headers")
+    if not served.ok:
+        mode.files[file] = served.text
+        mode.served.add(file)
+        if not allow_error:
+            raise Absent(f"{label} answers {served.status} (what it served is compared)")
+    return served
 
 
 def _report_row(stored: _Stored, **columns: Any) -> Any:
@@ -1430,8 +1831,8 @@ def _report_row(stored: _Stored, **columns: Any) -> Any:
     return SimpleNamespace(**row)
 
 
-def report_route(name: str, row: Any, query: Mapping[str, Any] | None = None) -> tuple[Any, Any]:
-    """The tree's ``app.api.v1.reports`` route ``name`` over ``row``, through its own service.
+def serve_report(file: str, mode: _Mode, row: Any, *, allow_error: bool = False) -> _Served:
+    """``file``'s request to the tree's report routes, its service reading ``row``.
 
     The service is the tree's ``ReportService`` reading ``row`` where it reads
     the store, so every step between the row and the answer is the tree's.
@@ -1444,30 +1845,107 @@ def report_route(name: str, row: Any, query: Mapping[str, Any] | None = None) ->
         async def get_report(self, *_args: Any, **_kwargs: Any) -> Any:
             return row
 
-    given = {"report_id": row.id or uuid.UUID(int=0), "user": None, "svc": _Row(None)}
-    return call_route("app.api.v1.reports", name, given, query)
-
-
-def _routed_stix(export: Any, judge: Any, source: str, stored: _Stored) -> dict[str, Any]:
-    """What the tree's ``/reports/{id}/stix`` route answers for a row holding these columns.
-
-    The envelope, the notice and the renamed properties are the tree's; a tree
-    whose route takes no ``source`` serves no judge source.
-    """
-    row = _report_row(stored, stix_bundle=export, judge_stix_bundle=judge)
-    answer, declared = report_route(
-        "get_stix_bundle", row, {"source": "judge"} if source == "judge" else None
+    return serve(
+        file,
+        mode,
+        allow_error=allow_error,
+        report_id=str(row.id or uuid.UUID(int=0)),
+        report_svc=_Row(None),
     )
-    return dict(served_json(answer, declared))
 
 
-def _call_map_route(stored: _Stored) -> tuple[Any, Any]:
-    """The tree's ``/jobs/{id}/evidence/call-map`` route over the stored ledger rows.
+class _AwaitedSession:
+    """A synchronous ORM session's calls, awaited as an asynchronous session's are."""
+
+    def __init__(self, session: Any) -> None:
+        self.session = session
+
+    async def execute(self, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        return self.session.execute(statement, *args, **kwargs)
+
+    async def scalar(self, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        return self.session.scalar(statement, *args, **kwargs)
+
+    async def scalars(self, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        return self.session.scalars(statement, *args, **kwargs)
+
+    async def get(self, *args: Any, **kwargs: Any) -> Any:
+        return self.session.get(*args, **kwargs)
+
+    async def commit(self) -> None:
+        return None
+
+    async def rollback(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+
+@contextmanager
+def ledger_database(stored: _Stored, job_id: Any) -> Iterator[Any]:
+    """The stored ledger rows in an in-memory SQLite database, in the tree's own table.
+
+    The table is the tree's ``EvidenceEntry`` table, created with the columns
+    its model declares, a JSON column and an id column in the types SQLite
+    stores them in; each stored row is one of its rows, written through the
+    tree's model, every column the stored row holds set from it (a timestamp
+    and an id read as the column types them) and the job's id its ``job_id``.
+    A statement a route makes runs on it as it would on the application's
+    database: what it selects, filters, orders and limits is the statement's
+    own.
+    """
+    import uuid
+
+    import sqlalchemy as sa
+    from sqlalchemy.orm import Session
+    from sqlalchemy.pool import StaticPool
+
+    model = entry("app.models.evidence", "EvidenceEntry")
+    engine = sa.create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    session = Session(engine, expire_on_commit=False)
+    try:
+        created = model.__table__.to_metadata(sa.MetaData())
+        for column in created.columns:
+            if isinstance(column.type, sa.JSON):
+                column.type = sa.JSON()
+            elif isinstance(column.type, sa.Uuid):
+                column.type = (
+                    sa.Uuid(as_uuid=True)
+                    if getattr(column.type, "as_uuid", True)
+                    else sa.Uuid(as_uuid=False)
+                )
+        for constraint in list(created.foreign_key_constraints):
+            created.constraints.discard(constraint)
+        created.create(engine)
+        for stored_row in stored.evidence:
+            values: dict[str, Any] = {}
+            for column in model.__table__.columns:
+                if column.name not in stored_row:
+                    continue
+                value = stored_row[column.name]
+                if isinstance(value, str) and isinstance(column.type, sa.DateTime):
+                    value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                elif isinstance(value, str) and getattr(column.type, "as_uuid", False):
+                    value = uuid.UUID(value)
+                values[column.name] = value
+            values["job_id"] = job_id
+            session.add(model(**values))
+        session.commit()
+        yield _AwaitedSession(session)
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def serve_call_map(mode: _Mode, stored: _Stored) -> _Served:
+    """``/jobs/{id}/evidence/call-map`` over the stored ledger rows, through the tree's route.
 
     Its service is the tree's ``AnalysisService`` finding the job, and its
-    session answers the one query the route makes, the job's ledger rows in
-    the order of their ``seq``, with the stored rows; a query for anything else
-    is :class:`Absent`. The route reads each row with its own row model.
+    database the stored ledger rows in an in-memory SQLite database
+    (:func:`ledger_database`): the route's own statement selects the rows.
     """
     import uuid
     from types import SimpleNamespace
@@ -1478,27 +1956,13 @@ def _call_map_route(stored: _Stored) -> tuple[Any, Any]:
         raise Absent("the stored ledger's rows hold no id column, which the route reads them with")
     service = entry("app.services.analysis_service", "AnalysisService")
     job = SimpleNamespace(id=_uuid(stored.job_id) or uuid.UUID(int=0))
-    rows = [
-        SimpleNamespace(**row)
-        for row in sorted(stored.evidence, key=lambda row: int(row.get("seq") or 0))
-    ]
 
     class _Job(service):  # type: ignore[misc, valid-type]
         async def get_job(self, *_args: Any, **_kwargs: Any) -> Any:
             return job
 
-    class _Ledger:
-        async def execute(self, statement: Any) -> Any:
-            asked = [
-                str(getattr(column.get("entity"), "__name__", ""))
-                for column in getattr(statement, "column_descriptions", None) or []
-            ]
-            if asked != ["EvidenceEntry"]:
-                raise Absent(f"the route asks the store for {asked}, which the run does not hold")
-            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: list(rows)))
-
-    given = {"job_id": job.id, "user": None, "svc": _Job(None), "db": _Ledger()}
-    return call_route("app.api.v1.jobs", "get_job_call_map", given)
+    with ledger_database(stored, job.id) as db:
+        return serve("call-map.json", mode, job_id=str(job.id), job_svc=_Job(None), db=db)
 
 
 def _render(
@@ -1510,14 +1974,16 @@ def _render(
     untyped: str = "",
     **columns: Any,
 ) -> None:
-    """Every surface of one report, each as the tree's route serves it over the report's row.
+    """Every surface of one report, each as the tree's application serves it over the report's row.
 
     ``report`` is the typed report, ``None`` when it does not read as the tree's
     model (``untyped`` says why): the surfaces the API builds from the stored
     document alone are produced all the same, as the API serves them.
-    ``columns`` holds what reads the row's other columns: ``stix`` and
-    ``judge`` (the served views) and ``mitre`` (the column), each raising
-    :class:`Absent` when the run has none.
+    ``columns`` holds what fills the row's other columns: ``stix`` and
+    ``judge`` (the export and judge columns, as keyword arguments of the row)
+    and ``mitre`` (the column), each raising :class:`Absent` when the run has
+    none. Each request of :data:`REQUESTS` is served through the application's
+    HTTP stack (:func:`serve`).
     """
     dynamic = mode.mode == "build"
     figures = DYNAMIC_FIGURES if dynamic else ()
@@ -1529,48 +1995,42 @@ def _render(
     def _row(**more: Any) -> Any:
         return _report_row(stored, malware_report=mr, **more)
 
-    def _served(name: str, row: Any, query: Mapping[str, Any] | None = None) -> Any:
-        answer, declared = report_route(name, row, query)
-        return served_json(answer, declared)
+    def _get(file: str, row: Any = None, *, allow_error: bool = False) -> _Served:
+        return serve_report(file, mode, row if row is not None else _row(), allow_error=allow_error)
+
+    def _json_file(file: str, row: Any = None) -> Any:
+        served = _get(file, row).json()
+        mode.files[file] = _json(served)
+        return served
 
     def _markdown() -> None:
         _need()
-        answer, _declared = report_route("get_full_malware_report_markdown", _row())
-        text = str(answer)
+        text = _get("report.md").text
         mode.files["report.md"] = text
         markdown_units(text, mode.units)
 
     def _html() -> None:
         _need()
-        answer, _declared = report_route("get_full_malware_report_html", _row())
-        text, headers = _served_body(answer)
+        text = _get("report.html").text
         mode.files["report.html"] = text
-        mode.files["report.html.headers"] = headers
         html_units(text, mode.units, dynamic_figures=figures)
 
     def _full() -> None:
-        served = _served("get_full_malware_report", _row())
-        mode.files["full.json"] = _json(served)
-        _full_units(served, mode.units)
+        _full_units(_json_file("full.json"), mode.units)
 
-    def _iocs() -> None:
-        row = _row()
-        default = _served("get_full_malware_report_iocs", row)
-        mode.files["iocs-default.json"] = _json(default)
+    def _iocs_default() -> None:
+        default = _json_file("iocs-default.json")
         _ioc_units("iocs.default", default.get("items") or [], mode.units, dynamic=dynamic)
-        every = _served("get_full_malware_report_iocs", row, {"include": "all"})
-        mode.files["iocs.json"] = _json(every)
-        rows = list(every.get("items") or [])
+
+    def _iocs_all() -> None:
+        rows = list(_json_file("iocs.json").get("items") or [])
         # The kinds served only to a filter that names them, after the rest.
         for kind in _FILTERED_IOC_KINDS:
-            only = _served("get_full_malware_report_iocs", row, {"include": "all", "kind": kind})
-            mode.files[f"iocs-{kind}.json"] = _json(only)
-            rows += list(only.get("items") or [])
+            rows += list(_json_file(f"iocs-{kind}.json").get("items") or [])
         _ioc_units("iocs.all", rows, mode.units, dynamic=dynamic)
 
     def _stix() -> None:
-        served = columns["stix"]()
-        mode.files["stix-bundle.json"] = _json(served)
+        served = _json_file("stix-bundle.json", _row(**columns["stix"]()))
         _stix_units(served, mode.units, dynamic=dynamic)
 
     def _stix_note() -> None:
@@ -1581,29 +2041,22 @@ def _render(
         mode.units.add("stix.note", "note", note or "(none)")
 
     def _judge_view() -> None:
-        view = columns["judge"]()
-        mode.files["stix-judge.json"] = _json(view)
+        view = _json_file("stix-judge.json", _row(**columns["judge"]()))
         _judge_view_units(view, mode.units)
 
     def _mitre() -> None:
-        served = _served("get_mitre_techniques", _row(mitre_techniques=columns["mitre"]()))
-        mode.files["mitre.json"] = _json(served)
+        served = _json_file("mitre.json", _row(mitre_techniques=columns["mitre"]()))
         _mitre_units(served.get("techniques"), mode.units)
 
     def _misp() -> None:
         _need()
-        event = _served("get_misp_event", _row())
-        mode.files["misp-event.json"] = _json(event)
-        _misp_units(event, mode.units)
+        _misp_units(_json_file("misp-event.json"), mode.units)
 
     def _layer() -> None:
-        layer = _served("get_attack_navigator_layer", _row())
-        mode.files["attack-layer.json"] = _json(layer)
-        _layer_units(layer, mode.units)
+        _layer_units(_json_file("attack-layer.json"), mode.units)
 
     def _call_map() -> None:
-        answer, declared = _call_map_route(stored)
-        found = served_json(answer, declared)
+        found = serve_call_map(mode, stored).json()
         mode.files["call-map.json"] = _json(found)
         _call_map_units(found, mode.units)
 
@@ -1613,33 +2066,29 @@ def _render(
         row = _row()
         downloads: dict[str, str] = {}
         for kind in RULE_KINDS:
-            for include in ("all", "printed"):
-                answer, _declared = report_route(
-                    "get_full_malware_report_signatures", row, {"kind": kind, "include": include}
-                )
-                name = (
-                    f"signatures-{kind}.txt"
-                    if include == "all"
-                    else f"signatures-{kind}-printed.txt"
-                )
-                mode.files[name] = downloads[f"{kind} {include}"] = str(answer)
+            for variant, file in (
+                ("default", f"signatures-{kind}-default.txt"),
+                ("all", f"signatures-{kind}.txt"),
+                ("printed", f"signatures-{kind}-printed.txt"),
+            ):
+                # A kind the route refuses is served all the same: its status and
+                # its error are units, and its download has no line.
+                served = _get(file, row, allow_error=True)
+                if served.ok:
+                    mode.files[file] = downloads[f"{kind} {variant}"] = served.text
         _rule_units(signatures, downloads, mode.units)
 
     def _bundle() -> None:
         _need()
-        answer, _declared = report_route("get_evidence_bundle_json", _row())
-        text, headers = _served_body(answer)
+        text = _get("evidence-bundle.json").text
         mode.files["evidence-bundle.json"] = text
-        mode.files["evidence-bundle.json.headers"] = headers
         _bundle_units(json.loads(text), mode.units)
 
     def _bundle_html() -> None:
         # ``/reports/{id}/evidence-bundle.html``: the bundle layout, whatever the run's.
         _need()
-        answer, _declared = report_route("get_evidence_bundle_html", _row())
-        text, headers = _served_body(answer)
+        text = _get("evidence-bundle.html").text
         mode.files["evidence-bundle.html"] = text
-        mode.files["evidence-bundle.html.headers"] = headers
         html_units(text, mode.units, dynamic_figures=figures, prefix="bundle.html")
 
     mode.produce(("report.md", "banner"), _markdown)
@@ -1648,7 +2097,8 @@ def _render(
         _html,
     )
     mode.produce(("full",), _full)
-    mode.produce(("iocs.default", "iocs.all"), _iocs)
+    mode.produce(("iocs.default",), _iocs_default)
+    mode.produce(("iocs.all",), _iocs_all)
     mode.produce(("stix", "stix.notice"), _stix)
     mode.produce(("stix.note",), _stix_note)
     mode.produce(("stix.judge", "stix.judge.notice"), _judge_view)
@@ -1700,12 +2150,13 @@ def _serve(stored: _Stored) -> _Mode:
             if "stix_bundle" not in stored.byjob:
                 raise Absent("report-byjob.json holds no stix_bundle column")
             judge = stored.judge_column if stored.judge_view is not None else None
-            return _routed_stix(stored.byjob.get("stix_bundle"), judge, "export", stored)
+            return {"stix_bundle": stored.byjob.get("stix_bundle"), "judge_stix_bundle": judge}
 
         def _judge() -> Any:
-            return _routed_stix(
-                stored.byjob.get("stix_bundle"), stored.judge_column, "judge", stored
-            )
+            return {
+                "stix_bundle": stored.byjob.get("stix_bundle"),
+                "judge_stix_bundle": stored.judge_column,
+            }
 
         def _mitre() -> Any:
             if "mitre_techniques" not in stored.byjob:
@@ -1898,10 +2349,10 @@ def _rebuilt(run_dir: Path, stored: _Stored) -> _Mode:
             return {**draft, flag: False, "x_malspark_notice": notice}
 
         def _stix() -> Any:
-            return _routed_stix(_export_column(), None, "export", stored)
+            return {"stix_bundle": _export_column()}
 
         def _judge() -> Any:
-            return _routed_stix(None, _judge_column(), "judge", stored)
+            return {"judge_stix_bundle": _judge_column()}
 
         def _mitre() -> Any:
             extract = entry("app.worker.analysis_worker", "_extract_mitre")
@@ -1988,6 +2439,8 @@ def render_run(
         "tree": platform_tree(),
         "imported_from": imported_from(),
         "modes": list(modes),
+        # The string hash seed the process ran under; "random" when none was set.
+        "hash_seed": os.environ.get(HASH_SEED_VARIABLE) or "random",
         "report_source": stored.report_source if stored.report is not None else None,
         "limits": list(LIMITS),
         "excluded": [list(row) for row in EXCLUDED],
@@ -2098,6 +2551,21 @@ def compare_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any
         }
         for key in sorted(reasons_a.keys() | reasons_b.keys())
     ]
+    # Absent from both, for reasons that differ: not absent alike, so a change.
+    # What a route served is compared in its own units (``http``) besides.
+    for row in not_compared:
+        if row["neither"] and row["a"] != row["b"]:
+            changes.append(
+                {
+                    "change": "changed",
+                    "mode": row["mode"],
+                    "surface": row["surface"],
+                    "group": "not produced",
+                    "key": "(not produced)",
+                    "old": row["a"],
+                    "new": row["b"],
+                }
+            )
     errors = [
         {"side": side, **row}
         for side, rows in (("a", a.get("not_produced")), ("b", b.get("not_produced")))
@@ -2231,20 +2699,23 @@ def render_under(
     *,
     modes: Sequence[str] = MODES,
     timeout: float | None = None,
+    hash_seed: str | None = None,
 ) -> list[dict[str, Any]]:
     """This driver run against ``tree`` in a process of its own; the records it wrote.
 
     ``tree`` and its API come first on the import path and nothing of this
     checkout is put on it, so every entry point is the tree's own. The process
-    hashes strings with :data:`HASH_SEED`, so an order the tree takes from a
-    set is the same on every render of it.
+    hashes strings with ``hash_seed``, else with the seed this process's
+    environment names, else with a random one; its stores are
+    :data:`CLOSED_STORES`.
     """
     from malspark.core.previous_name import CURRENT_NAME, PREVIOUS_NAME
 
-    env = dict(os.environ)
+    env = {**os.environ, **CLOSED_STORES}
     env["PYTHONPATH"] = os.pathsep.join([str(tree / "src"), str(tree / "apps" / "api"), str(tree)])
     env[TREE_VARIABLE] = str(tree.resolve())
-    env["PYTHONHASHSEED"] = HASH_SEED
+    if hash_seed is not None:
+        env[HASH_SEED_VARIABLE] = hash_seed
     env[PACKAGES_VARIABLE] = f"{CURRENT_NAME},{PREVIOUS_NAME}"
     cache = out.with_name(f"{out.name}-attck")
     cache.mkdir(parents=True, exist_ok=True)
@@ -2324,6 +2795,86 @@ def _show_file_changes(diff: Mapping[str, Any], at_a: Path, at_b: Path) -> None:
         change["new"] = f"{change['new']}; {line_b}"
 
 
+def draw_hash_seeds() -> tuple[str, str]:
+    """Two different string hash seeds, drawn afresh: neither is pinned."""
+    import random
+
+    first, second = random.SystemRandom().sample(range(1, 2**32), 2)
+    return str(first), str(second)
+
+
+def only_modes(record: Mapping[str, Any], modes: Iterable[str]) -> dict[str, Any]:
+    """``record`` with the units, files and reasons of ``modes`` alone."""
+    kept = set(modes)
+    return {
+        **record,
+        "modes": [m for m in record.get("modes") or [] if m in kept],
+        "units": [r for r in record.get("units") or [] if r["mode"] in kept],
+        "file_digests": {m: d for m, d in (record.get("file_digests") or {}).items() if m in kept},
+        "not_produced": [r for r in record.get("not_produced") or [] if r["mode"] in kept],
+    }
+
+
+def _unit_path(change: Mapping[str, Any]) -> tuple[str, str, str]:
+    return (str(change["mode"]), str(change["surface"]), str(change["key"]))
+
+
+def seed_dependent(
+    first: Mapping[str, Any], second: Mapping[str, Any]
+) -> set[tuple[str, str, str]]:
+    """Each unit (mode, surface, unit path) that differs between two hash seeds of one ref.
+
+    ``second`` is rendered under the other seed, in the modes it lists; the
+    units of ``first`` in those modes are compared with it as two refs are.
+    """
+    diff = compare_records(only_modes(first, second.get("modes") or []), second)
+    return {_unit_path(c) for c in diff["changes"]}
+
+
+def apply_hash_seeds(
+    diff: dict[str, Any],
+    seeds: tuple[str, str],
+    a: Mapping[str, Any],
+    a2: Mapping[str, Any],
+    b: Mapping[str, Any],
+    b2: Mapping[str, Any],
+) -> None:
+    """Class the units whose order depends on the hash seed, and keep every real difference.
+
+    ``a``, ``b``: the refs' records under the first seed (``diff`` compares
+    them); ``a2``, ``b2``: under the second, in build mode. A unit that differs
+    between the two seeds of one ref is listed as :data:`SEED_CLASS`; a
+    difference between the refs in such a unit is left out of the comparison
+    only when the refs agree under the second seed, and kept when they differ
+    under both. A surface that raised under the second seed is an error.
+    """
+    under_a, under_b = seed_dependent(a, a2), seed_dependent(b, b2)
+    classed = under_a | under_b
+    second = {_unit_path(c) for c in compare_records(a2, b2)["changes"]}
+    kept: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
+    for change in diff["changes"]:
+        path = _unit_path(change)
+        (excluded if path in classed and path not in second else kept).append(change)
+    diff["changes"] = kept
+    diff["summary"] = _summary(kept)
+    diff["hash_seed"] = {
+        "class": SEED_CLASS,
+        "seeds": list(seeds),
+        "a": [{"mode": m, "surface": s, "key": k} for m, s, k in sorted(under_a)],
+        "b": [{"mode": m, "surface": s, "key": k} for m, s, k in sorted(under_b)],
+        "excluded": excluded,
+    }
+    errors = [
+        {"side": f"{side} (second seed)", **row}
+        for side, record in (("a", a2), ("b", b2))
+        for row in record.get("not_produced") or []
+        if row.get("error")
+    ]
+    if errors:
+        diff["errors"] = [*(diff.get("errors") or []), *errors]
+
+
 def _compare(
     runs: list[Path],
     refs: tuple[str, str],
@@ -2332,21 +2883,42 @@ def _compare(
     work: Path | None,
     timeout: float | None,
     modes: Sequence[str] = MODES,
+    hash_seeds: tuple[str, str] | None = None,
 ) -> list[dict[str, Any]]:
+    """Both refs rendered and compared; build mode under two hash seeds per ref, the same two.
+
+    Every mode is rendered under the first seed; build mode once more under
+    the second, and the units that differ between the two seeds of one ref
+    are classed (:func:`apply_hash_seeds`).
+    """
     from scripts.replay import compare
 
+    seeds = hash_seeds or draw_hash_seeds()
+    twice = [mode for mode in modes if mode == "build"]
     owned = work is None
     base = Path(tempfile.mkdtemp(prefix="malspark-surfaces-")) if work is None else work
     try:
         records: dict[str, list[dict[str, Any]]] = {}
+        seconds: dict[str, list[dict[str, Any]]] = {}
         for side, ref in zip(("a", "b"), refs, strict=True):
             tree = compare.materialise(repo, ref, base / f"{side}-tree", harness=None)
             records[side] = render_under(
-                tree, runs, base / f"{side}-out", modes=modes, timeout=timeout
+                tree, runs, base / f"{side}-out", modes=modes, timeout=timeout, hash_seed=seeds[0]
             )
+            if twice:
+                seconds[side] = render_under(
+                    tree,
+                    runs,
+                    base / f"{side}-out-seed2",
+                    modes=twice,
+                    timeout=timeout,
+                    hash_seed=seeds[1],
+                )
         diffs: list[dict[str, Any]] = []
-        for a, b in zip(records["a"], records["b"], strict=True):
+        for index, (a, b) in enumerate(zip(records["a"], records["b"], strict=True)):
             diff = compare_records(a, b)
+            if twice:
+                apply_hash_seeds(diff, seeds, a, seconds["a"][index], b, seconds["b"][index])
             _show_file_changes(
                 diff, base / "a-out" / str(a.get("files")), base / "b-out" / str(b.get("files"))
             )
@@ -2412,6 +2984,20 @@ def render_comparison(
                 f"  ERROR under {row['side'].upper()} [{row['mode']} {row['surface']}]: "
                 f"{_safe(row['reason'])}"
             )
+        seeded = diff.get("hash_seed")
+        if seeded:
+            first, second = seeded["seeds"]
+            lines.append(
+                f"  {seeded['class'].upper()} (build mode rendered under the seeds {first} and "
+                f"{second}): {len(seeded['a'])} unit(s) under A, {len(seeded['b'])} under B; "
+                f"{len(seeded['excluded'])} difference(s) between the refs in them left out, "
+                "each because the refs agree under the other seed"
+            )
+            for side in ("a", "b"):
+                for row in seeded[side]:
+                    lines.append(
+                        f"    {side.upper()} [{row['mode']} {row['surface']}] {_safe(row['key'])}"
+                    )
         if diff.get("dynamic_compared"):
             lines.append(
                 f"  {diff['dynamic_compared']} unit(s) marked dynamic (drawn without the sandbox "
@@ -2434,7 +3020,10 @@ def render_comparison(
             for surface, what, proof in EXCLUDED:
                 lines.append(f"  excluded [{surface}] {what}: {proof}")
         else:
-            lines.append("  excluded from the comparison: nothing")
+            lines.append(
+                "  excluded from the comparison: nothing"
+                + (f", but the units {SEED_CLASS} listed above" if seeded else "")
+            )
         if not diff["changes"] and not neither:
             lines.append("  no difference: both refs render the same units")
         elif not diff["changes"]:
@@ -2450,9 +3039,33 @@ def render_comparison(
     return "\n".join(lines)
 
 
+class _HelpFormatter(argparse.HelpFormatter):
+    """The help wrapped at spaces only: a path or a name with a hyphen in it stays whole."""
+
+    def _fill_text(self, text: str, width: int, indent: str) -> str:
+        import textwrap
+
+        return textwrap.fill(
+            " ".join(text.split()),
+            width,
+            initial_indent=indent,
+            subsequent_indent=indent,
+            break_on_hyphens=False,
+            break_long_words=False,
+        )
+
+    def _split_lines(self, text: str, width: int) -> list[str]:
+        import textwrap
+
+        return textwrap.wrap(
+            " ".join(text.split()), width, break_on_hyphens=False, break_long_words=False
+        )
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="scripts/replay/render_surfaces.py",
+        formatter_class=_HelpFormatter,
         description=(
             "Render every published surface of stored runs, at zero cost, in two modes (serve: "
             "the stored report rendered as the API renders it; build: the report the replay "
@@ -2486,7 +3099,20 @@ def _parser() -> argparse.ArgumentParser:
         "--repo", type=Path, default=_ROOT, help="the repository the refs are read from"
     )
     parser.add_argument(
-        "--timeout", type=float, metavar="SECONDS", help="how long each ref's render may take"
+        "--timeout",
+        type=float,
+        metavar="SECONDS",
+        help="how long each render may take (a ref is rendered once per hash seed)",
+    )
+    parser.add_argument(
+        "--hash-seeds",
+        nargs=2,
+        type=int,
+        metavar=("SEED_1", "SEED_2"),
+        help=(
+            "with --compare: the two string hash seeds build mode is rendered under, the same "
+            "for both refs (two drawn afresh by default, and printed)"
+        ),
     )
     parser.add_argument(
         "--mode", choices=MODES, action="append", help="render one mode only (both by default)"
@@ -2495,8 +3121,10 @@ def _parser() -> argparse.ArgumentParser:
         "--accept-not-compared",
         action="store_true",
         help=(
-            "with --compare: a surface produced by neither ref (listed NOT COMPARED with both "
-            f"reasons) does not end the comparison with status {EXIT_NOT_COMPARED}"
+            "with --compare: a surface both refs lack for the same reason (listed NOT COMPARED "
+            f"with both reasons) does not end the comparison with status {EXIT_NOT_COMPARED}; "
+            "one they lack for different reasons, or whose served status or error differs, is "
+            "a difference all the same"
         ),
     )
     parser.add_argument("--quiet", action="store_true", help="print nothing; write files only")
@@ -2586,6 +3214,12 @@ def main(argv: list[str] | None = None) -> int:
                 expectations = read_expectations(args.expect)
             except (OSError, ValueError) as exc:
                 _error(f"the expectations cannot be read: {exc}")
+        seeds: tuple[str, str] | None = None
+        if args.hash_seeds is not None:
+            first, second = args.hash_seeds
+            if first == second or not all(0 <= s < 2**32 for s in args.hash_seeds):
+                _error("--hash-seeds takes two different seeds from 0 to 4294967295")
+            seeds = (str(first), str(second))
         try:
             diffs = _compare(
                 runs,
@@ -2594,6 +3228,7 @@ def main(argv: list[str] | None = None) -> int:
                 work=args.work,
                 timeout=args.timeout,
                 modes=modes,
+                hash_seeds=seeds,
             )
         except Exception as exc:  # noqa: BLE001 — said, and the status says it failed
             _error(str(exc))
@@ -2662,6 +3297,8 @@ def _prepare_path() -> None:
 
 
 if __name__ == "__main__":
+    # A store no dependency override answers is a closed port, never one configured.
+    os.environ.update(CLOSED_STORES)
     _prepare_path()
     try:
         sys.exit(main())

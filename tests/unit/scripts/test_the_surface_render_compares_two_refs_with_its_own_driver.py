@@ -11,7 +11,8 @@ needs the tree's replay, is a surface produced by neither ref, listed with the
 reason on both sides and ending the comparison with its own status unless it is
 accepted; against the second, the one sentence is the one change on each surface that
 prints it, on each line of a file that holds it and on each file, the length the
-headers serve included (status 1), and an expectation naming it makes the status 0.
+headers serve and the body each route serves included (status 1), and an expectation
+naming it makes the status 0.
 """
 
 from __future__ import annotations
@@ -79,6 +80,7 @@ def test_each_tree_is_rendered_by_this_driver_and_the_one_sentence_is_the_one_ch
         ("bundle.lines", "Title"),
         *[(rs.FILE_SURFACE, "the file differs")] * 4,
         *sorted((rs.FILE_LINES, f"{name}{end}") for name in files for end in ("", ".headers")),
+        *[(rs.HTTP_SURFACE, f"GET /reports/{{id}}/{name}") for name in files for _ in range(2)],
     ]
     assert {c["mode"] for c in diff["changes"]} == {"serve"}
     for change in diff["changes"]:
@@ -88,6 +90,8 @@ def test_each_tree_is_rendered_by_this_driver_and_the_one_sentence_is_the_one_ch
             assert "The record behind" in change["old"] and "The evidence behind" in change["new"]
         elif change["surface"] == rs.FILE_LINES:
             assert change["old"].startswith("content-length: ")
+        elif change["surface"] == rs.HTTP_SURFACE:
+            assert change["key"].endswith((" header content-length", " body"))
 
     expect = tmp_path / "expect.json"
     expect.write_text(
@@ -112,6 +116,11 @@ def test_each_tree_is_rendered_by_this_driver_and_the_one_sentence_is_the_one_ch
                     "surface": rs.FILE_SURFACE,
                     "key": "^evidence-bundle[.]",
                     "reason": "the bundle's files hold the reworded line",
+                },
+                {
+                    "surface": rs.HTTP_SURFACE,
+                    "key": "evidence-bundle[.](html|json) (header content-length|body)$",
+                    "reason": "the bundle is served with the reworded line, two bytes longer",
                 },
             ]
         ),
