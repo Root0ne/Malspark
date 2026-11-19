@@ -843,6 +843,27 @@ class MarkingDefinition(_SpecConformantModel):
         return f"{stamp:%Y-%m-%dT%H:%M:%S}.{stamp.microsecond // 1000:03d}Z"
 
 
+class Directory(_SpecConformantModel):
+    """A STIX 2.1 ``directory`` observable: the folder of a process image the export writes.
+
+    The export's own, and outside the union a judge's answer is read with, as
+    the marking definition is: a judge's ``directory`` is set aside as before.
+    Its id is derived from its path, as the standard derives a directory's id
+    from its identifying property, so one folder is one object in a bundle.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["directory"] = "directory"
+    spec_version: Literal["2.1"] = "2.1"
+    id: str = ""
+    path: str
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.id:
+            self.id = f"directory--{uuid.uuid5(SCO_NAMESPACE, json_canonical({'path': self.path}))}"
+
+
 def tlp_marking(level: str) -> MarkingDefinition | None:
     """The TLP 2.0 marking definition of a report's level, as the extension writes it."""
     key = str(level or "").strip().upper()
@@ -1068,9 +1089,10 @@ class Bundle(_SpecConformantModel):
 
     type: Literal["bundle"] = "bundle"
     id: str = Field(default_factory=lambda: f"bundle--{_generate_uuid()}")
-    # A marking definition is the export's own (``tlp_marking``) and outside
-    # the union a judge's answer is read with: a judge's is set aside as before.
-    objects: list[_BundleObject | MarkingDefinition] = Field(default_factory=list)
+    # A marking definition (``tlp_marking``) and a process image's directory are
+    # the export's own and outside the union a judge's answer is read with: a
+    # judge's is set aside as before.
+    objects: list[_BundleObject | MarkingDefinition | Directory] = Field(default_factory=list)
     # Severity, malware category and family attribution, as the judge answered
     # them. A STIX custom property (``x_`` prefixed, per the spec's extension
     # rule) rather than three bare bundle fields, because the Bundle's property

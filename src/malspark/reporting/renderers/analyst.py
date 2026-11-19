@@ -1842,11 +1842,10 @@ class _Analyst:
             return []
         lines = [_row("Name/offset", "Size", "SHA-256", "How found"), _divider(4)]
         for res in carved[:10]:
-            size = res.get("size")
             lines.append(
                 _row(
                     _code_span(ctx.plain(str(res.get("id") or "not recorded"))),
-                    f"{size} bytes" if isinstance(size, int) and size > 0 else "not recorded",
+                    dropped_size_cell(res),
                     _code_span(str(res.get("sha256")).lower()) if res.get("sha256") else "-",
                     "carved from the file",
                 )

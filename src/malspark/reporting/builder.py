@@ -809,7 +809,8 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
     holds its value, and once per type and value. A row of the table holds a
     value equal to its own under that row's kind's spelling (``value_key``: a
     URL's path keeps its case, a path reads one separator either way round);
-    a row of no kind holds only its value as written. Each carries
+    a row of no kind holds only its value as written. A value that is empty
+    or dots alone names nothing and is not listed. Each carries
     the record every unpublished row carries (:func:`with_record`): role
     ``listed``, no indicator type. The table itself holds none of them: §9,
     the exports and every reader of the table read the table alone, and the
@@ -840,7 +841,9 @@ def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
         value = str(stated.value or "").strip()
         kind = stated.table_kind
         label = stated.label or stated.written_kind
-        if publishes(answer) or not value:
+        # An empty or dots-only value names nothing, and a value whose key is
+        # empty would hold one slot for every such value of its type.
+        if publishes(answer) or not value.strip(".") or not value_key(kind, value):
             continue
         if value in written or any(
             value_key(held, value) in keys for held, keys in held_values.items()

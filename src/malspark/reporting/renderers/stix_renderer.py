@@ -113,9 +113,11 @@ from malspark.schemas.stix_models import (
     OBSERVED_IN_PROPERTY,
     PROPERTY_NOT_CARRIED_CODE,
     SAMPLE_TREE_PROPERTY,
+    SCO_NAMESPACE,
     STIX_ID_NAMESPACE,
     AttackPattern,
     Bundle,
+    Directory,
     File,
     Identity,
     Indicator,
@@ -129,6 +131,7 @@ from malspark.schemas.stix_models import (
     _Observable,
     attack_pattern_id,
     crediting_only,
+    json_canonical,
     produced_by,
     tlp_marking,
 )
@@ -1648,6 +1651,34 @@ def _ref_fields(obj: Any) -> list[str]:
     return [n for n in names if n.endswith(("_ref", "_refs"))]
 
 
+def unresolved_references(objects: Sequence[Any]) -> list[tuple[str, str, str]]:
+    """Every reference of a bundle's objects that names no object of the bundle.
+
+    ``(object id, property, reference)`` for each value of a top-level
+    ``*_ref`` or ``*_refs`` property the standard defines, of a dumped object
+    or a model alike, in order; a custom ``x_`` property names what its writer
+    says (``x_malspark_evidence_refs`` names ledger entries) and is not read.
+    The OASIS validator reads each object alone and does not ask this.
+    """
+
+    def _fields(obj: Any) -> dict[str, Any]:
+        if isinstance(obj, Mapping):
+            return dict(obj)
+        return {name: getattr(obj, name, None) for name in _ref_fields(obj) + ["id"]}
+
+    read = [_fields(obj) for obj in objects]
+    held = {str(fields.get("id") or "") for fields in read}
+    found: list[tuple[str, str, str]] = []
+    for fields in read:
+        for name, value in fields.items():
+            if not name.endswith(("_ref", "_refs")) or name.startswith("x_"):
+                continue
+            for ref in value if isinstance(value, list) else [value]:
+                if isinstance(ref, str) and ref and ref not in held:
+                    found.append((str(fields.get("id") or ""), name, ref))
+    return found
+
+
 def _relinked_refs(obj: Any, remap: Mapping[str, str]) -> Any:
     """A copy of ``obj`` with every reference ``remap`` moves moved, or ``obj`` itself."""
     update: dict[str, Any] = {}
@@ -2212,6 +2243,48 @@ def joined_path(directory: str, name: str) -> str:
     if not directory or directory[-1] in _SEPARATORS:
         return directory + name
     return directory + _separator_of(directory) + name
+
+
+# What a name wholly one path holds nowhere: a quote, a character Windows
+# refuses in a name, a control character. A colon stands only after a drive.
+_NOT_IN_ONE_PATH_RE = re.compile(r'["*?<>|\x00-\x1f]')
+_ONE_PATH_ROOT_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/](?![\\/]))")
+
+
+def image_path_parts(name: str) -> tuple[str, str] | None:
+    """``(directory, base name)`` of a process image name that is wholly one path, else ``None``.
+
+    Wholly one path: rooted at a drive (``C:\\``) or at one separator
+    (``/usr``), written with one kind of separator and no run of it, holding no
+    quote, no character a Windows name refuses, no control character and no
+    colon but the drive's, and a base name with no white space; and the
+    directory joined to the base name (:func:`image_path`) is the name again,
+    character for character. A white space inside the folder is a folder's
+    (``C:\\Program Files``). Anything else is no one path and is left whole: a
+    path followed by arguments (``svchost.exe -k GPSvcGroup``) or by a note
+    (``rundll32.exe (cmdline: …)``), a quoted path, a name with no folder, an
+    ordinal form, a share, a namespace or an ``%VARIABLE%`` spelling.
+    """
+    if not name or name != name.strip() or not _ONE_PATH_ROOT_RE.match(name):
+        return None
+    if _NOT_IN_ONE_PATH_RE.search(name) or ":" in name[2:]:
+        return None
+    if ("\\" in name and "/" in name) or "\\\\" in name or "//" in name:
+        return None
+    directory, base = split_path(name)
+    if not directory or not base or any(c.isspace() for c in base):
+        return None
+    return (directory, base) if image_path(directory, base) == name else None
+
+
+def image_path(directory: str, base: str) -> str:
+    """The name :func:`image_path_parts` split: the directory and the base name, joined back.
+
+    By the one kind of separator the directory is written with, which its
+    root holds, and none added after a root's own.
+    """
+    separator = "\\" if "\\" in directory else "/"
+    return directory + ("" if directory.endswith(separator) else separator) + base
 
 
 def _separator_of(directory: str) -> str:
@@ -6539,13 +6612,16 @@ def _lineage_marks(
 def _processes_to_observables(
     roots: list[ProcessNode],
     marks: Mapping[tuple[int, int, str, str], Mapping[str, Any]] | None = None,
-) -> list[File | Process]:
+) -> list[File | Process | Directory]:
     """The process tree as STIX 2.1 observables: processes, their images, their children.
 
     A process's name is the file it ran from — STIX 2.1 has no ``name`` on a
     process — so it becomes a ``file`` observable the process names by
-    ``image_ref``, and one image run twice is one file. The tree is kept by
-    ``child_refs``.
+    ``image_ref``, and one image run twice is one file. An image name wholly
+    one path (:func:`image_path_parts`) is the file's base name in a
+    ``directory`` object its ``parent_directory_ref`` names, one per folder,
+    written before the first file in it; any other name is the file's whole.
+    The tree is kept by ``child_refs``.
 
     One process is one object: a process that stands under two parents (two
     readings of its parent that differ, each holding it) is written once, with
@@ -6556,8 +6632,29 @@ def _processes_to_observables(
     (``marks``, :func:`_lineage_marks`): the sandbox watched it, and it is not
     the sample's, or its lineage is disputed.
     """
-    out: list[File | Process] = []
+    out: list[File | Process | Directory] = []
     images: dict[str, File] = {}
+    folders: dict[str, Directory] = {}
+
+    def _image(name: str) -> File:
+        """The file of an image name, in its directory where the name is wholly one path."""
+        parts = image_path_parts(name)
+        if parts is None:
+            return File(name=name)
+        directory, base = parts
+        folder = folders.get(directory)
+        if folder is None:
+            folder = folders[directory] = Directory(path=directory)
+            out.append(folder)
+        # The id the standard derives from the name and the parent, passed in:
+        # the file model a judge's answer is read with derives its own as before.
+        derived = json_canonical({"name": base, "parent_directory_ref": folder.id})
+        return File(
+            id=f"file--{uuid.uuid5(SCO_NAMESPACE, derived)}",
+            name=base,
+            parent_directory_ref=folder.id,
+        )
+
     places: dict[tuple[int, int, str, str], list[ProcessNode]] = {}
     pending = list(reversed(roots))
     while pending:
@@ -6596,7 +6693,7 @@ def _processes_to_observables(
         if node.name:
             image = images.get(node.name)
             if image is None:
-                image = images[node.name] = File(name=node.name)
+                image = images[node.name] = _image(node.name)
                 out.append(image)
             image_ref = image.id
         process = process.model_copy(update={"image_ref": image_ref, "child_refs": children})

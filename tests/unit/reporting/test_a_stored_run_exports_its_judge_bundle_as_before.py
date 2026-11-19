@@ -55,12 +55,18 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # T1036.005 and T1218.011, run5 and run4 T1027 and T1218.011, local8 T1027,
 # T1027.005 and T1218.011). A stored mapping records no set, so no edge
 # carries a note.
+# Re-pinned here and in ``HAIKU4_RENDERS`` when a process image wholly one path
+# came to be exported as its base name in a ``directory`` object (T-763(d)):
+# each such image file carries its base name and ``parent_directory_ref``, one
+# directory per folder is added to the observed-data, and the process and
+# report objects name the new ids; directory joined to name is each stored
+# name, and nothing else changed. The Markdown and HTML did not change.
 STORED_EXPORTS = {
-    "run7": "93aadaacf5823ca7",
-    "run5": "093a129ea2278b97",
-    "run4": "be010e06e4e54675",
-    "local8": "905a7b97d39427d6",
-    "haiku4": "0ce8403d7201e643",
+    "run7": "672aa1a28966d369",
+    "run5": "9922c9071270a637",
+    "run4": "85b101e3f00b64d3",
+    "local8": "7bce3356531611a6",
+    "haiku4": "9e4fc335ee49b2ef",
 }
 # ``(markdown, html with the nonce "fixed", normalised STIX)`` for haiku4. The
 # Markdown and HTML were re-pinned when a sample's, a tool's or a finding's text
@@ -105,7 +111,7 @@ STORED_EXPORTS = {
 # matches", and a mapping that stores its sources (haiku4) lists
 # the entries among them. The STIX is rendered with the stored ledger's ids
 # (see ``STORED_EXPORTS``).
-HAIKU4_RENDERS = ("f2b01c295b9813f0", "7e7c99ce92d9ede7", "4d4d287aa6a3d02d")
+HAIKU4_RENDERS = ("f2b01c295b9813f0", "7e7c99ce92d9ede7", "ff5607de575fb489")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

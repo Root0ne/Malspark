@@ -93,9 +93,12 @@ from malspark.reporting.judge_reasons import (
     status_shown,
 )
 from malspark.reporting.ledger_projection import (
+    FORM_URL,
+    NO_HOST_FORMS,
     cell_network_values,
     listing_kind,
     marks_of,
+    path_or_host_form,
     stated_marks,
 )
 from malspark.reporting.ledger_report import (
@@ -1238,12 +1241,11 @@ class MarkdownRenderer:
             measured.append(_row("Name/offset", "Size", "SHA-256", "Type", "Source"))
             measured.append(_divider(5))
             for res in carved[:10]:
-                size = res.get("size")
                 measured.append(
                     _row(
                         f"{_code_span(ctx.plain(str(res.get('id') or 'not recorded')))} "
                         f"({ctx.plain(str(res.get('source') or '-'))})",
-                        f"{size} bytes" if isinstance(size, int) and size > 0 else "not recorded",
+                        dropped_size_cell(res),
                         _code_span(str(res.get("sha256")).lower()) if res.get("sha256") else "-",
                         res.get("type") or "not recorded",
                         "carved (static)",
@@ -1589,9 +1591,10 @@ class MarkdownRenderer:
                 lines.extend([_plain_heading("Resources"), ""])
                 for res in plain[:20]:
                     kind = res.get("type") or res.get("kind") or "resource"
-                    size = res.get("size")
-                    said = f"{kind}" + (f" ({size} bytes)" if size else "")
-                    lines.append(_item(_inline_safe(said, plain=ctx.plain)))
+                    # The size as the size cells read it; none where none is stated.
+                    size = dropped_size_cell(res)
+                    said = _inline_safe(f"{kind}", plain=ctx.plain)
+                    lines.append(_item(said + (f" ({size})" if size != SIZE_NOT_RECORDED else "")))
                 lines.extend(_left_out(len(plain), 20, "resources"))
                 lines.append("")
 
@@ -5452,14 +5455,29 @@ def _family_words(report: MalwareReport) -> str:
     if not family or family.lower() == "unknown":
         return "none attributed"
     if attr.family_source == "sandbox":
-        note = f"; {_one_line(attr.family_note)}" if attr.family_note else ""
-        return f"{family} (named by the sandbox's own classification; the judge named none{note})"
+        return f"{family} ({family_qualifier(attr)})"
     said = f"{family} ({confidence_phrase(attr.family_confidence, 'the judge')})"
     if attr.family_evidence_ids:
         said += f" [{_ids(attr.family_evidence_ids)}]"
     elif not attr.family_grounded:
-        said += " (no evidence cited)"
+        said += f" ({family_qualifier(attr)})"
     return said
+
+
+def family_qualifier(attr: Any) -> str:
+    """Who named a family where the report head qualifies it, or ``""``.
+
+    A family the sandbox's own classification named, the judge naming none,
+    with the sandbox's note; a judge family with no evidence cited. A judge
+    family with cited evidence is not qualified. The report head and the HTML
+    header card both say it in these words.
+    """
+    if attr.family_source == "sandbox":
+        note = f"; {_one_line(attr.family_note)}" if attr.family_note else ""
+        return f"named by the sandbox's own classification; the judge named none{note}"
+    if not attr.family_evidence_ids and not attr.family_grounded:
+        return "no evidence cited"
+    return ""
 
 
 def _verdict_line(report: MalwareReport) -> str:
@@ -5578,7 +5596,15 @@ def _endpoint_with_state(value: str, ctx: _Context) -> str:
 
 
 def _endpoint(value: str) -> str:
-    """One model-written endpoint, defanged, and marked when no host outside could answer."""
+    """One model-written endpoint, defanged, and marked when no host outside could answer.
+
+    Read by its form first (:func:`path_or_host_form`): a name on the analysed
+    machine (a device or pipe name, a local file, a registry path) names no
+    host and prints as written, with no mark; a network path keeps its host
+    defanged in place and asks the mark of that host; a URL written with
+    backslashes prints as written, defanged as a URL, its host read from the
+    URL its forward slashes spell. Any other value is read as a host.
+    """
     from malspark.extractors.network_extractor import (
         address_is_publishable,
         host_is_public,
@@ -5588,13 +5614,28 @@ def _endpoint(value: str) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    if "://" in text:
-        kind, host = "url", url_host(text)
-    elif _is_address(text):
-        kind, host = "ip", text
+    form = path_or_host_form(text)
+    if form.form in NO_HOST_FORMS:
+        return _code_span(text)
+    if form.host or form.form == FORM_URL:
+        host = form.host
+        start, end = form.at
+        if form.form == FORM_URL:
+            # The scheme renamed and the authority's dots bracketed, as the URL
+            # its forward slashes spell is written; its separators as written.
+            twin = defang(f"{text[: text.index(':')]}://{text[start:end]}", "url")
+            head = twin.replace("://", text[text.index(":") : start], 1)
+        else:
+            head = text[:start] + defang(text[start:end], "ip" if _is_address(host) else "domain")
+        written = _code_span(head + text[end:])
     else:
-        kind, host = "domain", text.split("/", 1)[0].split(":", 1)[0]
-    written = _code_span(defang(_whole(text), kind))
+        if "://" in text:
+            kind, host = "url", url_host(text)
+        elif _is_address(text):
+            kind, host = "ip", text
+        else:
+            kind, host = "domain", text.split("/", 1)[0].split(":", 1)[0]
+        written = _code_span(defang(_whole(text), kind))
     if _is_address(host):
         # The publish rule's own question, asked of an address a model wrote:
         # a private or reserved one is nothing a consumer could act on.
@@ -6895,10 +6936,12 @@ def _truncate_escaped(text: str, length: int) -> str:
 
 # A size a row states as text: a number written out, read as it is written.
 _SIZE_TEXT_RE = re.compile(r"[+-]?\d+(?:\.\d+)?")
+# What a size cell says where its row states no size.
+SIZE_NOT_RECORDED = "not recorded"
 
 
 def dropped_size_cell(op: Mapping[str, Any]) -> str:
-    """A written file's size as a table cell: what its row states, zero included.
+    """A file's size as a cell (a written file, a carved payload, a resource): what its row states.
 
     ``"<size> bytes"`` where the row states a size that is a number (``0`` is
     a file of no bytes), or text that is a number, written without the white
@@ -6917,7 +6960,7 @@ def dropped_size_cell(op: Mapping[str, Any]) -> str:
     if isinstance(size, str) and size.strip():
         text = size.strip()
         return f"{text} bytes" if _SIZE_TEXT_RE.fullmatch(text) else _code_span(text)
-    return "not recorded"
+    return SIZE_NOT_RECORDED
 
 
 def _process_tree_lines(

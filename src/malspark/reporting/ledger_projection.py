@@ -32,7 +32,7 @@ import re
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 from malspark.analysis.detonation_reads import later_detonation_name
 from malspark.analysis.directed_text import KIND as DIRECTED_TEXT_KIND
@@ -2557,6 +2557,110 @@ def cell_network_values(cell: str, hint: str | None) -> list[tuple[str, str]]:
     if name.rsplit(".", 1)[-1] in _FILE_LABELS:
         return []
     return [("domain", name)]
+
+
+# The forms :func:`path_or_host_form` reads a value written without a scheme as.
+# A name on the analysed machine: a name in its device namespace, a file on one
+# of its volumes, a path it resolves itself, a registry path.
+FORM_DEVICE = "device"
+FORM_VOLUME = "volume"
+FORM_LOCAL = "local"
+FORM_REGISTRY = "registry"
+# A network path whose host is written after ``\\`` (or ``UNC\`` after a
+# namespace prefix), one written after ``//``, and a URL written with backslashes.
+FORM_SHARE = "share"
+FORM_SLASHES = "slashes"
+FORM_URL = "url"
+# A host whose every backslash escapes a dot, and anything else.
+FORM_ESCAPED = "escaped"
+FORM_OTHER = "other"
+# The forms that name no host: nothing in them is asked whether a host answers.
+NO_HOST_FORMS = frozenset({FORM_DEVICE, FORM_VOLUME, FORM_LOCAL, FORM_REGISTRY})
+
+# ``\\.\``, ``\\?\``, ``\??\`` and their slash spellings: the Win32 and NT
+# namespace of the analysed machine, which names no host.
+_NAMESPACE_RE = re.compile(r"^(?:\\\\[.?]\\|\\\?\?\\|//[.?]/)")
+_NAMESPACE_SHARE_RE = re.compile(r"UNC[\\/]([^\\/]+)", re.IGNORECASE)
+_DRIVE_RE = re.compile(r"[A-Za-z]:(?:[\\/]|$)")
+# A scheme of two characters or more (one is a drive) and two separators, a
+# backslash among them.
+_BACKSLASH_URL_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.\-]+):([\\/]{2})")
+_URL_AUTHORITY_RE = re.compile(r"[^\\/?#]*")
+_SHARE_RE = re.compile(r"^(\\\\|//)([^\\/]+)")
+# The WebClient's spelling of a share's port and of TLS after its host.
+_WEBDAV_SUFFIX_RE = re.compile(r"@(?:SSL)?(?:@?\d+)?$", re.IGNORECASE)
+_ESCAPED_DOTS_RE = re.compile(r"(?:[^\\/]|\\\.)+")
+_ROOTED_RE = re.compile(r"^[\\/](?![\\/])")
+_ENVIRONMENT_RE = re.compile(r"^%[^%\\/]+%(?:[\\/]|$)")
+_RELATIVE_RE = re.compile(r"^(?:~|\.{1,2})[\\/]")
+_HIVE_RE = re.compile(r"^(?:HKLM|HKCU|HKCR|HKU|HKCC|HKEY_[A-Z_]+)(?:[\\/]|$)", re.IGNORECASE)
+
+
+class PathOrHostForm(NamedTuple):
+    """What a value written without a scheme is (:func:`path_or_host_form`).
+
+    ``host`` is the host a network form names, as written, with no port or
+    WebDAV suffix, and ``at`` the start and end of its place in the value
+    (for a URL, of the authority); ``""`` and ``(-1, -1)`` where it names none.
+    """
+
+    form: str
+    host: str = ""
+    at: tuple[int, int] = (-1, -1)
+
+
+def path_or_host_form(text: str) -> PathOrHostForm:
+    """The form of a value written without a scheme, read from its separators alone.
+
+    Asked in this order: a namespace prefix (``\\\\.\\``, ``\\\\?\\``,
+    ``\\??\\`` or ``//./``, ``//?/``) names the analysed machine, so what
+    follows it is a device name, a file on a local volume (a drive) or the
+    long-path spelling of a share (``UNC\\host\\``); a URL written with
+    backslashes (``http:\\\\host\\a``) names the host its forward slashes
+    would; ``\\\\host\\`` is a share, its WebDAV ``@SSL`` or ``@port`` off the
+    host, and ``//host/`` a network path or a scheme-relative URL, the host
+    true of both; a host whose every backslash escapes a dot is a host; a
+    drive, a single root, an ``%VARIABLE%``, ``~``, ``.`` or ``..`` start a
+    path the machine resolves, and a hive name a registry path. Anything else,
+    and any value holding ``://``, is ``other``. Nothing here names a device,
+    a pipe or a tool. The value is read as given; the caller trims it.
+    """
+    if "://" in text:
+        return PathOrHostForm(FORM_OTHER)
+    namespace = _NAMESPACE_RE.match(text)
+    if namespace:
+        rest = text[namespace.end() :]
+        share = _NAMESPACE_SHARE_RE.match(rest)
+        if share:
+            return _share_form(text, namespace.end() + share.start(1), share.group(1))
+        return PathOrHostForm(FORM_VOLUME if _DRIVE_RE.match(rest) else FORM_DEVICE)
+    url = _BACKSLASH_URL_RE.match(text)
+    if url and "\\" in url.group(2):
+        from malspark.extractors.network_extractor import url_host
+
+        start = url.end()
+        authority = _URL_AUTHORITY_RE.match(text, start)
+        end = authority.end() if authority else start
+        return PathOrHostForm(FORM_URL, url_host(text.replace("\\", "/")), (start, end))
+    share = _SHARE_RE.match(text)
+    if share:
+        found = _share_form(text, share.start(2), share.group(2))
+        return found if share.group(1) == "\\\\" else found._replace(form=FORM_SLASHES)
+    if "\\." in text and _ESCAPED_DOTS_RE.fullmatch(text):
+        return PathOrHostForm(FORM_ESCAPED)
+    if _DRIVE_RE.match(text):
+        return PathOrHostForm(FORM_VOLUME)
+    if _HIVE_RE.match(text):
+        return PathOrHostForm(FORM_REGISTRY)
+    if _ROOTED_RE.match(text) or _ENVIRONMENT_RE.match(text) or _RELATIVE_RE.match(text):
+        return PathOrHostForm(FORM_LOCAL)
+    return PathOrHostForm(FORM_OTHER)
+
+
+def _share_form(text: str, start: int, segment: str) -> PathOrHostForm:
+    """A share whose host segment starts at ``start``, its WebDAV suffix off the host."""
+    host = _WEBDAV_SUFFIX_RE.sub("", segment)
+    return PathOrHostForm(FORM_SHARE, host, (start, start + len(host)))
 
 
 def _address_of(text: str) -> str:
