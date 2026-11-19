@@ -2589,6 +2589,8 @@ _URL_AUTHORITY_RE = re.compile(r"[^\\/?#]*")
 _SHARE_RE = re.compile(r"^(\\\\|//)([^\\/]+)")
 # The WebClient's spelling of a share's port and of TLS after its host.
 _WEBDAV_SUFFIX_RE = re.compile(r"@(?:SSL)?(?:@?\d+)?$", re.IGNORECASE)
+# A host followed by ``:port``: a bracketed address, or a host holding no other colon.
+_HOST_WITH_PORT_RE = re.compile(r"^(\[[^\]]*\]|[^:\[\]]+):\d{1,5}$")
 _ESCAPED_DOTS_RE = re.compile(r"(?:[^\\/]|\\\.)+")
 _ROOTED_RE = re.compile(r"^[\\/](?![\\/])")
 _ENVIRONMENT_RE = re.compile(r"^%[^%\\/]+%(?:[\\/]|$)")
@@ -2617,8 +2619,8 @@ def path_or_host_form(text: str) -> PathOrHostForm:
     follows it is a device name, a file on a local volume (a drive) or the
     long-path spelling of a share (``UNC\\host\\``); a URL written with
     backslashes (``http:\\\\host\\a``) names the host its forward slashes
-    would; ``\\\\host\\`` is a share, its WebDAV ``@SSL`` or ``@port`` off the
-    host, and ``//host/`` a network path or a scheme-relative URL, the host
+    would; ``\\\\host\\`` is a share, its WebDAV ``@SSL`` or ``@port`` and a
+    ``:port`` off the host, and ``//host/`` a network path or a scheme-relative URL, the host
     true of both; a host whose every backslash escapes a dot is a host; a
     drive, a single root, an ``%VARIABLE%``, ``~``, ``.`` or ``..`` start a
     path the machine resolves, and a hive name a registry path. Anything else,
@@ -2658,8 +2660,11 @@ def path_or_host_form(text: str) -> PathOrHostForm:
 
 
 def _share_form(text: str, start: int, segment: str) -> PathOrHostForm:
-    """A share whose host segment starts at ``start``, its WebDAV suffix off the host."""
+    """A share whose host segment starts at ``start``, its WebDAV suffix and port off the host."""
     host = _WEBDAV_SUFFIX_RE.sub("", segment)
+    port = _HOST_WITH_PORT_RE.match(host)
+    if port:
+        host = port.group(1)
     return PathOrHostForm(FORM_SHARE, host, (start, start + len(host)))
 
 

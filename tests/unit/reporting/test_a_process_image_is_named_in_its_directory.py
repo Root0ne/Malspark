@@ -79,6 +79,10 @@ def test_a_name_wholly_one_path_is_its_folder_and_its_base_name(
         r"Windows\system32\svchost.exe",
         r"\\?\C:\x\a.exe",
         r"\\server\share\a.exe",
+        # A base name that names a folder, not a file.
+        "C:\\x\\.",
+        "C:\\x\\..",
+        "/usr/..",
         "",
         " C:\\x\\a.exe",
     ],

@@ -2257,13 +2257,14 @@ def image_path_parts(name: str) -> tuple[str, str] | None:
     Wholly one path: rooted at a drive (``C:\\``) or at one separator
     (``/usr``), written with one kind of separator and no run of it, holding no
     quote, no character a Windows name refuses, no control character and no
-    colon but the drive's, and a base name with no white space; and the
-    directory joined to the base name (:func:`image_path`) is the name again,
-    character for character. A white space inside the folder is a folder's
-    (``C:\\Program Files``). Anything else is no one path and is left whole: a
-    path followed by arguments (``svchost.exe -k GPSvcGroup``) or by a note
-    (``rundll32.exe (cmdline: …)``), a quoted path, a name with no folder, an
-    ordinal form, a share, a namespace or an ``%VARIABLE%`` spelling.
+    colon but the drive's, and a base name with no white space that is not
+    ``.`` or ``..``; and the directory joined to the base name
+    (:func:`image_path`) is the name again, character for character. A white
+    space inside the folder is a folder's (``C:\\Program Files``). Anything
+    else is no one path and is left whole: a path followed by arguments
+    (``svchost.exe -k GPSvcGroup``) or by a note (``rundll32.exe (cmdline:
+    …)``), a quoted path, a name with no folder, an ordinal form, a share, a
+    namespace or an ``%VARIABLE%`` spelling.
     """
     if not name or name != name.strip() or not _ONE_PATH_ROOT_RE.match(name):
         return None
@@ -2272,7 +2273,7 @@ def image_path_parts(name: str) -> tuple[str, str] | None:
     if ("\\" in name and "/" in name) or "\\\\" in name or "//" in name:
         return None
     directory, base = split_path(name)
-    if not directory or not base or any(c.isspace() for c in base):
+    if not directory or base in {"", ".", ".."} or any(c.isspace() for c in base):
         return None
     return (directory, base) if image_path(directory, base) == name else None
 

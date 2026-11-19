@@ -40,6 +40,13 @@ FORMS = [
     (r"\\203.0.113.7@80\DavWWWRoot\x.dll", "share", "203.0.113.7"),
     (r"\\evil.com@SSL@443\DavWWWRoot\x", "share", "evil.com"),
     ("//evil.com/a", "slashes", "evil.com"),
+    # A host written with a port is the host without it.
+    ("//evil.com:8080/a", "slashes", "evil.com"),
+    (r"\\evil.com:445\s", "share", "evil.com"),
+    (r"\\?\UNC\evil.com:445\s", "share", "evil.com"),
+    (r"\\[2001:4860::1]:445\s", "share", "[2001:4860::1]"),
+    (r"\\[2001:4860::1]\s", "share", "[2001:4860::1]"),
+    (r"\\2001:4860::1\s", "share", "2001:4860::1"),
     (r"http:\\evil.com\gate.php", "url", "evil.com"),
     (r"https:/\evil.com/a", "url", "evil.com"),
     (r"evil\.com", "escaped", ""),
@@ -111,6 +118,15 @@ def test_a_name_on_the_analysed_machine_prints_as_written_with_no_mark(value: st
             r"`\\203[.]0[.]113[.]7@80\DavWWWRoot\x.dll`" + ADDRESS_MARK,
         ),
         ("//evil.com/a", "`//evil[.]com/a`"),
+        # The port stays as written beside the host; the mark is the host's.
+        ("//evil.com:8080/a", "`//evil[.]com:8080/a`"),
+        (r"\\evil.com:445\s", r"`\\evil[.]com:445\s`"),
+        (r"\\10.1.2.3:445\s", r"`\\10[.]1[.]2[.]3:445\s`" + ADDRESS_MARK),
+        (r"\\[2001:4860::1]:445\s", r"`\\[2001[:]4860::1]:445\s`"),
+        # An address in brackets is defanged as the address; its brackets stay
+        # where they are written.
+        (r"\\[2001:4860::1]\s", r"`\\[2001[:]4860::1]\s`"),
+        (r"\\[::1]\s", r"`\\[[:]:1]\s`" + ADDRESS_MARK),
     ],
 )
 def test_a_network_path_keeps_its_host_defanged_and_asks_the_mark_of_it(
