@@ -71,8 +71,8 @@ def _ends_swapped(c: Change) -> bool:
 SEEDS: tuple[tuple[str, str, str, str, frozenset[str], Callable[[Change], bool]], ...] = (
     (
         f"{R}/figures.py",
-        'caption="Network endpoints (observed)"',
-        'caption="Network endpoints (observed) SEED-NETWORK"',
+        'caption="Network endpoints"',
+        'caption="Network endpoints SEED-NETWORK"',
         "build",
         frozenset({"html.figure"}),
         _says("SEED-NETWORK"),
@@ -87,8 +87,8 @@ SEEDS: tuple[tuple[str, str, str, str, frozenset[str], Callable[[Change], bool]]
     ),
     (
         f"{R}/figures.py",
-        '("TA0005", "Defense Evasion"),',
-        '("TA0005", "Defense Evasion SEED-COLUMN"),',
+        "cols = [(tid, name) for tid, name in _tactic_columns()",
+        'cols = [(tid, name + " SEED-COLUMN") for tid, name in _tactic_columns()',
         "build",
         frozenset({"html.figure"}),
         _says("SEED-COLUMN"),
