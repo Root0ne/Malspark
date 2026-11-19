@@ -104,6 +104,43 @@ class TestTheCheck:
 
         assert found.values == (QUILL, MARROW)
 
+    def test_a_term_the_answer_holds_inside_a_longer_text_is_not_asked(self) -> None:
+        """The answer holds the term, case aside, inside a path or a name beside a dot, an
+        underscore or a separator: "is not in the answer" would be untrue, so nothing is asked."""
+        for found_text, term in (
+            ("C:\\Windows\\System32\\vssadmin.exe", "vssadmin"),
+            ("Win32_ShadowCopy", "shadowcopy"),
+        ):
+            pattern = f"re:(?i)({term}|{QUILL})"
+            texts = EntryTexts.from_ledger(
+                [
+                    _entry(
+                        "ev_0031",
+                        "strings",
+                        json.dumps(
+                            {
+                                "pattern": pattern,
+                                "strings": [{"offset": 16, "text": found_text}],
+                                "total_matched": 1,
+                            }
+                        ),
+                        args={"pattern": pattern},
+                    )
+                ]
+            )
+
+            assert _body(f"The strings hold '{term}' [ev_0031].", texts) == []
+            assert len(_body(f"The strings hold '{QUILL}' [ev_0031].", texts)) == 1
+
+    def test_a_term_another_cited_entry_holds_inside_a_longer_text_is_not_asked(self) -> None:
+        """The mark says the value is only in what the call was asked for: another cited
+        entry holding it inside a longer text makes that untrue, so nothing is asked."""
+        texts = _texts(
+            _entry("ev_0032", "process_tree", json.dumps({"processes": [f"{QUILL}.exe"]}))
+        )
+
+        assert _body(f"The strings hold '{QUILL}' [ev_0030, ev_0032].", texts) == []
+
     def test_a_term_the_answer_found_is_not_asked(self) -> None:
         assert _body(f"The string evidence contains the term '{MATCHED}' [ev_0030].") == []
 

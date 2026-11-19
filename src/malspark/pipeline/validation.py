@@ -8331,7 +8331,8 @@ def command_value_violations(payload: Any, compared: Sequence[ComparedValues]) -
 
 CITATION_WRONG_ENTRY_CODE = "report.citation_wrong_entry"
 # A quoted value that its cited entries hold only inside the echo of their own
-# call's arguments, never in what the answer found (``echoed_argument_citations``):
+# call's arguments, nowhere in the rest of the answer, letter case aside and not
+# inside a longer text either (``echoed_argument_citations``):
 # a search answer repeats the pattern it was given. Read for a quoted value of
 # three characters or more that is no number (digits with separators, a hex run
 # holding a digit, or ``0x`` hex) and holds no token the reader of unquoted
@@ -10717,7 +10718,8 @@ def echoed_argument_citations(
     the sentence does not name it as absent where it stands
     (:func:`_named_as_absent`); at least one cited entry holds it on its whole
     text and none holds it once the echoes of its own call's arguments are
-    taken out (:func:`_call_echoes`, :func:`_without_call_echoes`); and in at
+    taken out (:func:`_call_echoes`, :func:`_without_call_echoes`), not even,
+    letter case aside, inside a longer text; and in at
     least one cited entry the echo that holds it is longer than the value — a
     value that is a whole argument is the call's own target. A cited entry
     whose text is not the whole answer says nothing of what the answer lacks,
@@ -10842,12 +10844,17 @@ def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tupl
 
     ``()`` unless every condition of :func:`echoed_argument_citations` holds:
     a cited entry holds the value on its whole text, none holds it once its
-    call's echoes are out, none is a part of its answer only, and in one of
-    them the echo that holds it is longer than the value.
+    call's echoes are out (not even, case aside, inside a longer text), no
+    other cited entry holds it inside a longer text, none is a part of its
+    answer only, and in one of them the echo that holds it is longer than
+    the value.
     """
     known = [entry_id for entry_id in cited if entries.has_text(entry_id)]
     holding = [entry_id for entry_id in known if entries.holds(entry_id, value, fields=True)]
     if not holding or any(entry_id in entries.partial for entry_id in known):
+        return ()
+    if any(value.lower() in entries.text_of(e).lower() for e in known if e not in holding):
+        # Another cited entry holds it inside a longer text.
         return ()
     longer = False
     for entry_id in holding:
@@ -10856,6 +10863,9 @@ def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tupl
             entries.text_of(entry_id), echoes, _call_arguments(entries, entry_id)
         )
         if EntryTexts(texts={entry_id: rest}).holds(entry_id, value, fields=True):
+            return ()
+        if value.lower() in rest.lower():
+            # Held inside a longer text outside the echo: the answer holds it.
             return ()
         longer = longer or any(
             len(echo) > len(value)
