@@ -156,7 +156,9 @@ class TestFigureText:
         )
         units = rs._Units("serve")
         rs.html_units(document, units)
-        got = [(u["surface"], u["key"], u["text"]) for u in units.rows]
+        got = [
+            (u["surface"], u["key"], u["text"]) for u in units.rows if u["surface"] != "html.body"
+        ]
         assert got == [
             ("html.figure", "fig-x label", "first label"),
             ("html.figure", "fig-x label (2)", "second label"),
@@ -278,7 +280,8 @@ class TestCompare:
         )
         out = tmp_path / "diff.json"
         argv += ["--expect", str(expect), "--json", str(out)]
-        assert self._main(monkeypatch, pair, argv) == 0
+        # Every change expected, one expectation unexercised: its own status.
+        assert self._main(monkeypatch, pair, argv) == rs.EXIT_UNEXERCISED
         printed = capsys.readouterr().out
         assert "CHANGED expected" in printed
         assert "UNEXERCISED expectation 1 [stix]: an indicator is added" in printed

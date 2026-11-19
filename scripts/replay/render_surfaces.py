@@ -2,51 +2,67 @@
 
 Over one or more stored runs, each a directory in the benchmark's layout::
 
-    python scripts/replay/render_surfaces.py runs/plink-r4/1 --out DIR
+    python scripts/replay/render_surfaces.py runs/<family>/1 --out DIR
 
 renders what a reader of the run is shown, at zero cost, and writes a surface
 record (``DIR/surfaces.json``) beside the rendered files (``DIR/<run>/<mode>/``:
 ``report.md``, ``report.html``, ``iocs.json``, ``iocs-default.json``,
-``stix-bundle.json``, ``mitre.json``, ``misp-event.json``, ``attack-layer.json``,
-``call-map.json``, ``evidence-bundle.json`` and one rule file per kind). Nothing
-is written into a run's directory: every file of it is digested before and
-after, and the command fails when a digest changed.
+``stix-bundle.json``, ``stix-judge.json``, ``mitre.json``, ``misp-event.json``,
+``attack-layer.json``, ``call-map.json``, ``evidence-bundle.json`` and one rule
+file per kind). Nothing is written into a run's directory: every file of it is
+digested before and after, and the command fails when a digest changed.
 
 The record is a list of units, each with its ``surface``, the ``mode`` that
 produced it, a ``group`` (a section path, a figure id, a rule kind), a stable
 ``key`` and its ``text``:
 
-* ``report.md``: each line of the analyst-layout Markdown, under its section
-  path; ``banner``: the title block's note and banner lines;
+* ``report.md``: each line of the Markdown in the layout the API serves (the
+  run's ``reporting.full_report_in_one_file``), under its section path;
+  ``banner``: the title block's note and banner lines;
 * ``html.header`` (the cover's fields), ``html.figure`` (each figure's caption,
   legend and every SVG ``<text>`` label), ``html.notes`` (a paragraph made of
-  notes alone, the self-contained report's note list);
-* ``iocs.default`` and ``iocs.all``: each row of ``/iocs`` (kind, value, publish
-  answer, source, note), as served by default and with ``include=all``;
-* ``stix``: each object's type, key and every text property;
-  ``stix.notice``: the notice the API serves an unpublished bundle with;
+  notes alone, the self-contained report's note list), ``html.body`` (the text
+  of every other block outside the cover and the figures, a table row's cells
+  joined, under its section);
+* ``iocs.default`` and ``iocs.all``: each row of ``/iocs`` with every field it
+  is served with, by default and with ``include=all``; the kinds served only to
+  a ``kind`` filter naming them are rendered with that filter;
+* ``stix``: each object of the bundle ``/stix`` serves, keyed by its type and
+  identity (a relationship by its source, its type and its target), its text
+  every value but its id and timestamps as canonical JSON, each ref said as
+  its target's key; ``stix.notice``: the notice an unpublished bundle is served
+  with; ``stix.note``: the STIX note the report detail serves; ``stix.judge``
+  and ``stix.judge.notice``: the ``source=judge`` view, its objects and its
+  envelope;
 * ``mitre``: each row of ``/mitre``; ``misp``: the event's info and each
-  attribute; ``navigator``: the layer's description, legend and each
-  technique's comment and metadata; ``call_map``: each function of the call
-  map and its roots;
+  attribute; ``navigator``: the layer's own fields, its legend and each
+  technique with every field (score, colour, comment, metadata); ``call_map``:
+  each function of the call map and its roots;
 * ``rules``: each drafted detection rule as a digest of its body with its
   compile error, and ``rules.comments``: every comment line of each kind's
   download (``include=all``), the bodies' own comment lines among them;
-* ``bundle.notes``: the evidence bundle's numbered notes and its platform note
-  lines (each line of its sections written as a note: italic or quoted).
+* ``bundle.notes``: the evidence bundle's numbered notes; ``bundle.lines``:
+  every line of its sections outside a fence, headings and the platform's
+  notes among them; ``bundle.index``: its header and each evidence entry.
+
+The API's routes and writers are the tree's own: the ``/stix`` route is called
+with the tree's service reading a row of the stored (or rebuilt) columns.
 
 Two modes produce the units, and each unit says which:
 
 * **serve**: the stored report (``report-byjob.json``'s ``malware_report``, else
   ``report.json``) typed under the tree's own models and passed to its
   renderers and the API's writers, as the API does for a stored job. The STIX
-  bundle and ``/mitre`` are the stored report row's columns, served as the API
-  serves them.
+  bundle and ``/mitre`` are the stored report row's columns, and the judge
+  column is read back from the served view (``stix-judge.json``).
 * **build**: the report rebuilt by the replay (``scripts/replay/rules.py``: the
   deterministic build, the stored composed sections put back, the export, the
   IOC table, the MISP attributes and the detection drafts), its figures drawn
-  as the report node draws them and its clock set to the stored report's, then
-  rendered and exported the same way.
+  as the report node draws them, then rendered and exported the same way. Its
+  clock is the stored report's: ``generated_at`` and every value the builder
+  dates from the current time (the cover's date, the date inside the report
+  number, the copyright year, the revision history's date) are set to the
+  stored report's before the export and the drafts read them.
 
 A surface a tree cannot produce (a function its tree does not have, a stored
 file the run lacks, a report the replay could not rebuild) is listed under
@@ -58,25 +74,38 @@ equal. One that raised is listed there too, marked as an error.
 tree in a process of its own, with that tree first on the import path: the
 driver resolves the tree's entry points by name at run time, so a ref from
 before this tool is rendered too, and an entry point it lacks is a surface not
-produced. It prints, per run and grouped by surface, every unit changed, added
-or removed with both texts, and a summary count. ``--expect FILE`` (JSON: a list
+produced. The record says where the platform, the API and the replay scripts
+were imported from, and a package imported from outside the tree fails the
+comparison. It prints, per run and grouped by surface, every unit changed,
+added or removed with both texts, and a summary count. Every unit is compared,
+those marked ``dynamic`` too (see the limits). A surface produced by neither
+ref is listed NOT COMPARED with both reasons. ``--expect FILE`` (JSON: a list
 of ``{"surface", "mode"?, "key"?, "old"?, "new"?, "reason"}``, each pattern a
 regular expression searched in the key or the text) names the changes
 expected: a difference no expectation matches is UNEXPECTED, and an
-expectation no difference matches is UNEXERCISED. The exit status is 0 when the
-refs render the same or every difference was expected, 1 when a difference was
-not expected, and 2 when a surface raised in either tree, a tree could not be
-written out or rendered, or on an error.
+expectation no difference matches is UNEXERCISED. The exit status is the first
+that applies of: 2 when a surface raised in either tree, a tree could not be
+written out or rendered, or on an error; 1 when a difference was not expected;
+3 when a surface was produced by neither ref (unless ``--accept-not-compared``);
+4 when an expectation was not exercised; 0 otherwise.
 
 Limits:
 
 * serve mode cannot change platform text that was written before rendering
   and stored: clauses appended to section bodies, degradation reasons, the
-  indicators' reasons, the figures a stored report holds are read as stored;
+  indicators' reasons, the figures a stored report holds and the stored STIX
+  bundle (its export reasons among them) are read as stored;
 * build mode rebuilds without the sandbox report, so the units that only it
   fills (the process tree and network figures, the sandbox's IOC rows, the
-  export's process, observed-data and network objects) are marked ``dynamic``
-  and not compared;
+  export's process, observed-data and network objects) are drawn from no
+  sandbox data. Both refs draw them alike, so they are compared, but they are
+  marked ``dynamic``: read against the stored report, they differ;
+* build mode's judge view carries the stored record's label map: the replay
+  keeps none of its own;
+* the report detail is read for its STIX note only (``with_current_iocs``):
+  its other fields (the transcript, the findings, the verdict reading, the
+  section tabs) are not rendered; nor are the PDF (the HTML through WeasyPrint),
+  the job package and the console, which draws the API's JSON;
 * fields an older build lacked default to empty when typed under a newer
   model, so a re-render shows the differences between two refs only, and is
   not what a new run would print.
@@ -113,13 +142,29 @@ ATTCK_CACHE_VARIABLE = "MALSPARK_ATTCK_CACHE"
 SCHEMA = 1
 MODES: tuple[str, ...] = ("serve", "build")
 RECORD_FILE = "surfaces.json"
+# The exit statuses of a comparison, the first that applies.
+EXIT_ERROR = 2
+EXIT_UNEXPECTED = 1
+EXIT_NOT_COMPARED = 3
+EXIT_UNEXERCISED = 4
+EXIT_STATUSES: tuple[tuple[int, str], ...] = (
+    (EXIT_ERROR, "a surface raised in either tree, a tree could not be written out or rendered"),
+    (EXIT_UNEXPECTED, "a difference no expectation names"),
+    (EXIT_NOT_COMPARED, "a surface neither ref produced, unless --accept-not-compared"),
+    (EXIT_UNEXERCISED, "an expectation no difference matched"),
+    (0, "the refs render the same, or every difference was expected"),
+)
 
 LIMITS: tuple[str, ...] = (
     "serve mode cannot change platform text that was written before rendering and stored: "
     "clauses appended to section bodies, degradation reasons, the indicators' reasons and the "
-    "stored figures are read as stored",
-    "build mode rebuilds without the sandbox report, so the units only it fills are marked "
-    "dynamic and not compared",
+    "stored figures and the stored STIX bundle are read as stored",
+    "build mode rebuilds without the sandbox report, so the units only it fills are drawn from "
+    "no sandbox data: both refs draw them alike and they are compared, but they are marked "
+    "dynamic, as read against the stored report they differ",
+    "build mode's judge view carries the stored record's label map",
+    "the report detail is read for its STIX note only; its other fields, the PDF, the job "
+    "package and the console are not rendered",
     "fields an older build lacked default to empty, so a re-render shows the differences "
     "between two refs only and is not what a new run would print",
 )
@@ -131,10 +176,14 @@ SURFACES: tuple[str, ...] = (
     "html.header",
     "html.figure",
     "html.notes",
+    "html.body",
     "iocs.default",
     "iocs.all",
     "stix",
     "stix.notice",
+    "stix.note",
+    "stix.judge",
+    "stix.judge.notice",
     "mitre",
     "misp",
     "navigator",
@@ -142,11 +191,21 @@ SURFACES: tuple[str, ...] = (
     "rules",
     "rules.comments",
     "bundle.notes",
+    "bundle.lines",
+    "bundle.index",
 )
 # The surfaces whose units are lines in order: compared by aligning each
 # group's texts, so a line put in does not move every key after it.
 ORDERED: frozenset[str] = frozenset(
-    {"report.md", "banner", "html.header", "html.notes", "rules.comments", "bundle.notes"}
+    {
+        "report.md",
+        "banner",
+        "html.header",
+        "html.notes",
+        "html.body",
+        "rules.comments",
+        "bundle.lines",
+    }
 )
 # What only the sandbox report fills, which build mode rebuilds without: the
 # figures drawn from its process tree and its network block, the IOC rows it
@@ -165,10 +224,13 @@ DYNAMIC_STIX_TYPES: frozenset[str] = frozenset(
         "network-traffic",
     }
 )
+# The IOC kinds ``/iocs`` serves only to a ``kind`` filter that names them.
+_FILTERED_IOC_KINDS: tuple[str, ...] = ("secret", "crypto_wallet")
 # The download comment of each rule kind, as the API writes it.
 RULE_KINDS: tuple[str, ...] = ("yara", "sigma", "suricata", "snort")
 _RULE_COMMENT = {"yara": "//", "sigma": "#", "suricata": "#", "snort": "#"}
-# A STIX property that identifies or dates an object rather than says something.
+# A STIX property that identifies or dates an object rather than says something:
+# every other value is part of the object's unit.
 _STIX_NOT_TEXT = frozenset(
     {
         "id",
@@ -183,9 +245,10 @@ _STIX_NOT_TEXT = frozenset(
         "first_observed",
         "last_observed",
         "published",
-        "number_observed",
     }
 )
+# A STIX identifier: what a ``*_ref`` names.
+_STIX_ID = re.compile(r"^[a-z][a-z0-9-]*--[0-9a-fA-F-]{36}$")
 
 
 class Absent(LookupError):
@@ -446,11 +509,130 @@ class _HtmlReader(HTMLParser):
             self._note_item.append(data)
 
 
+class _HtmlBody(HTMLParser):
+    """The text of every block of the body outside the cover and the figures, in order.
+
+    A block (a paragraph, a list item, a heading, a preformatted block, a table
+    row, a quote, a definition, the document's title) is one text; the cells of
+    a row are joined with `` | ``. Styles and scripts say nothing a reader reads.
+    """
+
+    _BLOCKS = frozenset(
+        {
+            "p",
+            "li",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "pre",
+            "blockquote",
+            "dt",
+            "dd",
+            "tr",
+            "caption",
+            "summary",
+            "div",
+            "section",
+            "article",
+            "aside",
+            "nav",
+            "footer",
+            "main",
+            "details",
+            "table",
+            "ul",
+            "ol",
+            "dl",
+            "title",
+            "br",
+            "hr",
+        }
+    )
+    _CELLS = frozenset({"td", "th"})
+    _SKIPPED = frozenset({"header", "figure", "style", "script", "svg"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.blocks: list[tuple[str, str]] = []  # (section, text)
+        self._chunk: list[str] = []
+        self._skipping: list[str] = []
+        self._section: list[str] = ["", ""]
+        self._heading: list[str] | None = None
+        self._heading_level = 0
+
+    @property
+    def section(self) -> str:
+        return " > ".join(p for p in self._section if p)
+
+    def _flush(self) -> None:
+        # A row whose first cells are empty starts with a separator: dropped.
+        said = _space("".join(self._chunk)).strip(" |")
+        if said:
+            self.blocks.append((self.section, said))
+        self._chunk = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self._skipping:
+            if tag in self._SKIPPED:
+                self._skipping.append(tag)
+            return
+        if tag in self._SKIPPED:
+            self._flush()
+            self._skipping.append(tag)
+        elif tag in self._CELLS:
+            if _space("".join(self._chunk)):
+                self._chunk.append(" | ")
+        elif tag in self._BLOCKS:
+            self._flush()
+            if tag in {"h2", "h3"}:
+                self._heading = []
+                self._heading_level = int(tag[1])
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if not self._skipping and tag in self._BLOCKS:
+            self._flush()
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._skipping:
+            if tag == self._skipping[-1]:
+                self._skipping.pop()
+            return
+        if tag in self._BLOCKS:
+            if tag in {"h2", "h3"} and self._heading is not None:
+                title = _space("".join(self._heading))
+                self._heading = None
+                # The heading is a block of the section it opens.
+                if self._heading_level == 2:
+                    self._section = [title, ""]
+                else:
+                    self._section = [self._section[0], title]
+            self._flush()
+
+    def handle_data(self, data: str) -> None:
+        if self._skipping:
+            return
+        self._chunk.append(data)
+        if self._heading is not None:
+            self._heading.append(data)
+
+    def close(self) -> None:
+        super().close()
+        self._flush()
+
+
 def html_units(document: str, units: _Units, *, dynamic_figures: Iterable[str] = ()) -> None:
-    """The HTML's cover fields, figure texts (SVG ``<text>`` nodes) and note paragraphs."""
+    """The HTML's cover fields, figure texts (SVG ``<text>`` nodes), note paragraphs and blocks."""
     reader = _HtmlReader()
     reader.feed(document)
     reader.close()
+    body = _HtmlBody()
+    body.feed(document)
+    body.close()
+    for section, said in body.blocks:
+        units.add("html.body", "block", said, group=section)
     marked = set(dynamic_figures)
     for said in reader.header:
         units.add("html.header", "field", said, group="cover")
@@ -464,16 +646,25 @@ def html_units(document: str, units: _Units, *, dynamic_figures: Iterable[str] =
         units.add("html.notes", "note", said, group=section)
 
 
+def canonical(value: Any) -> str:
+    """``value`` as canonical JSON: sorted keys, one line, the text as it is."""
+    return json.dumps(
+        value, sort_keys=True, ensure_ascii=False, separators=(", ", ": "), default=str
+    )
+
+
+def _without(row: Mapping[str, Any], *names: str) -> dict[str, Any]:
+    return {k: v for k, v in row.items() if k not in names}
+
+
 def _ioc_units(rows: Sequence[Mapping[str, Any]], units: _Units, *, dynamic: bool) -> None:
+    """Each row as served, keyed by its kind and value, every other field its text."""
     for surface, wanted in (("iocs.default", True), ("iocs.all", None)):
         for row in rows:
             if wanted is not None and row.get("published") is not wanted:
                 continue
             key = f"{row.get('kind') or ''} {row.get('value') or ''}"
-            text = " | ".join(
-                f"{name}: {row.get(name) if row.get(name) is not None else ''}"
-                for name in ("publish_answer", "source", "notes", "role", "indicator_type")
-            )
+            text = canonical(_without(row, "kind", "value"))
             units.add(
                 surface,
                 key,
@@ -493,38 +684,103 @@ def _stix_ident(obj: Mapping[str, Any]) -> str:
     return ""
 
 
-def _stix_text(obj: Mapping[str, Any]) -> str:
-    lines: list[str] = []
-    for name in sorted(obj):
-        if name in _STIX_NOT_TEXT or name.endswith(("_ref", "_refs")):
+def stix_keys(objects: Sequence[Mapping[str, Any]]) -> tuple[list[str], dict[str, str]]:
+    """Each object's key, in order, and the map from an object's id to its key.
+
+    An object is keyed by its type and identity (:func:`_stix_ident`), numbered
+    on a repeat; a relationship by its source's key, its type and its target's
+    key, so one pointed elsewhere is another unit. A ref to an object the
+    bundle does not hold stays the id it is.
+    """
+    seen: dict[str, int] = {}
+    by_id: dict[str, str] = {}
+    keys: list[str] = [""] * len(objects)
+
+    def _numbered(base: str) -> str:
+        count = seen.get(base, 0) + 1
+        seen[base] = count
+        return base if count == 1 else f"{base} ({count})"
+
+    relationships = [i for i, o in enumerate(objects) if o.get("type") == "relationship"]
+    for index, obj in enumerate(objects):
+        if index in relationships:
             continue
-        value = obj[name]
-        if isinstance(value, str):
-            lines.append(f"{name}: {value}")
-        elif isinstance(value, list) and value and all(isinstance(v, str) for v in value):
-            lines.append(f"{name}: {', '.join(value)}")
-        elif name == "kill_chain_phases" and isinstance(value, list):
-            phases = [str(p.get("phase_name") or "") for p in value if isinstance(p, Mapping)]
-            lines.append(f"{name}: {', '.join(phases)}")
-    return "\n".join(lines)
+        keys[index] = _numbered(f"{obj.get('type') or ''} {_stix_ident(obj)}".strip())
+        if obj.get("id"):
+            by_id[str(obj["id"])] = keys[index]
+    for index in relationships:
+        obj = objects[index]
+        source = str(obj.get("source_ref") or "")
+        target = str(obj.get("target_ref") or "")
+        keys[index] = _numbered(
+            f"relationship {by_id.get(source, source)} {obj.get('relationship_type') or ''} "
+            f"{by_id.get(target, target)}"
+        )
+        if obj.get("id"):
+            by_id[str(obj["id"])] = keys[index]
+    return keys, by_id
 
 
-def _stix_units(served: Mapping[str, Any], units: _Units, *, dynamic: bool) -> None:
+def _stix_value(value: Any, by_id: Mapping[str, str], *, top: bool = False) -> Any:
+    """``value`` with each id of the bundle said as its object's key.
+
+    ``top``: the object itself, whose id, type and timestamps are left out.
+    """
+    if isinstance(value, Mapping):
+        return {
+            str(k): _stix_value(v, by_id)
+            for k, v in value.items()
+            if not (top and k in _STIX_NOT_TEXT)
+        }
+    if isinstance(value, list):
+        return [_stix_value(v, by_id) for v in value]
+    if isinstance(value, str) and _STIX_ID.match(value) and value in by_id:
+        return f"-> {by_id[value]}"
+    return value
+
+
+def _stix_text(obj: Mapping[str, Any], by_id: Mapping[str, str] | None = None) -> str:
+    """Every value of the object but its id and timestamps, as canonical JSON."""
+    return canonical(_stix_value(obj, by_id or {}, top=True))
+
+
+def _stix_units(
+    served: Mapping[str, Any],
+    units: _Units,
+    *,
+    dynamic: bool,
+    surface: str = "stix",
+    notice_surface: str = "stix.notice",
+) -> None:
     """Each object of the bundle as served, and the notice served with an unpublished one."""
     found = served.get("bundle")
     bundle: Mapping[str, Any] = found if isinstance(found, Mapping) else served
     notice = served.get("notice") or bundle.get("x_malspark_notice")
-    units.add("stix.notice", "notice", notice or "(none)")
-    for obj in bundle.get("objects") or []:
-        if not isinstance(obj, Mapping):
-            continue
+    units.add(notice_surface, "notice", notice or "(none)")
+    objects = [o for o in bundle.get("objects") or [] if isinstance(o, Mapping)]
+    keys, by_id = stix_keys(objects)
+    for obj, key in zip(objects, keys, strict=True):
         kind = str(obj.get("type") or "")
         units.add(
-            "stix",
-            f"{kind} {_stix_ident(obj)}".strip(),
-            _stix_text(obj),
+            surface,
+            key,
+            _stix_text(obj, by_id),
             group=kind,
             dynamic=dynamic and kind in DYNAMIC_STIX_TYPES,
+        )
+
+
+def _judge_view_units(view: Mapping[str, Any], units: _Units) -> None:
+    """The judge-source view: its envelope (kept, reason, labels, notice) and its objects."""
+    units.add("stix.judge.notice", "envelope", canonical(_without(view, "bundle")))
+    found = view.get("bundle")
+    if isinstance(found, Mapping):
+        _stix_units(
+            {"bundle": found, "notice": view.get("notice")},
+            units,
+            dynamic=False,
+            surface="stix.judge",
+            notice_surface="stix.judge.notice",
         )
 
 
@@ -535,18 +791,9 @@ def _mitre_units(rows: Sequence[Mapping[str, Any]] | None, units: _Units) -> Non
     for row in rows:
         if not isinstance(row, Mapping):
             continue
-        text = " | ".join(
-            f"{name}: {row.get(name) if row.get(name) is not None else ''}"
-            for name in (
-                "name",
-                "description",
-                "evidence_ids",
-                "sandbox_items",
-                "absence_sources",
-            )
-            if name in row
+        units.add(
+            "mitre", str(row.get("technique_id") or ""), canonical(_without(row, "technique_id"))
         )
-        units.add("mitre", str(row.get("technique_id") or ""), text)
 
 
 def _misp_units(event: Mapping[str, Any], units: _Units) -> None:
@@ -574,22 +821,19 @@ def _misp_units(event: Mapping[str, Any], units: _Units) -> None:
 
 
 def _layer_units(layer: Mapping[str, Any], units: _Units) -> None:
+    """The layer's own fields, each legend item, and each technique with every field it has."""
     units.add("navigator", "description", layer.get("description") or "")
+    units.add("navigator", "layer", canonical(_without(layer, "techniques", "legendItems")))
     for item in layer.get("legendItems") or []:
         if isinstance(item, Mapping):
             units.add("navigator", f"legend {item.get('label') or ''}", item.get("color") or "")
     for row in layer.get("techniques") or []:
         if not isinstance(row, Mapping):
             continue
-        metadata = "; ".join(
-            f"{m.get('name')}: {m.get('value')}"
-            for m in row.get("metadata") or []
-            if isinstance(m, Mapping)
-        )
         units.add(
             "navigator",
             f"technique {row.get('techniqueID') or ''}",
-            f"comment: {row.get('comment') or ''} | {metadata}",
+            canonical(_without(row, "techniqueID")),
         )
 
 
@@ -633,29 +877,39 @@ def _rule_units(
 
 
 def _bundle_units(document: Mapping[str, Any], units: _Units) -> None:
+    """The bundle's numbered notes, every line of its sections outside a fence, and its index.
+
+    A line is a unit whether the model or the platform wrote it: a heading with
+    its tag, a note in italics, a quote, a table row, a list item.
+    """
     for note in document.get("notes") or []:
         if isinstance(note, Mapping):
-            ids = ", ".join(str(i) for i in note.get("evidence_ids") or [])
             units.add(
                 "bundle.notes",
                 f"note {note.get('number')}",
-                f"{note.get('section') or ''}: {ids}",
+                canonical(_without(note, "number")),
                 group="notes",
             )
     for section in document.get("sections") or []:
         if not isinstance(section, Mapping):
             continue
+        group = str(section.get("title") or section.get("anchor") or "")
         fenced = False
         for line in str(section.get("markdown") or "").splitlines():
-            said = line.strip()
+            said = line.rstrip()
             if _FENCE.match(said):
                 fenced = not fenced
                 continue
-            if fenced or len(said) < 3:
+            if fenced or not said.strip():
                 continue
-            note = (said.startswith("_") and said.endswith("_")) or said.startswith(">")
-            if note:
-                units.add("bundle.notes", "line", said, group=str(section.get("title") or ""))
+            units.add("bundle.lines", "line", said, group=group)
+    header = document.get("report")
+    if isinstance(header, Mapping):
+        units.add("bundle.index", "report", canonical(header))
+    units.add("bundle.index", "format", str(document.get("format") or ""))
+    for row in document.get("evidence_index") or []:
+        if isinstance(row, Mapping):
+            units.add("bundle.index", f"entry {row.get('id')}", canonical(_without(row, "id")))
 
 
 # ---------------------------------------------------------------------------
@@ -712,6 +966,20 @@ class _Stored:
         if not isinstance(summary, dict):
             summary = self.byjob.get("run_summary")
         self.run_summary: dict[str, Any] = summary if isinstance(summary, dict) else {}
+        # The judge-source view as the run served it: the row's judge column is
+        # what it holds besides the envelope the route adds.
+        judge = _read(root, "stix-judge.json")
+        self.judge_view: dict[str, Any] | None = judge if isinstance(judge, dict) else None
+
+    @property
+    def judge_column(self) -> dict[str, Any] | None:
+        """The report row's ``judge_stix_bundle`` column, read back from the served view."""
+        view = self.judge_view
+        if view is None:
+            raise Absent("the stored run holds no judge-source view (stix-judge.json)")
+        if view.get("kept") is False:
+            return None
+        return {k: v for k, v in view.items() if k in {"bundle", "labels", "as_written"}}
 
     @property
     def report_id(self) -> str:
@@ -803,6 +1071,56 @@ def _served_stix(bundle: Any) -> dict[str, Any]:
     return served
 
 
+def _routed_stix(export: Any, judge: Any, source: str, report_id: str) -> dict[str, Any]:
+    """What the tree's ``/reports/{id}/stix`` route answers for a row holding these columns.
+
+    The route itself is called, its service the tree's own ``ReportService``
+    reading a row of the two columns, so the envelope, the notice and the
+    renamed properties are the tree's. A tree without the route serves the
+    export as :func:`_served_stix` does; the judge source, which only the route
+    serves, is then not produced.
+    """
+    import asyncio
+    import inspect
+    import uuid
+    from types import SimpleNamespace
+
+    try:
+        route = entry("app.api.v1.reports", "get_stix_bundle")
+        service = entry("app.services.report_service", "ReportService")
+    except Absent:
+        if source == "judge":
+            raise
+        return _served_stix(export)
+    parameters = inspect.signature(route).parameters
+    if source == "judge" and "source" not in parameters:
+        raise Absent("this tree's /stix route serves no judge source")
+    row = SimpleNamespace(
+        id=report_id or None, stix_bundle=export, judge_stix_bundle=judge, malware_report=None
+    )
+
+    class _Row(service):  # type: ignore[misc, valid-type]
+        async def get_report(self, *_args: Any, **_kwargs: Any) -> Any:
+            return row
+
+    named: dict[str, Any] = {
+        "report_id": uuid.UUID(int=0),
+        "user": None,
+        "svc": _Row(None),
+    }
+    if "source" in parameters:
+        named["source"] = source
+    try:
+        answer = asyncio.run(route(**named))
+    except Exception as exc:
+        # The route's 404, with what it says: no surface, never an empty one.
+        status = getattr(exc, "status_code", None)
+        if status is None:
+            raise
+        raise Absent(f"the route answers {status}: {getattr(exc, 'detail', '')}") from exc
+    return dict(answer)
+
+
 def _render(
     mode: _Mode,
     stored: _Stored,
@@ -819,7 +1137,13 @@ def _render(
     document alone are produced all the same, as the API serves them.
     """
     dynamic = mode.mode == "build"
-    layout = "analyst"
+    # The layout the API serves the report in, by the run's settings
+    # (``reporting.full_report_in_one_file``, read under the replay guard);
+    # a tree without layouts prints its one.
+    try:
+        layout: str | None = str(entry("platform.reporting.renderers.layout", "report_layout")())
+    except Absent:
+        layout = None
 
     def _need() -> Any:
         if report is None:
@@ -828,6 +1152,8 @@ def _render(
 
     def _laid_out(module: str, name: str) -> Any:
         renderer = entry(module, name)
+        if layout is None:
+            return renderer()
         try:
             return renderer(layout=layout)
         except TypeError as exc:
@@ -846,7 +1172,16 @@ def _render(
         html_units(text, mode.units, dynamic_figures=DYNAMIC_FIGURES if dynamic else ())
 
     def _iocs() -> None:
-        rows = entry("app.services.report_service", "ioc_feed_rows")(mr)
+        feed = entry("app.services.report_service", "ioc_feed_rows")
+        rows = list(feed(mr))
+        # The kinds served only to a filter that names them, after the rest.
+        held = {(row.get("kind"), row.get("value")) for row in rows}
+        for kind in _FILTERED_IOC_KINDS:
+            try:
+                only = feed(mr, kind)
+            except TypeError:
+                break  # a feed without the filter serves every kind unfiltered
+            rows += [r for r in only if (r.get("kind"), r.get("value")) not in held]
         mode.files["iocs.json"] = _json({"items": rows, "total": len(rows)})
         default = [row for row in rows if row.get("published") is True]
         mode.files["iocs-default.json"] = _json({"items": default, "total": len(default)})
@@ -856,6 +1191,17 @@ def _render(
         served = parts["stix"]()
         mode.files["stix-bundle.json"] = _json(served)
         _stix_units(served, mode.units, dynamic=dynamic)
+
+    def _stix_note() -> None:
+        # The note the detail endpoint serves beside the report (``with_current_iocs``).
+        with_current_iocs = entry("app.services.report_service", "with_current_iocs")
+        _served, note = with_current_iocs(dict(mr), stored.report_id)
+        mode.units.add("stix.note", "note", note or "(none)")
+
+    def _judge_view() -> None:
+        view = parts["judge"]()
+        mode.files["stix-judge.json"] = _json(view)
+        _judge_view_units(view, mode.units)
 
     def _mitre() -> None:
         rows = parts["mitre"]()
@@ -898,15 +1244,17 @@ def _render(
         _bundle_units(json.loads(text), mode.units)
 
     mode.produce(("report.md", "banner"), _markdown)
-    mode.produce(("html.header", "html.figure", "html.notes"), _html)
+    mode.produce(("html.header", "html.figure", "html.notes", "html.body"), _html)
     mode.produce(("iocs.default", "iocs.all"), _iocs)
     mode.produce(("stix", "stix.notice"), _stix)
+    mode.produce(("stix.note",), _stix_note)
+    mode.produce(("stix.judge", "stix.judge.notice"), _judge_view)
     mode.produce(("mitre",), _mitre)
     mode.produce(("misp",), _misp)
     mode.produce(("navigator",), _layer)
     mode.produce(("call_map",), _call_map)
     mode.produce(("rules", "rules.comments"), _rules)
-    mode.produce(("bundle.notes",), _bundle)
+    mode.produce(("bundle.notes", "bundle.lines", "bundle.index"), _bundle)
 
 
 def _json(value: Any) -> str:
@@ -947,7 +1295,13 @@ def _serve(stored: _Stored) -> _Mode:
         def _stix() -> Any:
             if "stix_bundle" not in stored.byjob:
                 raise Absent("report-byjob.json holds no stix_bundle column")
-            return _served_stix(stored.byjob.get("stix_bundle"))
+            judge = stored.judge_column if stored.judge_view is not None else None
+            return _routed_stix(stored.byjob.get("stix_bundle"), judge, "export", stored.report_id)
+
+        def _judge() -> Any:
+            return _routed_stix(
+                stored.byjob.get("stix_bundle"), stored.judge_column, "judge", stored.report_id
+            )
 
         def _mitre() -> Any:
             if "mitre_techniques" not in stored.byjob:
@@ -957,7 +1311,17 @@ def _serve(stored: _Stored) -> _Mode:
         def _misp(typed: Any) -> Any:
             return _misp_event(typed, mr, stored.job_id, stored.report_id)
 
-        _render(mode, stored, report, mr, untyped=untyped, stix=_stix, mitre=_mitre, misp=_misp)
+        _render(
+            mode,
+            stored,
+            report,
+            mr,
+            untyped=untyped,
+            stix=_stix,
+            judge=_judge,
+            mitre=_mitre,
+            misp=_misp,
+        )
     return mode
 
 
@@ -976,6 +1340,39 @@ def _clock(stored: _Stored) -> datetime:
     return datetime(1970, 1, 1, tzinfo=UTC)
 
 
+def pin_clock(report: Any, stored: Mapping[str, Any] | None, clock: datetime) -> None:
+    """Every value the build derived from the current time, set to the stored report's.
+
+    The builder dates the cover from the clock it reads (``_build_front_matter``):
+    the report date, the date inside the report number, the copyright year and
+    the revision history's date. Each is set to the stored report's date
+    (its ``front_matter.report_date``, else ``clock``'s), and ``generated_at``,
+    which the export, the MISP event and the drafted rules read, to ``clock``.
+    Only the date in each value is replaced, so a prefix, a digest or a wording
+    the tree changed still shows.
+    """
+    report.generated_at = clock
+    front = getattr(report, "front_matter", None)
+    built = str(getattr(front, "report_date", "") or "")
+    if front is None or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", built):
+        return
+    stored_front = (stored or {}).get("front_matter")
+    stored_front = stored_front if isinstance(stored_front, Mapping) else {}
+    pinned = str(stored_front.get("report_date") or "")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", pinned):
+        pinned = f"{clock:%Y-%m-%d}"
+    if front.report_number:
+        front.report_number = str(front.report_number).replace(
+            built.replace("-", ""), pinned.replace("-", "")
+        )
+    if getattr(front, "copyright", None):
+        front.copyright = re.sub(rf"\b{built[:4]}\b", pinned[:4], str(front.copyright))
+    front.report_date = pinned
+    for row in getattr(report, "version_history", None) or []:
+        if getattr(row, "date", None) == built:
+            row.date = pinned
+
+
 def _build(run_dir: Path, stored: _Stored) -> _Mode:
     """The report the replay rebuilds, captured where the export decided its values."""
     mode = _Mode("build")
@@ -992,11 +1389,12 @@ def _build(run_dir: Path, stored: _Stored) -> _Mode:
 
     def _clocked(*args: Any, **kwargs: Any) -> Any:
         # The build's clock is the stored report's, set before the export and
-        # the drafts read it: their object ids and dates derive from it.
+        # the drafts read it: their object ids and dates derive from it, and
+        # the cover's dates and report number are the stored report's.
         values = built_by(*args, **kwargs)
         built: Any = args[2] if len(args) > 2 else kwargs.get("built")
         if getattr(built, "report", None) is not None:
-            built.report.generated_at = clock
+            pin_clock(built.report, stored.report, clock)
         return values
 
     def _capturing(*args: Any, **kwargs: Any) -> Any:
@@ -1035,10 +1433,28 @@ def _build(run_dir: Path, stored: _Stored) -> _Mode:
                 )
         mr = report.model_dump(mode="json")
 
-        def _stix() -> Any:
+        def _judge_column() -> Any:
+            # The column the worker stores (``judge_bundle_record``): the judge's
+            # answer as written when the run kept it, else the rebuilt parse. The
+            # label map is the stored record's: the replay keeps none of its own.
+            judge = getattr(captured.get("judged"), "bundle", None)
+            record = stored.judge_column if stored.judge_view is not None else None
+            if judge is None:
+                return None
+            written = (record or {}).get("bundle") if (record or {}).get("as_written") else None
+            build_record = entry("app.worker.analysis_worker", "judge_bundle_record")
+            return build_record(
+                {
+                    "stix_output": judge.model_dump(),
+                    "stix_labels": (record or {}).get("labels") or {},
+                    "stix_written": written,
+                }
+            )
+
+        def _export_column() -> Any:
             bundle = report.stix_bundle_extended
             if bundle:
-                return _served_stix(bundle)
+                return bundle
             judge = getattr(captured.get("judged"), "bundle", None)
             if judge is None:
                 raise Absent("the rebuilt report holds no export and the judge's bundle is absent")
@@ -1048,7 +1464,13 @@ def _build(run_dir: Path, stored: _Stored) -> _Mode:
             flag = entry("platform.schemas.stix_models", "UNPUBLISHED_PROPERTY")
             notice = entry("platform.schemas.stix_models", "UNPUBLISHED_NOTICE")
             draft = {k: v for k, v in as_json.items() if k not in only}
-            return _served_stix({**draft, flag: False, "x_malspark_notice": notice})
+            return {**draft, flag: False, "x_malspark_notice": notice}
+
+        def _stix() -> Any:
+            return _routed_stix(_export_column(), None, "export", stored.report_id)
+
+        def _judge() -> Any:
+            return _routed_stix(None, _judge_column(), "judge", stored.report_id)
 
         def _mitre() -> Any:
             extract = entry("app.worker.analysis_worker", "_extract_mitre")
@@ -1057,7 +1479,7 @@ def _build(run_dir: Path, stored: _Stored) -> _Mode:
         def _misp(typed: Any) -> Any:
             return _misp_event(typed, mr, stored.job_id, stored.report_id)
 
-        _render(mode, stored, report, mr, stix=_stix, mitre=_mitre, misp=_misp)
+        _render(mode, stored, report, mr, stix=_stix, judge=_judge, mitre=_mitre, misp=_misp)
     return mode
 
 
@@ -1070,6 +1492,31 @@ def platform_tree() -> str:
             continue
         return str(Path(str(found.__file__)).resolve().parents[2])
     return ""
+
+
+def imported_from() -> dict[str, str | None]:
+    """The directory each package the render reads was imported from, by name.
+
+    The API (``app``) and the replay scripts (``scripts.replay``); ``None`` for
+    one this tree does not hold. The platform's is the record's ``tree``.
+    """
+    out: dict[str, str | None] = {}
+    for name in ("app", "scripts.replay"):
+        try:
+            found = importlib.import_module(name)
+        except ModuleNotFoundError as exc:
+            missing = str(exc.name or "")
+            if name != missing and not name.startswith(f"{missing}."):
+                raise  # a module the package imports is missing: a broken tree
+            out[name] = None
+            continue
+        at = getattr(found, "__file__", None)
+        if at:
+            out[name] = str(Path(at).resolve().parent)
+        else:
+            # A namespace package: each of its directories is said.
+            out[name] = os.pathsep.join(str(Path(p).resolve()) for p in found.__path__)
+    return out
 
 
 def render_run(
@@ -1109,6 +1556,7 @@ def render_run(
         "run": f"{run_dir.parent.name}/{run_dir.name}" if run_dir.name.isdigit() else run_dir.name,
         "path": str(run_dir),
         "tree": platform_tree(),
+        "imported_from": imported_from(),
         "modes": list(modes),
         "report_source": stored.report_source if stored.report is not None else None,
         "limits": list(LIMITS),
@@ -1147,12 +1595,20 @@ def _change(row_a: Mapping[str, Any] | None, row_b: Mapping[str, Any] | None) ->
 
 
 def compare_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any]:
-    """Every unit changed, added or removed between two records of one run."""
+    """Every unit changed, added or removed between two records of one run.
+
+    Every unit is compared, those marked dynamic too: both refs rebuild them
+    from the same stored ledger without the sandbox report, so a difference
+    between them is the trees'. A surface neither side produced is listed
+    under ``not_compared`` with both reasons and counted in ``neither``.
+    """
     changes: list[dict[str, Any]] = []
-    dynamic = 0
-    rows_a = [r for r in a.get("units") or [] if not r.get("dynamic")]
-    rows_b = [r for r in b.get("units") or [] if not r.get("dynamic")]
-    dynamic = sum(1 for r in [*(a.get("units") or []), *(b.get("units") or [])] if r.get("dynamic"))
+    rows_a = list(a.get("units") or [])
+    rows_b = list(b.get("units") or [])
+    # Each unit marked dynamic on either side, counted once.
+    dynamic = len(
+        {(r["mode"], r["surface"], r["key"]) for r in [*rows_a, *rows_b] if r.get("dynamic")}
+    )
     keyed_a = {
         (r["mode"], r["surface"], r["key"]): r for r in rows_a if r["surface"] not in ORDERED
     }
@@ -1194,6 +1650,8 @@ def compare_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any
             "surface": key[1],
             "a": (reasons_a.get(key) or {}).get("reason"),
             "b": (reasons_b.get(key) or {}).get("reason"),
+            # Produced by neither side: nothing of it was compared at all.
+            "neither": key in reasons_a and key in reasons_b,
         }
         for key in sorted(reasons_a.keys() | reasons_b.keys())
     ]
@@ -1205,7 +1663,8 @@ def compare_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any
     ]
     out: dict[str, Any] = {"run": a.get("run") or b.get("run"), "changes": changes}
     out["summary"] = _summary(changes)
-    out["dynamic_not_compared"] = dynamic
+    out["dynamic_compared"] = dynamic
+    out["neither"] = sum(1 for row in not_compared if row["neither"])
     if not_compared:
         out["not_compared"] = not_compared
     if errors:
@@ -1331,11 +1790,33 @@ def render_under(
         )
     records = json.loads(record_file.read_text(encoding="utf-8"))
     for record in records:
-        if Path(str(record.get("tree") or "")).resolve() != tree.resolve():
-            raise RuntimeError(
-                f"the render under {tree} imported its platform from {record.get('tree')}"
-            )
+        check_imports(record, tree)
     return list(records)
+
+
+def check_imports(record: Mapping[str, Any], tree: Path) -> None:
+    """Raise ``RuntimeError`` unless the record's packages were all imported from ``tree``.
+
+    The platform, the API and the replay scripts; a package the tree does not
+    hold passes as absent.
+    """
+    root = tree.resolve()
+    if Path(str(record.get("tree") or "")).resolve() != root:
+        raise RuntimeError(
+            f"the render under {tree} imported its platform from {record.get('tree')}"
+        )
+    found = record.get("imported_from")
+    if not isinstance(found, Mapping):
+        raise RuntimeError(f"the render under {tree} did not say where it imported its API from")
+    for name in ("app", "scripts.replay"):
+        if name not in found:
+            raise RuntimeError(f"the render under {tree} did not say where it imported {name} from")
+        if found[name] is None:
+            continue
+        for at in str(found[name]).split(os.pathsep):
+            where = Path(at).resolve()
+            if where != root and root not in where.parents:
+                raise RuntimeError(f"the render under {tree} imported {name} from {at}")
 
 
 def _compare(
@@ -1404,24 +1885,42 @@ def render_comparison(
                 if change.get("reason"):
                     lines.append(f"      reason: {_safe(change['reason'])}")
         for row in diff.get("not_compared") or []:
-            lines.append(
-                f"  NOT COMPARED [{row['mode']} {row['surface']}]: A: "
-                f"{_safe(row['a'] or 'produced')}; B: {_safe(row['b'] or 'produced')}"
-            )
+            if row.get("neither"):
+                lines.append(
+                    f"  NOT COMPARED [{row['mode']} {row['surface']}]: produced by neither ref: "
+                    f"A: {_safe(row['a'])}; B: {_safe(row['b'])}"
+                )
+            else:
+                lines.append(
+                    f"  PRODUCED BY ONE REF [{row['mode']} {row['surface']}]: A: "
+                    f"{_safe(row['a'] or 'produced')}; B: {_safe(row['b'] or 'produced')}"
+                )
         for row in diff.get("errors") or []:
             lines.append(
                 f"  ERROR under {row['side'].upper()} [{row['mode']} {row['surface']}]: "
                 f"{_safe(row['reason'])}"
             )
-        if diff.get("dynamic_not_compared"):
-            lines.append(f"  {diff['dynamic_not_compared']} dynamic unit(s) not compared")
+        if diff.get("dynamic_compared"):
+            lines.append(
+                f"  {diff['dynamic_compared']} unit(s) marked dynamic (drawn without the sandbox "
+                "report) compared"
+            )
         total = sum(sum(per.values()) for per in diff["summary"].values())
         unexpected = sum(1 for c in diff["changes"] if not c.get("expected"))
-        lines.append(f"  summary: {total} difference(s), {unexpected} unexpected")
+        neither = int(diff.get("neither") or 0)
+        lines.append(
+            f"  summary: {total} difference(s), {unexpected} unexpected, "
+            f"{neither} surface(s) not compared"
+        )
         for surface, per in diff["summary"].items():
             lines.append(f"    {surface}: " + ", ".join(f"{k} {v}" for k, v in sorted(per.items())))
-        if not diff["changes"]:
+        if not diff["changes"] and not neither:
             lines.append("  no difference: both refs render the same units")
+        elif not diff["changes"]:
+            lines.append(
+                f"  no difference in the units compared; {neither} surface(s) produced by "
+                "neither ref were not compared (listed above)"
+            )
     for expectation in unexercised:
         lines.append(
             f"UNEXERCISED expectation {expectation['index']} [{_safe(expectation['surface'])}]: "
@@ -1464,8 +1963,35 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mode", choices=MODES, action="append", help="render one mode only (both by default)"
     )
+    parser.add_argument(
+        "--accept-not-compared",
+        action="store_true",
+        help=(
+            "with --compare: a surface produced by neither ref (listed NOT COMPARED with both "
+            f"reasons) does not end the comparison with status {EXIT_NOT_COMPARED}"
+        ),
+    )
     parser.add_argument("--quiet", action="store_true", help="print nothing; write files only")
     return parser
+
+
+def comparison_status(
+    diffs: Sequence[Mapping[str, Any]],
+    unexpected: Sequence[Any],
+    unexercised: Sequence[Any],
+    *,
+    accept_not_compared: bool = False,
+) -> int:
+    """The comparison's exit status, the first that applies of :data:`EXIT_STATUSES`."""
+    if any(diff.get("errors") for diff in diffs):
+        return EXIT_ERROR
+    if unexpected:
+        return EXIT_UNEXPECTED
+    if not accept_not_compared and any(diff.get("neither") for diff in diffs):
+        return EXIT_NOT_COMPARED
+    if unexercised:
+        return EXIT_UNEXERCISED
+    return 0
 
 
 def _error(words: str) -> NoReturn:
@@ -1539,9 +2065,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         if not args.quiet:
             print(render_comparison(diffs, (args.compare[0], args.compare[1]), unexercised))
-        if any(diff.get("errors") for diff in diffs):
-            return 2
-        return 1 if unexpected else 0
+        return comparison_status(
+            diffs, unexpected, unexercised, accept_not_compared=args.accept_not_compared
+        )
     if args.out is None:
         parser.error("name --out DIR, or --compare REF_A REF_B")
     records = write_out(args.out, runs, modes)
@@ -1551,6 +2077,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"run {_safe(record['run'])}: {args.out / record['files']}")
             for mode, per in counts(record).items():
                 print(f"  {mode}: " + ", ".join(f"{s} {n}" for s, n in sorted(per.items())))
+            dynamic = sum(1 for row in record["units"] if row.get("dynamic"))
+            if dynamic:
+                print(
+                    f"  note: {dynamic} unit(s) marked dynamic: the build drew them without the "
+                    "sandbox report, so read against the stored report they differ"
+                )
             for row in record["not_produced"]:
                 mark = "ERROR " if row.get("error") else ""
                 print(

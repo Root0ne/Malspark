@@ -5,16 +5,46 @@ whose ledger, answers and judge's bundle the build mode rebuilds from, and
 writes a report row beside it that the serve mode reads: a small report that
 reads as today's model, with one figure of two SVG labels, one drafted rule
 and one published technique, the row's STIX bundle and its ``/mitre`` rows.
+
+``platform_repository(at)`` is a git repository of the test's own holding this
+checkout's platform as its working tree has it, and ``commit_edits`` commits
+strings replaced in it: the two refs a comparison test renders.
 """
 
 from __future__ import annotations
 
 import json
 import shutil
+import subprocess  # nosec B404 — git, argument lists only
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from tests.unit.scripts._replay_tiny import FIXTURE
+
+ROOT = Path(__file__).resolve().parents[3]
+# A commit of the test's own needs a name, and no hook or signing of the
+# machine's may run on it.
+GIT = (
+    "-c",
+    "user.name=Render Test",
+    "-c",
+    "user.email=render-test@example.invalid",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "commit.gpgsign=false",
+)
+# What a platform repository holds: the platform, its tables, the API.
+PLATFORM_PATHS: tuple[str, ...] = (
+    "pyproject.toml",
+    "src",
+    "data",
+    ":(exclude)data/samples",
+    "apps/api/app",
+)
 
 SHA256 = "6abc1626f78cdbe20895273317295fa86ef2f65069382495938fe76d34657448"
 SUMMARY = "The sample decodes its configuration at run time."
@@ -112,3 +142,64 @@ def stored_run(at: Path, **row: Any) -> Path:
             byjob[key] = value
     (run / "report-byjob.json").write_text(json.dumps(byjob), encoding="utf-8")
     return run
+
+
+def git(repo: Path, *args: str) -> str:
+    done = subprocess.run(  # nosec B603 B607 — a fixed git argument list
+        ["git", *GIT, "-C", str(repo), *args], capture_output=True, check=True
+    )
+    return done.stdout.decode().strip()
+
+
+def _working_tree_files(paths: Sequence[str]) -> list[str]:
+    if shutil.which("git") is None:
+        pytest.skip("git is not on this machine")
+    listed = subprocess.run(  # nosec B603 B607 — a fixed git argument list
+        [
+            "git",
+            "-C",
+            str(ROOT),
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            *paths,
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if listed.returncode != 0:
+        pytest.skip("this checkout is not a git repository")
+    names = [name for name in listed.stdout.decode().split("\0") if name]
+    return [name for name in names if (ROOT / name).is_file()]
+
+
+def platform_repository(at: Path, *, extra: Sequence[str] = ()) -> tuple[Path, str]:
+    """This checkout's platform (and the ``extra`` paths) committed once; the repository and sha.
+
+    ``data/samples`` holds a placeholder, which the written-out tree leaves out.
+    """
+    repo = at / "platform"
+    for name in _working_tree_files([*PLATFORM_PATHS, *extra]):
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, repo / name)
+    placeholder = repo / "data" / "samples" / "placeholder.json"
+    placeholder.parent.mkdir(parents=True, exist_ok=True)
+    placeholder.write_text("{}", encoding="utf-8")
+    git(repo, "init", "--quiet")
+    git(repo, "add", "--", ".")
+    git(repo, "commit", "--quiet", "-m", "the platform")
+    return repo, git(repo, "rev-parse", "HEAD")
+
+
+def commit_edits(repo: Path, edits: Sequence[tuple[str, str, str]]) -> str:
+    """Each ``(file, old, new)`` replaced once in the repository, committed; the new sha."""
+    for name, old, new in edits:
+        target = repo / name
+        text = target.read_text(encoding="utf-8")
+        assert old in text, (name, old)
+        target.write_text(text.replace(old, new, 1), encoding="utf-8")
+    git(repo, "commit", "--quiet", "--all", "-m", "strings changed")
+    return git(repo, "rev-parse", "HEAD")
