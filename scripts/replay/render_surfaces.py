@@ -194,7 +194,8 @@ Limits:
   the job package and the console, which draws the API's JSON;
 * GET routes and variants not rendered (:data:`NOT_RENDERED`): ``/iocs`` with
   ``include=unpublished`` or a ``kind`` filter other than the kinds served only
-  when named, ``/attack-layer`` with a ``domain``, the ``download`` variant of
+  when named, ``/signatures/{kind}`` with a kind other than yara, sigma,
+  suricata and snort, ``/attack-layer`` with a ``domain``, the ``download`` variant of
   ``/html`` and ``/evidence-bundle.html``, the report list, the report detail
   and the report by its job, ``/pdf``, ``/timeline``, ``/reports/diff``, the job
   list, the job, its evidence, its evidence check, an evidence entry's objects,
@@ -206,18 +207,23 @@ Limits:
   store, so the layout a service reads from the store falls back to the
   process's settings, which the replay guard sets to the run's; the router
   dependency that reads the tool servers' declarations does nothing; the
-  stores the process is configured with are a closed local port;
+  database and the queue the process is configured with are a closed local
+  port, and the rest of its settings are the caller's environment (``DEBUG``,
+  for one, decides the HSTS header);
 * the rate limiter is taken out of the stack (its headers count the caller's
-  requests in a shared store); a request carries no Origin, so no CORS header
-  is served, and carries a fixed request id, which the stack echoes;
+  requests in a shared store), so nothing it serves is compared: its
+  ``X-RateLimit-*`` headers, its 429 and ``Retry-After``, which requests it
+  limits; a request carries no Origin, so no CORS header is served, and
+  carries a fixed request id, which the stack echoes;
 * the call map's database is SQLite: what only PostgreSQL answers fails the
   surface rather than being answered;
 * functions of the report node build mode does not run (:data:`NOT_REBUILT`,
-  every function the node names that neither the replay's scripts nor the
-  render call, read from the node's code by :func:`report_node_stages`): the
+  every function the node names that neither the replay's build nor the
+  render calls, read from the node's code by :func:`report_node_stages`): the
   section agreement round (``_ask_section_agreement``), the analyst question
   round (``answer_questions``, ``asked_questions``), the verbatim record
-  (``record_verbatim_unseen``), the amended validation block
+  (``record_verbatim_unseen``), the limitations inventory
+  (``build_inventory``), the amended validation block
   (``_amended_validation``), the limitations as recorded
   (``_limitations_as_recorded``), the notes on unlinked techniques and on the
   export's findings (``_note_unlinked_techniques``, ``_note_export_findings``),
@@ -364,11 +370,13 @@ REQUESTS: dict[str, tuple[str, tuple[tuple[str, str], ...], tuple[tuple[str, str
 }
 # The GET routes and variants the API serves that the render does not, each by
 # its path as :data:`REQUESTS` says one; ``/*`` names a path and every path
-# under it, ``?name=`` a query parameter. Every GET route of the application's
+# under it, ``?name=`` a query parameter, a path with a note after it the
+# values of its path parameters the note names. Every GET route of the application's
 # route table is in :data:`REQUESTS` or here.
 NOT_RENDERED: tuple[str, ...] = (
     "/reports/{id}/iocs?include=unpublished",
     "/reports/{id}/iocs?kind= (a kind other than the ones served only when named)",
+    "/reports/{id}/signatures/{kind} (a kind other than " + ", ".join(RULE_KINDS) + ")",
     "/reports/{id}/attack-layer?domain=",
     "/reports/{id}/html?download=true",
     "/reports/{id}/evidence-bundle.html?download=true",
@@ -401,7 +409,8 @@ NOT_RENDERED: tuple[str, ...] = (
 # not: the figures, drawn as the node draws them when the rebuilt report has none.
 RERUN_BY_THE_RENDER: tuple[str, ...] = ("build_figures",)
 # The functions the report node names that build mode never runs: neither the
-# replay's scripts nor :data:`RERUN_BY_THE_RENDER` name them
+# replay's build (``scripts.replay.rules`` and the replay modules it imports)
+# nor :data:`RERUN_BY_THE_RENDER` name them
 # (``malspark.pipeline.nodes``, derived by :func:`report_node_stages`), and
 # two more of the node's module the replay never calls.
 NOT_REBUILT: tuple[str, ...] = (
@@ -409,6 +418,7 @@ NOT_REBUILT: tuple[str, ...] = (
     "answer_questions",
     "asked_questions",
     "record_verbatim_unseen",
+    "build_inventory",
     "_amended_validation",
     "_limitations_as_recorded",
     "_note_unlinked_techniques",
@@ -473,12 +483,15 @@ LIMITS: tuple[str, ...] = (
     "the user, the report and job services and the database: the services read one row and "
     "no settings store, so the layout a service reads from the store falls back to the "
     "process's settings, which the replay guard sets to the run's; the router dependency that "
-    "reads the tool servers' declarations does nothing; the stores the process is configured "
-    "with are a closed local port",
+    "reads the tool servers' declarations does nothing; the database and the queue the process "
+    "is configured with are a closed local port, and the rest of its settings are the caller's "
+    "environment (DEBUG, for one, decides the HSTS header)",
     "the rate limiter ("
     + ", ".join(LEFT_OUT_MIDDLEWARE)
-    + ") is taken out of the stack: its headers count the caller's requests in a shared store; "
-    "a request carries no Origin, so no CORS header is served, and carries the request id "
+    + ") is taken out of the stack: its headers count the caller's requests in a shared store, so "
+    "nothing the rate limiter serves (its X-RateLimit-* headers, its 429 and Retry-After, which "
+    "requests it limits) is compared; a request carries no Origin, so no CORS header is "
+    "served, and carries the request id "
     f"{REQUEST_ID!r}, which the stack echoes",
     "the call map's ledger is the stored rows loaded into an in-memory SQLite database with "
     "the tree's own table, and the route's own statement runs on it: what only PostgreSQL "
@@ -687,8 +700,8 @@ def not_rendered_covers(path: str, named: Iterable[str] = NOT_RENDERED) -> bool:
     """Whether :data:`NOT_RENDERED` names the route ``path`` (in :func:`route_key`'s form)."""
     for said in named:
         whole = said.split("?", 1)[0].split(" ", 1)[0]
-        if "?" in said:
-            continue
+        if "?" in said or whole != said and not whole.endswith("/*"):
+            continue  # a variant of the route, never the route
         if whole.endswith("/*"):
             if path == whole[:-2] or path.startswith(whole[:-1]):
                 return True
@@ -1977,8 +1990,9 @@ def _render(
     """Every surface of one report, each as the tree's application serves it over the report's row.
 
     ``report`` is the typed report, ``None`` when it does not read as the tree's
-    model (``untyped`` says why): the surfaces the API builds from the stored
-    document alone are produced all the same, as the API serves them.
+    model (``untyped`` says why): every route is asked all the same, and what
+    it served is compared; a surface read from the typed report is not
+    produced when its route answers a success the tool cannot type.
     ``columns`` holds what fills the row's other columns: ``stix`` and
     ``judge`` (the export and judge columns, as keyword arguments of the row)
     and ``mitre`` (the column), each raising :class:`Absent` when the run has
@@ -1988,8 +2002,11 @@ def _render(
     dynamic = mode.mode == "build"
     figures = DYNAMIC_FIGURES if dynamic else ()
 
-    def _need() -> None:
+    def _typed_or_absent(file: str) -> None:
+        # A success served over a report that does not type: what it served is
+        # kept and compared, and the surface read from it is not produced.
         if report is None:
+            mode.served.add(file)
             raise Absent(untyped)
 
     def _row(**more: Any) -> Any:
@@ -2004,15 +2021,15 @@ def _render(
         return served
 
     def _markdown() -> None:
-        _need()
         text = _get("report.md").text
         mode.files["report.md"] = text
+        _typed_or_absent("report.md")
         markdown_units(text, mode.units)
 
     def _html() -> None:
-        _need()
         text = _get("report.html").text
         mode.files["report.html"] = text
+        _typed_or_absent("report.html")
         html_units(text, mode.units, dynamic_figures=figures)
 
     def _full() -> None:
@@ -2049,8 +2066,9 @@ def _render(
         _mitre_units(served.get("techniques"), mode.units)
 
     def _misp() -> None:
-        _need()
-        _misp_units(_json_file("misp-event.json"), mode.units)
+        served = _json_file("misp-event.json")
+        _typed_or_absent("misp-event.json")
+        _misp_units(served, mode.units)
 
     def _layer() -> None:
         _layer_units(_json_file("attack-layer.json"), mode.units)
@@ -2079,16 +2097,16 @@ def _render(
         _rule_units(signatures, downloads, mode.units)
 
     def _bundle() -> None:
-        _need()
         text = _get("evidence-bundle.json").text
         mode.files["evidence-bundle.json"] = text
+        _typed_or_absent("evidence-bundle.json")
         _bundle_units(json.loads(text), mode.units)
 
     def _bundle_html() -> None:
         # ``/reports/{id}/evidence-bundle.html``: the bundle layout, whatever the run's.
-        _need()
         text = _get("evidence-bundle.html").text
         mode.files["evidence-bundle.html"] = text
+        _typed_or_absent("evidence-bundle.html")
         html_units(text, mode.units, dynamic_figures=figures, prefix="bundle.html")
 
     mode.produce(("report.md", "banner"), _markdown)
@@ -2399,12 +2417,14 @@ def imported_from() -> dict[str, str | None]:
 
 
 def render_run(
-    run_dir: Path, *, modes: Sequence[str] = MODES
+    run_dir: Path, *, modes: Sequence[str] = MODES, work: Path | None = None
 ) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
     """One stored run's surface record under the tree this process imports, and its files.
 
     Every file of ``run_dir`` is digested before and after; a run changed while
-    it was rendered raises ``RuntimeError``. Nothing is written.
+    it was rendered raises ``RuntimeError``. Nothing is written but, when this
+    process renders under no tree named to it and ``work`` is given, an ATT&CK
+    cache of the render's own in a folder under ``work``, removed at the end.
     """
     run_dir = Path(run_dir)
     if not run_dir.is_dir():
@@ -2413,10 +2433,15 @@ def render_run(
     stored = _Stored(run_dir)
     done: list[_Mode] = []
     # A cache of the render's own, as the replay keeps one: the machine's ATT&CK
-    # cache is neither read nor written.
-    cache = tempfile.mkdtemp(prefix="malspark-surfaces-attck-")
+    # cache is neither read nor written. A render under a named tree is given
+    # one by its caller (:func:`render_under`); without ``work`` the replay
+    # guard's own is the one read.
+    cache = None
+    if work is not None and not os.environ.get(TREE_VARIABLE):
+        work.mkdir(parents=True, exist_ok=True)
+        cache = tempfile.mkdtemp(prefix="attck-cache-", dir=work)
     previous = os.environ.get(ATTCK_CACHE_VARIABLE)
-    if not os.environ.get(TREE_VARIABLE):
+    if cache is not None:
         os.environ[ATTCK_CACHE_VARIABLE] = cache
     try:
         for name in modes:
@@ -2426,7 +2451,8 @@ def render_run(
             os.environ.pop(ATTCK_CACHE_VARIABLE, None)
         else:
             os.environ[ATTCK_CACHE_VARIABLE] = previous
-        shutil.rmtree(cache, ignore_errors=True)
+        if cache is not None:
+            shutil.rmtree(cache, ignore_errors=True)
     if _digests(run_dir) != before:
         raise RuntimeError(f"the stored run {run_dir} changed while it was rendered")
     for mode in done:
@@ -2707,7 +2733,8 @@ def render_under(
     checkout is put on it, so every entry point is the tree's own. The process
     hashes strings with ``hash_seed``, else with the seed this process's
     environment names, else with a random one; its stores are
-    :data:`CLOSED_STORES`.
+    :data:`CLOSED_STORES`. Its temporary directory is a folder beside ``out``,
+    removed when it ends, so nothing it makes lands in the system's.
     """
     from malspark.core.previous_name import CURRENT_NAME, PREVIOUS_NAME
 
@@ -2722,6 +2749,10 @@ def render_under(
     env[ATTCK_CACHE_VARIABLE] = str(cache.resolve())
     previous = PREVIOUS_NAME.upper() + ATTCK_CACHE_VARIABLE.removeprefix(CURRENT_NAME.upper())
     env[previous] = str(cache.resolve())
+    temporary = out.with_name(f"{out.name}-tmp")
+    shutil.rmtree(temporary, ignore_errors=True)
+    temporary.mkdir(parents=True)
+    env["TMPDIR"] = str(temporary.resolve())
     if out.exists():
         shutil.rmtree(out)
     command = [
@@ -2741,6 +2772,8 @@ def render_under(
         raise RuntimeError(
             f"the render under {tree} did not finish within {timeout:g} s and was stopped"
         ) from exc
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
     record_file = out / RECORD_FILE
     if done.returncode not in (0, 2) or not record_file.is_file():
         kept = out.with_name(f"{out.name}-stderr.txt")
@@ -3183,7 +3216,7 @@ def write_out(out: Path, runs: Sequence[Path], modes: Sequence[str]) -> list[dic
     out.mkdir(parents=True, exist_ok=True)
     records: list[dict[str, Any]] = []
     for index, run in enumerate(runs):
-        record, files = render_run(run, modes=modes)
+        record, files = render_run(run, modes=modes, work=out)
         name = f"{index:02d}-{re.sub(r'[^A-Za-z0-9._-]+', '-', record['run'])}"
         for mode, rendered in files.items():
             for file_name, text in rendered.items():

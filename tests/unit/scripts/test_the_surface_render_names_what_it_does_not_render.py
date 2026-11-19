@@ -4,7 +4,9 @@ Both lists are read from the code, never kept by hand: every GET route of the
 application's route table is a request the render serves or a route named
 not rendered, and each query parameter of a served route is in a request it
 serves or named; every function the report node names is called by the
-replay's scripts, run by the render itself, or named not rebuilt. A route or
+modules the replay's build imports (``scripts.replay.rules`` and the replay
+modules it imports, transitively), run by the render itself, or named not
+rebuilt. A route or
 a function added later fails here until it is rendered or named. What is
 named is in the limits, the help and the docstring, and each name is one the
 application serves or the report node's module holds.
@@ -12,6 +14,7 @@ application serves or the report node's module holds.
 
 from __future__ import annotations
 
+import ast
 import inspect
 import re
 from pathlib import Path
@@ -22,6 +25,31 @@ from fastapi import params
 from scripts.replay import render_surfaces as rs
 
 _ROOT = Path(__file__).resolve().parents[3]
+
+
+def _build_modules() -> list[Path]:
+    """``scripts/replay/rules.py`` and each ``scripts.replay`` module it imports, transitively."""
+    found: list[Path] = []
+    pending = ["scripts.replay.rules"]
+    while pending:
+        name = pending.pop()
+        path = _ROOT / (name.replace(".", "/") + ".py")
+        if not name.startswith("scripts.replay.") or path in found or not path.is_file():
+            continue
+        found.append(path)
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                pending.append(node.module)
+                pending += [f"{node.module}.{alias.name}" for alias in node.names]
+            elif isinstance(node, ast.Import):
+                pending += [alias.name for alias in node.names]
+    return found
+
+
+def test_the_build_s_modules_are_read_from_its_imports() -> None:
+    names = {p.name for p in _build_modules()}
+    assert {"rules.py", "stored.py", "guard.py"} <= names
+    assert "limitation_inventory.py" not in names and Path(rs.__file__).name not in names
 
 
 def _help(capsys: pytest.CaptureFixture[str]) -> str:
@@ -99,6 +127,11 @@ def test_each_request_and_each_route_named_is_one_the_application_serves(
             assert path in served, said
     assert rs.not_rendered_covers("/samples/{sample_id}/sandbox-reports")
     assert not rs.not_rendered_covers("/reports/{id}/markdown")
+    # A kind no request asks is named; the route itself is served.
+    assert "/reports/{id}/signatures/{kind} (a kind other than yara, sigma, suricata, snort)" in (
+        rs.NOT_RENDERED
+    )
+    assert not rs.not_rendered_covers("/reports/{id}/signatures/{kind}")
 
 
 def test_every_function_the_report_node_names_is_re_run_or_named() -> None:
@@ -106,9 +139,7 @@ def test_every_function_the_report_node_names_is_re_run_or_named() -> None:
 
     stages = rs.report_node_stages(nodes)
     assert "_ask_section_agreement" in stages and "answer_questions" in stages
-    replay = rs.code_names(
-        p for p in (_ROOT / "scripts" / "replay").glob("*.py") if p.name != Path(rs.__file__).name
-    )
+    replay = rs.code_names(_build_modules())
     unnamed = [
         name
         for name in stages
@@ -121,9 +152,7 @@ def test_each_function_named_is_the_platform_s_and_the_build_never_calls_it() ->
     from malspark.pipeline import nodes
 
     stages = set(rs.report_node_stages(nodes))
-    replay = rs.code_names(
-        p for p in (_ROOT / "scripts" / "replay").glob("*.py") if p.name != Path(rs.__file__).name
-    )
+    replay = rs.code_names(_build_modules())
     for name in rs.NOT_REBUILT:
         assert name in stages or hasattr(nodes, name), name
         assert name not in replay, name
