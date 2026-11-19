@@ -682,6 +682,8 @@ class StatedHostValue:
     # sandbox's copy of it carries.
     sample_digests: frozenset[str] = frozenset()
     sample_name: str = ""
+    # The kind as the row writes it, which types a row of no vocabulary kind.
+    written_kind: str = ""
 
     @property
     def table_kind(self) -> str:
@@ -714,6 +716,7 @@ def read_stated(item: Any, report: Any = None, *, beyond_rows: bool = False) -> 
         beyond_rows=beyond_rows,
         sample_digests=_sample_digests(report),
         sample_name=_sample_name(report),
+        written_kind=" ".join(str(getattr(item, "kind", "") or "").split()),
     )
 
 

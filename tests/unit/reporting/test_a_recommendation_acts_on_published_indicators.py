@@ -18,8 +18,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from malspark.pipeline.validation import (
+    ASKED_BY_VALUE,
     KEPT_WITH_A_FINDING,
     UNPUBLISHED_RECOMMENDATION_CODE,
+    feedback_text,
+    raised_only_in_retry,
     recommendation_indicator_violations,
 )
 from malspark.reporting.models import (
@@ -106,6 +109,90 @@ class TestTheCheck:
 
     def test_a_kept_value_ships_with_the_finding(self) -> None:
         assert UNPUBLISHED_RECOMMENDATION_CODE in KEPT_WITH_A_FINDING
+
+
+class TestTheFindingAndItsQuestion:
+    """The finding states the fact; the question sent carries the list to act on."""
+
+    def test_the_message_states_the_fact_and_names_the_row_by_its_priority_and_category(
+        self,
+    ) -> None:
+        payload = _recommendations("Alert on beacons.", f"Block {REFUSED}.")
+        payload["defensive_recommendations"][1]["priority"] = "P2"
+
+        (found,) = recommendation_indicator_violations(payload, published_answers(_report()))
+
+        assert found.message == (
+            f"the P2 firewall recommendation names a value this run does not publish: "
+            f"{REFUSED} ({REFUSAL})."
+        )
+        assert found.path == "defensive_recommendations.1"
+        assert found.statements == ("defensive_recommendations.1",)
+
+    def test_a_row_sharing_its_priority_and_category_is_named_by_its_place_among_them(
+        self,
+    ) -> None:
+        payload = _recommendations("Alert on beacons.", f"Block {REFUSED}.")
+
+        (found,) = recommendation_indicator_violations(payload, published_answers(_report()))
+
+        assert found.message.startswith(
+            "the second P0 firewall recommendation names a value this run does not publish: "
+        )
+
+    def test_rows_naming_neither_are_named_by_their_place_among_them(self) -> None:
+        payload = _recommendations(f"Block {REFUSED}.", "Alert on beacons.")
+        for row in payload["defensive_recommendations"]:
+            row.pop("priority")
+            row.pop("category")
+
+        (found,) = recommendation_indicator_violations(payload, published_answers(_report()))
+
+        assert found.message.startswith(
+            "the first recommendation names a value this run does not publish: "
+        )
+
+    def test_the_question_names_the_network_values_the_run_publishes(self) -> None:
+        (found,) = recommendation_indicator_violations(
+            _recommendations(f"Block {REFUSED}."), published_answers(_report())
+        )
+
+        assert found.shown == (
+            "A recommendation acts on the indicators this run publishes; the network "
+            f"indicators it publishes are: {PUBLISHED}. Write the recommendation over those, "
+            "or without the value."
+        )
+        assert found.shown in feedback_text([found])
+
+    def test_a_run_that_publishes_no_network_indicator_says_so(self) -> None:
+        report = _report()
+        assert report.network is not None
+        report.network.domains = []
+
+        (found,) = recommendation_indicator_violations(
+            _recommendations(f"Block {REFUSED}."), published_answers(report)
+        )
+
+        assert found.shown == (
+            "This run publishes no network indicator: write the recommendation without the value."
+        )
+
+    def test_a_retry_that_brings_a_new_value_under_the_same_row_was_not_asked(self) -> None:
+        assert UNPUBLISHED_RECOMMENDATION_CODE in ASKED_BY_VALUE
+        answers = published_answers(_report())
+        (asked,) = recommendation_indicator_violations(
+            _recommendations(f"Block {REFUSED}."), answers
+        )
+        (again,) = recommendation_indicator_violations(
+            _recommendations(f"Block {REFUSED} at the perimeter."), answers
+        )
+        (new,) = recommendation_indicator_violations(
+            _recommendations("Block other.example.net."), answers
+        )
+
+        assert asked.values == (REFUSED,)
+        assert not raised_only_in_retry(again, [asked])
+        assert raised_only_in_retry(new, [asked])
 
 
 def _answer(action: str) -> str:

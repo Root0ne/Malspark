@@ -22,6 +22,7 @@ import asyncio
 import contextlib
 import re
 import time
+from collections import Counter
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
@@ -64,6 +65,7 @@ from malspark.pipeline.feedback_mode import feeds_back
 from malspark.pipeline.validation import (
     CHANNEL_BINDING_CODE,
     KEPT_WITH_A_FINDING,
+    MARKED_IN_PLACE,
     NUMERIC_CONFIDENCE_CODE,
     PROCESS_WORDS_CODE,
     PROSE_SHAPE_CODE,
@@ -84,11 +86,13 @@ from malspark.pipeline.validation import (
     command_value_violations,
     compared_values,
     configuration_citation_violations,
+    echoed_argument_citations,
     flow_voice_violations,
     identifier_citation_violations,
     keep_known_keys,
     ledger_absence_contradictions,
     misstated_entry_contents,
+    option_number_violations,
     pack_line_ids,
     persistence_not_observed_violations,
     quoted_values,
@@ -227,6 +231,12 @@ _ITEM_IDENTITY: dict[type[BaseModel], dict[str, tuple[str, ...]]] = {
     _C2Out: {"channels": ("name", "endpoints")},
     SummaryOut: {"bullets": ("text",)},
     ProceduresOut: {"procedures": ("technique_id",)},
+}
+# The sections read together once both are written (``option_number_violations``):
+# the two option tables, each by its schema and the list its answer holds.
+_TABLES_READ_TOGETHER: dict[str, tuple[type[BaseModel], str]] = {
+    "commands": (_CommandsOut, "commands"),
+    "cli_flags": (_CliFlagsOut, "flags"),
 }
 
 
@@ -1437,6 +1447,12 @@ class ReportComposer:
         # Where the sentences a check leaves standing are recorded, to be
         # marked where they stand.
         self._report = report
+        # Each option table's conversation while its one retry is unused, for a
+        # question raised once both tables are written (:meth:`_tables_read_together`).
+        self._turn_left: dict[str, Any] = {}
+        # The marks each section records, counted, so a replaced answer's are
+        # withdrawn by count (:meth:`_withdraw_recorded`).
+        self._marks_by_section: dict[str, Counter[tuple[str, str, str, bool]]] = {}
         # The analyst statements each subsection folds in, read once per report.
         self._folded = statements_to_fold(report)
         self._facts_block = facts_block
@@ -1813,6 +1829,8 @@ class ReportComposer:
             else:
                 for planned in plan:
                     authored += planned.apply(await self._author_one(planned, report, isr_reports))
+            applies = {planned.section: planned.apply for planned in plan}
+            await self._tables_read_together(ta, lambda section, out: applies[section](out))
         finally:
             # On the report whatever ended the round, so a stopped run's
             # partial report carries the subsections already written.
@@ -2396,6 +2414,7 @@ class ReportComposer:
                     payload, citable, prose=prose, items=self._items, records=True
                 ),
                 *wrong_entry_citations(payload, entries, prose=prose),
+                *echoed_argument_citations(payload, entries, prose=prose),
                 *misstated_entry_contents(payload, entries, prose=prose),
                 *ledger_absence_contradictions(payload, entries),
                 *technique_name_violations(payload),
@@ -2405,6 +2424,85 @@ class ReportComposer:
             for extra in validators or []:
                 found.extend(extra(payload))
         return found
+
+    async def _tables_read_together(
+        self, ta: TechnicalAnalysis, apply: Callable[[str, BaseModel], Any]
+    ) -> None:
+        """Read the two option tables against each other once both are written.
+
+        A commands row and a flags row naming one option and citing a common
+        entry that state different numbers for one key
+        (``option_number_violations``) are asked of each section in its one
+        retry, where that retry is unused; the answer it gives stands in place
+        of the one it gave through ``apply``. The tables are read again before
+        each later section is asked, so a question an earlier section's
+        corrected row settles is not asked of the next. A section whose retry
+        is spent, or whose answer came by the structured path, is not asked
+        again: what is left is recorded unresolved, marked not asked. Never
+        raises.
+        """
+        tables = {
+            section: (_ITEM_IDENTITY[schema][key], key)
+            for section, (schema, key) in _TABLES_READ_TOGETHER.items()
+        }
+
+        def _found() -> list[Violation]:
+            return option_number_violations(
+                list(ta.commands or []),
+                list(ta.cli_flags or []),
+                command_fields=tables["commands"][0],
+                flag_fields=tables["cli_flags"][0],
+            )
+
+        try:
+            found = _found()
+        except Exception as exc:  # noqa: BLE001 — a cross-table question is never worth a report
+            logger.warning("ReportComposer: the option tables were not read together (%s).", exc)
+            return
+        if not found:
+            return
+        left = getattr(self, "_turn_left", None) or {}
+        asked: dict[str, bool] = {}
+        for section, (_fields, key) in tables.items():
+            ask = left.get(section)
+            if ask is None:
+                continue
+            if asked:
+                # Read again before each later section is asked: an earlier
+                # section's corrected row may have settled its question.
+                try:
+                    found = _found()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "ReportComposer: the option tables were not read again (%s).", exc
+                    )
+                    break
+            mine = [v for v in found if v.path.split(".", 1)[0] == key]
+            if not mine:
+                continue
+            try:
+                sent, out = await asyncio.wait_for(ask(mine), timeout=self._section_timeout())
+            except Exception as exc:  # noqa: BLE001 — the section's answer stands
+                logger.warning(
+                    "ReportComposer: section '%s' was not asked about the other option table "
+                    "(%s); its answer stands.",
+                    section,
+                    type(exc).__name__,
+                )
+                continue
+            asked[section] = sent
+            if out is not None:
+                apply(section, out)
+        try:
+            rest = _found()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ReportComposer: the option tables were not read again (%s).", exc)
+            return
+        for section, (_fields, key) in tables.items():
+            mine = [v for v in rest if v.path.split(".", 1)[0] == key]
+            if mine:
+                self._tally().count(mine)
+                self._record_ungrounded(section, mine, asked=asked.get(section, False))
 
     def _start_the_section_clock(self, seconds: float) -> None:
         """Measure the model list's turn deadline against this section's clock.
@@ -2667,9 +2765,14 @@ class ReportComposer:
         # then never sent; its usage is already on the ledger.
         pending = [kept] if kept is not None else []
 
+        # The turns the latest answer was asked with, and that answer.
+        last: list[Any] = []
+
         async def _run(turns: list[BaseMessage]) -> Any:
             if pending:
-                return _read_cut(pending.pop(), None, "")
+                given = pending.pop()
+                last[:] = [turns, given]
+                return _read_cut(given, None, "")
             slot = object()
             bound, why = self._call_limit(turns, slot=slot)
             if bound is not None:
@@ -2719,6 +2822,7 @@ class ReportComposer:
                         logger.debug("ReportComposer: token usage not recorded (%s).", exc)
             finally:
                 spend_release(getattr(self, "token_ledger", None), slot)
+            last[:] = [turns, raw]
             return _read_cut(raw, bound, why)
 
         # The text the latest answer was read from: an answer that gives the
@@ -2941,6 +3045,100 @@ class ReportComposer:
             [replace(v, message=f"{v.message} {ONLY_IN_THE_RETRY}", sentence="") for v in late],
             asked=False,
         )
+        turn_left = getattr(self, "_turn_left", None)
+        if section in _TABLES_READ_TOGETHER and isinstance(turn_left, dict):
+            # The section's one retry, kept for a question raised once both
+            # option tables are written; none where it was spent or the mode
+            # asks nothing (``validation.feedback``).
+            turn_left.pop(section, None)
+            if not retries and feeds_back() and last:
+                first_turns, first_answer = last
+                first_read = answer_read
+                recorded = {(v.code, v.path, v.message) for v in ungrounded}
+
+                async def _ask_again(asked: Sequence[Violation]) -> tuple[bool, Any]:
+                    """The section's one retry, asked ``asked`` on the answer it gave.
+
+                    ``(sent, answer)``: the answer to keep in its place, or
+                    ``None`` where the one given stands — a retry that is
+                    declined, cut or breaks its schema never replaces it.
+                    """
+                    nonlocal declined, cut, cut_at, cut_text, answer_read
+                    given = [first_answer]
+                    opened = [True]
+                    kept_first: list[bool] = []
+
+                    async def _again(turns: list[BaseMessage]) -> Any:
+                        return given.pop() if given else await _run(turns)
+
+                    def _check(p: Any) -> list[Violation]:
+                        if opened:
+                            opened.clear()
+                            return list(asked)
+                        return _validate(p)
+
+                    def _keep(first: Any, latest: Any) -> Any:
+                        nonlocal declined, cut, cut_at, cut_text, answer_read
+                        worse = declined or cut or latest is None
+                        if not worse:
+                            worse = any(
+                                v.code not in KEPT_WITH_A_FINDING for v in _validate(latest)
+                            )
+                        if not worse:
+                            return latest
+                        kept_first.append(True)
+                        declined = False
+                        cut = False
+                        cut_at = 0
+                        cut_text = ""
+                        answer_read = first_read
+                        return first
+
+                    again, left, sent = await retry_with_feedback(
+                        _again,
+                        list(first_turns),
+                        [_check],
+                        parse=_parse,
+                        on_feedback=lambda found: self._tally().count(found),
+                        can_retry=_fits,
+                        reply_to_calls=kept is not None,
+                        keep=_keep,
+                    )
+                    self._tally().retries += sent
+                    if not sent or again is payload or again is None:
+                        return bool(sent), None
+                    name = section or schema.__name__
+                    if kept_first:
+                        # The first answer stands: its findings on record stay,
+                        # and each of its own not yet recorded is recorded under
+                        # its own words, not asked.
+                        self._record_ungrounded(
+                            name,
+                            [v for v in left if (v.code, v.path, v.message) not in recorded],
+                            asked=False,
+                        )
+                        return True, schema.model_validate(again)
+                    # The answer is replaced: the findings on record are those
+                    # of the answer that stands. The first answer's are taken
+                    # off; each of the standing answer's is recorded, as asked
+                    # where the first answer held it too, as not asked where
+                    # only this answer raises it.
+                    self._withdraw_recorded(name, ungrounded)
+                    self._record_ungrounded(
+                        name, [v for v in left if (v.code, v.path, v.message) in recorded]
+                    )
+                    self._record_ungrounded(
+                        name,
+                        [
+                            replace(v, message=f"{v.message} {ONLY_IN_THE_RETRY}", sentence="")
+                            for v in left
+                            if (v.code, v.path, v.message) not in recorded
+                        ],
+                        asked=False,
+                    )
+                    return True, schema.model_validate(again)
+
+                turn_left[section] = _ask_again
         return schema.model_validate(payload)
 
     async def _reading_call(
@@ -3036,6 +3234,60 @@ class ReportComposer:
         if reason not in self.degradations:
             self.degradations.append(reason)
 
+    def _withdraw_recorded(self, section: str, violations: Sequence[Violation]) -> None:
+        """Take a section's recorded findings off the record: its unresolved rows and the
+        sentences they marked. For an answer another one replaced. Never raises.
+
+        By section, sentence and code, each mark as many times as it was
+        recorded: a mark another section recorded for the same sentence stays
+        (``_section_marks``).
+        """
+        if not violations:
+            return
+        try:
+            agent = f"composer:{section}"
+            rows = {(v.code, v.message) for v in violations}
+            tally = self._tally()
+            tally.unresolved[:] = [
+                row
+                for row in tally.unresolved
+                if not (row.get("agent") == agent and (row.get("code"), row.get("message")) in rows)
+            ]
+            marks = self._section_marks()
+            own = marks.get(section, Counter())
+            # Each mark as many times as the answer recorded it.
+            withdrawn: set[tuple[str, str, str, bool]] = set()
+            for key, count in Counter(_mark_keys(violations, asked=True)).items():
+                if own[key] > 0:
+                    own[key] -= min(count, own[key])
+                    withdrawn.add(key)
+            held = {
+                key
+                for counted in marks.values()
+                for key, count in counted.items()
+                if count > 0 and key in withdrawn
+            }
+            gone = withdrawn - held
+            flagged = getattr(getattr(self, "_report", None), "flagged_statements", None)
+            if gone and isinstance(flagged, list):
+                flagged[:] = [
+                    row
+                    for row in flagged
+                    if (row.sentence, row.code, row.label, row.asked) not in gone
+                ]
+        except Exception as exc:  # noqa: BLE001 — the record is never worth a report
+            logger.debug("ReportComposer: a replaced answer's findings stayed (%s).", exc)
+
+    def _section_marks(self) -> dict[str, Counter[tuple[str, str, str, bool]]]:
+        """The marks each section recorded, by sentence, code, label and asked state."""
+        marks: dict[str, Counter[tuple[str, str, str, bool]]] | None = getattr(
+            self, "_marks_by_section", None
+        )
+        if marks is None:
+            marks = {}
+            self._marks_by_section = marks
+        return marks
+
     def _record_ungrounded(
         self, section: str, violations: list[Violation], *, asked: bool = True
     ) -> None:
@@ -3053,11 +3305,30 @@ class ReportComposer:
             ", ".join(v.path for v in violations),
         )
         self._tally().record_unresolved(f"composer:{section}", violations, asked=asked)
+        self._section_marks().setdefault(section, Counter()).update(
+            _mark_keys(violations, asked=asked)
+        )
         record = _SECTION_RECORD.get()
         if record is not None:
             record.effects.append(("flagged", list(violations), asked))
             return
         record_flagged_statements(getattr(self, "_report", None), violations, asked=asked)
+
+
+def _mark_keys(violations: Sequence[Violation], *, asked: bool) -> list[tuple[str, str, str, bool]]:
+    """The marks ``validation.record_flagged_statements`` puts on the report for ``violations``.
+
+    Each as ``(sentence, code, label, asked)``, the key it dedupes a mark by.
+    """
+    keys: list[tuple[str, str, str, bool]] = []
+    for violation in violations:
+        if violation.code not in MARKED_IN_PLACE:
+            continue
+        default = violation.path.replace("_", " ")
+        for position, sentence in enumerate(violation.quoted):
+            label = violation.labels[position] if position < len(violation.labels) else default
+            keys.append((sentence, violation.code, label, asked and violation.asked))
+    return keys
 
 
 def _published_answers(report: MalwareReport) -> Any:

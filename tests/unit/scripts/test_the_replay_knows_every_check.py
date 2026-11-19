@@ -51,7 +51,12 @@ SITES: dict[str, tuple[Sequence[Callable[..., Any]], Sequence[str], Mapping[str,
         {},
     ),
     "composer": (
-        (ReportComposer.compose, ReportComposer._invoke, ReportComposer._section_findings),
+        (
+            ReportComposer.compose,
+            ReportComposer._invoke,
+            ReportComposer._section_findings,
+            ReportComposer._tables_read_together,
+        ),
         rules.COMPOSER_CHECKS,
         rules.COMPOSER_NOT_REPLAYED,
     ),

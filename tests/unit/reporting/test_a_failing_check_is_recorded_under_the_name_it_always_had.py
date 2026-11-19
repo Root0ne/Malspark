@@ -25,8 +25,8 @@ from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity,
 
 NARRATIVE_NAME = "NarrativeAgent.generate.<locals>.<lambda>"
 QUESTION_NAME = "answer_questions.<locals>.<lambda>"
-NARRATIVE_NAMES = [NARRATIVE_NAME] * 7 + ["technique_name_violations"] + [NARRATIVE_NAME] * 2
-QUESTION_NAMES = [QUESTION_NAME] * 5
+NARRATIVE_NAMES = [NARRATIVE_NAME] * 8 + ["technique_name_violations"] + [NARRATIVE_NAME] * 2
+QUESTION_NAMES = [QUESTION_NAME] * 6
 
 
 def _recommendation() -> dict[str, str]:

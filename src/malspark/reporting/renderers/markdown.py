@@ -80,6 +80,7 @@ from malspark.core.undeclared_tools import (
     names_itself,
 )
 from malspark.reporting import tool_kinds
+from malspark.reporting.category_words import category_shown
 from malspark.reporting.dedupe import (
     distinct_processes,
     distinct_signatures,
@@ -129,6 +130,7 @@ from malspark.reporting.prose_decisions import (
     PUBLISHED_TECHNIQUE_DOUBTED_CODE,
     with_decided_statements,
 )
+from malspark.reporting.publish_words import NETWORK_INDICATOR_KINDS, PUBLISHED_NETWORK_LABEL
 from malspark.reporting.redone_calls import ENTRY_ID
 from malspark.reporting.renderers.layout import ANALYST, BUNDLE, FULL, checked
 from malspark.reporting.renderers.prose_forms import (
@@ -279,7 +281,7 @@ _EV_RE = re.compile(r"\bev_\d+\b")
 _SANDBOX_TOOLS = "markdown._SANDBOX_TOOLS"
 
 # Network indicator kinds, which the IOC section prints in its second table.
-_NETWORK_KINDS = frozenset({"domain", "ip", "url", "user_agent", "ja3", "ja3s", "email", "sni"})
+_NETWORK_KINDS = NETWORK_INDICATOR_KINDS
 
 # The reputation tools a triage pack may call about the sample itself, by
 # their declared kinds.
@@ -656,7 +658,7 @@ class MarkdownRenderer:
         published = sum(
             1 for row in ctx.iocs if row.kind in _NETWORK_KINDS and publishes(row.published)
         )
-        lines.append(_item(f"Published network indicators: {published} _({MEASURED})_"))
+        lines.append(_item(f"{PUBLISHED_NETWORK_LABEL}: {published} _({MEASURED})_"))
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
@@ -771,11 +773,11 @@ class MarkdownRenderer:
                         + ", ".join(_one_line(t) for t in severity.likely_targets),
                     ]
                 )
-        if report.malware_category and str(report.malware_category).lower() != "unknown":
+        if category_shown(report.malware_category):
             lines.extend(
                 [
                     "",
-                    f"**Category:** {_one_line(report.malware_category)} "
+                    f"**Category:** {category_shown(report.malware_category)} "
                     f"_(a behavioural class, not a family)_{ctx.category_mark}",
                 ]
             )
@@ -1842,7 +1844,7 @@ class MarkdownRenderer:
                 lines.append(_row(*cells))
             lines.append("")
         lines.extend(_enrichment_not_asked_lines(report))
-        rid = _one_line((report.run_summary or {}).get("report_id") or "{report_id}")
+        rid = _one_line(stored_report_id(report) or "{report_id}")
         lines.append(
             "Network values are defanged for reading. The STIX 2.1 bundle "
             f"({_code_span(f'/reports/{rid}/stix')}) and the machine-readable list "
@@ -2014,10 +2016,10 @@ class MarkdownRenderer:
         blocks = [_heading(12, "Attribution and related activity", PER_SUBSECTION)]
         family = [_subheading("12.1", "Family", _family_voice(report)), ""]
         family.append("**Family:** " + _family_words(report))
-        if report.malware_category and str(report.malware_category).lower() != "unknown":
+        if category_shown(report.malware_category):
             family.append("")
             family.append(
-                f"**Category:** {_one_line(report.malware_category)} "
+                f"**Category:** {category_shown(report.malware_category)} "
                 f"_(a behavioural class, not a family)_{ctx.category_mark}"
             )
         blocks.append("\n".join(family))
@@ -3205,6 +3207,8 @@ class _Context:
         # A failed call a later call redid left no gap: counted in the run's
         # bounds, not here (T-494 D6). Where the report holds the limitations
         # inventory, its failed calls are the count, as section 11 prints them.
+        from malspark.reporting.limitation_inventory import failed_calls_said, trimmed_entries
+
         if inventory is not None:
             from malspark.reporting.limitation_inventory import failed_counts
 
@@ -3218,10 +3222,9 @@ class _Context:
         trimmed = int(_trimmed(evidence, inventory) or 0)
         parts = []
         if failed:
-            not_redone = " and were not redone" if redone else ""
-            parts.append(f"{failed} of {entries} tool calls failed{not_redone}")
+            parts.append(failed_calls_said(failed, entries, not_redone=bool(redone)))
         if trimmed:
-            parts.append(f"{trimmed} of {entries} ledger entries were trimmed")
+            parts.append(trimmed_entries(trimmed, entries, grouped=False))
         return f" The evidence is partial: {' and '.join(parts)}." if parts else ""
 
 
@@ -3601,6 +3604,7 @@ _FLAG_WORDS = {
     "report.rule_match_as_action": "a rule match only, stated as an action",
     "report.unpublished_value": "not published by this run",
     "report.citation_wrong_entry": "cited to an entry that does not hold it",
+    "report.value_only_in_call_arguments": "held only in what the call was asked for",
     "report.id_not_in_cited_entry": "an id none of its cited entries holds",
     "report.numeric_confidence": "a confidence written as a number",
     "report.process_words": "names how the report was made",
@@ -4676,7 +4680,9 @@ def _finding_text(row: dict[str, Any], plain: Callable[[str], str] = _defanged_t
 
 # The marks whose labels name values: several on one sentence or row read as
 # one list in one mark.
-_JOINED_MARK_CODES = frozenset({"report.citation_wrong_entry"})
+_JOINED_MARK_CODES = frozenset(
+    {"report.citation_wrong_entry", "report.value_only_in_call_arguments"}
+)
 
 
 def _joined_marks(rows: Sequence[Any]) -> list[Any]:
@@ -5002,6 +5008,21 @@ QUESTIONS_NOTE = (
 def _appendix_heading(letter: str, title: str, voice: str) -> str:
     """An appendix's H2, lettered, with its voice tag."""
     return f"## Appendix {letter}. {_one_line(title)} · _{voice}_"
+
+
+def stored_report_id(report: Any) -> Any:
+    """The stored report's id, as the seal the stored report carries names it.
+
+    The worker stores the seal at the top of the report (``report.ledger_seal``);
+    a seal in the run summary is read next, and a report with no seal reads the
+    run summary's own ``report_id``, as it always did (``None`` where it holds
+    none).
+    """
+    summary = getattr(report, "run_summary", None) or {}
+    for seal in (getattr(report, "ledger_seal", None), summary.get("ledger_seal")):
+        if isinstance(seal, dict) and seal.get("report_id"):
+            return seal["report_id"]
+    return summary.get("report_id")
 
 
 def _ledger_seal_lines(report: Any) -> list[str]:

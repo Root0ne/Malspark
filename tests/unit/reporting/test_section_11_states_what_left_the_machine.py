@@ -262,12 +262,54 @@ def test_a_category_stated_as_none_takes_no_article() -> None:
     assert ", a nonexistent-class loader," in _conclusion("nonexistent-class loader")
 
 
+def test_a_category_stated_as_none_after_a_colon_prints_in_the_same_form() -> None:
+    said = _conclusion("none: a legitimate archiver")
+    assert ", category: none (a legitimate archiver)" in said
+    assert "none:" not in said
+    report = _report(_ledger())
+    report.malware_category = "none: a legitimate archiver"
+    for layout in (ANALYST, BUNDLE):
+        rendered = MarkdownRenderer(layout=layout).render(report)
+        assert "**Category:** none (a legitimate archiver)" in rendered, layout
+        assert "none:" not in rendered, layout
+
+
 def test_a_trimmed_count_agrees_with_its_own_number() -> None:
     report = _report(_ledger(), build=False)
     report.run_summary["evidence"]["trimmed"] = 1
     report.limitation_inventory = build_inventory(report, _ledger())
     (row,) = [r for r in printed_rows(report.limitation_inventory) if r.part == "failed"]
     assert row.text.endswith(" 1 of 6 ledger entries was trimmed to the budget.")
+
+
+def test_the_partial_evidence_sentence_agrees_with_its_own_numbers() -> None:
+    report = _report(_ledger(), build=False)
+    report.run_summary["evidence"]["trimmed"] = 1
+    report.limitation_inventory = build_inventory(report, _ledger())
+    rendered = MarkdownRenderer(layout=ANALYST).render(report)
+    (said,) = re.findall(r"The evidence is partial: [^.]*\.", rendered)
+    assert said == (
+        "The evidence is partial: 1 of 6 tool calls failed and was not redone and 1 of 6 "
+        "ledger entries was trimmed."
+    )
+
+
+def test_a_count_past_a_thousand_reads_as_each_line_always_wrote_it() -> None:
+    # Section 11's row writes the ledger's size with a thousands separator; the
+    # partial-evidence sentence writes every number as it is.
+    report = _report(_ledger(), build=False)
+    report.run_summary["evidence"]["trimmed"] = 1
+    inventory = build_inventory(report, _ledger())
+    report.limitation_inventory = inventory.model_copy(update={"entries": 1234})
+    (row,) = [r for r in printed_rows(report.limitation_inventory) if r.part == "failed"]
+    assert row.text.startswith("Tool calls: 1 of 1,234 failed and was not redone: ")
+    assert row.text.endswith(" 1 of 1,234 ledger entries was trimmed to the budget.")
+    rendered = MarkdownRenderer(layout=ANALYST).render(report)
+    (said,) = re.findall(r"The evidence is partial: [^.]*\.", rendered)
+    assert said == (
+        "The evidence is partial: 1 of 1234 tool calls failed and was not redone and 1 of 1234 "
+        "ledger entries was trimmed."
+    )
 
 
 def test_the_disclosure_row_prints_where_the_inventory_prints_none() -> None:

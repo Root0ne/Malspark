@@ -19,6 +19,7 @@ import pytest
 from malspark.pipeline.validation import (
     KEPT_WITH_A_FINDING,
     UNPUBLISHED_RECOMMENDATION_TECHNIQUE_CODE,
+    feedback_text,
     recommendation_technique_violations,
 )
 from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity, TTPMapping
@@ -59,9 +60,7 @@ class TestTheCheck:
 
         assert found.code == UNPUBLISHED_RECOMMENDATION_TECHNIQUE_CODE
         assert found.path == "defensive_recommendations.1"
-        assert "recommendation 2 names a technique this run does not publish: T1059.003." in (
-            found.message
-        )
+        assert "names a technique this run does not publish: T1059.003." in found.message
 
     def test_an_id_in_the_hunting_note_is_read_too(self) -> None:
         row = _row("T1105", detection="Sysmon event 1 for the shell (T1059.003).")
@@ -89,6 +88,64 @@ class TestTheCheck:
 
     def test_the_published_list_is_the_attck_table(self) -> None:
         assert published_technique_ids(_report()) == PUBLISHED
+
+
+class TestTheFindingAndItsQuestion:
+    """The finding states the fact and names the row; the question sent carries the rule."""
+
+    def test_the_message_states_the_fact_and_names_the_row_by_its_priority_and_category(
+        self,
+    ) -> None:
+        (found,) = recommendation_technique_violations(
+            {"defensive_recommendations": [_row("T1105"), _row("T1059.003", priority="P2")]},
+            PUBLISHED,
+        )
+
+        assert found.message == (
+            "the P2 edr hunting recommendation names a technique this run does not publish: "
+            "T1059.003. The report's ATT&CK table does not carry it."
+        )
+        assert found.path == "defensive_recommendations.1"
+        assert found.statements == ("defensive_recommendations.1",)
+
+    def test_a_row_sharing_its_priority_and_category_is_named_by_its_place_among_them(
+        self,
+    ) -> None:
+        rows = [_row("T1105", priority="P2"), _row("T1105"), _row("T1059.003", priority="P2")]
+
+        (found,) = recommendation_technique_violations(
+            {"defensive_recommendations": rows}, PUBLISHED
+        )
+
+        assert found.message.startswith(
+            "the second P2 edr hunting recommendation names a technique this run does not publish: "
+        )
+
+    def test_rows_naming_neither_are_named_by_their_place_among_them(self) -> None:
+        rows = [
+            _row("T1105", priority="", category=""),
+            _row("T1059.003", priority="", category=""),
+        ]
+
+        (found,) = recommendation_technique_violations(
+            {"defensive_recommendations": rows}, PUBLISHED
+        )
+
+        assert found.message.startswith(
+            "the second recommendation names a technique this run does not publish: "
+        )
+
+    def test_the_instruction_is_in_the_question_sent_alone(self) -> None:
+        (found,) = recommendation_technique_violations(
+            {"defensive_recommendations": [_row("T1059.003")]}, PUBLISHED
+        )
+
+        assert found.shown == (
+            "A recommendation acts on the techniques this run publishes. Write it with a "
+            "published technique, or without the id."
+        )
+        assert "Write it" not in found.message
+        assert found.shown in feedback_text([found])
 
 
 def _answer(technique: str) -> str:

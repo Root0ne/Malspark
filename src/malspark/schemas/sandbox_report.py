@@ -967,6 +967,15 @@ TRAFFIC_FLOWS_LEFT_OUT_KEY = "platform_flows_left_out"
 TRAFFIC_FLOWS_UNSETTLED_KEY = "platform_flows_unsettled"
 
 
+def flow_image(name: Any) -> str:
+    """A listed process's image as published text names it: the last part of its path, as written.
+
+    One name for a process on every row that names it, a network row's
+    (``FLOW_PROCESS_KEY``) and a host row's whose writer's lineage is disputed.
+    """
+    return re.split(r"[\\/]", str(name or "").strip().strip('"'))[-1]
+
+
 def _basename(path: str) -> str:
     return re.split(r"[\\/]", path.strip().strip('"').strip("'"))[-1].lower()
 
@@ -1048,13 +1057,16 @@ class SampleTree:
     lineages that differ. A record naming an unsettled pid is unattributed.
     ``reached`` is every pid a listed process of the tree carries, a pid
     another listed process also carries outside it included: a process read
-    by its place in the listing, not a record read by its pid.
+    by its place in the listing, not a record read by its pid. ``disputed``
+    holds ``(pid, name)`` for each process the two lineage facts disagree
+    about: the process is known, its lineage is not.
     """
 
     pids: frozenset[str]
     names: frozenset[str]
     unsettled: frozenset[str]
     reached: frozenset[str] = frozenset()
+    disputed: frozenset[tuple[str, str]] = frozenset()
 
 
 def _node_field(node: Any, name: str) -> Any:
@@ -1198,6 +1210,9 @@ def sample_process_tree(roots: list[Any], file_name: str = "", sha256: str = "")
         names=frozenset(n for n in (nodes[i][2].strip().lower() for i in tree) if n),
         unsettled=frozenset(unsettled),
         reached=frozenset(nodes[i][1] for i in tree if nodes[i][1]),
+        disputed=frozenset(
+            (nodes[i][1], flow_image(nodes[i][2])) for i in placed.disputed if nodes[i][1]
+        ),
     )
 
 
@@ -1205,6 +1220,7 @@ def sample_process_tree(roots: list[Any], file_name: str = "", sha256: str = "")
 WRITER_IN_TREE = "tree"
 WRITER_OUTSIDE = "outside"
 WRITER_UNSETTLED = "unsettled"
+WRITER_DISPUTED = "disputed"
 WRITER_UNLISTED = "unlisted"
 
 
@@ -1227,10 +1243,11 @@ class ProcessTrees:
 
         ``WRITER_IN_TREE`` for a process of its task's tree,
         ``WRITER_OUTSIDE`` for a listed process outside it,
-        ``WRITER_UNSETTLED`` for one the listing does not settle (a pid the
-        lineage facts dispute, or a number more than one listed process
-        answers to), ``WRITER_UNLISTED`` for a number no listed process
-        answers to.
+        ``WRITER_DISPUTED`` for one process whose lineage the two lineage
+        facts dispute (:meth:`disputed`), ``WRITER_UNSETTLED`` for one the
+        listing does not settle otherwise (a number more than one listed
+        process answers to), ``WRITER_UNLISTED`` for a number no listed
+        process answers to.
         """
         keys = self.identities.keys(pid, task)
         if not keys:
@@ -1239,9 +1256,26 @@ class ProcessTrees:
             return WRITER_UNSETTLED
         (key,) = keys
         tree = self.by_task.get(key.task)
+        if tree is not None and any(key.id == one for one, _name in tree.disputed):
+            return WRITER_DISPUTED
         if tree is None or key.id in tree.unsettled:
             return WRITER_UNSETTLED
         return WRITER_IN_TREE if key.id in tree.pids else WRITER_OUTSIDE
+
+    def disputed(self, pid: Any, task: str | None = None) -> str:
+        """The process ``pid`` names where :meth:`place` finds it ``WRITER_DISPUTED``.
+
+        As the network block names a traffic record's process: ``<image>
+        (procid N)``, or ``procid N`` where the listing names no image, N the
+        report's id. ``""`` for a pid placed otherwise.
+        """
+        if self.place(pid, task) != WRITER_DISPUTED:
+            return ""
+        (key,) = self.identities.keys(pid, task)
+        for one, name in sorted(self.by_task[key.task].disputed):
+            if one == key.id:
+                return f"{name} (procid {one})" if name else f"procid {one}"
+        return ""
 
 
 def sample_process_trees(roots: list[Any], file_name: str = "", sha256: str = "") -> ProcessTrees:
@@ -1348,7 +1382,8 @@ def process_placement(
 # as the sandbox started it (:func:`started_by_the_sandbox`), left out where
 # not; the words every surface that renders the row writes beside it
 # (:func:`staged_words`); and the sentence an answer holding such a row carries
-# once, under :data:`STAGED_NOTE_KEY`.
+# once, under :data:`STAGED_NOTE_KEY` (:func:`staged_note`, by the number of
+# rows it holds marked).
 STAGED_KEY = "staged_by_sandbox"
 STAGED_WORDS = "the sandbox started the submitted file from this path"
 STAGED_NOTE_KEY = "staged_by_sandbox_note"
@@ -1357,6 +1392,22 @@ STAGED_NOTE = (
     "started by no process that runs it, at a path the report does not show written "
     "during the run: the sandbox started the submitted file from there."
 )
+
+
+def staged_note(count: int) -> str:
+    """The sentence beside ``count`` rows marked :data:`STAGED_KEY`.
+
+    :data:`STAGED_NOTE`, word for word, for one row; the same fact stated of
+    each row for more.
+    """
+    if count <= 1:
+        return STAGED_NOTE
+    return (
+        f"Each of the {count} rows marked {STAGED_KEY} is the first process of its own "
+        "lineage that runs the submitted file, started by no process that runs it, at a "
+        "path the report does not show written during the run: the sandbox started the "
+        "submitted file from each row's path."
+    )
 
 
 def started_by_the_sandbox(
@@ -1766,10 +1817,7 @@ def _sample_process_tree(task: dict[str, Any], sample: dict[str, Any]) -> _Linea
     listed = [(procid, p) for procid, p in processes if procid]
     parent = {procid: pid_of(p.get("procid_parent")) for procid, p in listed}
     # As the report writes them, for a reader: the case is the file's own.
-    images = {
-        procid: re.split(r"[\\/]", str(p.get("image") or p.get("name") or "").strip())[-1]
-        for procid, p in listed
-    }
+    images = {procid: flow_image(p.get("image") or p.get("name")) for procid, p in listed}
     marked = {procid for procid, p in listed if p.get("orig") is True}
     named = {procid for procid, p in listed if _is_the_sample(p, sample)}
     by_mark, by_file = _reach(parent, marked), _reach(parent, named)
@@ -2329,7 +2377,7 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
         parent[node] = (task, ppid) if ppid else None
         by_pid.setdefault(pid, set()).add(node)
         image = _image_of(proc.name)
-        images[node] = re.split(r"[\\/]", proc.name.strip().strip('"'))[-1]
+        images[node] = flow_image(proc.name)
         if image == names.sample:
             roots.add(node)
             quoted = _QUOTED.search(proc.name)

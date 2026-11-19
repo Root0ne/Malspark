@@ -94,7 +94,7 @@ decides what comes back:
 | `include` | What comes back |
 | :-- | :-- |
 | `published` (default) | Only what the platform's publish rule publishes — the rows of the report's IOC table the exported STIX bundle is built from. |
-| `unpublished` | Only the rows it withholds, for a reader who is triaging rather than acting. |
+| `unpublished` | Only the rows it withholds, for a reader who is triaging rather than acting, and each host value the analysis states that the rule refuses and no row of the table holds (read as that row's kind spells a value), once per `type` and value, under source `analysis` with its refusal and its `type`: the rule's label, or the kind as the analysis wrote it. |
 | `all` | Both. |
 
 Every row carries its `kind`, its `value`, a `source` (`sandbox`, `analyst`,
@@ -138,7 +138,9 @@ with one kind of a closed list — `mutex`, `file path`, `file name`, `folder`,
 `alternate data stream`, `string`, `template` — and says what the evidence shows
 the sample doing with it: `creates/writes`, `reads/checks` or `not shown`. The
 platform then checks each value in code, and exports it as source `analysis`
-("stated by the analysis") only when all of these hold:
+("stated by the analysis") only when all of these hold (a value that fails one
+may be served on the full list of `/iocs` under the same source, unpublished
+with the rule's refusal and its `type`, where the end of this section says):
 
 - its kind names a host object and the sample creates or writes it;
 - the value is found whole in a ledger entry the row cites — not as part of a
@@ -187,9 +189,15 @@ pipe and an alternate data stream have no STIX object, their reason says so, and
 value that the rule refused becomes the analysis's row, so every surface reads
 one answer for it. A row that is not exported is not a row of
 the IOC table: section 9 prints the rule's answer beside every identifier, with
-the reason it was refused. A report stored before the typed kinds writes its
-rows under free-text kinds and without a use, and every such row is refused with
-that reason.
+the reason it was refused. The full list of `/iocs` (`include=unpublished` or
+`all`) lists such a row after the table's rows, unpublished under source
+`analysis`, its `publish_answer` that refusal and its `type` the rule's label
+or, for a kind of no label, the kind as the analysis wrote it: only where no
+row of the table holds its value, read as that row's kind spells a value (a
+URL's path keeps its case, a path reads one separator either way round, a row of
+no kind holds its value as written), and once per `type` and value.
+A report stored before the typed kinds writes its rows under free-text kinds
+and without a use, and every such row is refused with that reason.
 
 ## The STIX bundle
 

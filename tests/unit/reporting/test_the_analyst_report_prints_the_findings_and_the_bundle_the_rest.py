@@ -659,3 +659,40 @@ def test_every_beyond_human_fact_is_in_the_analyst_report(run: str) -> None:
     facts = [f for f in json.loads(QUOTES.read_text())["beyond_human"] if f["run"] == run]
     assert facts
     assert [f for f in facts if f["token"] not in analyst] == []
+
+
+def _with_an_unpublished_recommendation() -> MalwareReport:
+    """A report whose recommendation names an address the run does not publish."""
+    from malspark.pipeline.validation import recommendation_indicator_violations
+    from malspark.reporting.models import NetworkIOCs, NetworkIP
+    from malspark.reporting.narrative_agent import published_answers
+
+    report = MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
+        verdict="Malware",
+        network=NetworkIOCs(ips=[NetworkIP(address="198.51.100.7", source="sandbox")]),
+    )
+    payload = {
+        "defensive_recommendations": [
+            {
+                "category": "firewall",
+                "action": "Block 198.51.100.7 at the perimeter.",
+                "rationale": "The sample talks to its server.",
+                "priority": "P0",
+            }
+        ]
+    }
+    (found,) = recommendation_indicator_violations(payload, published_answers(report))
+    report.run_summary = {
+        "validation": {"retries": 1, "unresolved": [{"agent": "narrative", **found.to_dict()}]}
+    }
+    return report
+
+
+def test_an_unpublished_recommendation_is_printed_as_the_fact_alone() -> None:
+    markdown = MarkdownRenderer(layout=ANALYST).render(_with_an_unpublished_recommendation())
+    (line,) = [one for one in markdown.splitlines() if "narrative.unpublished_indicator" in one]
+
+    assert "_Unresolved:_" in line
+    assert "the P0 firewall recommendation names a value this run does not publish" in line
+    assert "Write it" not in line and "Write the recommendation" not in line

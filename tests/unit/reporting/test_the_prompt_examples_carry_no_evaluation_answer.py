@@ -232,6 +232,7 @@ from malspark.pipeline.validation import (
     command_value_violations,
     confidence_violation,
     decompiled_not_described_violation,
+    echoed_argument_citations,
     feedback_text,
     flow_voice_violations,
     gate_removed_note,
@@ -240,6 +241,7 @@ from malspark.pipeline.validation import (
     library_only_claims_violation,
     malware_object_violations,
     misstated_entry_contents,
+    option_number_violations,
     persistence_not_observed_violations,
     recommendation_indicator_violations,
     recommendation_technique_violations,
@@ -314,6 +316,7 @@ from malspark.reporting.narrative_agent import (
     CLAIMS_IN_FORCE_HEADING,
     EXAMPLE_OBJECT,
     EXPECTED_OBJECT,
+    PublishedAnswers,
     build_prompt_text,
     support_note,
 )
@@ -1624,18 +1627,28 @@ PROMPTS: dict[str, str] = {
         _FLOW_FACTS_REPORT
     ),
     "narrative question about a recommendation naming a value not published": " ".join(
-        v.message
+        f"{v.message} {v.shown}"
+        for answers in (
+            lambda kind, value: "no: x" if kind == "ip" else "",
+            PublishedAnswers(table={}, network=()),
+            PublishedAnswers(table={}, network=("two.example.net", "192.0.2.9")),
+        )
         for v in recommendation_indicator_violations(
             {
                 "defensive_recommendations": [
-                    {"action": "Block 192.0.2.1 and one.example.com.", "detection": "x"}
+                    {
+                        "category": "firewall",
+                        "priority": "P0",
+                        "action": "Block 192.0.2.1 and one.example.com.",
+                        "detection": "x",
+                    }
                 ]
             },
-            lambda kind, value: "no: x" if kind == "ip" else "",
+            answers,
         )
     ),
     "narrative question about a recommendation naming a technique not published": " ".join(
-        v.message
+        f"{v.message} {v.shown}"
         for v in recommendation_technique_violations(
             {"defensive_recommendations": [{"action": "Alert on it.", "technique_id": "T1001"}]},
             ["T1002"],
@@ -1707,6 +1720,40 @@ PROMPTS: dict[str, str] = {
         v.message
         for v in unpublished_value_violations(
             {"body": "It reaches 192.0.2.1."}, lambda kind, value: "no: x"
+        )
+    ),
+    "composer question about a value held only in the call's own arguments": " ".join(
+        f"{v.message} {v.shown}"
+        for v in echoed_argument_citations(
+            {"body": "The strings hold 'beta' [ev_0001]."},
+            EntryTexts.from_ledger(
+                [
+                    build_entry(
+                        entry_id="ev_0001",
+                        seq=1,
+                        agent="a",
+                        server="a",
+                        tool="strings",
+                        args={"pattern": "alpha|beta"},
+                        output='{"pattern": "alpha|beta", "strings": ["alpha one"]}',
+                    )
+                ]
+            ),
+            prose=("body",),
+        )
+    ),
+    "composer question about two option tables stating other numbers for one key": " ".join(
+        f"{v.message} {v.shown}"
+        for v in option_number_violations(
+            [
+                {
+                    "id": "-q",
+                    "name": "-q",
+                    "description": "Sets 0x10 to 1 here.",
+                    "evidence_refs": ["ev_0001"],
+                }
+            ],
+            [{"flag": "-q", "description": "Sets 0x10 to 2 here.", "evidence_ref": "ev_0001"}],
         )
     ),
     "judge question about an indicator on a value the sample did not reach": " ".join(

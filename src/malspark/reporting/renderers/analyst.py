@@ -56,6 +56,7 @@ from malspark.reporting.models import (
     TechnicalSubsection,
     outcome_words,
 )
+from malspark.reporting.publish_words import UNPUBLISHED_STATE
 from malspark.reporting.renderers.layout import BUNDLE_HTML, BUNDLE_JSON
 from malspark.reporting.renderers.markdown import (
     _EV_RE,
@@ -96,6 +97,7 @@ from malspark.reporting.renderers.markdown import (
     not_started_by_the_sample_line,
     report_title,
     started_by_the_sample,
+    stored_report_id,
 )
 from malspark.reporting.sentence_ends import SENTENCE_CLOSE, close_end, ends_sentence
 from malspark.reporting.technique_evidence import (
@@ -808,8 +810,6 @@ def _left_out_rows(count: int, what: str) -> str:
     )
 
 
-# A category the judge states as none ("none", "None: a legitimate tool"): no article.
-_STATED_NONE = re.compile(r"none\b", re.IGNORECASE)
 # Citation brackets right after a flagged text, read past to its end.
 _CITED_AFTER = re.compile(r"(?:[ \t]*\[[^\]\n]*\])*")
 # What may stand on a line before the sentence that opens it: a list item's or a quoted
@@ -870,9 +870,6 @@ _CONFIDENCE_NUMBER = re.compile(
 )
 
 
-# The state the analyst report writes after a value the run does not publish, in
-# its own fixed words: never the model's, never the table's reason (T-555).
-UNPUBLISHED_STATE = "not a published indicator"
 # A bracket that speaks of publication: what the model wrote of a value's publish
 # state, which the platform's own state replaces. Any other bracket ("(UDP 53)")
 # is the model's description of the value, and stays.
@@ -1394,8 +1391,9 @@ class _Analyst:
         return family
 
     def _category(self) -> str:
-        category = _one_line(self.report.malware_category).strip()
-        return category if category and category.lower() != "unknown" else ""
+        from malspark.reporting.category_words import category_shown
+
+        return category_shown(self.report.malware_category)
 
     def _subsection(
         self,
@@ -2065,9 +2063,11 @@ class _Analyst:
     def conclusion(self) -> str:
         report = self.report
         lines = [_heading(7, "Conclusion"), ""]
+        from malspark.reporting.category_words import stated_none
+
         said = f"The sample is assessed as {self._verdict()}"
         category = self._category()
-        if _STATED_NONE.match(category):
+        if stated_none(category):
             # A category the judge states as none takes no article: printed as stated (T-719).
             said += f", category: {category}"
         elif category:
@@ -2322,7 +2322,7 @@ class _Analyst:
                     "",
                 ]
             )
-        rid = _one_line((report.run_summary or {}).get("report_id") or "{report_id}")
+        rid = _one_line(stored_report_id(report) or "{report_id}")
         lines.extend(
             [
                 "Network values are defanged for reading. A value with the publish rule's answer "

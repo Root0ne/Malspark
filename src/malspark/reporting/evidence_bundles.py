@@ -1344,25 +1344,40 @@ def sandbox_start_facts(report: MalwareReport) -> dict[str, str]:
     The one writer of the fact every writer that decides is shown (a
     section's facts, the narrative's facts block, the agreement round's
     facts): the words every surface writes beside the marked row, the rows'
-    pids, and the sentence the process view states (``STAGED_NOTE``),
-    unchanged. One entry per path in the platform's normal form for a path,
-    in tree order; ``{}`` where no row is marked.
+    pids, and the sentence the process view states (``staged_note``, by
+    the number of marked rows the entry speaks of, as the process view
+    counts them), unchanged. A pid marked in more than one task is named
+    with each row's task. One entry per path in the platform's normal form
+    for a path, in tree order; ``{}`` where no row is marked.
     """
     from malspark.reporting.dedupe import indicator_fingerprint
-    from malspark.schemas.sandbox_report import STAGED_NOTE, STAGED_WORDS
+    from malspark.schemas.sandbox_report import STAGED_WORDS, staged_note
 
-    pids: dict[tuple[str, str], list[str]] = {}
+    rows: dict[tuple[str, str], list[Any]] = {}
     paths: dict[tuple[str, str], str] = {}
     for node in sandbox_started_nodes(report):
         if not node.name:
             continue
         key = indicator_fingerprint("path", str(node.name))
         paths.setdefault(key, str(node.name))
-        held = pids.setdefault(key, [])
-        if f"pid {node.pid}" not in held:
-            held.append(f"pid {node.pid}")
+        rows.setdefault(key, []).append(node)
+
+    def _named(nodes: list[Any]) -> str:
+        tasks: dict[int, set[str]] = {}
+        for node in nodes:
+            tasks.setdefault(node.pid, set()).add(node.task)
+        said = [
+            f"pid {node.pid} in task {node.task}"
+            if node.task and len(tasks[node.pid]) > 1
+            else f"pid {node.pid}"
+            for node in nodes
+        ]
+        return ", ".join(dict.fromkeys(said))
+
     return {
-        path: f"{STAGED_WORDS} ({', '.join(pids[key])}). {STAGED_NOTE}"
+        # Rows are counted as listed, as the process view counts them: two rows of
+        # one pid may be two tasks' processes where a row carries no task.
+        path: f"{STAGED_WORDS} ({_named(rows[key])}). {staged_note(len(rows[key]))}"
         for key, path in paths.items()
     }
 

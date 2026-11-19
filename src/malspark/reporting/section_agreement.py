@@ -252,6 +252,7 @@ from malspark.pipeline.validation import (
     _NegationReader,
     _read_dashes,
     citation_violations,
+    echoed_argument_citations,
     generic_function_name,
     ledger_absence_contradictions,
     misstated_entry_contents,
@@ -1311,12 +1312,13 @@ def passages_of(
     if held and found is not None:
         # A negated sentence naming an API, an export or a text the run holds is
         # held to what the ledger holds of it, the call lines of the routines calling an
-        # API shown with their slots named, so no keep rests on no source (T-600).
+        # API shown with their slots named, so no keep rests on no source (T-600); a
+        # sentence naming an address a strings row starts at is shown that row (T-749).
         from malspark.reporting.ledger_entities import run_names
 
         names = run_names(held, found.image_bases)
         by_entry = {str(_field(e, "id") or ""): e for e in held}
-        if names.apis or names.exports or names.texts or found.listed:
+        if names.apis or names.exports or names.texts or names.strings_at or found.listed:
             name_facts, _readings = _name_passages(
                 [*coded, *uncoded],
                 names,
@@ -2548,9 +2550,10 @@ _CALL_MARKS = re.compile(r"(?<=[A-Za-z0-9_])\(\s*\)")
 @dataclass(frozen=True)
 class NameReading:
     """A name a negated sentence writes (or, pointing back, the sentence before it writes),
-    which holds the sentence to what the ledger holds of it: ``kind`` is "api", "export"
-    or "text", ``key`` the name as the ledger holds it (an API's lowered name, an export's
-    address in hex, a text lowered), ``shown`` as the sentence writes it."""
+    which holds the sentence to what the ledger holds of it: ``kind`` is "api", "export",
+    "text", "data" or "string", ``key`` the name as the ledger holds it (an API's lowered
+    name, an export's address in hex, a text lowered, a routine and its data addresses, a
+    strings row's offset and file), ``shown`` as the sentence writes it."""
 
     sentence: str
     kind: str
@@ -3187,6 +3190,90 @@ def _text_at_fact(key: str, names: Any) -> _NameFact | None:
     )
 
 
+# An address as a sentence writes it in hex: only such a word is read for a strings row.
+_HEX_WORD = re.compile(r"0x([0-9a-fA-F]+)")
+# A hex word the sentence states as a file offset: "file offset" right before it.
+_FILE_OFFSET_BEFORE = re.compile(r"\bfile[\s-]+offset\s*(?:of\s+)?$", re.IGNORECASE)
+
+
+def _strings_named(sentence: str, names: Any) -> list[tuple[str, str, str]]:
+    """``(kind, key, shown)`` of each address ``sentence`` writes as a hex word at which a
+    strings row of the ledger starts (``RunNames.strings_at``): read against each file's
+    layout as a virtual address and as an offset from the image base
+    (``Layout.rvas_of``), keyed by that offset and the file, shown as the sentence writes
+    it. A hex word the sentence states as a file offset ("file offset 0x4410") is placed
+    as one, through the file's section table (``Layout.rva_of_offset``), and never read
+    as an address; one no section places names no row. One look per address and file."""
+    if not names.strings_at:
+        return []
+    as_offset: set[int] = set()
+    as_address: set[int] = set()
+    for match in _HEX_WORD.finditer(sentence):
+        stated = _FILE_OFFSET_BEFORE.search(sentence[: match.start()])
+        (as_offset if stated else as_address).add(int(match.group(1), 16))
+    out: dict[str, str] = {}
+    for address in dict.fromkeys(_addresses_named(sentence)):
+        if address not in as_offset | as_address:
+            continue
+        for file, layout in names.layouts.items():
+            readings = list(layout.rvas_of(address)) if address in as_address else []
+            placed = layout.rva_of_offset(address) if address in as_offset else None
+            if placed is not None:
+                readings.append(placed)
+            for rva in dict.fromkeys(readings):
+                if (file, rva) in names.strings_at:
+                    out.setdefault(f"{rva:x}" + (f":{file}" if file else ""), hex(address))
+    return [("string", key, shown) for key, shown in out.items()]
+
+
+def _denies_something(sentence: str) -> bool:
+    """Whether ``sentence`` denies something a run's code facts may speak of, as
+    :func:`name_readings` reads a sentence: a negated clause, not set in what a run saw."""
+    uncited = _uncited(sentence).strip()
+    return bool(negated_clauses(_CALL_MARKS.sub("", uncited))) and not set_in_a_run(uncited)
+
+
+def _string_fact(key: str, names: Any) -> _NameFact | None:
+    """What the ledger holds at an address a sentence names (``key``: its offset from the
+    image base, and the file where it is not the sample): the texts strings rows state
+    there, each with the entries stating it, and the file offset the row was read at and
+    the section the file's own section table places it in (T-749). Each list a cap cuts
+    counts the rest."""
+    head_key, _, file = key.partition(":")
+    rva = int(head_key, 16)
+    placed = names.strings_at.get((file, rva))
+    layout = names.layouts.get(file)
+    if not placed or layout is None:
+        return None
+    texts: dict[str, dict[str, None]] = {}
+    for row in placed:
+        texts.setdefault(row.text, {})[row.entry] = None
+    shown = list(texts.items())[:_TEXTS_SHOWN]
+    listed = _more(
+        ", ".join(
+            quoted_value(_capped(text)) + f" ({', '.join(sorted(_ids(ids)))})"
+            for text, ids in shown
+        ),
+        len(texts) - len(shown),
+    )
+    first = placed[0]
+    where = f"offset {hex(rva)}" + (f" of {file}" if file else "")
+    head = (
+        f"the ledger holds {'a string' if len(texts) == 1 else 'strings'} at {where}: {listed}, "
+        f"its row read at file offset {hex(first.offset)} in section {first.section}"
+    )
+    said = ", ".join(quoted_value(_sample_text(text)) for text, _ids_of in shown)
+    bases = layout.bases
+    return _NameFact(
+        text=head,
+        qualifier=f"the ledger holds {said} at {where}",
+        cites=_ids([entry for _text, ids in shown for entry in ids]),
+        rows=(head,),
+        values=(*(text for text, _ids_of in shown), hex(rva)),
+        addresses=frozenset({rva, *(rva + base for base in bases[:1] if len(bases) == 1)}),
+    )
+
+
 def _name_passages(
     passages: Sequence[Passage],
     names: Any,
@@ -3203,7 +3290,10 @@ def _name_passages(
     name past it is not shown, its sentences not held on it, and the count is said. A
     sentence held this way is answered as a held absence of the body is (or as every
     closing sentence is): code decides none of them. The data addresses the listings name
-    are read first (:func:`_hold_listed_data`, T-652)."""
+    are read first (:func:`_hold_listed_data`, T-652). An address any sentence writes at
+    which a strings row starts is shown its row (:func:`_string_fact`), a negated sentence
+    held on it (T-749); the facts only shown, for a sentence denying nothing, are built
+    after every fact a sentence is held on, so the budget never takes a held one's."""
     _hold_listed_data(names, found, entries)
     listed = {routine.address: routine.listed_in for routine in found.listed}
     # The conclusion and the limitations first, then the fields answered whole (a value
@@ -3236,6 +3326,8 @@ def _name_passages(
             if kind == "export"
             else _text_at_fact(key, names)
             if kind == "data"
+            else _string_fact(key, names)
+            if kind == "string"
             else _text_fact(key, names)
         )
         if built is None or not built.cites:
@@ -3250,7 +3342,13 @@ def _name_passages(
         out.append(
             Passage(
                 id=fid,
-                label="what the run's answers hold of a name a sentence denies something of",
+                # What the fact is: a string fact is shown for any sentence naming the
+                # address, every other fact for a sentence that denies something.
+                label=(
+                    "what the run's answers hold at an address a sentence names"
+                    if kind == "string"
+                    else "what the run's answers hold of a name a sentence denies something of"
+                ),
                 text=built.text,
                 kind=FACT,
                 cites=built.cites,
@@ -3265,6 +3363,9 @@ def _name_passages(
         made[(kind, key)] = fid
         return fid
 
+    # The facts of strings rows a sentence denying nothing names: built once every fact a
+    # sentence is held on is, so a held denial never loses its fact to the budget.
+    shown_only: list[tuple[str, str, str]] = []
     for passage in ordered:
         previous = ""
         named: dict[str, list[str]] = {}
@@ -3276,12 +3377,26 @@ def _name_passages(
                 fid = _fact(reading.kind, reading.key, sentence)
                 if fid is not None:
                     named.setdefault(sentence, []).append(fid)
+            # The strings rows at the addresses it names: shown for any sentence, held on a
+            # negated one only, as a denial of a name is (T-749).
+            strings = [NameReading(sentence, *name) for name in _strings_named(sentence, names)]
+            readings.extend(strings)
+            denies = bool(strings) and _denies_something(sentence)
+            for reading in strings:
+                if not denies:
+                    shown_only.append((reading.kind, reading.key, sentence))
+                    continue
+                fid = _fact(reading.kind, reading.key, sentence)
+                if fid is not None:
+                    named.setdefault(sentence, []).append(fid)
         if not named:
             continue
         passage.ledger_named = tuple((s, tuple(dict.fromkeys(ids))) for s, ids in named.items())
         if not passage.closing:
             passage.absences = tuple(dict.fromkeys([*passage.absences, *named]))
         passage.held = tuple(dict.fromkeys([*passage.held, *named]))
+    for kind, key, sentence in shown_only:
+        _fact(kind, key, sentence)
     for fact in out:
         fact.speaks_to = tuple(speaks[fact.id])
     if left:
@@ -7396,6 +7511,7 @@ def _rewrite_violations(
     return [
         *citation_violations(prose, citable, prose=("rewrite",), items=items),
         *wrong_entry_citations(prose, entries, prose=("rewrite",)),
+        *echoed_argument_citations(prose, entries, prose=("rewrite",)),
         *misstated_entry_contents(prose, entries, prose=("rewrite",)),
         *ledger_absence_contradictions(prose, entries),
     ]

@@ -1053,7 +1053,11 @@ class ExtendedSTIXRenderer:
         # for a placeholder: "Unknown" is no family to export an object for.
         family = stated_family(report.attribution.family)
         if malware_id is None and not benign:
-            malware_name = family or report.malware_category or "unknown"
+            from malspark.reporting.category_words import stated_none
+
+            # A category the judge states as none names no malware.
+            category = None if stated_none(report.malware_category) else report.malware_category
+            malware_name = family or category or "unknown"
             malware_obj = Malware(
                 name=str(malware_name),
                 description=f"Sample {report.identity.hashes.sha256}",
@@ -3486,9 +3490,15 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
     record naming a pid the listing does not settle is unattributed, and one
     naming a number no listed process answers to says so where every listed
     process it could name (its task's, where it states one) states its guest
-    pid, and is unattributed where one of them states none.
+    pid, and is unattributed where one of them states none. A record naming
+    a process whose lineage the two lineage facts dispute is unattributed
+    too, and says so naming the process in the network row's words for that
+    case (:data:`MADE_BY_WHOM`).
     """
+    from types import SimpleNamespace
+
     from malspark.schemas.sandbox_report import (
+        WRITER_DISPUTED,
         WRITER_IN_TREE,
         WRITER_UNLISTED,
         WRITER_UNSETTLED,
@@ -3508,6 +3518,10 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
         places = {trees.place(pid, task) for pid in by_pid}
         if WRITER_UNSETTLED in places:
             return UNATTRIBUTED_HOST_ROW.format(did=did)
+        if WRITER_DISPUTED in places:
+            named = list(dict.fromkeys(trees.disputed(pid, task) for pid in by_pid))
+            said = made_by_reason(SimpleNamespace(disputed=[one for one in named if one]))
+            return said or UNATTRIBUTED_HOST_ROW.format(did=did)
         if WRITER_IN_TREE in places:
             return ""
         if places == {WRITER_UNLISTED}:
@@ -4801,6 +4815,10 @@ _SOURCE_WORDS = {
 }
 
 
+# What a verdict-withheld answer says of what the evidence held, before it in brackets.
+EVIDENCE_ALONE = "the evidence alone would publish it"
+
+
 def published_because(reason: str) -> str:
     """The publish rule's reason for a row, as a sentence a reader can check."""
     said = str(reason or "").strip()
@@ -4857,9 +4875,9 @@ def publish_answer(
     the export asks it.
 
     A value the evidence would publish and the verdict's table withholds
-    (:func:`withheld_by_the_verdict`) is ``no: <the verdict's reason>; <what it
-    stands on>``: the verdict first, and what the evidence said of it kept
-    after it, the judge's keep among it.
+    (:func:`withheld_by_the_verdict`) is ``no: <the verdict's reason>; the evidence
+    alone would publish it (<what it stands on>)``: the verdict first, and what the
+    evidence said of it kept after it as a clause of its own, the judge's keep among it.
     """
     text = str(value or "").strip()
     from_strings = str(source or "").strip().lower() in ("", "strings")
@@ -4888,7 +4906,7 @@ def publish_answer(
     )
     withheld = withheld_by_the_verdict(verdict, digest)
     if admitted and withheld:
-        return f"no: {withheld}; {published_because(admitted)}"
+        return f"no: {withheld}; {EVIDENCE_ALONE} ({published_because(admitted)})"
     if admitted:
         return yes_because(admitted)
     if stated is not None:

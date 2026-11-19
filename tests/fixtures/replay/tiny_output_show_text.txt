@@ -88,7 +88,7 @@ Findings
     narrative.ungrounded_finding | key_findings.1.evidence_ids | at key_findings.1
         said: key finding 2 cites ev_0099, which no entry in this run's evidence carries. Cite the ev_ ids of the entries the finding stands on, or leave evidence_ids empty.
     narrative.unpublished_technique | defensive_recommendations.2 | T1053.005 | at defensive_recommendations.2
-        said: recommendation 3 names a technique this run does not publish: T1053.005. The report's ATT&CK table does not carry it. A recommendation acts on the techniques this run publishes. Write it with a published technique, or without the id.
+        said: the P3 other recommendation names a technique this run does not publish: T1053.005. The report's ATT&CK table does not carry it.
   tool
     tool.argument_names_its_parameter | ev_0002 | argument pattern
         values: {'pattern': 'pattern'}
@@ -112,6 +112,7 @@ Not replayed
   agreement: rewrites_violations is not replayed: no replay step asks the agreement question again or reads the answers its record keeps (section_agreement.answers): the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
   agreement: citation_violations is not replayed: no replay step asks the agreement question again or reads the answers its record keeps (section_agreement.answers): the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
   agreement: wrong_entry_citations is not replayed: no replay step asks the agreement question again or reads the answers its record keeps (section_agreement.answers): the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
+  agreement: echoed_argument_citations is not replayed: no replay step asks the agreement question again or reads the answers its record keeps (section_agreement.answers): the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
   agreement: misstated_entry_contents is not replayed: no replay step asks the agreement question again or reads the answers its record keeps (section_agreement.answers): the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
   agreement: ledger_absence_contradictions is not replayed: no replay step asks the agreement question again or reads the answers its record keeps (section_agreement.answers): the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
   analysts: isr.retry_dropped is not replayed: it reads a validation retry's answer against the answer it fixes, and the record keeps no retry answer

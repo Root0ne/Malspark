@@ -480,6 +480,32 @@ def _published(value: Any) -> bool | None:
     return None
 
 
+def _identifier_refusals(full: Any) -> dict[str, set[tuple[str, str]]]:
+    """Each refusal the identifier rule gives, with the type it gives, by the value it refuses.
+
+    The rule's own answers (``stated_host_values.identifier_answers``) on the
+    full report as the model reads it, each beside the row's type (the rule's
+    label, or the kind as written where it has none), ``{}`` for a report the
+    model cannot read; an answer that publishes is no refusal.
+    """
+    from malspark.reporting.models import MalwareReport
+    from malspark.reporting.renderers.stix_renderer import one_reading, publishes
+    from malspark.reporting.stated_host_values import identifier_answers
+
+    try:
+        report = MalwareReport.model_validate(full)
+        with one_reading(report):
+            answers = identifier_answers(report)
+    except Exception:  # noqa: BLE001 — no refusal is read, so no feed row is excused
+        return {}
+    out: dict[str, set[str]] = {}
+    for stated, answer in answers:
+        if not publishes(answer):
+            label = stated.label or stated.written_kind
+            out.setdefault(_ioc_key(stated.value), set()).add((label, answer))
+    return out
+
+
 def canonical(surfaces: dict[str, Any]) -> Findings:
     """The job's own decisions, from the report row and its report document."""
     row = _dict(surfaces.get("report_row"))
@@ -935,7 +961,20 @@ def check_iocs(
                     ioc["value"],
                     f"published={said} in the feed, {ioc['published']} in the report's IOC table",
                 )
+        # The full list carries each identifier row the rule refuses after the
+        # table's rows, unpublished under source ``analysis`` and typed
+        # (``builder.full_ioc_list``): a row whose answer is the refusal the
+        # identifier rule gives that value, typed as the rule types it.
+        refusals = _identifier_refusals(full)
         for key in feed.keys() - canon.keys():
+            item = feed[key]
+            if (
+                item.get("source") == "analysis"
+                and _published(item.get("published")) is False
+                and (_text(item.get("type")), _text(item.get("publish_answer")))
+                in refusals.get(key, ())
+            ):
+                continue
             out.defect(
                 "orphan",
                 "ioc",

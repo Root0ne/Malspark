@@ -8330,6 +8330,18 @@ def command_value_violations(payload: Any, compared: Sequence[ComparedValues]) -
 
 
 CITATION_WRONG_ENTRY_CODE = "report.citation_wrong_entry"
+# A quoted value that its cited entries hold only inside the echo of their own
+# call's arguments, nowhere in the rest of a JSON answer, letter case aside and
+# not inside a longer text either (``echoed_argument_citations``): a search
+# answer repeats the pattern it was given. Only a JSON answer is read, since only
+# its key paths tell the echo from a match; an answer in text or in pages is not.
+# Read for a quoted value of three characters or more that is no number (digits
+# with separators, a hex run holding a digit, or ``0x`` hex) and holds no token
+# the reader of unquoted values takes for a value by its shape
+# (``literal_values``: for example a whole digest, a URL, a mailbox, a host name,
+# a file name, a token with a backslash). Asked once with the fact; a sentence
+# kept after it is marked where it stands with the entry named.
+VALUE_ONLY_IN_CALL_ARGUMENTS_CODE = "report.value_only_in_call_arguments"
 # A recommendation or hunting note that acts on a value this run does not
 # publish. Asked once with the IOC table's own answer; a value kept after it
 # is recorded beside the recommendation.
@@ -8373,6 +8385,11 @@ TECHNIQUE_NAME_CODE = "report.technique_name"
 # Asked once, naming the entry and showing what it holds (the routine's code,
 # the object that names the address); a sentence kept after it is recorded.
 ABSENCE_CONTRADICTS_LEDGER_CODE = "report.absence_contradicts_ledger"
+# A commands row and a command-line flags row that name the same option and
+# cite a common entry, and state different numbers for one key
+# (``option_number_violations``). The code cannot tell which row is right: each
+# section is asked once, shown both rows, and a row kept stands with the finding.
+OPTION_NUMBERS_DIFFER_CODE = "report.option_numbers_differ"
 
 # The codes a report round's answer is kept with. A broken shape leaves nothing
 # to print; each of these leaves a printable answer with a finding beside it.
@@ -8385,6 +8402,7 @@ MARKED_IN_PLACE: frozenset[str] = frozenset(
         RULE_MATCH_AS_ACTION_CODE,
         UNPUBLISHED_VALUE_CODE,
         CITATION_WRONG_ENTRY_CODE,
+        VALUE_ONLY_IN_CALL_ARGUMENTS_CODE,
         ID_NOT_IN_CITED_ENTRY_CODE,
         NUMERIC_CONFIDENCE_CODE,
         PROCESS_WORDS_CODE,
@@ -8394,7 +8412,13 @@ MARKED_IN_PLACE: frozenset[str] = frozenset(
 # an answer that rewrites the sentence around the same value was asked all the
 # same.
 ASKED_BY_VALUE: frozenset[str] = frozenset(
-    {CITATION_WRONG_ENTRY_CODE, ID_NOT_IN_CITED_ENTRY_CODE, STATED_VALUE_INSIDE_A_TOKEN_CODE}
+    {
+        CITATION_WRONG_ENTRY_CODE,
+        VALUE_ONLY_IN_CALL_ARGUMENTS_CODE,
+        ID_NOT_IN_CITED_ENTRY_CODE,
+        STATED_VALUE_INSIDE_A_TOKEN_CODE,
+        UNPUBLISHED_RECOMMENDATION_CODE,
+    }
 )
 
 
@@ -8424,6 +8448,7 @@ KEPT_WITH_A_FINDING: frozenset[str] = frozenset(
         UNCITED_CONFIGURATION_CODE,
         CITATION_NOT_EVIDENCE_CODE,
         CITATION_WRONG_ENTRY_CODE,
+        VALUE_ONLY_IN_CALL_ARGUMENTS_CODE,
         ENTRY_CONTENTS_MISSTATED_CODE,
         ABSENCE_CONTRADICTS_LEDGER_CODE,
         UNCITED_IDENTIFIER_CODE,
@@ -8436,6 +8461,7 @@ KEPT_WITH_A_FINDING: frozenset[str] = frozenset(
         RULE_MATCH_AS_ACTION_CODE,
         REPEATED_ITEMS_CODE,
         COMMAND_VALUES_CODE,
+        OPTION_NUMBERS_DIFFER_CODE,
         UNPUBLISHED_RECOMMENDATION_CODE,
         UNPUBLISHED_RECOMMENDATION_TECHNIQUE_CODE,
         PERSISTENCE_NOT_OBSERVED_CODE,
@@ -8770,15 +8796,22 @@ def recommendation_indicator_violations(
     field of a recommendation is read — the action, the rationale and the
     detection the hunting notes print — and each value the table does not
     answer ``yes`` for is named with the table's reason, one question per
-    recommendation. Nothing is removed: what the model answers stands.
+    recommendation. The finding states the fact and names the row by its
+    priority and category, as the report's table prints it; its path keeps
+    the row's place in the answer. The question sent (``shown``) names the
+    network values the run publishes (``answers.network``), or says it
+    publishes none. Nothing is removed: what the model answers stands.
     """
     from malspark.extractors.network_extractor import is_well_known_benign_host
     from malspark.reporting.renderers.stix_renderer import publishes
 
+    shown = _recommendation_list_question(getattr(answers, "network", None))
     out: list[Violation] = []
-    for index, (at, row) in enumerate(_placed_rows(payload, "defensive_recommendations")):
+    placed = _placed_rows(payload, "defensive_recommendations")
+    for index, (at, row) in enumerate(placed):
         text = " ".join(str(row.get(key) or "") for key in ("action", "rationale", "detection"))
         refused: list[str] = []
+        values: list[str] = []
         named, gated = _values_and_gated(text)
         for kind, value in named:
             answer = str(answers(kind, value) or "")
@@ -8796,22 +8829,78 @@ def recommendation_indicator_violations(
             said = f"{safe_finding_value(value)} ({safe_finding_value(why)})"
             if said not in refused:
                 refused.append(said)
+                values.append(value)
         if not refused:
             continue
         out.append(
             Violation(
                 code=UNPUBLISHED_RECOMMENDATION_CODE,
                 message=(
-                    f"recommendation {safe_finding_value(index + 1)} names a value this run "
-                    "does not publish: "
-                    f"{'; '.join(refused)}. A recommendation acts on the indicators this run "
-                    "publishes. Write it over the published indicators, or without the value."
+                    f"{_recommendation_named(placed, index)} names a value this run does not "
+                    f"publish: {'; '.join(refused)}."
                 ),
                 path=f"defensive_recommendations.{index}",
                 statements=(f"defensive_recommendations.{at}",),
+                values=tuple(dict.fromkeys(values)),
+                shown=shown,
             )
         )
     return out
+
+
+_ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth")
+
+
+def _ordinal(n: int) -> str:
+    """``first`` to ``ninth`` in words, then ``10th``, ``11th``, ``21st``."""
+    if n <= len(_ORDINALS):
+        return _ORDINALS[n - 1]
+    suffix = "th" if n % 100 in (11, 12, 13) else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _recommendation_named(rows: Sequence[tuple[int, Mapping[str, Any]]], index: int) -> str:
+    """The recommendation ``rows[index]`` as the report's table names it.
+
+    ``the P2 firewall recommendation``: by its priority and category; where
+    more rows share that name, each is named by its place among them (``the
+    second P2 firewall recommendation``), so a finding names one row. A row
+    whose name no other row shares keeps it as it is.
+    """
+    keys = [
+        tuple(
+            safe_finding_value(str(row.get(key) or "").strip().replace("_", " "))
+            for key in ("priority", "category")
+            if str(row.get(key) or "").strip()
+        )
+        for _at, row in rows
+    ]
+    words = keys[index]
+    place = [_ordinal(keys[: index + 1].count(words))] if keys.count(words) > 1 else []
+    return " ".join(["the", *place, *words, "recommendation"])
+
+
+def _recommendation_list_question(network: Sequence[str] | None) -> str:
+    """What the question about an unpublished recommendation value shows after the finding.
+
+    The network values the run publishes, or that it publishes none; the rule
+    alone where the caller's answers carry no list.
+    """
+    if network is None:
+        return (
+            "A recommendation acts on the indicators this run publishes. Write it over the "
+            "published indicators, or without the value."
+        )
+    if not network:
+        return (
+            "This run publishes no network indicator: write the recommendation without the value."
+        )
+    listed = ", ".join(safe_finding_value(value) for value in network)
+    return (
+        "A recommendation acts on the indicators this run publishes; the network indicators "
+        f"it publishes are: {listed}. Write the recommendation over those, or without the "
+        "value."
+    )
 
 
 def recommendation_technique_violations(
@@ -8824,15 +8913,18 @@ def recommendation_technique_violations(
     hunting notes print is read — the action, the rationale, the detection and
     the technique column — and each id written there that the run does not
     publish is named, one question per recommendation, as an unpublished
-    indicator is (:func:`recommendation_indicator_violations`). ``None`` reads
-    nothing: with no list to compare with there is no fact to state. Nothing
-    is removed: what the model answers stands.
+    indicator is (:func:`recommendation_indicator_violations`): the finding
+    states the fact and names the row by its priority and category, and the
+    rule it is asked by is in the question sent (``shown``) alone. ``None``
+    reads nothing: with no list to compare with there is no fact to state.
+    Nothing is removed: what the model answers stands.
     """
     if published is None:
         return []
     known = {str(tid).strip().upper() for tid in published if str(tid).strip()}
     out: list[Violation] = []
-    for index, (at, row) in enumerate(_placed_rows(payload, "defensive_recommendations")):
+    placed = _placed_rows(payload, "defensive_recommendations")
+    for index, (at, row) in enumerate(placed):
         text = " ".join(
             str(row.get(key) or "") for key in ("action", "rationale", "detection", "technique_id")
         )
@@ -8845,14 +8937,16 @@ def recommendation_technique_violations(
             Violation(
                 code=UNPUBLISHED_RECOMMENDATION_TECHNIQUE_CODE,
                 message=(
-                    f"recommendation {safe_finding_value(index + 1)} names a technique this run "
-                    f"does not publish: {ids}. The report's ATT&CK table does not carry it. A "
-                    "recommendation acts on the techniques this run publishes. Write it with a "
-                    "published technique, or without the id."
+                    f"{_recommendation_named(placed, index)} names a technique this run does not "
+                    f"publish: {ids}. The report's ATT&CK table does not carry it."
                 ),
                 path=f"defensive_recommendations.{index}",
                 subject=unpublished[0],
                 statements=(f"defensive_recommendations.{at}",),
+                shown=(
+                    "A recommendation acts on the techniques this run publishes. Write it with a "
+                    "published technique, or without the id."
+                ),
             )
         )
     return out
@@ -10603,6 +10697,445 @@ def wrong_entry_citations(
     return violations
 
 
+@_locating(lambda payload, entries, *, prose=(): _Names(top=frozenset(prose)))
+def echoed_argument_citations(
+    payload: Any, entries: EntryTexts | None, *, prose: Sequence[str] = ()
+) -> list[Violation]:
+    """Quoted values a cited entry holds only in the echo of its own call's arguments.
+
+    A tool's stored answer may repeat the call it answers (a search answer
+    carries its pattern), and :meth:`EntryTexts.holds` reads the whole answer,
+    so a term of the query reads as held by the entry whether the answer
+    matched it or not. A value is asked about when it is quoted
+    (:func:`quoted_values`) and :func:`literal_values` does not also read it;
+    the sentence does not name it as absent where it stands
+    (:func:`_named_as_absent`); at least one cited entry holds it on its whole
+    text and none holds it once the echoes of its own call's arguments are
+    taken out (:func:`_call_echoes`, :func:`_without_call_echoes`), not even,
+    letter case aside, inside a longer text; and in at
+    least one cited entry the echo that holds it is longer than the value — a
+    value that is a whole argument is the call's own target. Only a JSON
+    answer is read: its key paths tell the echo of the call from a match
+    equal to it, so a holder whose text, or any text it was read in, is not
+    a JSON object or array gives no finding. A cited entry whose text is not
+    the whole answer says nothing of what the answer lacks, and nothing is
+    asked over it. Read as :func:`wrong_entry_citations` reads
+    a text: ``prose`` fields sentence by sentence under each sentence's
+    brackets, every other string under its own brackets or its record's
+    citations. Asked once; the sentence is never rewritten, and one kept is
+    marked where it stands with the entries named (``labels``).
+    """
+    if payload is None or entries is None or not (entries.texts or entries.items is not None):
+        return []
+    data = payload if isinstance(payload, dict) else getattr(payload, "__dict__", {}) or {}
+    # Keyed by the entries holding a value and whether the citation stands in
+    # the sentence (``False``) or comes from its record's citation fields.
+    echoed: dict[tuple[tuple[str, ...], bool], list[str]] = {}
+    written: dict[tuple[tuple[str, ...], bool], dict[str, list[str]]] = {}
+    spans: dict[tuple[tuple[str, ...], bool], list[Span]] = {}
+
+    def _ask(
+        value: str,
+        cited: Sequence[str],
+        sentence: str,
+        where: str,
+        span: Span,
+        by_record: bool = False,
+    ) -> None:
+        value = str(value or "").strip()
+        if literal_values(value) or not decidable(value):
+            return
+        start = sentence.find(value)
+        if start >= 0 and _named_as_absent(sentence, start, start + len(value)):
+            return
+        holders = _echo_holders(value, cited, entries)
+        if not holders:
+            return
+        group = (holders, by_record)
+        values = echoed.setdefault(group, [])
+        if value not in values:
+            values.append(value)
+        found = written.setdefault(group, {}).setdefault(where, [])
+        if value not in found:
+            found.append(value)
+        spans.setdefault(group, []).append(span)
+
+    def _read_prose(text: Any) -> None:
+        read = _text_of(text)
+        for sentence, cited, begin, end in _cited_sentences(read):
+            for value in quoted_values(sentence):
+                _ask(value, cited, sentence, sentence.strip(), (read, begin, end))
+
+    def _walk(node: Any, depth: int = 0) -> None:
+        if depth > 4:
+            return
+        if isinstance(node, list | tuple):
+            for item in node:
+                _walk(item, depth + 1)
+            return
+        if not isinstance(node, dict):
+            return
+        refs: list[str] = []
+        for key in _CITING_FIELDS:
+            refs.extend(ref for ref in _ids_in(node.get(key)) if ref not in refs)
+        for key, value in node.items():
+            if key in _CITING_FIELDS:
+                continue
+            if isinstance(value, str):
+                if _sentences_with_citations(value):
+                    _read_prose(value)
+                elif refs:
+                    where = cited_row_text(value, node)
+                    for stated in quoted_values(value):
+                        _ask(stated, refs, value, where, (value, 0, len(value)), by_record=True)
+            else:
+                _walk(value, depth + 1)
+
+    for key in prose:
+        if isinstance(data.get(key), str):
+            _read_prose(data.get(key))
+    _walk({key: value for key, value in data.items() if key not in prose})
+    for key in prose:
+        if not isinstance(data.get(key), str):
+            _walk(data.get(key))
+
+    violations: list[Violation] = []
+    for group, values in echoed.items():
+        holding, by_record = group
+        one = len(values) == 1
+        more = len(values) - _MAX_NAMED_IDS
+        listed = ", ".join(repr(value) for value in values[:_MAX_NAMED_IDS])
+        named = ", ".join(entries.named(i) for i in holding)
+        verb = "is" if one else "are"
+        stands = "it stands" if one else "they stand"
+        answers = "the answer" if len(holding) == 1 else "the answers"
+        calls = "that call was" if len(holding) == 1 else "those calls were"
+        places = written.get(group, {})
+        citing = "its record" if by_record else "the sentence"
+        violations.append(
+            Violation(
+                code=VALUE_ONLY_IN_CALL_ARGUMENTS_CODE,
+                message=(
+                    f"{safe_finding_value(listed)}"
+                    f"{' (with ' + safe_finding_value(more) + ' more)' if more > 0 else ''} "
+                    f"{verb} not in {answers} of {safe_finding_value(named)}, which "
+                    f"{citing} cites; {stands} only in what {calls} asked for."
+                ),
+                path="citation",
+                quoted=tuple(places),
+                labels=tuple(_echoed_label(stated, holding) for stated in places.values()),
+                values=tuple(values),
+                about=_distinct_spans(spans.get(group, [])),
+                shown=(
+                    "Say what the entry's answer holds, or state the value without attributing it "
+                    "to the entry."
+                ),
+            )
+        )
+    return violations
+
+
+def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tuple[str, ...]:
+    """The cited entries that hold ``value`` only in the echo of their own call, or ``()``.
+
+    ``()`` unless every condition of :func:`echoed_argument_citations` holds:
+    a cited entry holds the value on its whole text, none holds it once its
+    call's echoes are out (not even, case aside, inside a longer text), no
+    other cited entry holds it inside a longer text, none is a part of its
+    answer only, each holder's text and every text it was read in (the
+    answer, each page: :meth:`EntryTexts.parts_of`) is a JSON object or array,
+    and in one of them the echo that holds it is longer than the value. Only
+    the key paths of a JSON answer tell the echo of the call from a match
+    equal to it.
+    """
+    known = [entry_id for entry_id in cited if entries.has_text(entry_id)]
+    holding = [entry_id for entry_id in known if entries.holds(entry_id, value, fields=True)]
+    if not holding or any(entry_id in entries.partial for entry_id in known):
+        return ()
+    if not all(
+        _a_json_document(text)
+        for entry_id in holding
+        for text in (entries.text_of(entry_id), *entries.parts_of(entry_id))
+    ):
+        return ()
+    if any(value.lower() in entries.text_of(e).lower() for e in known if e not in holding):
+        # Another cited entry holds it inside a longer text.
+        return ()
+    longer = False
+    for entry_id in holding:
+        echoes = _call_echoes(entries, entry_id)
+        rest = _without_call_echoes(entries.text_of(entry_id), _call_arguments(entries, entry_id))
+        if EntryTexts(texts={entry_id: rest}).holds(entry_id, value, fields=True):
+            return ()
+        if value.lower() in rest.lower():
+            # Held inside a longer text outside the echo: the answer holds it.
+            return ()
+        longer = longer or any(
+            len(echo) > len(value)
+            for echo in echoes
+            if EntryTexts(texts={entry_id: echo}).holds(entry_id, value, fields=True)
+        )
+    return tuple(holding) if longer else ()
+
+
+def _without_call_echoes(text: str, arguments: Any = None) -> str:
+    """An entry's text with what echoes its own call taken out.
+
+    Read through its JSON where it is JSON: a string is dropped where it
+    stands at the key path the call's arguments (``arguments``) give a value
+    it echoes (that value, or its last path component), the path counted from
+    the answer's root or from an object under a key that repeats the
+    arguments whole (a list's item is a row of the answer, whatever it
+    repeats, and no key path runs through a list). The same string at any
+    other place, under the same key name or not, is what the answer holds (a
+    match row equal to the pattern it was asked for) and stays. A text that is
+    no JSON object or array is returned as it is: without key paths an echo
+    cannot be told from a match. So is one that writes a key twice in one
+    object: a parser keeps the last of the two, and what the first held would
+    be read as absent.
+    """
+    import json as _json
+
+    def _each_key_once(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        read = dict(pairs)
+        if len(read) != len(pairs):
+            raise ValueError("a key written twice")
+        return read
+
+    try:
+        parsed: Any = _json.loads(text, object_pairs_hook=_each_key_once)
+    except (ValueError, TypeError):
+        parsed = None
+    if isinstance(parsed, dict | list):
+        placed = _argument_places(arguments)
+        whole = _folded(arguments) if isinstance(arguments, dict) and arguments else None
+
+        def _repeats(node: dict[Any, Any]) -> bool:
+            held = _folded(node)
+            return whole is not None and all(
+                key in held and held[key] == value for key, value in whole.items()
+            )
+
+        def _echo(node: Any, at: Sequence[tuple[str, ...]]) -> bool:
+            return isinstance(node, str) and any(
+                node.strip().lower() in placed.get(path, ()) for path in at
+            )
+
+        def _drop(node: Any, at: tuple[tuple[str, ...], ...], keyed: bool = False) -> Any:
+            if isinstance(node, dict):
+                # A list's item is a row of the answer, whatever it repeats.
+                if keyed and _repeats(node):
+                    at = (*at, ())
+                kept: dict[Any, Any] = {}
+                for key, item in node.items():
+                    below = tuple((*path, str(key).strip().lower()) for path in at)
+                    if not _echo(item, below):
+                        kept[key] = _drop(item, below, keyed=True)
+                return kept
+            if isinstance(node, list):
+                # A list's item is a row of the answer: no key path runs through it.
+                return [_drop(item, ()) for item in node]
+            return node
+
+        return _json.dumps(_drop(parsed, ((),)), ensure_ascii=False, indent=1)
+    return str(text or "")
+
+
+def _echoed_label(values: Sequence[str], holding: Sequence[str]) -> str:
+    """What a renderer prints beside a sentence kept after the question: the values, the entries."""
+    said = ", ".join(f'"{value}"' for value in values[:_MAX_NAMED_IDS])
+    if len(values) > _MAX_NAMED_IDS:
+        said += f" and {len(values) - _MAX_NAMED_IDS} more"
+    asked = "was asked for" if len(holding) == 1 else "were asked for"
+    return f"{said} {'is' if len(values) == 1 else 'are'} only in what {', '.join(holding)} {asked}"
+
+
+# A command-line option a table row names: one or two dashes and a name, its
+# case kept (``-t`` and ``-T`` are two options).
+_OPTION_TOKEN_RE = re.compile(r"(?<![\w/-])--?[A-Za-z][\w-]*")
+# A key a row states a number for: a hex constant, a ``CONF_`` name, or an
+# upper-case name with an underscore.
+_SETTING_KEY_RE = re.compile(r"\b0x[0-9a-fA-F]+\b|\bCONF_\w+\b|\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b")
+# The small numbers a row states beside a key, in digits or in words.
+_SMALL_NUMBER_WORDS = {
+    word: number
+    for number, word in enumerate(
+        "zero one two three four five six seven eight nine ten eleven twelve".split()
+    )
+}
+_SMALL_NUMBER_RE = re.compile(
+    r"(?<![\w.])(\d{1,2})(?![\w.])|\b(" + "|".join(_SMALL_NUMBER_WORDS) + r")\b", re.IGNORECASE
+)
+# Where a clause of a row's text ends: a number beside a key is the key's only
+# inside one clause.
+_ROW_CLAUSE_END_RE = re.compile(r"[;,]|\.\s|\band\b|\bwhile\b|\bthen\b")
+# How many words from a key a number may stand and be the key's.
+_KEY_NUMBER_WORDS = 6
+
+
+def option_number_violations(
+    commands: Sequence[Any],
+    flags: Sequence[Any],
+    *,
+    command_fields: Sequence[str] = ("id", "name"),
+    flag_fields: Sequence[str] = ("flag",),
+) -> list[Violation]:
+    """Rows of the two option tables that name one option and state other numbers for one key.
+
+    The commands table and the command-line flags table are written apart and
+    may both list one option. A commands row and a flags row pair when their
+    identity fields (``command_fields``, ``flag_fields``: the composer's
+    ``_ITEM_IDENTITY``) name the same option, its case kept, and the rows cite
+    a common entry. A key both rows state numbers for (a hex constant or a
+    configuration name, with a small number within a few words of it in the
+    same clause) must carry the same numbers in both. Where it does not, one
+    finding goes to each table, its path naming its own row (``commands.<i>``,
+    ``flags.<j>``): the code cannot tell which row is right, so each section is
+    asked once, shown both rows and the common entry, and may correct its own.
+    Nothing is marked or left out.
+    """
+    out: list[Violation] = []
+    command_rows = [_row_mapping(row) for row in commands or ()]
+    flag_rows = [_row_mapping(row) for row in flags or ()]
+    for at, command in enumerate(command_rows):
+        named = _row_options(command, command_fields)
+        if not named:
+            continue
+        command_text = _row_said(command, command_fields)
+        stated = _key_numbers(command_text)
+        for place, flag in enumerate(flag_rows):
+            shared = sorted(named & _row_options(flag, flag_fields))
+            flag_refs = _row_refs(flag)
+            common = [ref for ref in _row_refs(command) if ref in flag_refs]
+            if not shared or not common:
+                continue
+            flag_text = _row_said(flag, flag_fields)
+            other = _key_numbers(flag_text)
+            for key in [key for key in stated if key in other and stated[key] != other[key]]:
+                command_named = _row_identity(command, command_fields)
+                flag_named = _row_identity(flag, flag_fields)
+                options = ", ".join(shared)
+                entries = ", ".join(common)
+                command_numbers = ", ".join(str(number) for number in sorted(stated[key]))
+                flag_numbers = ", ".join(str(number) for number in sorted(other[key]))
+                fact = (
+                    f"commands row {at + 1} ({safe_finding_value(command_named)}) and "
+                    f"command-line flags row {place + 1} ({safe_finding_value(flag_named)}) both "
+                    f"name {safe_finding_value(options)} and cite {safe_finding_value(entries)}, "
+                    f"and state different numbers for {safe_finding_value(key)}: "
+                    f"{safe_finding_value(command_numbers)} in the commands row, "
+                    f"{safe_finding_value(flag_numbers)} in the command-line flags row."
+                )
+                for path, own, theirs, mine, other_text in (
+                    (f"commands.{at}", "commands", "command-line flags", command_text, flag_text),
+                    (f"flags.{place}", "command-line flags", "commands", flag_text, command_text),
+                ):
+                    out.append(
+                        Violation(
+                            code=OPTION_NUMBERS_DIFFER_CODE,
+                            message=fact,
+                            path=path,
+                            subject=shared[0],
+                            values=(key,),
+                            statements=(path,),
+                            shown=(
+                                f"Your {own} row reads: '{safe_finding_value(mine)}'. The "
+                                f"{theirs} row reads: '{safe_finding_value(other_text)}'. Read "
+                                f"{safe_finding_value(entries)} again: where it shows another "
+                                f"number for {safe_finding_value(key)} than your row states, "
+                                "correct your row; where your row is right, keep it as written."
+                            ),
+                        )
+                    )
+    return out
+
+
+def _row_mapping(row: Any) -> dict[str, Any]:
+    """A table row as a mapping: a model's fields, or the row itself."""
+    if isinstance(row, Mapping):
+        return dict(row)
+    dump = getattr(row, "model_dump", None)
+    return dict(dump()) if callable(dump) else {}
+
+
+def _row_options(row: Mapping[str, Any], fields: Sequence[str]) -> set[str]:
+    """The command-line options a row's identity fields name, case kept."""
+    return {
+        match.group(0).rstrip("-")
+        for name in fields
+        for match in _OPTION_TOKEN_RE.finditer(str(row.get(name) or ""))
+    }
+
+
+def _row_refs(row: Mapping[str, Any]) -> list[str]:
+    """The entries a row cites: its citing fields, and the brackets of its text."""
+    refs: list[str] = []
+    for key, value in row.items():
+        if key in _CITING_FIELDS:
+            found = _ids_in(value)
+        elif isinstance(value, str):
+            found = _ids_in(_cited_groups(value))
+        else:
+            continue
+        refs.extend(ref for ref in found if ref not in refs)
+    return refs
+
+
+def _row_identity(row: Mapping[str, Any], fields: Sequence[str]) -> str:
+    """What names a row: its identity fields, the repeats left out, joined."""
+    said = [str(row.get(name) or "").strip() for name in fields]
+    return ": ".join(dict.fromkeys(part for part in said if part)) or "?"
+
+
+def _row_said(row: Mapping[str, Any], fields: Sequence[str]) -> str:
+    """A row's text: its identity fields, then each of its other text fields, as it reads."""
+    head = ": ".join(str(row.get(name) or "").strip() for name in fields if row.get(name))
+    rest = [
+        str(value).strip()
+        for key, value in row.items()
+        if key not in fields
+        and key not in _CITING_FIELDS
+        and isinstance(value, str)
+        and value.strip()
+    ]
+    return ". ".join(part for part in [head, *rest] if part)
+
+
+def _key_numbers(text: str) -> dict[str, frozenset[int]]:
+    """Each key a text states small numbers for, lower-cased, and those numbers.
+
+    A number is a key's when it stands within ``_KEY_NUMBER_WORDS`` words of
+    the key in the same clause and is no key itself.
+    """
+    found: dict[str, set[int]] = {}
+    start = 0
+    clauses: list[str] = []
+    for match in _ROW_CLAUSE_END_RE.finditer(text):
+        clauses.append(text[start : match.start()])
+        start = match.end()
+    clauses.append(text[start:])
+    for clause in clauses:
+        words = clause.split()
+        for at, word in enumerate(words):
+            key = _SETTING_KEY_RE.search(word)
+            if key is None:
+                continue
+            for index in range(max(0, at - _KEY_NUMBER_WORDS), at + _KEY_NUMBER_WORDS + 1):
+                if index == at or index >= len(words):
+                    continue
+                near = words[index]
+                number = _SMALL_NUMBER_RE.search(near)
+                if number is None or _SETTING_KEY_RE.search(near):
+                    continue
+                value = (
+                    int(number.group(1))
+                    if number.group(1)
+                    else _SMALL_NUMBER_WORDS[number.group(2).lower()]
+                )
+                found.setdefault(key.group(0).lower(), set()).add(value)
+    return {key: frozenset(numbers) for key, numbers in found.items()}
+
+
 def cited_row_text(text: str, row: Mapping[str, Any]) -> str:
     """A table row's text under the ids the row cites: ``"<text> [ev_0003, ev_0007]"``.
 
@@ -11757,6 +12290,45 @@ def _call_echoes(entries: EntryTexts, entry_id: str) -> frozenset[str]:
 
     _walk(getattr(entry, "args", None) or {})
     return frozenset(echo.strip().lower() for echo in found if echo.strip())
+
+
+def _call_arguments(entries: EntryTexts, entry_id: str) -> Any:
+    """An entry's own call arguments as stored, or ``None``."""
+    entry = entries.entries.get(entry_id)
+    return getattr(entry, "args", None)
+
+
+def _argument_places(arguments: Any) -> dict[tuple[str, ...], frozenset[str]]:
+    """Each key path of a call's arguments, with what an answer echoing it there would write.
+
+    A path is its keys folded to lower case; no key path runs through a list,
+    so a value under one has no place. A value is echoed as passed and by its
+    last path component, as :func:`_call_echoes` reads one.
+    """
+    found: dict[tuple[str, ...], set[str]] = {}
+
+    def _walk(node: Any, path: tuple[str, ...]) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                _walk(value, (*path, str(key).strip().lower()))
+        elif isinstance(node, str | int | float) and not isinstance(node, bool):
+            written = str(node)
+            forms = {written.strip().lower(), re.split(r"[\\/]", written)[-1].strip().lower()}
+            found.setdefault(path, set()).update(form for form in forms if form)
+
+    _walk(arguments, ())
+    return {path: frozenset(forms) for path, forms in found.items()}
+
+
+def _folded(node: Any) -> Any:
+    """A JSON value with its keys and its strings folded to lower case, stripped."""
+    if isinstance(node, dict):
+        return {str(key).strip().lower(): _folded(value) for key, value in node.items()}
+    if isinstance(node, list | tuple):
+        return [_folded(item) for item in node]
+    if isinstance(node, str):
+        return node.strip().lower()
+    return node
 
 
 def _name_words(tool: str) -> set[str]:

@@ -688,17 +688,23 @@ class MalwareReportBuilder:
             and not is_benign(report)
             and report.attribution.family_grounded
         )
-        name = family if family_named else report.malware_category
+        # Without a family, the category names the sample, title-cased, unless the judge
+        # states it as none (``category_words``).
+        from malspark.reporting.category_words import category_name, stated_none
+
+        name = family if family_named else category_name(report.malware_category)
         subtitle = None
-        if report.identity.platform and report.malware_category:
+        if (
+            report.identity.platform
+            and report.malware_category
+            and not stated_none(report.malware_category)
+        ):
             subtitle = f"{report.malware_category} targeting {report.identity.platform.title()}"
 
         return ReportFrontMatter(
             publisher=rc.publisher,
             product_type=rc.product_type,
-            malware_name=(
-                (name if family_named else name.title()) if isinstance(name, str) and name else None
-            ),
+            malware_name=name or None,
             subtitle=subtitle,
             version="1.0",
             report_date=f"{now:%Y-%m-%d}",
@@ -790,6 +796,75 @@ def ioc_table(report: MalwareReport, *, raise_unread: bool = False) -> list[Cons
             return with_record(stored, report)
         except Exception:  # noqa: BLE001 — the rows as stored, record and all
             return stored
+
+
+def full_ioc_list(report: MalwareReport) -> list[ConsolidatedIOC]:
+    """The full indicator list an export serves: the IOC table and each refused identifier row.
+
+    The table's rows (:func:`ioc_table`), then each identifier row the rule
+    refuses (``stated_host_values.identifier_answers``) as an unpublished row:
+    its answer the refusal the identifier table prints, under source
+    ``analysis``, typed by the rule's label or, for a row of no vocabulary
+    kind, by the kind as the analysis wrote it; only where no row of the table
+    holds its value, and once per type and value. A row of the table holds a
+    value equal to its own under that row's kind's spelling (``value_key``: a
+    URL's path keeps its case, a path reads one separator either way round);
+    a row of no kind holds only its value as written. Each carries
+    the record every unpublished row carries (:func:`with_record`): role
+    ``listed``, no indicator type. The table itself holds none of them: §9,
+    the exports and every reader of the table read the table alone, and the
+    published rows are the table's alone.
+    """
+    from malspark.reporting.detonation_marks import entry_marks
+    from malspark.reporting.ledger_projection import value_key
+    from malspark.reporting.renderers.stix_renderer import one_reading, publishes
+    from malspark.reporting.stated_host_values import ANALYSIS_SOURCE, identifier_answers
+
+    rows = ioc_table(report)
+    try:
+        with one_reading(report):
+            answers = identifier_answers(report)
+    except Exception:  # noqa: BLE001 — the table is served without them
+        logger.exception("builder: the identifier rows could not be read; the table is listed.")
+        return rows
+    index = {row.id: at for at, row in enumerate(report.evidence_index)}
+    # Each row of the table's value, spelled as its own kind spells one.
+    held_values: dict[str, set[str]] = {}
+    for row in rows:
+        if row.kind:
+            held_values.setdefault(row.kind, set()).add(value_key(row.kind, row.value))
+    written = {row.value.strip() for row in rows if not row.kind}
+    listed: set[tuple[str, str]] = set()
+    added: list[ConsolidatedIOC] = []
+    for stated, answer in answers:
+        value = str(stated.value or "").strip()
+        kind = stated.table_kind
+        label = stated.label or stated.written_kind
+        if publishes(answer) or not value:
+            continue
+        if value in written or any(
+            value_key(held, value) in keys for held, keys in held_values.items()
+        ):
+            continue
+        slot = (label, value_key(kind, value))
+        if slot in listed:
+            continue
+        listed.add(slot)
+        held = [*(stated.held_in or ())]
+        added.append(
+            ConsolidatedIOC(
+                type=label,
+                kind=kind,
+                value=value,
+                source=ANALYSIS_SOURCE,
+                context="stated by the analysis",
+                description="stated by the analysis",
+                published=answer,
+                evidence_ids=_in_the_index(held, index),
+                observed_in=entry_marks(held, report),
+            )
+        )
+    return [*rows, *with_record(added, report)]
 
 
 def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:

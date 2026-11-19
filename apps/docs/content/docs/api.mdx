@@ -575,7 +575,7 @@ the analysis states, `path`, `folder`, `registry`, `registry_value`, `mutex`,
 | `include` | what comes back |
 | :-- | :-- |
 | `published` (default) | only what the platform's publish rule publishes — the rows of the report's IOC table the exported STIX bundle is built from |
-| `unpublished` | only the rows it withholds, for a reader who is triaging rather than acting |
+| `unpublished` | only the rows it withholds, for a reader who is triaging rather than acting, and each host value the analysis states that the rule refuses and no row of the table holds (read as that row's kind spells a value), once per `type` and value, under source `analysis` with its refusal and its `type`: the rule's label, or the kind as the analysis wrote it |
 | `all` | both |
 
 Every row carries `kind`, `value`, `is_suspicious`, `notes`, **`source`** —
@@ -586,7 +586,9 @@ file that has the shape of one, `identity` for the sample's own hashes,
 decoded text the code passes whole to an API argument of its role, `analysis`
 for a host value the report model's identifier table states that code found
 whole in a ledger entry the row cites ([Host values the analysis
-states](/docs/usage/reports-and-exports/#host-values-the-analysis-states)) —
+states](/docs/usage/reports-and-exports/#host-values-the-analysis-states)),
+and, on the full list, for a host value that table states that the rule
+refuses, served unpublished with the rule's refusal and its `type` —
 **`published`**, and
 **`publish_answer`**: the publish rule's answer as the report's IOC table
 prints it, `yes:` and why the row is published, or `no:` and why not.

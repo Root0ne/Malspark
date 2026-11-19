@@ -934,9 +934,11 @@ class TestTheSampleSTreeIsItsLineage:
 
         assert self._facts(processes, ["11"])("registry", self.KEY) == ""
 
-    def test_a_process_the_two_facts_disagree_about_is_unattributed(self) -> None:
+    def test_a_process_the_two_facts_disagree_about_is_named_with_the_dispute(self) -> None:
         # The sandbox marks a desktop process that runs none of the sample's
-        # names; the process running the sample is not marked.
+        # names; the process running the sample is not marked. The process is
+        # known, its lineage is what the report disputes: the reason says so in
+        # the network row's words for that case.
         processes = [
             self._node(10, "invoice.exe", 1, marked=True),
             self._node(30, "notepad.exe", 2, marked=True),
@@ -944,7 +946,67 @@ class TestTheSampleSTreeIsItsLineage:
 
         said = self._facts(processes, ["30"])("registry", self.KEY)
 
-        assert said == "the sandbox report does not say which process wrote it"
+        assert said == (
+            "the sandbox report says it was made by a process whose lineage the report's "
+            "two facts dispute (notepad.exe (procid 30))"
+        )
+
+    def test_a_disputed_writer_s_row_is_unattributed_on_its_indicator_record(self) -> None:
+        from types import SimpleNamespace
+
+        from malspark.reporting.models import DynamicBehavior, RegistryMod
+        from malspark.reporting.renderers.stix_renderer import sandbox_host_kwargs
+
+        processes = [
+            self._node(10, "invoice.exe", 1, marked=True),
+            self._node(30, "notepad.exe", 2, marked=True),
+        ]
+        report = SimpleNamespace(
+            network=None,
+            dynamic=DynamicBehavior(
+                process_tree=processes,
+                registry_mods=[RegistryMod(key=self.KEY, operation="modify", pids=["30"])],
+            ),
+            identity={"file_name": "invoice.exe", "hashes": {"sha256": SHA256}},
+            judge_indicators=[],
+            run_summary={},
+        )
+
+        said = sandbox_host_kwargs(report, "registry", self.KEY)
+
+        assert said["unattributed"] == (
+            "the sandbox report says it was made by a process whose lineage the report's "
+            "two facts dispute (notepad.exe (procid 30))"
+        )
+
+    def test_a_disputed_process_listed_by_its_path_is_named_as_a_network_row_names_it(
+        self,
+    ) -> None:
+        # One process the two facts dispute, listed by its full path: the host
+        # row and the network row name it by its image and its id alike.
+        from malspark.reporting.ledger_projection import traffic_makers
+        from malspark.schemas.sandbox_report import _flow_attribution, _sample_process_tree
+
+        path = "C:\\Windows\\System32\\notepad.exe"
+        processes = [
+            self._node(10, "C:\\Users\\Public\\invoice.exe", 1, marked=True),
+            self._node(30, path, 2, marked=True),
+        ]
+        host = self._facts(processes, ["30"])("registry", self.KEY)
+        task = {
+            "processes": [
+                {"procid": 10, "procid_parent": 1, "image": processes[0].name, "orig": True},
+                {"procid": 30, "procid_parent": 2, "image": path, "orig": True},
+            ]
+        }
+        lineage = _sample_process_tree(task, {"target": "invoice.exe", "sha256": SHA256})
+        (made,) = traffic_makers(_flow_attribution({"procid": 30}, lineage))
+
+        assert made == ("disputed", "notepad.exe (procid 30)")
+        assert host == (
+            "the sandbox report says it was made by a process whose lineage the report's "
+            f"two facts dispute ({made[1]})"
+        )
 
     def test_a_pid_two_listed_processes_of_different_lineage_carry_is_unattributed(self) -> None:
         processes = [self._node(10, "invoice.exe", 1), self._node(10, "svchost.exe", 4)]

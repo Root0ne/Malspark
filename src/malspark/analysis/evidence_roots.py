@@ -284,6 +284,35 @@ class _Section:
     size: int
     raw: int
     raw_size: int
+    # Whether the section table marks it as code (:func:`_marks_code`).
+    executable: bool = False
+
+
+# The section flags that mark code in a PE section table (execute, contains code), as a
+# number or by the names a parser writes them under ("EXECUTE|READ|CODE").
+_CODE_FLAGS = 0x20000000 | 0x00000020
+_CODE_FLAG_NAMES = frozenset({"EXECUTE", "CODE", "MEM_EXECUTE", "CNT_CODE"})
+
+
+def _marks_code(value: Any) -> bool:
+    """Whether a section's characteristics as an answer writes them mark it as code."""
+    if isinstance(value, bool) or value is None:
+        return False
+    if isinstance(value, int):
+        return bool(value & _CODE_FLAGS)
+    words = [str(v) for v in value] if isinstance(value, list | tuple) else [str(value)]
+    for word in words:
+        number = _measure(word.strip())
+        if number is not None:
+            if number & _CODE_FLAGS:
+                return True
+            continue
+        if any(
+            part.upper().removeprefix("IMAGE_SCN_") in _CODE_FLAG_NAMES
+            for part in re.split(r"[^A-Za-z_]+", word)
+        ):
+            return True
+    return False
 
 
 @dataclass
@@ -787,6 +816,7 @@ def _gather(entry: Any, stated: _Stated) -> None:
                 size=_measure(row.get("virtual_size")) or 0,
                 raw=_measure(row.get("raw_offset")) or 0,
                 raw_size=_measure(row.get("raw_size")) or 0,
+                executable=_marks_code(row.get("characteristics")),
             )
         for row in _rows(data, "export_rows"):
             rva = _hex(row.get("rva"))
@@ -839,6 +869,71 @@ def layouts_of(entries: Iterable[Any], files: _Files) -> dict[str, Layout]:
             extent=held.extent,
         )
     return out
+
+
+@dataclass(frozen=True)
+class PlacedText:
+    """A text a declared row states at a file offset, placed through its file's own section
+    table: the file (``""`` the sample), the offset from the image base, the file offset,
+    the section holding it, the text and the entry stating it."""
+
+    file: str
+    rva: int
+    offset: int
+    section: str
+    text: str
+    entry: str
+
+
+def placed_texts(entries: Iterable[Any]) -> tuple[dict[str, Layout], list[PlacedText]]:
+    """Each file's layout (:func:`layouts_of`), and each text a declared row of a usable entry
+    states at a file offset, placed through its file's own section table
+    (:meth:`Layout.rva_of_offset`).
+
+    A row is read by its tool's declared paths (``core.tool_declarations.select``), never by
+    the tool's name: its ``rows``, a ``places`` key naming a file offset
+    (:data:`_OFFSET_PLACES`) and its ``text`` value. A tool declaring no such row places
+    none, nor does a file whose answers state no section table. A row lying in a section its
+    file marks as code is left out: bytes of code a strings pass read as printable are no
+    text the file stores. One pass over the entries and their rows.
+    """
+    from malspark.core.tool_declarations import select
+
+    entries = list(entries)
+    files = _Files(entries)
+    layouts = layouts_of(entries, files)
+    out: list[PlacedText] = []
+    for entry in entries:
+        if not _usable(entry):
+            continue
+        facts = facts_of(entry)
+        if facts is None or not facts.rows or "text" not in (facts.values or {}):
+            continue
+        offsets = [path for name, path in (facts.places or {}).items() if name in _OFFSET_PLACES]
+        file = files.of(entry) if offsets else None
+        layout = layouts.get(file) if file is not None else None
+        if file is None or layout is None or not layout.sections:
+            continue
+        for row in select(_structured(entry), facts.rows):
+            if not isinstance(row, Mapping):
+                continue
+            texts = [
+                t
+                for t in _flat(select(row, facts.values["text"]))
+                if isinstance(t, str) and t.strip()
+            ]
+            for path in offsets if texts else ():
+                for value in _flat(select(row, path)):
+                    offset = _hex(value)
+                    rva = layout.rva_of_offset(offset) if offset is not None else None
+                    section = layout.section_at(rva) if rva is not None else None
+                    if offset is None or rva is None or section is None or section.executable:
+                        continue
+                    out.extend(
+                        PlacedText(file, rva, offset, section.name, text, str(entry.id))
+                        for text in texts
+                    )
+    return layouts, out
 
 
 # -- facts one answer states that place another's rows ------------------------------

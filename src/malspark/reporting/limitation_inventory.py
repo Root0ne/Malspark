@@ -139,6 +139,37 @@ def _number(value: int) -> str:
     return f"{value:,}"
 
 
+def trimmed_entries(trimmed: int, entries: int, *, grouped: bool = True) -> str:
+    """ "N of M ledger entries was (were) trimmed": the one writer of that count, on every
+    surface that prints it, its verb agreeing with ``trimmed``; its numbers with a
+    thousands separator where ``grouped`` (section 11), as written where not (the
+    partial-evidence sentence)."""
+    number = _number if grouped else str
+    return (
+        f"{number(trimmed)} of {number(entries)} ledger entries "
+        f"{_plural(trimmed, 'was', 'were')} trimmed"
+    )
+
+
+def failed_calls_said(
+    failed: int,
+    entries: int,
+    *,
+    not_redone: bool = False,
+    calls_named: bool = True,
+    entries_grouped: bool = False,
+) -> str:
+    """ "N of M tool calls failed", and "and was (were) not redone" where ``not_redone``:
+    the one writer of the count of failed calls a line of the report states, its verb
+    agreeing with ``failed``. Section 11's row names the calls before the count
+    ("N of M failed", ``calls_named=False``) and writes M with a thousands separator
+    (``entries_grouped``); the partial-evidence sentence writes both as they are."""
+    total = _number(entries) if entries_grouped else str(entries)
+    return f"{failed} of {total}{' tool calls' if calls_named else ''} failed" + (
+        f" and {_plural(failed, 'was', 'were')} not redone" if not_redone else ""
+    )
+
+
 def _hexes(addresses: Iterable[int], bases: Sequence[int]) -> str:
     """Addresses by their offsets where the one image base read makes them offsets, else as
     written, as the agreement round's facts spell them."""
@@ -399,20 +430,22 @@ def _failed_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[I
     redone = [call for call in inv.failed if call.redone_by]
     out: list[InventoryRow] = []
     # Entries trimmed to the budget are a limit of the evidence too: the row prints for them.
-    trimmed = (
-        f"{_number(inv.trimmed)} of {_number(inv.entries)} ledger entries "
-        f"{_plural(inv.trimmed, 'was', 'were')} trimmed to the budget."
-        if inv.trimmed
-        else ""
-    )
+    trimmed = f"{trimmed_entries(inv.trimmed, inv.entries)} to the budget." if inv.trimmed else ""
     if not left and trimmed:
         out.append(InventoryRow(FAILED, f"Tool calls: {trimmed}", printed=True))
     if left:
         named = "; ".join(_call(call, inv.image_bases, name) for call in left[:_CALLS_NAMED])
         more = len(left) - _CALLS_NAMED
         text = (
-            f"Tool calls: {len(left)} of {_number(inv.entries)} failed and "
-            f"{_plural(len(left), 'was', 'were')} not redone: {named}"
+            "Tool calls: "
+            + failed_calls_said(
+                len(left),
+                inv.entries,
+                not_redone=True,
+                calls_named=False,
+                entries_grouped=True,
+            )
+            + f": {named}"
             + (f"; and {more} more, listed in the bundle" if more > 0 else "")
             + (
                 f". {len(redone)} other failed {_plural(len(redone), 'call was', 'calls were')} "

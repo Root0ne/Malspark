@@ -542,6 +542,62 @@ def reads_as_dns_row(value: Any) -> bool:
     return bool(dns_row_name(value))
 
 
+# The fields a request row states its scheme under, and the ports a URL
+# leaves unwritten for its scheme (RFC 3986's default ports).
+SCHEME_FIELDS = ("scheme", "protocol")
+DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def request_scheme(row: Mapping[str, Any]) -> str:
+    """The scheme a request row states: its scheme or protocol field, else its ``encrypted``.
+
+    ``""`` for a row that states neither. The row's keys are read as written
+    (a reader that lower-cases its fields passes them so).
+    """
+    for name in SCHEME_FIELDS:
+        value = row.get(name)
+        stated = value.strip().lower().removesuffix("://") if isinstance(value, str) else ""
+        if stated:
+            if stated in DEFAULT_PORTS:
+                return stated
+            break
+    encrypted = row.get("encrypted")
+    if isinstance(encrypted, bool):
+        return "https" if encrypted else "http"
+    return ""
+
+
+def joined_url(path: str, host: str, row: Mapping[str, Any], default: str = "") -> str:
+    """A request's URL from its own host and path, by the scheme its row states.
+
+    A port other than its scheme's default is written after a host that
+    carries none, and a bare IPv6 host is bracketed. A row that states no scheme is joined with
+    ``default`` exactly as ``<default>://<host><path>``, and gives ``""``
+    where there is none; so does a request with no host. The query string is
+    not added.
+    """
+    if not host:
+        return ""
+    target = path if path.startswith("/") else "/" + path
+    scheme = request_scheme(row)
+    if not scheme:
+        return f"{default}://{host}{target}" if default else ""
+    bare_v6 = host.count(":") > 1 and not host.startswith("[")
+    written = f"[{host}]" if bare_v6 else host
+    # A host that already carries its port (``name:8080``, ``[::1]:8080``)
+    # keeps it as written.
+    has_port = ":" in written.rsplit("]", 1)[-1]
+    port = row.get("port")
+    if (
+        not has_port
+        and isinstance(port, int)
+        and not isinstance(port, bool)
+        and port != DEFAULT_PORTS[scheme]
+    ):
+        written += f":{port}"
+    return f"{scheme}://{written}{target}"
+
+
 def dns_requests_have_place(report: SandboxReport) -> bool:
     """Whether ``report``'s document can hold the rows of its structural DNS requests.
 

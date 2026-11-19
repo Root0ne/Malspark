@@ -267,9 +267,12 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # (T-597): the ATT&CK table's Evidence cells are the only change. A rule's entry
 # the stored mapping does not list is named "rule matches", and a mapping that
 # stores its sources (haiku4, run5, run7) lists the entries among them.
+# run5's Markdown and HTML re-pinned when a count of trimmed ledger entries came
+# to take the verb its number takes (T-749): "1 of 350 ledger entries was
+# trimmed" is the only change; no other stored run prints a count of one.
 STORED_RENDERS = {
     "run7": ("0c85258e0bc3f825", "5d209181f98213e8"),
-    "run5": ("9909cddb577caa2c", "6ed669740689348f"),
+    "run5": ("8f6a96e40d09f13e", "156a645b3d568bd2"),
     "run4": ("6645defcf074ad3d", "60cfad50c120e58b"),
     "local8": ("d59ab7b6c10001fa", "b78721cb9ba4f766"),
     "haiku4": ("f2b01c295b9813f0", "7e7c99ce92d9ede7"),

@@ -23,9 +23,9 @@ familiar to anyone debugging existing agents.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import nullcontext
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -61,6 +61,7 @@ from malspark.pipeline.validation import (
     answer_of,
     citation_violations,
     declaring,
+    echoed_argument_citations,
     key_finding_citation_violations,
     ledger_absence_contradictions,
     misstated_entry_contents,
@@ -83,6 +84,13 @@ from malspark.reporting.models import (
     KeyFinding,
     MalwareReport,
     confidence_text,
+)
+from malspark.reporting.publish_words import (
+    NETWORK_INDICATOR_KINDS,
+    NO_PUBLISHED_NETWORK,
+    PUBLISHED_NETWORK_LABEL,
+    PUBLISHED_STATE,
+    UNPUBLISHED_STATE,
 )
 from malspark.utils.json_cleaner import safe_parse_json
 
@@ -257,6 +265,8 @@ _SYSTEM_PROMPT_TEMPLATE = (
     "exact observable.\n"
     "   Each entry is a distinct, non-overlapping action; do not duplicate an "
     "action already implied by the narrative prose.\n"
+    "   A recommendation names only values this run publishes: the 'Published network "
+    "indicators' line above lists them.\n"
     "6. The three fields must NOT restate one another — a reader should be able "
     "to read all three with no repeated sentences.\n"
     "7. State facts plainly and write inferences with estimative words ('likely', "
@@ -406,8 +416,17 @@ def claims_in_force_lines(isr_reports: Any, entries: EntryTexts | None = None) -
 NO_SANDBOX_OBSERVATION = "not observed: this run has no sandbox observation"
 
 
+# Handed to a prompt builder for "read the IOC table here": a caller that has
+# read it for the round hands its answers (``None`` for a table it could not
+# read) instead.
+_UNREAD: Any = object()
+
+
 def build_prompt_text(
-    report: MalwareReport, isr_reports: Any = None, entries: EntryTexts | None = None
+    report: MalwareReport,
+    isr_reports: Any = None,
+    entries: EntryTexts | None = None,
+    answers: Any = _UNREAD,
 ) -> str:
     """Return the human-readable prompt body (used by ``_build_prompt`` and tests).
 
@@ -415,9 +434,10 @@ def build_prompt_text(
     each whole: the model reads all of what the run established. With
     ``isr_reports``, every analyst claim in force too, each whole under its
     label, so the summary and the key findings are written over every claim
-    the run holds.
+    the run holds. ``answers`` is the round's read of the IOC table, read
+    here where none is handed.
     """
-    lines = findings_lines(report, isr_reports, entries)
+    lines = findings_lines(report, isr_reports, entries, answers)
     lines.extend(
         [
             "TASK",
@@ -430,13 +450,17 @@ def build_prompt_text(
 
 
 def findings_lines(
-    report: MalwareReport, isr_reports: Any = None, entries: EntryTexts | None = None
+    report: MalwareReport,
+    isr_reports: Any = None,
+    entries: EntryTexts | None = None,
+    answers: Any = _UNREAD,
 ) -> list[str]:
     """The prompt body's lines before its task: what the run established, each fact whole.
 
     The narrative round's (:func:`build_prompt_text`) and the question
     round's (``reporting.question_round``), so both are written over the
-    same facts.
+    same facts. ``answers`` is the round's read of the IOC table
+    (:func:`_published_or_none`), read here where none is handed.
     """
     lines: list[str] = [
         "DETERMINISTIC FINDINGS",
@@ -577,6 +601,18 @@ def findings_lines(
     lines.append("")
 
     # --- Network IOCs (the suspicious ones first) ----------------------
+    # Each value with its publish state from the IOC table, then the network
+    # values the run publishes: what a recommendation is written over.
+    if answers is _UNREAD:
+        answers = _published_or_none(report)
+
+    def _state(kind: str, value: str) -> str:
+        if answers is None:
+            return ""
+        from malspark.reporting.renderers.stix_renderer import publishes
+
+        return f"; {PUBLISHED_STATE if publishes(answers(kind, value)) else UNPUBLISHED_STATE}"
+
     lines.append("Network IOCs:")
     if report.network:
         domains = [d for d in report.network.domains if d.is_suspicious] + [
@@ -586,13 +622,21 @@ def findings_lines(
         # is shown quoted and escaped, one value on one line.
         for dom in domains:
             reason = dom.reason or "observed"
-            lines.append(f"  - domain: {quoted_value(str(dom.fqdn))} ({reason})")
+            state = _state("domain", str(dom.fqdn))
+            lines.append(f"  - domain: {quoted_value(str(dom.fqdn))} ({reason}{state})")
         for ip in report.network.ips:
             note = ip.reputation.get("_heuristic_reason") if ip.reputation else None
             tag = note or ("suspicious" if ip.is_suspicious else "observed")
-            lines.append(f"  - ip: {ip.address} ({tag})")
+            lines.append(f"  - ip: {ip.address} ({tag}{_state('ip', str(ip.address))})")
     else:
         lines.append("  (no network data)")
+    if answers is not None:
+        published = ", ".join(quoted_value(value) for value in answers.network)
+        lines.append(
+            f"{PUBLISHED_NETWORK_LABEL}: {published}"
+            if published
+            else f"{PUBLISHED_NETWORK_LABEL}: none; {NO_PUBLISHED_NETWORK}."
+        )
     lines.append("")
 
     # --- The place the sandbox started the submitted file from ----------
@@ -661,7 +705,7 @@ def published_technique_ids(report: MalwareReport) -> list[str]:
     )
 
 
-def published_answers(report: MalwareReport, *, rows: list[Any] | None = None) -> Any:
+def published_answers(report: MalwareReport, *, rows: list[Any] | None = None) -> PublishedAnswers:
     """``(kind, value) -> the IOC table's answer`` for a value, ``""`` when no row holds it.
 
     The table the report's §9 prints and ``/iocs`` serves, by their one
@@ -676,10 +720,12 @@ def published_answers(report: MalwareReport, *, rows: list[Any] | None = None) -
     """
     from malspark.reporting.builder import ioc_table
     from malspark.reporting.ledger_projection import value_key
+    from malspark.reporting.renderers.stix_renderer import publishes
 
     if rows is None:
         rows = ioc_table(report, raise_unread=True)
     table: dict[tuple[str, str], str] = {}
+    network: dict[str, None] = {}
     for row in rows:
         kind = str(row.kind or "")
         answer = str(row.published or "")
@@ -687,11 +733,40 @@ def published_answers(report: MalwareReport, *, rows: list[Any] | None = None) -
         # A value with two rows is published when either publishes it.
         if key not in table or answer.startswith("yes"):
             table[key] = answer
+        if kind in NETWORK_INDICATOR_KINDS and publishes(answer):
+            network.setdefault(str(row.value), None)
+    return PublishedAnswers(table=table, network=tuple(network))
 
-    def _answer(kind: str, value: str) -> str:
-        return table.get((kind, value_key(kind, value)), "")
 
-    return _answer
+@dataclass(frozen=True, eq=False)
+class PublishedAnswers:
+    """``(kind, value) -> the IOC table's answer`` (:func:`published_answers`).
+
+    ``network`` is the network values the table publishes, in its order, as
+    the report counts them (``publish_words.NETWORK_INDICATOR_KINDS``): the
+    list a recommendation is to act on.
+    """
+
+    table: Mapping[tuple[str, str], str]
+    network: tuple[str, ...] = ()
+
+    def __call__(self, kind: str, value: str) -> str:
+        from malspark.reporting.ledger_projection import value_key
+
+        return self.table.get((kind, value_key(kind, value)), "")
+
+
+def _published_or_none(report: MalwareReport) -> PublishedAnswers | None:
+    """:func:`published_answers` for the prompt's network block, ``None`` where the table is unread.
+
+    The block then prints each value as it did, with no state and no list:
+    the round's own check reads the table again and ends the round there.
+    """
+    try:
+        return published_answers(report)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("narrative prompt: the IOC table could not be read (%s)", exc)
+        return None
 
 
 class NarrativeAgent:
@@ -742,6 +817,10 @@ class NarrativeAgent:
         # of every call of the report stage this agent makes; set by the
         # report node (``agents.ledger_reads``), ``None`` offers none.
         self.ledger_reads: Any = None
+        # The report and its IOC table's answers as the round's size read them
+        # (:meth:`prompt_chars`), taken by the round's own prompt and check
+        # (:meth:`generate`), so one round builds the table once.
+        self._answers_read: tuple[Any, PublishedAnswers | None] | None = None
 
     def attempts(self) -> int:
         """The calls this round may make: its answer and one validation retry,
@@ -886,9 +965,17 @@ class NarrativeAgent:
         isr_reports: Any = None,
         evidence: EntryTexts | None = None,
     ) -> int:
-        """The characters of this round's first prompt, as :meth:`generate` builds it."""
+        """The characters of this round's first prompt, as :meth:`generate` builds it.
+
+        The IOC table's answers it reads are kept for that round's
+        :meth:`generate` of the same report.
+        """
         try:
-            messages = self._build_prompt(report, facts_block, run_state, isr_reports, evidence)
+            answers = _published_or_none(report)
+            self._answers_read = (report, answers)
+            messages = self._build_prompt(
+                report, facts_block, run_state, isr_reports, evidence, answers
+            )
             return sum(len(str(message.content)) for message in messages)
         except Exception:  # noqa: BLE001 — a size is never worth a lost round
             return len(_SYSTEM_PROMPT) + len(facts_block) + len(run_state)
@@ -910,7 +997,11 @@ class NarrativeAgent:
         Both surfaces are wrapped in broad ``except`` so the report node can
         always rely on the fallback narrative.
         """
-        messages = self._build_prompt(report, facts_block, run_state, isr_reports, evidence)
+        # The IOC table's answers this round's size read, where it read them
+        # for this report; else read here. Taken once: a later round reads again.
+        held, self._answers_read = self._answers_read, None
+        table = held[1] if held is not None and held[0] is report else _published_or_none(report)
+        messages = self._build_prompt(report, facts_block, run_state, isr_reports, evidence, table)
         self._note_room(sum(len(str(message.content)) for message in messages))
         # Where the sentences a check leaves standing are recorded, to be
         # marked where they stand.
@@ -934,7 +1025,8 @@ class NarrativeAgent:
                 self.degradations.append(unread)
         # What the run publishes, which is what a recommendation may act on:
         # its indicators and its techniques.
-        answers = published_answers(report)
+        # A table the prompt could not read is read again here, which raises.
+        answers = table if table is not None else published_answers(report)
         published = published_technique_ids(report)
         # The entries a key finding may cite: the ledger's, which the pack's
         # own entries are part of.
@@ -1121,6 +1213,7 @@ class NarrativeAgent:
                             p, citable, prose=NARRATIVE_PROSE, items=self._items
                         ),
                         lambda p: wrong_entry_citations(p, evidence, prose=NARRATIVE_PROSE),
+                        lambda p: echoed_argument_citations(p, evidence, prose=NARRATIVE_PROSE),
                         lambda p: misstated_entry_contents(p, evidence, prose=NARRATIVE_PROSE),
                         lambda p: ledger_absence_contradictions(p, evidence),
                         technique_name_violations,
@@ -1354,6 +1447,7 @@ class NarrativeAgent:
                 *key_finding_citation_violations(answer, known_ids or [], self._items),
                 *citation_violations(answer, citable, prose=NARRATIVE_PROSE, items=self._items),
                 *wrong_entry_citations(answer, evidence, prose=NARRATIVE_PROSE),
+                *echoed_argument_citations(answer, evidence, prose=NARRATIVE_PROSE),
                 *misstated_entry_contents(answer, evidence, prose=NARRATIVE_PROSE),
                 *ledger_absence_contradictions(answer, evidence),
                 *technique_name_violations(answer),
@@ -1371,16 +1465,18 @@ class NarrativeAgent:
         run_state: str = "",
         isr_reports: Any = None,
         evidence: EntryTexts | None = None,
+        answers: Any = _UNREAD,
     ) -> list[BaseMessage]:
         """The system turn and the human turn, the two standing blocks leading the human turn.
 
         ``facts_block`` is the triage pack as the analysts and the judge saw
         it and ``run_state`` the run's state block; the summary is written
         over the same facts, with their ids, and knows which stages ran.
+        ``answers`` is the round's read of the IOC table.
         """
         from malspark.pipeline.run_state import with_run_state
 
-        body = build_prompt_text(report, isr_reports, evidence)
+        body = build_prompt_text(report, isr_reports, evidence, answers)
         if facts_block:
             body = f"{facts_block}\n\n{body}"
         if run_state:

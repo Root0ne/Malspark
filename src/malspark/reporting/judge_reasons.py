@@ -78,15 +78,47 @@ def status_shown(text: str, width: int, plain: Callable[[str], str] = str) -> st
 
     Each judge's reason is printed by :func:`judge_reason_shown` and never cut
     into; what follows the last reason is cut at a word to what the width
-    leaves. A status with no judge's reason is cut to the width as before.
-    ``plain`` is the report's defanger, applied before anything is cut.
+    leaves. A status with no judge's reason is cut to the width at a word. Every bracket a
+    cut leaves open is closed after the cut mark, within the width
+    (:func:`closed_cut`). ``plain`` is the report's defanger, applied before anything is
+    cut.
     """
     said, through = judge_reasons_shown(str(text or ""))
     if not through:
-        whole = plain(said)
-        return whole if len(whole) <= width else whole[: width - 1] + CUT_MARK
+        return closed_cut(plain(said), width)
     head, tail = plain(said[:through]), plain(said[through:])
-    return head + word_cut(tail, max(0, width - len(head))) if tail else head
+    return head + closed_cut(tail, max(0, width - len(head))) if tail else head
+
+
+def closed_cut(text: str, width: int) -> str:
+    """``text`` cut at a word to ``width`` (:func:`word_cut`), each bracket the cut leaves open
+    closed after the cut mark, the closing brackets within the width too."""
+    if len(text) <= width:
+        return text
+    room = width
+    while room > len(CUT_MARK):
+        cut = word_cut(text, room)
+        closing = _closing(cut)
+        over = len(cut) + len(closing) - width
+        if over <= 0:
+            return cut + closing
+        room -= over
+    return CUT_MARK
+
+
+# Each opening bracket and the one that closes it.
+_CLOSERS = {"(": ")", "[": "]"}
+
+
+def _closing(text: str) -> str:
+    """The brackets that close, innermost first, every bracket ``text`` leaves open."""
+    held: list[str] = []
+    for character in text:
+        if character in _CLOSERS:
+            held.append(_CLOSERS[character])
+        elif held and character == held[-1]:
+            held.pop()
+    return "".join(reversed(held))
 
 
 def word_cut(text: str, width: int) -> str:

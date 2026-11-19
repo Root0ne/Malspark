@@ -48,6 +48,7 @@ from malspark.pipeline.validation import (
     Violation,
     citation_violations,
     declaring,
+    echoed_argument_citations,
     misstated_entry_contents,
     raised_only_in_retry,
     retry_with_feedback,
@@ -744,6 +745,10 @@ async def answer_questions(
                 declaring(
                     QuestionRoundOutput,
                     lambda p: wrong_entry_citations(_answer_prose(p), evidence_texts),
+                ),
+                declaring(
+                    QuestionRoundOutput,
+                    lambda p: echoed_argument_citations(_answer_prose(p), evidence_texts),
                 ),
                 declaring(
                     QuestionRoundOutput,
