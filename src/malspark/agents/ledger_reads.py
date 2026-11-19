@@ -42,6 +42,7 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from contextlib import AbstractContextManager, nullcontext
+from functools import cached_property
 from typing import Any
 
 from malspark.agents.tool_answer_clearing import (
@@ -102,10 +103,19 @@ class LedgerReads:
                 rows[key] = row
         self._rows = rows
         self._spill = spill
+        self._sizer = sizer
         self.tally = tally
         self._container = container
-        self.tool = read_evidence_tool(
-            self._stored_answer, sizer, self._stored_copy, holds=THE_RUNS_LEDGER
+
+    @cached_property
+    def tool(self) -> Any:
+        """The ``read_evidence`` tool over this ledger, built on first use.
+
+        A loop that reads through :meth:`lookup` and :meth:`stored_copy` with
+        a tool of its own never builds it.
+        """
+        return read_evidence_tool(
+            self._stored_answer, self._sizer, self._stored_copy, holds=THE_RUNS_LEDGER
         )
 
     def __len__(self) -> int:

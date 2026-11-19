@@ -731,10 +731,17 @@ class TestAPartialAnswerSaysSo:
 
 
 class TestTheMediatorSaysWhichLedgerItReads:
-    def test_with_the_run_s_ledger_an_unknown_id_names_it_and_the_tool_is_the_same(self) -> None:
+    def test_with_the_run_s_ledger_an_unknown_id_names_it_and_the_tool_says_what_it_reads(
+        self,
+    ) -> None:
         from langchain_core.utils.function_calling import convert_to_openai_tool
 
-        from malspark.agents.tool_answer_clearing import THE_RUNS_LEDGER, read_evidence_tool
+        from malspark.agents.tool_answer_clearing import (
+            READ_EVIDENCE_DESCRIPTION,
+            READ_OWN_EVIDENCE_DESCRIPTION,
+            THE_RUNS_LEDGER,
+            read_evidence_tool,
+        )
         from tests.unit.agents.test_the_mediator_decides_whether_to_read_or_ask import (
             MEDIATION,
             PROMPT,
@@ -753,7 +760,10 @@ class TestTheMediatorSaysWhichLedgerItReads:
 
         said = next(str(m.content) for m in judge.llm.seen[1] if getattr(m, "type", "") == "tool")
         assert "ev_9999 is no evidence id the run's ledger holds" in said
-        # The definition the model is sent is the one whichever ledger it reads.
-        here = read_evidence_tool(lambda _id: None)
-        run = read_evidence_tool(lambda _id: None, holds=THE_RUNS_LEDGER)
-        assert json.dumps(convert_to_openai_tool(here)) == json.dumps(convert_to_openai_tool(run))
+        # The definition the model is sent names what the tool reads, and is
+        # otherwise the one whichever ledger it reads: one name, one parameter schema.
+        here = convert_to_openai_tool(read_evidence_tool(lambda _id: None))
+        run = convert_to_openai_tool(read_evidence_tool(lambda _id: None, holds=THE_RUNS_LEDGER))
+        assert here["function"].pop("description") == READ_OWN_EVIDENCE_DESCRIPTION
+        assert run["function"].pop("description") == READ_EVIDENCE_DESCRIPTION
+        assert json.dumps(here) == json.dumps(run)

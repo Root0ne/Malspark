@@ -23,6 +23,7 @@ from malspark.agents.prompt_fragments import (
     FINDINGS_BLOCK_FRAGMENT,
     PROVIDER_FAMILY,
     REPUTATION_LOOKUP_FRAGMENT,
+    TECHNIQUE_LINE_RULE,
     has_decompiler,
     has_xrefs,
     offered,
@@ -731,6 +732,7 @@ class StaticAnalyst(BaseAnalyst):
                     "Format your response as structured claims "
                     "(CLAIM/EVIDENCE/CONFIDENCE/TECHNIQUE)\n"
                     "followed by a DISPUTES section listing peer claims you reject.\n"
+                    f"{TECHNIQUE_LINE_RULE}\n"
                     "Example:\n"
                     "CLAIM: ...\nEVIDENCE: ...\nCONFIDENCE: 0.8\nTECHNIQUE: T1055\n---\n"
                     "DISPUTES:\n- Dynamic analyst claims no injection but PCAP shows it.\n",
