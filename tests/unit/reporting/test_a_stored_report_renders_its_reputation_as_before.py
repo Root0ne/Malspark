@@ -96,9 +96,12 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # the stored mapping does not list is not on the edge (run7 T1036.005 and
 # T1218.011, run5 and run4 T1027 and T1218.011, local8 T1027, T1027.005 and
 # T1218.011). A stored mapping records no set, so no edge carries a note.
+# run5's Markdown and HTML re-pinned when a count of trimmed ledger entries came
+# to take the verb its number takes (T-749): "1 of 350 ledger entries was
+# trimmed" is the only change; no other stored run prints a count of one.
 STORED_RENDERS = {
     "run7": ("0c85258e0bc3f825", "5d209181f98213e8", "7c44bdac869da068"),
-    "run5": ("9909cddb577caa2c", "6ed669740689348f", "dc0e6cbb57f1ec13"),
+    "run5": ("8f6a96e40d09f13e", "156a645b3d568bd2", "dc0e6cbb57f1ec13"),
     "run4": ("6645defcf074ad3d", "60cfad50c120e58b", "f6a60e13df655e75"),
     "local8": ("d59ab7b6c10001fa", "b78721cb9ba4f766", "dd7785fc7f53b528"),
 }
