@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 from scripts.replay import render_surfaces as rs
+from scripts.replay.output import terminal_safe
 
 from tests.unit.scripts._surfaces_render_run import stored_run
 
@@ -63,4 +64,6 @@ def test_a_render_that_imported_a_package_from_elsewhere_is_refused(
         rs.main([str(run), "--out", str(tmp_path / "out"), "--mode=serve", "--quiet"])
 
     assert ended.value.code == 2
-    assert f"imported app from {elsewhere}" in capsys.readouterr().err
+    # The sentence writes the path as every replay line writes text: a
+    # backslash doubled, so a Windows path reads one way only.
+    assert f"imported app from {terminal_safe(elsewhere)}" in capsys.readouterr().err
