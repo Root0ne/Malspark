@@ -121,6 +121,21 @@ class TestTheCheck:
         assert _body("The decoder (3 call sites) reaches FUN_00401900 [ev_0095].") == []
         assert _body("FUN_00401900 runs 3 times per block [ev_0095].") == []
 
+    def test_a_routine_another_word_governs_is_not_read(self) -> None:
+        """A pronoun or a preposition between the verb and a name leaves the phrase naming
+        nothing: the routine counted is not the one written there."""
+        assert _body("FUN_00401900 is called by FUN_00401200 3 times [ev_0095].") == []
+        assert _body("FUN_00401900 is called from FUN_00401200 3 times [ev_0095].") == []
+        assert _body("FUN_00401900 was called by FUN_00401200 three times [ev_0095].") == []
+        assert _body("The mixer FUN_00401900 makes 5 calls to it in FUN_00401200 [ev_0095].") == []
+        assert _body("The block calls it via FUN_00401900 3 times [ev_0095].") == []
+        assert _body("The routine calls them within FUN_00401900 3 times [ev_0095].") == []
+
+    def test_a_number_is_read_whole(self) -> None:
+        assert _body("The routine makes 1,000 calls to FUN_00401900 [ev_0095].") == []
+        assert _body("The routine calls FUN_00401900 2.5 times per block [ev_0095].") == []
+        assert _body("The routine makes 1000 calls to FUN_00401900 [ev_0095].") == []
+
     def test_an_entry_that_lists_no_code_is_not_read(self) -> None:
         assert _body("The routine calls seed 2 times [ev_0097].") == []
         assert _body("The routine calls FUN_00401900 three times [ev_0097].") == []
@@ -143,9 +158,9 @@ class TestTheFindingAndItsQuestion:
         )
 
         assert found.message == (
-            "The text states 'three times' for FUN_00401900; the code in "
-            "ev_0095 (decompile_function) writes 4 calls of FUN_00401900 (in FUN_00401200), "
-            "its own definition not counted."
+            "The text states 'three times' and names FUN_00401900; ev_0095 "
+            "(decompile_function) writes 'FUN_00401900(' on 4 lines, letter case and spaces "
+            "before the bracket aside."
         )
 
     def test_the_message_names_only_the_entries_whose_code_was_read(self) -> None:
@@ -154,7 +169,45 @@ class TestTheFindingAndItsQuestion:
         )
 
         assert "ev_0097" not in found.message
-        assert "ev_0095 (decompile_function) writes 4 calls" in found.message
+        assert "ev_0095 (decompile_function) writes 'FUN_00401900(' on 4 lines" in found.message
+
+    def test_the_message_states_the_name_the_text_writes_and_what_the_code_writes(self) -> None:
+        """An address the text names is stated as written, beside the name the code writes."""
+        (found,) = _body("The routine calls 0x401900 three times [ev_0095].")
+
+        assert found.message.startswith("The text states 'three times' and names 0x401900; ")
+        assert "writes 'FUN_00401900(' on 4 lines" in found.message
+
+    def test_every_line_writing_the_name_and_a_bracket_is_counted_in_the_message(self) -> None:
+        """A prototype, a comment and a string that write the name and a bracket are lines
+        that write them: the message counts what the lines hold, not what they mean."""
+        code = (
+            "void FUN_00401900(int a);\n"
+            "void FUN_00401200(void)\n"
+            "{\n"
+            "  /* FUN_00401900(x) mixes */\n"
+            "  FUN_00401900(1); FUN_00401900(2);\n"
+            "}\n"
+        )
+        texts = EntryTexts.from_ledger(
+            [
+                LedgerEntry(
+                    id="ev_0098",
+                    agent="code",
+                    server="code",
+                    tool="decompile_function",
+                    output=json.dumps({"code": code}),
+                )
+            ]
+        )
+
+        (found,) = call_count_violations(
+            {"body": "The routine calls FUN_00401900 nine times [ev_0098]."},
+            texts,
+            prose=("body",),
+        )
+
+        assert "writes 'FUN_00401900(' on 3 lines" in found.message
 
     def test_the_question_asks_for_the_number_or_what_it_counts(self) -> None:
         (found,) = _body(
