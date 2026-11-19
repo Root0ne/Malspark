@@ -10864,9 +10864,7 @@ def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tupl
     longer = False
     for entry_id in holding:
         echoes = _call_echoes(entries, entry_id)
-        rest = _without_call_echoes(
-            entries.text_of(entry_id), echoes, _call_arguments(entries, entry_id)
-        )
+        rest = _without_call_echoes(entries.text_of(entry_id), _call_arguments(entries, entry_id))
         if EntryTexts(texts={entry_id: rest}).holds(entry_id, value, fields=True):
             return ()
         if value.lower() in rest.lower():
@@ -10880,7 +10878,7 @@ def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tupl
     return tuple(holding) if longer else ()
 
 
-def _without_call_echoes(text: str, echoes: Collection[str], arguments: Any = None) -> str:
+def _without_call_echoes(text: str, arguments: Any = None) -> str:
     """An entry's text with what echoes its own call taken out.
 
     Read through its JSON where it is JSON: a string is dropped where it
@@ -10890,9 +10888,9 @@ def _without_call_echoes(text: str, echoes: Collection[str], arguments: Any = No
     arguments whole (a list's item is a row of the answer, whatever it
     repeats, and no key path runs through a list). The same string at any
     other place, under the same key name or not, is what the answer holds (a
-    match row equal to the pattern it was asked for) and stays. Any other
-    text has each echo of three characters or more masked where it stands, as
-    written and as a JSON string writes it.
+    match row equal to the pattern it was asked for) and stays. A text that is
+    no JSON object or array is returned as it is: without key paths an echo
+    cannot be told from a match.
     """
     import json as _json
 
@@ -10932,13 +10930,7 @@ def _without_call_echoes(text: str, echoes: Collection[str], arguments: Any = No
             return node
 
         return _json.dumps(_drop(parsed, ((),)), ensure_ascii=False, indent=1)
-    masked = str(text or "")
-    for echo in sorted(echoes, key=len, reverse=True):
-        if len(echo) < 3:
-            continue
-        for form in {echo, _json.dumps(echo, ensure_ascii=False)[1:-1]}:
-            masked = re.sub(re.escape(form), lambda match: " " * len(match.group(0)), masked)
-    return masked
+    return str(text or "")
 
 
 def _echoed_label(values: Sequence[str], holding: Sequence[str]) -> str:

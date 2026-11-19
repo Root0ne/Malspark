@@ -216,7 +216,7 @@ class TestTheCheck:
 
         searched = f"{MATCHED} delete {QUILL}"
 
-        assert searched in _without_call_echoes(json.dumps([searched]), [searched], [searched])
+        assert searched in _without_call_echoes(json.dumps([searched]), [searched])
 
     def test_a_sub_object_repeating_the_arguments_whole_is_an_echo(self) -> None:
         texts = EntryTexts.from_ledger(
