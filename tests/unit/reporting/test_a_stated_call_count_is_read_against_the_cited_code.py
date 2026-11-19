@@ -1,14 +1,17 @@
 """A stated count of calls is read against the calls the cited entry's code writes.
 
 A sentence that states how many times a routine calls another ("calls the
-mixer eight times", "three calls of the decoder") can be read against the
-code the entry it cites holds: the number of places that code writes
-``name(``, the routine's own definition not counted. Where the two differ the
+mixer FUN_00401900 eight times", "FUN_00401900 is called three times", "three
+calls of FUN_00401900") names the routine it counts in the count's own words;
+that count can be read against the code the entry it cites holds: the number
+of places that code writes ``name(``, the routine's own definition not
+counted. Only an entry whose tool lists code is read. Where the two differ the
 model is asked once, with the fact alone — what the sentence states and what
 the code writes, in which functions — and states the number the code shows or
-says what its number counts (calls per loop iteration, distinct callers,
-executions). Only a number attached to a count of calls is read; callers,
-references, "once" and "twice" count other things. Nothing is rewritten.
+says what its number counts (calls per loop iteration, executions). A count
+of callers or call sites counts places across the whole image, not the calls
+one function's code writes, and is not read; neither are references, "once"
+and "twice". Nothing is rewritten.
 """
 
 from __future__ import annotations
@@ -60,6 +63,23 @@ def _texts() -> EntryTexts:
                 tool="strings",
                 output=json.dumps({"strings": ["mixer"]}),
             ),
+            # A tool that lists no code, whose answer still writes a name and
+            # a bracket: a field describing a layout, three times.
+            LedgerEntry(
+                id="ev_0097",
+                agent="code",
+                server="code",
+                tool="decode_blobs",
+                output=json.dumps(
+                    {
+                        "results": [
+                            {"layout": "seed (4), length (2), text", "text": t}
+                            for t in ("one", "two", "three")
+                        ]
+                        + [{"note": "FUN_00401900(block) is listed here"}]
+                    }
+                ),
+            ),
         ]
     )
 
@@ -82,16 +102,28 @@ class TestTheCheck:
 
     def test_digits_and_the_nouns_of_calls_are_read(self) -> None:
         assert len(_body("It makes 3 calls to FUN_00401900 [ev_0095].")) == 1
-        assert len(_body("FUN_00401900 has five call sites in the routine [ev_0095].")) == 1
+        assert len(_body("FUN_00401900 is called five times in the routine [ev_0095].")) == 1
 
-    def test_callers_references_once_and_twice_are_not_read(self) -> None:
+    def test_callers_call_sites_references_once_and_twice_are_not_read(self) -> None:
         assert _body("FUN_00401900 has two callers [ev_0095].") == []
+        assert _body("FUN_00401900 has five call sites [ev_0095].") == []
+        assert _body("There are 3 call sites of FUN_00401900 [ev_0095].") == []
         assert _body("FUN_00401900 has three references [ev_0095].") == []
         assert _body("The routine calls FUN_00401900 twice [ev_0095].") == []
         assert _body("The routine calls FUN_00401900 once per byte [ev_0095].") == []
 
     def test_an_identifier_the_cited_code_does_not_call_is_not_read(self) -> None:
         assert _body("The mixer is called three times [ev_0096].") == []
+
+    def test_the_routine_counted_is_the_one_the_count_names(self) -> None:
+        """A name elsewhere in the sentence is not what the count counts."""
+        assert _body("FUN_00401900 mixes the block; the decoder has 3 call sites [ev_0095].") == []
+        assert _body("The decoder (3 call sites) reaches FUN_00401900 [ev_0095].") == []
+        assert _body("FUN_00401900 runs 3 times per block [ev_0095].") == []
+
+    def test_an_entry_that_lists_no_code_is_not_read(self) -> None:
+        assert _body("The routine calls seed 2 times [ev_0097].") == []
+        assert _body("The routine calls FUN_00401900 three times [ev_0097].") == []
 
     def test_an_address_is_read_as_the_routine_s_name(self) -> None:
         (found,) = _body("The routine calls 0x401900 three times [ev_0095].")
@@ -111,10 +143,18 @@ class TestTheFindingAndItsQuestion:
         )
 
         assert found.message == (
-            "The text states 'three times' for FUN_00401900, citing ev_0095; the code in "
+            "The text states 'three times' for FUN_00401900; the code in "
             "ev_0095 (decompile_function) writes 4 calls of FUN_00401900 (in FUN_00401200), "
             "its own definition not counted."
         )
+
+    def test_the_message_names_only_the_entries_whose_code_was_read(self) -> None:
+        (found,) = _body(
+            "The routine calls the mixer FUN_00401900 three times per block [ev_0095, ev_0097]."
+        )
+
+        assert "ev_0097" not in found.message
+        assert "ev_0095 (decompile_function) writes 4 calls" in found.message
 
     def test_the_question_asks_for_the_number_or_what_it_counts(self) -> None:
         (found,) = _body(
