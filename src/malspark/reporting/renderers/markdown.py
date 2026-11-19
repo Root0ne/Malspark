@@ -4013,9 +4013,12 @@ def _reference_spans(text: str) -> list[tuple[int, int]]:
     A sentence's punctuation after the link is trimmed before the check, and
     only what was checked is kept: the trimmed characters are read with the
     rest of the text. A link the run's own indicator was defanged inside is no
-    lookup.
+    lookup. Inside a value the value writer reads (:func:`_inline_safe`), no
+    link is a lookup kept.
     """
     spans: list[tuple[int, int]] = []
+    if _IN_A_VALUE.get():
+        return spans
     for found in _REFERENCE_CANDIDATE.finditer(text):
         if text[found.end() : found.end() + 3] in _DEFANGED_MARKS:
             continue
@@ -4513,7 +4516,11 @@ def _escaped_spelling(value: Any) -> str:
 
 
 def _inline_safe(
-    text: Any, *, pipes: bool = True, plain: Callable[[str], str] = _defanged_text
+    text: Any,
+    *,
+    pipes: bool = True,
+    plain: Callable[[str], str] = _defanged_text,
+    links: bool = False,
 ) -> str:
     """A value this report's checks wrote about the sample: escaped, then defanged.
 
@@ -4523,9 +4530,22 @@ def _inline_safe(
     is the render's own defanger (``ctx.plain``) wherever a section has it,
     so the run's recorded values are read before the escape of an underscore
     could hide one from the closing pass.
+
+    A link is live only where the platform writes the link: inside a value a
+    reference service's lookup URL is defanged as any URL is, unless ``links``
+    keeps it (a viewer's autolink would otherwise vouch for a destination the
+    sample or a tool chose).
     """
     meta = _INLINE_META if pipes else _INLINE_META_NO_PIPE
-    return _emphasis_escaped(plain(meta.sub(r"\\\1", str(text or ""))))
+    token = _IN_A_VALUE.set(not links)
+    try:
+        return _emphasis_escaped(plain(meta.sub(r"\\\1", str(text or ""))))
+    finally:
+        _IN_A_VALUE.reset(token)
+
+
+# Set while the value writer reads a value: no reference lookup in it is kept.
+_IN_A_VALUE: ContextVar[bool] = ContextVar("markdown_in_a_value", default=False)
 
 
 def _escaped_keeping_spans(text: Any, meta: re.Pattern[str] = _INLINE_META_NO_PIPE) -> str:

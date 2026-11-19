@@ -358,3 +358,33 @@ def test_no_place_of_a_report_lets_a_value_form_structure(payload: str) -> None:
                     payload,
                     mark,
                 )
+
+
+# A reference service's lookup of another sample, as a value may hold it.
+LOOKUP = "https://www.virustotal.com/gui/file/" + "b" * 64
+
+
+def test_a_reference_lookup_inside_a_value_is_defanged_as_any_url() -> None:
+    ctx = _context()
+    assert "https://" not in ctx.value(LOOKUP)
+    assert "https://" not in ctx.value(f"see [x]({LOOKUP})")
+
+
+def test_a_value_s_lookup_is_no_link_and_the_platform_s_reference_stays_one() -> None:
+    # The platform's own link position keeps its target; a value holding a
+    # lookup prints it defanged, so no reader draws it as an anchor.
+    own = "https://www.virustotal.com/gui/file/" + "a" * 64
+    report = MalwareReport(
+        identity=SampleIdentity(
+            hashes=FileHashes(sha256="a" * 64),
+            signing=SignatureInfo(is_signed=True, signer_subject=f"[x]({LOOKUP}) {LOOKUP}"),
+        ),
+        verdict="Malware",
+        references=[ExternalReference(source="VirusTotal", url=own, note="detections")],
+    )
+    for layout in LAYOUTS:
+        markdown = MarkdownRenderer(layout=layout).render(report)
+        assert LOOKUP not in markdown, layout
+        rendered = HtmlRenderer._markdown_to_html(markdown)
+        assert f'href="{LOOKUP}"' not in rendered
+        assert f'href="{own}"' in rendered, layout
