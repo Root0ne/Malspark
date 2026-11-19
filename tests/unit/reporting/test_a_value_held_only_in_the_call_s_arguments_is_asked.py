@@ -312,7 +312,7 @@ class TestTheFindingAndItsQuestion:
         (found,) = _body(f"The string evidence contains the term '{QUILL}' [ev_0030].")
 
         assert found.message == (
-            f"'{QUILL}' is not in the answer of ev_0030 (strings), which the text cites for it; "
+            f"'{QUILL}' is not in the answer of ev_0030 (strings), which the sentence cites; "
             "it stands only in what that call was asked for."
         )
 
@@ -320,8 +320,8 @@ class TestTheFindingAndItsQuestion:
         (found,) = _body(f"It holds '{QUILL}' and '{MARROW}' [ev_0030].")
 
         assert found.message == (
-            f"'{QUILL}', '{MARROW}' are not in the answer of ev_0030 (strings), which the text "
-            "cites for them; they stand only in what that call was asked for."
+            f"'{QUILL}', '{MARROW}' are not in the answer of ev_0030 (strings), which the "
+            "sentence cites; they stand only in what that call was asked for."
         )
 
     def test_the_instruction_is_in_the_question_sent_alone(self) -> None:

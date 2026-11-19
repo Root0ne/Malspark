@@ -10798,7 +10798,6 @@ def echoed_argument_citations(
         listed = ", ".join(repr(value) for value in values[:_MAX_NAMED_IDS])
         named = ", ".join(entries.named(i) for i in holding)
         verb = "is" if one else "are"
-        them = "it" if one else "them"
         stands = "it stands" if one else "they stand"
         answers = "the answer" if len(holding) == 1 else "the answers"
         calls = "that call was" if len(holding) == 1 else "those calls were"
@@ -10809,8 +10808,8 @@ def echoed_argument_citations(
                 message=(
                     f"{safe_finding_value(listed)}"
                     f"{' (with ' + safe_finding_value(more) + ' more)' if more > 0 else ''} "
-                    f"{verb} not in {answers} of {safe_finding_value(named)}, which the text "
-                    f"cites for {them}; {stands} only in what {calls} asked for."
+                    f"{verb} not in {answers} of {safe_finding_value(named)}, which the "
+                    f"sentence cites; {stands} only in what {calls} asked for."
                 ),
                 path="citation",
                 quoted=tuple(places),
