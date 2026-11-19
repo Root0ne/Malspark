@@ -316,6 +316,23 @@ class TestTheFindingAndItsQuestion:
             "it stands only in what that call was asked for."
         )
 
+    def test_a_record_s_own_citations_are_named_as_the_record_s(self) -> None:
+        """A string with no brackets is cited by its record's citation fields: the message
+        says the record cites the entry, since the sentence cites nothing."""
+        (found,) = echoed_argument_citations(
+            {
+                "rows": [
+                    {"description": f"The search matched '{QUILL}'", "evidence_refs": ["ev_0030"]}
+                ]
+            },
+            _texts(),
+        )
+
+        assert found.message == (
+            f"'{QUILL}' is not in the answer of ev_0030 (strings), which its record cites; "
+            "it stands only in what that call was asked for."
+        )
+
     def test_several_values_are_stated_together(self) -> None:
         (found,) = _body(f"It holds '{QUILL}' and '{MARROW}' [ev_0030].")
 

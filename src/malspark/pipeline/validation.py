@@ -10730,27 +10730,37 @@ def echoed_argument_citations(
     if payload is None or entries is None or not (entries.texts or entries.items is not None):
         return []
     data = payload if isinstance(payload, dict) else getattr(payload, "__dict__", {}) or {}
-    echoed: dict[tuple[str, ...], list[str]] = {}
-    written: dict[tuple[str, ...], dict[str, list[str]]] = {}
-    spans: dict[tuple[str, ...], list[Span]] = {}
+    # Keyed by the entries holding a value and whether the citation stands in
+    # the sentence (``False``) or comes from its record's citation fields.
+    echoed: dict[tuple[tuple[str, ...], bool], list[str]] = {}
+    written: dict[tuple[tuple[str, ...], bool], dict[str, list[str]]] = {}
+    spans: dict[tuple[tuple[str, ...], bool], list[Span]] = {}
 
-    def _ask(value: str, cited: Sequence[str], sentence: str, where: str, span: Span) -> None:
+    def _ask(
+        value: str,
+        cited: Sequence[str],
+        sentence: str,
+        where: str,
+        span: Span,
+        by_record: bool = False,
+    ) -> None:
         value = str(value or "").strip()
         if literal_values(value) or not decidable(value):
             return
         start = sentence.find(value)
         if start >= 0 and _named_as_absent(sentence, start, start + len(value)):
             return
-        holding = _echo_holders(value, cited, entries)
-        if not holding:
+        holders = _echo_holders(value, cited, entries)
+        if not holders:
             return
-        values = echoed.setdefault(holding, [])
+        group = (holders, by_record)
+        values = echoed.setdefault(group, [])
         if value not in values:
             values.append(value)
-        found = written.setdefault(holding, {}).setdefault(where, [])
+        found = written.setdefault(group, {}).setdefault(where, [])
         if value not in found:
             found.append(value)
-        spans.setdefault(holding, []).append(span)
+        spans.setdefault(group, []).append(span)
 
     def _read_prose(text: Any) -> None:
         read = _text_of(text)
@@ -10779,7 +10789,7 @@ def echoed_argument_citations(
                 elif refs:
                     where = cited_row_text(value, node)
                     for stated in quoted_values(value):
-                        _ask(stated, refs, value, where, (value, 0, len(value)))
+                        _ask(stated, refs, value, where, (value, 0, len(value)), by_record=True)
             else:
                 _walk(value, depth + 1)
 
@@ -10792,7 +10802,8 @@ def echoed_argument_citations(
             _walk(data.get(key))
 
     violations: list[Violation] = []
-    for holding, values in echoed.items():
+    for group, values in echoed.items():
+        holding, by_record = group
         one = len(values) == 1
         more = len(values) - _MAX_NAMED_IDS
         listed = ", ".join(repr(value) for value in values[:_MAX_NAMED_IDS])
@@ -10801,21 +10812,22 @@ def echoed_argument_citations(
         stands = "it stands" if one else "they stand"
         answers = "the answer" if len(holding) == 1 else "the answers"
         calls = "that call was" if len(holding) == 1 else "those calls were"
-        places = written.get(holding, {})
+        places = written.get(group, {})
+        citing = "its record" if by_record else "the sentence"
         violations.append(
             Violation(
                 code=VALUE_ONLY_IN_CALL_ARGUMENTS_CODE,
                 message=(
                     f"{safe_finding_value(listed)}"
                     f"{' (with ' + safe_finding_value(more) + ' more)' if more > 0 else ''} "
-                    f"{verb} not in {answers} of {safe_finding_value(named)}, which the "
-                    f"sentence cites; {stands} only in what {calls} asked for."
+                    f"{verb} not in {answers} of {safe_finding_value(named)}, which "
+                    f"{citing} cites; {stands} only in what {calls} asked for."
                 ),
                 path="citation",
                 quoted=tuple(places),
                 labels=tuple(_echoed_label(stated, holding) for stated in places.values()),
                 values=tuple(values),
-                about=_distinct_spans(spans.get(holding, [])),
+                about=_distinct_spans(spans.get(group, [])),
                 shown=(
                     "Say what the entry's answer holds, or state the value without attributing it "
                     "to the entry."
