@@ -17427,7 +17427,9 @@ def technique_absence_sources(
                 continue
             ref = str(getattr(claim, "evidence_ref", "") or "")
             said = f"{getattr(claim, 'claim', '') or ''} {ref}"
-            read(tid, said, [*entry_ids_in(said), *item_ids_in(ref)])
+            # Cited entries sorted as in ``technique_roots``; no output reads
+            # this order, since the sources are sorted below.
+            read(tid, said, [*sorted(entry_ids_in(said)), *item_ids_in(ref)])
         for finding in getattr(isr, "findings", None) or []:
             said = f"{getattr(finding, 'title', '') or ''} {getattr(finding, 'detail', '') or ''}"
             cited = [str(i) for i in getattr(finding, "evidence_ids", None) or [] if i]
@@ -17547,7 +17549,9 @@ def technique_sources(
                 continue
             ref = str(getattr(claim, "evidence_ref", "") or "")
             said = f"{getattr(claim, 'claim', '') or ''} {ref}"
-            cited = [*entry_ids_in(said), *item_ids_in(ref)]
+            # The entries one statement cites, sorted as in ``technique_roots``
+            # (fixed-width ids sort in issue order; another width as a string).
+            cited = [*sorted(entry_ids_in(said)), *item_ids_in(ref)]
             add(tid, cited_sources(said, cited, tid, str(getattr(claim, "claim", "") or "")))
         for finding in getattr(isr, "findings", None) or []:
             said = f"{getattr(finding, 'title', '') or ''} {getattr(finding, 'detail', '') or ''}"
@@ -17599,7 +17603,11 @@ def technique_roots(
                 continue
             ref = str(getattr(claim, "evidence_ref", "") or "")
             said = f"{getattr(claim, 'claim', '') or ''} {ref}"
-            cited = [*entry_ids_in(said), *item_ids_in(ref)]
+            # The entries one statement cites, sorted, as the capability
+            # matrix lists them: an order of the data, never of a set. Issued
+            # ids are fixed-width, so the sort is their issue order; an id a
+            # model wrote at another width sorts as a string.
+            cited = [*sorted(entry_ids_in(said)), *item_ids_in(ref)]
             out.setdefault(tid, RootCount()).add(*found.of_statement(said, cited))
         for finding in getattr(isr, "findings", None) or []:
             said = f"{getattr(finding, 'title', '') or ''} {getattr(finding, 'detail', '') or ''}"

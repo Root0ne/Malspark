@@ -1244,7 +1244,7 @@ async def probe_agent(v: dict[str, Any]) -> ProbeResult:
                 {
                     "key": key,
                     "tools": [str(getattr(t, "name", "")) for t in server_tools],
-                    "status": next((r for r in reasons if f"'{key}" in r), "ok"),
+                    "status": next((r for r in sorted(reasons) if f"'{key}" in r), "ok"),
                 }
             )
         listed = ", ".join(tools[:8]) + ("…" if len(tools) > 8 else "")

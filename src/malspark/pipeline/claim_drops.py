@@ -165,9 +165,10 @@ def values_as_written(text: str, technique_id: str | None = "") -> dict[str, str
 
     A quoted value is compared without case, and the record writes it as the
     claim did: a value folded to lower case is a different string to every
-    mask that matches a configured value exactly.
+    mask that matches a configured value exactly. The values come sorted,
+    so the record lists them in the same order in every process.
     """
-    written: dict[str, str] = {value: value for value in claim_values(text, technique_id)}
+    written: dict[str, str] = {value: value for value in sorted(claim_values(text, technique_id))}
     for match in _QUOTED.finditer(_refanged(text)):
         quoted = (match.group(1) or match.group(2) or "").strip()
         if quoted.casefold() in written:

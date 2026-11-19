@@ -169,7 +169,7 @@ def lint_report(report: Any, sample_platform: str | None) -> list[FPWarning]:
     # C3 — executive_summary mentions platform-incompatible concepts.
     exec_summary = (getattr(report, "executive_summary", None) or "").lower()
     if sp and sp in _PLATFORM_INCOMPATIBLE_TERMS:
-        for term in _PLATFORM_INCOMPATIBLE_TERMS[sp]:
+        for term in sorted(_PLATFORM_INCOMPATIBLE_TERMS[sp]):
             if term in exec_summary:
                 warnings.append(
                     FPWarning(
