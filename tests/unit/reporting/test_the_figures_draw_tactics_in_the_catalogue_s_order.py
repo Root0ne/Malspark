@@ -24,7 +24,46 @@ from malspark.reporting.figures import build_attack_matrix, build_infection_chai
 from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity, TTPMapping
 
 _TEXT = re.compile(r"<text\b([^>]*)>(.*?)</text>", re.S)
-_EM = 0.62
+# Each enterprise tactic name's width in px at 11 px, bold (the matrix header)
+# and normal (the chain box), measured from the font files of DejaVu Sans and
+# DejaVu Sans Bold, the only font the backend image installs, with PIL's
+# ``ImageFont.getlength``.
+_BOLD_11 = {
+    "Reconnaissance": 99.2,
+    "Resource Development": 143.5,
+    "Initial Access": 81.8,
+    "Execution": 60.8,
+    "Persistence": 72.3,
+    "Privilege Escalation": 122.2,
+    "Defense Evasion": 102.3,
+    "Defense Impairment": 126.5,
+    "Credential Access": 110.2,
+    "Discovery": 60.7,
+    "Lateral Movement": 112.8,
+    "Collection": 61.6,
+    "Command and Control": 138.0,
+    "Exfiltration": 69.1,
+    "Impact": 42.6,
+}
+_NORMAL_11 = {
+    "Reconnaissance": 88.4,
+    "Resource Development": 128.0,
+    "Initial Access": 71.6,
+    "Execution": 54.0,
+    "Persistence": 62.9,
+    "Privilege Escalation": 107.0,
+    "Defense Evasion": 91.5,
+    "Defense Impairment": 112.7,
+    "Credential Access": 97.8,
+    "Discovery": 54.4,
+    "Lateral Movement": 100.0,
+    "Collection": 54.4,
+    "Command and Control": 124.0,
+    "Exfiltration": 60.1,
+    "Impact": 38.0,
+}
+# A box keeps as much room right of its text as left of it.
+_PAD = 8
 _VENDORED = Path(attck_loader.TECHNIQUES_FILE)
 
 
@@ -160,5 +199,11 @@ class TestTheFiguresPlaceATacticByItsPosition:
             assert len(boxes) == len(headers) == len(every)
             for (bx, bw), (attrs, body) in zip(boxes, headers, strict=True):
                 x = float(re.search(r'\bx="(\d+)"', attrs).group(1))  # type: ignore[union-attr]
-                size = float(re.search(r'font-size="(\d+)"', attrs).group(1))  # type: ignore[union-attr]
-                assert x + len(unescape(body)) * size * _EM <= bx + bw, body
+                drawn = _BOLD_11 if 'font-weight="bold"' in attrs else _NORMAL_11
+                assert x + drawn[unescape(body)] + _PAD <= bx + bw, body
+
+    def test_a_reckoned_width_is_never_below_the_measured_one(self) -> None:
+        for name, width in _BOLD_11.items():
+            assert figures._label_width(name, 11, "bold") >= width, name
+        for name, width in _NORMAL_11.items():
+            assert figures._label_width(name, 11) >= width, name

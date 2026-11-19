@@ -26,7 +26,7 @@ from malspark.reporting.dedupe import distinct_processes
 from malspark.reporting.defang import defang
 from malspark.reporting.models import Figure, MalwareReport, ProcessNode
 from malspark.schemas.sandbox_report import staged_words
-from malspark.utils.marked_cut import marked_cut
+from malspark.utils.marked_cut import CUT_MARK, marked_cut
 
 _INK = "#1b1f24"
 _MUTED = "#57606a"
@@ -65,14 +65,79 @@ def _figure_left_out(total: int, shown: int, what: str) -> str:
     return f" {rest:,} more {what} are not drawn; the JSON report holds all {int(total):,}."
 
 
-# A label's width is reckoned at 0.62 em per character, a wide mean for the
-# figures' font, so a box sized by it holds its label.
-_EM_PER_CHAR = 0.62
+# A label's width is reckoned from the font the PDF is printed in: the backend
+# image installs DejaVu alone (docker/Dockerfile.backend), so the figures'
+# sans-serif is DejaVu Sans. Each entry is a character's width, ' ' to '~', in
+# thousandths of an em, rounded up: its advance in DejaVu Sans (Bold), unhinted
+# and hinted at 9 to 12 px, plus the largest positive kerning it takes before
+# any of these characters, read from the font files with PIL and fontTools.
+# The sum is an upper bound, so a box sized by it holds its label.
+# fmt: off
+_ASCII_WIDTHS: dict[str, tuple[int, ...]] = {
+    "normal": (
+        319, 402, 461, 839, 637, 951, 780, 276, 391, 391, 500, 839, 319, 417, 319, 338,
+        637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 338, 338, 839, 839, 839, 532,
+        1000, 713, 687, 699, 771, 633, 576, 776, 753, 296, 296, 657, 581, 864, 749, 816,
+        604, 816, 696, 654, 612, 733, 685, 990, 686, 612, 686, 391, 338, 391, 839, 500,
+        500, 614, 636, 551, 636, 616, 353, 636, 635, 279, 279, 580, 279, 975, 635, 632,
+        636, 636, 412, 522, 393, 635, 593, 819, 593, 593, 526, 637, 338, 637, 839,
+    ),
+    "bold": (
+        349, 457, 522, 839, 697, 1003, 873, 307, 458, 458, 524, 839, 381, 416, 381, 366,
+        697, 697, 697, 697, 697, 697, 697, 697, 697, 697, 401, 401, 839, 839, 839, 581,
+        1000, 793, 763, 758, 850, 684, 684, 822, 838, 373, 373, 776, 638, 996, 838, 870,
+        752, 870, 790, 721, 706, 813, 775, 1104, 772, 725, 726, 458, 366, 458, 839, 500,
+        500, 676, 717, 593, 717, 679, 436, 717, 713, 343, 343, 666, 343, 1043, 713, 688,
+        717, 717, 494, 596, 479, 713, 653, 925, 646, 653, 583, 713, 366, 713, 839,
+    ),
+}
+# fmt: on
+# Any other character counts the font's widest advance (``hhea``
+# advanceWidthMax); the cut mark counts its own, which no kerning widens.
+_OTHER_WIDTH = {"normal": 1875, "bold": 2017}
+_CUT_MARK_WIDTH = 1000
+# A box keeps as much room right of its label as left of it.
+_LABEL_PAD = 8
 
 
-def _label_width(text: str, size: int) -> int:
-    """How wide ``text`` is drawn at ``size`` px, at :data:`_EM_PER_CHAR`."""
-    return math.ceil(len(text) * size * _EM_PER_CHAR)
+def _label_width(text: str, size: int, weight: str = "normal") -> int:
+    """How wide ``text`` is drawn at ``size`` px and ``weight``, at most (:data:`_ASCII_WIDTHS`)."""
+    table = _ASCII_WIDTHS[weight]
+    other = _OTHER_WIDTH[weight]
+    milli = 0
+    for char in text:
+        code = ord(char)
+        if 32 <= code < 127:
+            milli += table[code - 32]
+        else:
+            milli += _CUT_MARK_WIDTH if char == CUT_MARK else other
+    return math.ceil(milli * size / 1000)
+
+
+# A defang bracket a cut never splits.
+_DEFANG_BRACKETS = ("[.]", "[:]", "[@]")
+
+
+def _fitted_label(text: str, chars: int, room: int, size: int) -> str:
+    """``text`` whole when it is at most ``chars`` long and ``room`` px wide, else cut.
+
+    The cut is the longest :func:`marked_cut` that fits both, made only where
+    it splits no defang bracket.
+    """
+    split: set[int] = set()
+    for bracket in _DEFANG_BRACKETS:
+        start = text.find(bracket)
+        while start >= 0:
+            split.update(range(start + 1, start + len(bracket)))
+            start = text.find(bracket, start + 1)
+    width = min(len(text), chars)
+    while width > 0:
+        cut = marked_cut(text, width)
+        whole = cut == text
+        if (whole or width - len(CUT_MARK) not in split) and _label_width(cut, size) <= room:
+            return cut
+        width -= 1
+    return CUT_MARK
 
 
 def _tactic_columns() -> tuple[tuple[str, str], ...]:
@@ -191,7 +256,10 @@ def build_attack_matrix(report: MalwareReport) -> Figure | None:
     mapped = sum(len(techniques) for techniques in by_tactic.values())
     drawn = sum(min(len(by_tactic[t]), _MATRIX_CELLS) for t, _ in cols)
     # A column is as wide as its longest header needs, never narrower than 118.
-    col_w = max(118, max(8 + _label_width(name, 11) for _tid, name in cols))
+    col_w = max(
+        118,
+        max(8 + _label_width(_written(name), 11, "bold") + _LABEL_PAD for _tid, name in cols),
+    )
     gap = 8
     width = len(cols) * (col_w + gap) + gap
     max_rows = max((len(by_tactic[t]) for t, _ in cols), default=0)
@@ -292,8 +360,9 @@ def _source_word(source: str | None, capture_only: bool = False) -> str:
     return "source not recorded"
 
 
-# A network box: its value, cut at 44 characters, then the source word in a
-# column of its own; the box holds the longest of both at :data:`_EM_PER_CHAR`.
+# A network box: its value, cut at 44 characters or where it would reach the
+# source word, then the source word in a column of its own; the box holds the
+# longest source word (:func:`_label_width`).
 _NETWORK_LABEL_CHARS = 44
 _NETWORK_WORD_AT = 320
 _NETWORK_BOX_W = 504
@@ -319,7 +388,12 @@ def build_network_graph(report: MalwareReport) -> Figure | None:
         flagged = bool(getattr(ip, "is_suspicious", False)) or (
             ("ip", value_key("ip", ip.address)) in held
         )
-        label = f"{address}:{ip.port}" if ip.port else address
+        if ip.port:
+            # An address holding a colon is bracketed, so its port reads apart.
+            bare = ":" in ip.address and not ip.address.startswith("[")
+            label = f"[{address}]:{ip.port}" if bare else f"{address}:{ip.port}"
+        else:
+            label = address
         every.append((label, flagged, _source_word(ip.source), ip.sample_process_tree is True))
     # A figure holds twelve endpoints; the rest are counted in its legend.
     endpoints = every[:_NETWORK_ENDPOINTS]
@@ -346,7 +420,13 @@ def build_network_graph(report: MalwareReport) -> Figure | None:
         col = _DANGER if red else _MUTED
         parts.append(_rect(bx, y, _NETWORK_BOX_W, 22, fill="#fff", stroke=col))
         parts.append(
-            _text(bx + 8, y + 15, marked_cut(label, _NETWORK_LABEL_CHARS), fill=_INK, size=11)
+            _text(
+                bx + 8,
+                y + 15,
+                _fitted_label(label, _NETWORK_LABEL_CHARS, _NETWORK_WORD_AT - 8 - _LABEL_PAD, 11),
+                fill=_INK,
+                size=11,
+            )
         )
         parts.append(_text(bx + _NETWORK_WORD_AT, y + 15, _written(word), fill=_MUTED, size=10))
     joined = (
@@ -372,7 +452,7 @@ def build_network_graph(report: MalwareReport) -> Figure | None:
 # ---------------------------------------------------------------------------
 
 
-# A chain box holds the longest tactic name at :data:`_EM_PER_CHAR`.
+# A chain box is as wide as its longest tactic name needs, never narrower than 150.
 _CHAIN_BOX_W = 150
 
 
@@ -383,7 +463,11 @@ def build_infection_chain(report: MalwareReport) -> Figure | None:
     stages = [(tid, name) for tid, name in _tactic_columns() if tid in present]
     if len(stages) < 2:
         return None
-    box_w, box_h, gap = _CHAIN_BOX_W, 40, 26
+    box_w = max(
+        _CHAIN_BOX_W,
+        max(8 + _label_width(_written(name), 11) + _LABEL_PAD for _tid, name in stages),
+    )
+    box_h, gap = 40, 26
     per_row = 4
     width = per_row * box_w + (per_row - 1) * gap + 24
     rows = (len(stages) + per_row - 1) // per_row

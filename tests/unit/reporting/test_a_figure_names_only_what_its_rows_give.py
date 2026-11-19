@@ -42,7 +42,18 @@ from malspark.reporting.models import (
 
 _RED = 'stroke="#cf222e"'
 _TEXT = re.compile(r"<text\b([^>]*)>(.*?)</text>", re.S)
-_EM = 0.62
+# Widths in px, measured from the font files of DejaVu Sans, the only font the
+# backend image installs, with PIL's ``ImageFont.getlength`` at the size drawn.
+_W_11 = 9.0  # one "w" at 11 px: "w" * 44 is 396.0 px
+_CUT_MARK_11 = 11.0  # "…" at 11 px
+_SOURCE_WORD_10 = {
+    "network record": 75.8,
+    "TLS name only": 73.9,
+    "text only, no network record": 141.8,
+    "analyst listing only": 94.1,
+    "source not recorded": 100.4,
+}
+_BRACKET = re.compile(r"\[[.:@]\]")
 
 
 def _report(**over: Any) -> MalwareReport:
@@ -115,27 +126,41 @@ class TestANetworkBoxSaysWhereItsValueWasRead:
         for row in rows:
             assert row.fqdn.replace(".", "[.]") in said
 
-    def test_every_label_fits_its_box(self) -> None:
-        long_host = "a" * 70 + ".example"
+    def test_a_label_of_wide_letters_is_cut_before_its_source_word(self) -> None:
         fig = build_network_graph(
             _report(
                 network=NetworkIOCs(
-                    domains=[NetworkDomain(fqdn=long_host, source="strings")],
-                    ips=[NetworkIP(address="203.0.113.7", port=65535, sample_process_tree=True)],
+                    domains=[NetworkDomain(fqdn="w" * 60 + ".example", source="strings")]
                 )
             )
         )
         assert fig is not None
+        (label_attrs, label), (word_attrs, _word) = _TEXT.findall(fig.content)
+        label = unescape(label)
+        assert label.endswith("…") and set(label[:-1]) == {"w"}
+        right = _number(label_attrs, "x") + (len(label) - 1) * _W_11 + _CUT_MARK_11
+        assert right <= _number(word_attrs, "x")
+
+    @pytest.mark.parametrize("lead", range(6))
+    def test_a_cut_keeps_every_defang_bracket_whole(self, lead: int) -> None:
+        host = "a" * lead + "WWW." * 12 + "com"
+        fig = build_network_graph(_report(network=NetworkIOCs(domains=[NetworkDomain(fqdn=host)])))
+        assert fig is not None
+        label = _texts(fig.content)[0]
+        assert label.endswith("…")
+        kept = label[:-1]
+        assert host.replace(".", "[.]").startswith(kept)
+        assert "[" not in _BRACKET.sub("", kept) and "]" not in _BRACKET.sub("", kept)
+
+    def test_every_source_word_fits_its_box(self) -> None:
+        rows = [row for row, _w in self._CASES]
+        fig = build_network_graph(_report(network=NetworkIOCs(domains=rows)))
+        assert fig is not None
         boxes = _rows(fig.content)
-        texts = _TEXT.findall(fig.content)
-        for attrs, body in texts:
-            x, y = _number(attrs, "x"), _number(attrs, "y")
-            size = _number(attrs, "font-size")
-            inside = [b for b in boxes if b[1] <= y <= b[1] + 22 and b[0] <= x <= b[0] + b[2]]
-            if not inside:
-                continue  # the sample's own node
-            (bx, _by, bw) = inside[0]
-            assert x + len(unescape(body)) * size * _EM <= bx + bw, body
+        words = [(a, unescape(b)) for a, b in _TEXT.findall(fig.content)][1::2]
+        assert len(words) == len(boxes)
+        for (attrs, word), (bx, _by, bw) in zip(words, boxes, strict=True):
+            assert _number(attrs, "x") + _SOURCE_WORD_10[word] <= bx + bw, word
 
     def test_a_source_word_and_a_host_label_pass_the_figure_s_defanger(self) -> None:
         fig = build_network_graph(
@@ -160,6 +185,25 @@ class TestANetworkBoxSaysWhereItsValueWasRead:
         for _row, word in self._CASES:
             assert word not in attributes
         assert "example" not in attributes
+
+
+class TestAnAddressWithAPortReadsAsOneAddress:
+    @pytest.mark.parametrize(
+        ("address", "port", "label"),
+        [
+            ("203.0.113.7", 443, "203[.]0[.]113[.]7:443"),
+            ("2001:db8::1", None, "2001[:]db8::1"),
+            ("2001:db8::1", 443, "[2001[:]db8::1]:443"),
+        ],
+    )
+    def test_an_address_holding_a_colon_is_bracketed_before_its_port(
+        self, address: str, port: int | None, label: str
+    ) -> None:
+        fig = build_network_graph(
+            _report(network=NetworkIOCs(ips=[NetworkIP(address=address, port=port)]))
+        )
+        assert fig is not None
+        assert _texts(fig.content)[0] == label
 
 
 class TestALineJoinsTheSampleOnlyWhereTheRowSaysSo:
@@ -228,6 +272,17 @@ class TestAKeyIsPrintedOnlyForAMarkThatIsDrawn:
         assert fig is not None
         assert fig.legend is None
         assert "#cf222e" not in fig.content
+
+    def test_an_injecting_process_past_the_drawn_rows_prints_no_key_and_is_counted(
+        self,
+    ) -> None:
+        drawn = [ProcessNode(pid=n, name=f"p{n}.exe") for n in range(1, 41)]
+        past = ProcessNode(pid=99, name="inj.exe", injected_into=[1])
+        fig = build_process_tree(_report(dynamic=DynamicBehavior(process_tree=[*drawn, past])))
+        assert fig is not None
+        assert fig.legend == "1 more processes are not drawn; the JSON report holds all 41."
+        assert "#cf222e" not in fig.content
+        assert "inj.exe" not in fig.content
 
     def test_a_red_node_is_keyed_as_the_injecting_process(self) -> None:
         fig = build_process_tree(
