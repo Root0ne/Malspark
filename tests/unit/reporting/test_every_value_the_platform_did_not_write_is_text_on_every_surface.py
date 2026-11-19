@@ -9,13 +9,19 @@ file changing. The report is the recorded run of ``_report_shapes`` with every
 empty text place filled from its type (:func:`_filled`); every text of such a
 provenance then carries a payload with a token of its own (:func:`_payload`).
 
-The free mappings have no place in the schema. The tool and sandbox records
-(:data:`FREE_RECORDS`) are written under the keys the recorded run holds;
-``run_summary`` is built from the keys the renderers read
-(:func:`_run_summary`), taken from their code (``markdown.py``'s verdict,
-run, method and limitation sections), each with the provenance of its value:
-the mediator's and the analysts' quoted words and a negative claim are a
-model's and carry a plain token of their own.
+What comes from reflection: the text places of the schema and the values
+written into them. What is written by hand: :data:`PROVENANCE`; the free
+mappings, which have no place in the schema — the tool and sandbox records
+(:data:`FREE_RECORDS`, written under the keys the recorded run holds) and the
+``run_summary`` keys (:func:`_run_summary`, the keys the renderers' verdict,
+run, method and limitation sections read, each with the provenance of its
+value: the mediator's and the analysts' quoted words, the negotiation keys
+listed in :data:`NEGOTIATION_QUOTES` and a negative claim are a model's and
+carry a plain token of their own); and the lists the scan checks against —
+the places carrying a balanced backtick pair (:data:`PAIRED`), the places
+whose spans a sentence keeps (:data:`SPANS_ACROSS_VALUES`) and the places
+no surface prints (:data:`NOT_PRINTED`). A key or a record the hand lists
+miss is not scanned.
 
 report.md, the evidence bundle's Markdown and the HTML of both are rendered by
 the product's own path (``render_products``); the Markdown is read by the HTML
@@ -24,7 +30,9 @@ parsed. A token occurs only inside text or code: never in an attribute but the
 operator's reference target in its link, never as the start of a link, an
 emphasis, a struck or underlined run, a heading, a list item or a table cell
 the payload made, and the words between a value's first and last token are its
-own, never another value's.
+own, never another value's; a backtick run, a backslash and a character
+reference are shown as written; every place written is printed somewhere
+unless listed, and the operator's reference is one link.
 """
 
 from __future__ import annotations
@@ -58,9 +66,10 @@ PROVENANCE: list[tuple[str, str]] = [
     (r"^report\.capability_matrix\[\]\.absence_sources\[\]$", "P"),
     (r"^report\.enrichment_not_asked\[\]\.questions\[\]$", "P"),
     (r"^report\.directed_text\[\]\.(family|evidence_id)$", "P"),
-    # A figure the platform drew, and the closing texts no code writes (a stored
-    # report's platform Markdown, printed as written).
-    (r"^report\.figures\[\]\.", "P"),
+    # A figure the platform drew (its caption names a decompiler's symbol and is
+    # scanned), and the closing texts no code writes (a stored report's platform
+    # Markdown, printed as written).
+    (r"^report\.figures\[\]\.(id|kind|legend|content)$", "P"),
     (r"^report\.(appendices\[\]|disclaimer)$", "P"),
     (r"^report\.drafts_not_built", "P"),
     (r"^report\.evidence_index\[\]\.(id|repeated_of)$", "P"),
@@ -164,18 +173,58 @@ def test_every_listed_place_of_the_platform_or_a_model_is_a_place_of_the_schema(
 # ---------------------------------------------------------------------------
 
 
-def _payload(n: int) -> str:
+def _payload(n: int, *, paired: bool = False) -> str:
     """A value that would open every structure, with its token ``n`` at each part.
 
     ``1. # `` opens a list and a heading at a line's start; the brackets a link,
     the stars and tildes emphasis and struck text, the tags raw HTML, the
-    pipes a cell; ``\\x00claim0\\x00`` is the shape of a placeholder; the line
-    after the break opens a heading of its own.
+    pipes a cell; ``\\x00claim0\\x00`` is the shape of a placeholder; two
+    backtick runs of unequal length, a backslash before a star and ``&lt;``
+    are what a writer's code span, an escape and a character reference would
+    take instead of showing (:data:`_SHOWN_BEFORE`); the line after the break
+    opens a heading of its own. ``paired`` makes the runs equal, a code span
+    for any writer that keeps one (:data:`PAIRED`).
     """
+    ticks = "``" if paired else "`"
     return (
         f"1. # zH{n}z [zL{n}z](#zT{n}z) **zB{n}z** ~~zS{n}z~~ <u>zU{n}z</u> "
-        f"<img src=zI{n}z> |zP{n}z| \x00claim0\x00 zZ{n}z\n# zN{n}z"
+        f"<img src=zI{n}z> |zP{n}z| \x00claim0\x00 {ticks}zC{n}z`` \\*zK{n}z &lt;zE{n}z "
+        f"zZ{n}z\n# zN{n}z"
     )
+
+
+# What a reader shows before a part's token where the value is printed with
+# all its characters: the backtick run, the backslash and the reference as written.
+_SHOWN_BEFORE = {"C": "`", "K": "\\*", "E": "&lt;"}
+
+# The places whose value carries a balanced backtick pair: a section's text is
+# written with every backtick escaped. A platform sentence elsewhere keeps a
+# balanced pair as a span by its rule (``ctx.inline``), so its value carries none.
+PAIRED = re.compile(r"^report\.sections\[\]\.text$")
+
+# The places a platform sentence carries beside another value, the sentence
+# written by its rule with its spans kept (``ctx.inline``): a backtick run of
+# one value pairs with a run of the same length in the other and the two show
+# as a span. Listed so the scan states it; the backtick checks pass over them.
+SPANS_ACROSS_VALUES = frozenset(
+    f"report.{place}"
+    for place in (
+        "bound_values[].api",
+        "bound_values[].parameter",
+        "limitation_inventory.failed[].entry",
+        "limitation_inventory.failed[].tool",
+        "limitation_inventory.not_offered[].reason",
+        "limitation_inventory.not_offered[].tool",
+        "limitation_inventory.sandbox_entry",
+        "limitation_inventory.sandbox_sections[].name",
+        "limitation_inventory.short_analyses[].detonation",
+        "limitation_inventory.short_analyses[].task",
+        "network.domains[].reason",
+        "network.domains[].resolved_ips[]",
+        "network.ips[].asn",
+        "network.ips[].geo",
+    )
+)
 
 
 class _Tokens:
@@ -191,7 +240,7 @@ class _Tokens:
         return n
 
     def value(self, path: str) -> str:
-        return _payload(self._next(path, "V"))
+        return _payload(self._next(path, "V"), paired=bool(PAIRED.match(path)))
 
     def plain(self, path: str, text: str) -> str:
         return f"{text} zM{self._next(path, 'M')}z"
@@ -281,6 +330,14 @@ def _written(held: Any, path: str, tokens: _Tokens, places: set[str]) -> Any:
     return held
 
 
+# The negotiation keys that print a model's quoted words with the platform's
+# and a tool's text around them, by class: scanned as a model's text here.
+NEGOTIATION_QUOTES = {
+    key: "a model's quoted words; written as text by a later change"
+    for key in ("revision_replacements", "unread_marks", "ledger_facts", "ledger_stated")
+}
+
+
 def _run_summary(tokens: _Tokens) -> dict[str, Any]:
     """The keys the renderers read from ``run_summary``, each value by its provenance."""
 
@@ -300,11 +357,9 @@ def _run_summary(tokens: _Tokens) -> dict[str, Any]:
             # The mediator's and the analysts' quoted words.
             "not_blocking": [m("negotiation.not_blocking[]")],
             "limit_rulings": [m("negotiation.limit_rulings[]")],
-            "revision_replacements": [m("negotiation.revision_replacements[]")],
-            "mediation_notes": [m("negotiation.mediation_notes[]")],
-            "unread_marks": [m("negotiation.unread_marks[]")],
-            "ledger_facts": [m("negotiation.ledger_facts[]")],
-            "ledger_stated": [m("negotiation.ledger_stated[]")],
+            # The platform's note, carrying a provider's or an exception's text.
+            "mediation_notes": [v("negotiation.mediation_notes[]")],
+            **{key: [m(f"negotiation.{key}[]")] for key in NEGOTIATION_QUOTES},
             "dropped_value_counts": [
                 {
                     "agent": v("negotiation.dropped_value_counts[].agent"),
@@ -388,13 +443,14 @@ def _report() -> tuple[MalwareReport, _Tokens]:
     _filled(report)
     tokens = _Tokens()
     _written(report, "report", tokens, _text_places())
-    # The operator's reference, whose target a link holds: a value that would end it.
+    # The operator's reference, whose target a link holds: a value that would end
+    # it, open a tag after it or a title inside it, and is still one link.
     n = tokens._next("report.references[].url", "V")
     report.references = [
         *report.references,
         ExternalReference(
             source=tokens.value("report.references[].source"),
-            url=f"https://ref.example/zL{n}z)<img src=zI{n}z> [zB{n}z](#zT{n}z)",
+            url=f'https://ref.example/zL{n}z)<img src=zI{n}z> (zB{n}z) "zQ{n}z"',
             note=tokens.value("report.references[].note"),
         ),
     ]
@@ -418,6 +474,7 @@ _MADE = {
     "s": "S",
     "del": "S",
     "u": "U",
+    "code": "C",
 }
 _BLOCKS = {"h1", "h2", "h3", "h4", "h5", "h6", "li", "td", "th", "pre", "blockquote"}
 
@@ -467,11 +524,21 @@ def _faults(surface: str, rendered: str, tokens: _Tokens) -> list[str]:
         if head is None:
             continue
         place = tokens.places.get(int(head.group(2)), "?")
+        if head.group(1) == "C" and place in SPANS_ACROSS_VALUES:
+            continue
         if tag in _MADE and head.group(1) == _MADE[tag] and place != "report.references[].source":
             faults.append(f"{surface}: {place} made <{tag}>")
         elif tag in _BLOCKS and head.group(1) in "HNP":
             faults.append(f"{surface}: {place} made <{tag}>")
     shown = " ".join("".join(tree.text).split())
+    for found in re.finditer(r"z([CKE])(\d+)z", shown):
+        before = _SHOWN_BEFORE[found.group(1)]
+        if shown[: found.start()].endswith(before):
+            continue
+        place = tokens.places.get(int(found.group(2)), "?")
+        if found.group(1) == "C" and place in SPANS_ACROSS_VALUES:
+            continue
+        faults.append(f"{surface}: {place} lost {before!r} before its token")
     for first in re.finditer(r"zH(\d+)z", shown):
         n = first.group(1)
         last = shown.find(f"zZ{n}z", first.end())
@@ -498,14 +565,172 @@ def _surfaces(report: MalwareReport) -> dict[str, str]:
     return surfaces
 
 
+# The places whose value no surface prints for this report: a field the
+# renderers do not print, or print only for a value of its kind's shape, which
+# a payload is not. Written by hand from the scan's own run; a listed place
+# that is printed, or an unlisted one that is not, fails the scan.
+NOT_PRINTED = frozenset(
+    f"report.{place}"
+    for place in (
+        "bound_values[].decoder_call",
+        "bound_values[].entry",
+        "bound_values[].function",
+        "bound_values[].imported_as",
+        "bound_values[].inside",
+        "bound_values[].named_by",
+        "bound_values[].offset",
+        "bound_values[].reaches",
+        "bound_values[].role",
+        "bound_values[].role_words",
+        "bound_values[].site",
+        "bound_values[].slot",
+        "bound_values[].tool",
+        "capability_matrix[].domain",
+        "capability_matrix[].evidence_ids[]",
+        "capability_matrix[].independent_layers[]",
+        "capability_matrix[].platforms[]",
+        "capability_matrix[].roots_not_read[]",
+        "capability_matrix[].support",
+        "code_constants[].entry",
+        "code_constants[].first_offset",
+        "code_constants[].meaning",
+        "code_constants[].tool",
+        "code_constants[].value",
+        "consolidated_iocs[].context",
+        "consolidated_iocs[].description",
+        "consolidated_iocs[].evidence_ids[]",
+        "consolidated_iocs[].indicator_type",
+        "consolidated_iocs[].kind",
+        "consolidated_iocs[].observed_in[].detonation",
+        "consolidated_iocs[].observed_in[].launched_with",
+        "consolidated_iocs[].published",
+        "consolidated_iocs[].recovered_by",
+        "consolidated_iocs[].source",
+        "consolidated_iocs[].type",
+        "consolidated_iocs[].value",
+        "detection_signatures[].sample_strings[].identifier",
+        "detection_signatures[].standing",
+        "detection_signatures[].values_left_out[].value",
+        "detection_signatures[].values_left_out[].why",
+        "dynamic.process_tree[].guest_pid",
+        "dynamic.process_tree[].task",
+        "dynamic.registry_mods[].new_value",
+        "dynamic.registry_mods[].pids[]",
+        "dynamic.sandbox_signatures[].marks[]",
+        "dynamic.sandbox_signatures[].observed_in[].detonation",
+        "dynamic.sandbox_signatures[].observed_in[].launched_with",
+        "dynamic.sandbox_signatures[].pids[]",
+        "emulated_strings.partial",
+        "evidence_index[].agent_role",
+        "evidence_index[].agent_tab",
+        "evidence_index[].observed_in[].detonation",
+        "evidence_index[].observed_in[].launched_with",
+        "evidence_index[].source",
+        "front_matter.authors",
+        "front_matter.codename",
+        "front_matter.copyright",
+        "front_matter.license",
+        "front_matter.malware_name",
+        "front_matter.subtitle",
+        "front_matter.team",
+        "identity.platform",
+        "identity.signing.signer_thumbprint",
+        "limitation_inventory.failed[].answered[][]",
+        "limitation_inventory.failed[].error",
+        "limitation_inventory.questions[].agent",
+        "limitation_inventory.questions[].cites[]",
+        "limitation_inventory.questions[].question",
+        "limitation_inventory.questions[].reason",
+        "network.domains[].homograph_target",
+        "network.domains[].kept_by[]",
+        "network.domains[].made_by.disputed[]",
+        "network.domains[].made_by.launcher[]",
+        "network.domains[].made_by.outside[]",
+        "network.domains[].made_by.unlisted[]",
+        "network.domains[].mentioned_by[]",
+        "network.domains[].observed_in[].detonation",
+        "network.domains[].observed_in[].launched_with",
+        "network.ips[].file_only_processes[]",
+        "network.ips[].kept_by[]",
+        "network.ips[].launcher_unsettled_processes[]",
+        "network.ips[].marked_by",
+        "network.ips[].marked_only_processes[]",
+        "network.ips[].mentioned_by[]",
+        "network.ips[].observed_in[].detonation",
+        "network.ips[].observed_in[].launched_with",
+        "network.ips[].outside_processes[]",
+        "network.ips[].unlisted_processes[]",
+        "network.urls[].made_by.disputed[]",
+        "network.urls[].made_by.launcher[]",
+        "network.urls[].made_by.outside[]",
+        "network.urls[].made_by.unlisted[]",
+        "network.urls[].observed_in[].detonation",
+        "network.urls[].observed_in[].launched_with",
+        "reputation[].detections[]",
+        "reputation[].entry_id",
+        "reputation[].first_seen",
+        "reputation[].labels[]",
+        "reputation[].last_seen",
+        "reputation[].link",
+        "reputation[].service",
+        "reputation[].summary",
+        "reputation[].tool",
+        "second_source_reads[].entry",
+        "second_source_reads[].holds[]",
+        "second_source_reads[].standing",
+        "second_source_reads[].tool",
+        "sections[].source_server",
+        "static.api_capabilities_evidence_ids[]",
+        "static.api_capabilities_resolved_evidence_ids[]",
+        "static.api_capability_corpus",
+        "static.delay_imports[].dll",
+        "static.delay_imports[].function",
+        "static.exports[]",
+        "static.imports_partial[]",
+        "static.interesting_strings[].cut_from",
+        "static.packer_hint",
+        "static.sections_partial[]",
+        "ttp_mappings[].absence_sources[]",
+        "ttp_mappings[].evidence_ids[]",
+        "ttp_mappings[].independent_layers[]",
+        "ttp_mappings[].observed_in[].detonation",
+        "ttp_mappings[].observed_in[].launched_with",
+        "ttp_mappings[].retry_only_layers[]",
+        "ttp_mappings[].roots_not_read[]",
+        "ttp_mappings[].support",
+    )
+)
+
+
 def test_no_value_the_platform_did_not_write_makes_structure_on_any_surface() -> None:
     report, tokens = _report()
     faults: list[str] = []
-    printed: set[str] = set()
+    printed: set[int] = set()
     for surface, rendered in _surfaces(report).items():
         faults += _faults(surface, rendered, tokens)
-        printed |= {m.group(2) for m in _TOKEN.finditer(rendered)}
+        printed |= {int(m.group(2)) for m in _TOKEN.finditer(rendered)}
     assert not sorted(set(faults)), "\n".join(sorted(set(faults)))
-    # The scan reaches the report: most values it wrote are printed somewhere.
-    values = {str(n) for n, kind in tokens.kinds.items() if kind == "V"}
-    assert len(values & printed) > len(values) // 3
+    # Each place written is printed somewhere, or listed as one no surface prints.
+    places = {tokens.places[n] for n, kind in tokens.kinds.items() if kind == "V"}
+    shown = {tokens.places[n] for n in printed if n in tokens.places}
+    assert sorted(places - shown - NOT_PRINTED) == []
+    assert sorted(NOT_PRINTED & shown) == []
+    assert NOT_PRINTED <= places
+
+
+def test_the_operator_s_reference_is_one_link_on_every_markdown_surface() -> None:
+    report, tokens = _report()
+    (n,) = [n for n, place in tokens.places.items() if place == "report.references[].url"]
+    for surface, rendered in _surfaces(report).items():
+        if not surface.startswith(("report.md", "bundle.md")):
+            continue
+        tree = _Tree()
+        tree.feed(rendered)
+        targets = [
+            held or ""
+            for tag, attrs, _texts in tree.elements
+            if tag == "a"
+            for name, held in attrs
+            if name == "href"
+        ]
+        assert [t for t in targets if f"zL{n}z" in t and f"zQ{n}z" in t], surface

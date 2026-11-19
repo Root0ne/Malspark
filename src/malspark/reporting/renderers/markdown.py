@@ -2491,8 +2491,10 @@ class MarkdownRenderer:
             # the writing of model prose.
             for sentence in negotiation.get("revision_replacements") or []:
                 lines.append(_prose_item(str(sentence)))
+            # A mediation note is the platform's, carrying a provider's or an
+            # exception's text and no model's words: by the inline rule.
             for sentence in negotiation.get("mediation_notes") or []:
-                lines.append(_prose_item(str(sentence)))
+                lines.append(_item(named(str(sentence))))
             # What the platform recorded of the debate: how many values each
             # revision states nowhere (the claims themselves are in the run
             # summary), the lines the mediator marked not blocking, the marks
@@ -2644,9 +2646,10 @@ class MarkdownRenderer:
         plain = ctx.plain if ctx is not None else _defanged_text
         # A model's claim is quoted by the inline rule and set into its line
         # after the line's own writing, so no character of it is escaped twice.
-        # Its place is marked by a character no text of the record holds, and
-        # every mark is filled in one pass: a value prints its own characters,
-        # never another claim's.
+        # Its place is marked by a run of NULs no text of the record holds,
+        # alone or beside another (:func:`_absent_mark`), and every mark is
+        # filled in one pass: a value prints its own characters, never another
+        # claim's.
         claims: list[str] = []
         held = (states.failed, states.skipped, states.silent) if states is not None else None
         mark = _absent_mark((recorded, held))
@@ -6721,11 +6724,12 @@ def _evidence_body(
         return rows
     if section.kind == "text":
         return [*_fenced(write(section.text)), "", *rows]
-    # The text is the platform's sentence about a tool's answer, quoting its
-    # values as code spans: each of its lines by the rule of such a sentence
-    # (its spans kept, every other character escaped), then the block-start rule.
+    # The text is the platform's sentence about a tool's answer, carrying a
+    # tool's keys and names: each of its lines by the inline rule, every
+    # backtick escaped so no value in it pairs into a span, then the
+    # block-start rule.
     text = "\n".join(
-        _paragraph_line(_emphasis_escaped(write(_escaped_keeping_spans(line))))
+        _paragraph_line(_inline_safe(line, pipes=False, plain=write))
         for line in str(section.text).split("\n")
     )
     return [text, ""] + rows
@@ -7076,41 +7080,38 @@ def _cell(value: Any) -> str:
 
 
 def _absent_mark(record: Any) -> str:
-    """A character no text of ``record`` holds: a NUL where none does, else the next free one.
+    """A run of NULs one longer than all the NULs the texts of ``record`` hold together.
 
-    No line break or tab is a candidate; a record holding every candidate is
-    not a record a run writes.
+    No text of the record holds it, nor any texts of it set side by side, so a
+    place it fences is the renderer's own; a record of any content has one.
     """
-    seen: set[str] = set()
+    held = 0
     stack = [record]
     while stack:
         item = stack.pop()
         if isinstance(item, str):
-            seen.update(item)
+            held += item.count("\x00")
         elif isinstance(item, dict):
             stack.extend(item.keys())
             stack.extend(item.values())
         elif isinstance(item, (list, tuple, set, frozenset)):
             stack.extend(item)
         elif item is not None:
-            seen.update(str(item))
-    return next(
-        chr(code)
-        for code in (*range(0x09), *range(0x0E, 0x20), *range(0xFDD0, 0xFDF0))
-        if chr(code) not in seen
-    )
+            held += str(item).count("\x00")
+    return "\x00" * (held + 1)
 
 
-# What would end a link's target or open a tag inside it.
-_LINK_TARGET_ENDS = re.compile(r"[()<>\s]")
+# What would end a link's target, escape its end, open a title or a tag inside it.
+_LINK_TARGET_ENDS = re.compile(r'[()<>\s\\"]')
 
 
 def _link_target(url: Any) -> str:
     """A target the platform writes into a link, no character of which can end the link.
 
-    A parenthesis, an angle bracket and white space are percent-encoded, so a
-    target the operator configured is one link to that target and never
-    closes it early or carries a tag after it; the link's text is its own.
+    A parenthesis, an angle bracket, white space, a backslash and a double
+    quote are percent-encoded, so a target the operator configured is one link
+    to that target and never closes it early, escapes its closing parenthesis,
+    opens a title or carries a tag after it; the link's text is its own.
     """
     return _LINK_TARGET_ENDS.sub(
         lambda found: "".join(f"%{byte:02X}" for byte in found.group(0).encode()),

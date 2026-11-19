@@ -25,6 +25,9 @@ from typing import Any
 import pytest
 from markdown_it import MarkdownIt
 
+from malspark.analysis.coverage import NEGATIVES_INTRO as COVERAGE_NEGATIVES_INTRO
+from malspark.pipeline.mediation_models import mediator_no_answer_note
+from malspark.reporting.ledger_report import shortened_sentence
 from malspark.reporting.models import (
     DynamicBehavior,
     EvidenceIndexRow,
@@ -47,7 +50,9 @@ from malspark.reporting.renderers.markdown import (
     _code_span,
     _Context,
     _escaped_references,
+    _evidence_body,
     _item,
+    _one_line,
     _paragraph_line,
     _plain_heading,
     _prose_item,
@@ -388,3 +393,127 @@ def test_a_value_s_lookup_is_no_link_and_the_platform_s_reference_stays_one() ->
         rendered = HtmlRenderer._markdown_to_html(markdown)
         assert f'href="{LOOKUP}"' not in rendered
         assert f'href="{own}"' in rendered, layout
+
+
+# ---------------------------------------------------------------------------
+# A section's text, a reference's target, a mediation note, a quoted claim
+# ---------------------------------------------------------------------------
+
+# Section texts carrying a tool's JSON key, a section name or unbalanced
+# backticks, and a platform sentence with a span of its own.
+SECTION_TEXTS = [
+    shortened_sentence(
+        {
+            "shortened": {
+                "/rows`QK1 [l](#t)` and `<img src=x onerror=alert(1)>`": {"omitted": 3, "kept": 2}
+            }
+        }
+    ),
+    "The section carries no `x`y` mutexes.",
+    "a ``` b ` c `` d",
+    "The section carries no `mutexes`.",
+    "two lines\n# heading\n    code\n- item\n```",
+]
+
+
+def _table_section(text: str) -> EvidenceSection:
+    return EvidenceSection(
+        key="probe_table", title="Probe", kind="table", columns=["A"], rows=[["r"]], text=text
+    )
+
+
+@pytest.mark.parametrize("text", SECTION_TEXTS, ids=range(len(SECTION_TEXTS)))
+def test_a_section_s_text_prints_every_character_and_forms_no_span(text: str) -> None:
+    ctx = _context()
+    written = "\n".join(_evidence_body(_table_section(text), ctx.plain))
+    plain = "\n".join(_evidence_body(_table_section("plain"), ctx.plain))
+    for reading, baseline in zip(_readings(written), _readings(plain), strict=True):
+        assert _elements(reading) == _elements(baseline), (text, reading)
+        assert _same_words(text) in _shown(reading), (text, reading)
+
+
+# Operator targets ending in a backslash, escaping the closing parenthesis, or
+# holding a double quote; the last is already percent-encoded. A target with a
+# backslash in its path is no link a reference keeps (:func:`_reference_lookup`)
+# and prints defanged, every character of it shown.
+TARGETS = [
+    ("https://x.example/a\\", "https://x.example/a%5C", False),
+    ("https://x.example/a\\)<img src=x>", "https://x.example/a%5C%29%3Cimg%20src=x%3E", False),
+    ('https://x.example/a" title', "https://x.example/a%22%20title", True),
+    ("https://x.example/a%20%29b", "https://x.example/a%20%29b", True),
+]
+
+
+@pytest.mark.parametrize(("url", "target", "kept"), TARGETS)
+def test_a_reference_target_stays_one_link_and_its_text_loses_no_character(
+    url: str, target: str, kept: bool
+) -> None:
+    report = MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
+        verdict="Malware",
+        references=[ExternalReference(source="Source", url=url, note="note")],
+    )
+    for layout in LAYOUTS:
+        markdown = MarkdownRenderer(layout=layout).render(report)
+        product, raw = _readings(markdown)
+        for reading in (product, raw):
+            assert _elements(reading)["img"] == 0, (layout, url)
+        if kept:
+            for reading in (product, raw):
+                anchors = re.findall(r'<a href="([^"]*)"[^>]*>(.*?)</a>', reading)
+                assert (html.escape(target), "Source") in anchors, (layout, url, anchors)
+        else:
+            shown = target.replace("https://x.example", "hxxps://x[.]example")
+            assert f"[Source]({shown}) — note" in _shown(product), (layout, url)
+
+
+def test_a_mediation_note_carrying_a_provider_s_text_forms_no_structure() -> None:
+    reason = "provider said <img src=x onerror=alert(1)> **b** [l](#t) `c` ~~s~~ <u>u</u>"
+
+    def report(note: str) -> MalwareReport:
+        return MalwareReport(
+            identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
+            verdict="Malware",
+            run_summary={"negotiation": {"rounds_completed": 1, "mediation_notes": [note]}},
+        )
+
+    note = mediator_no_answer_note(reason)
+    for layout in ("bundle", "full"):
+        written = MarkdownRenderer(layout=layout).render(report(note))
+        plain = MarkdownRenderer(layout=layout).render(report(mediator_no_answer_note("plain")))
+        for reading, baseline in zip(_readings(written), _readings(plain), strict=True):
+            assert _elements(reading) == _elements(baseline), (layout, reading)
+            assert _same_words(note) in _shown(reading), layout
+
+
+# Every character a placeholder of a quoted claim could be made of.
+MARK_CHARACTERS = "".join(
+    chr(code) for code in (*range(0x09), *range(0x0E, 0x20), *range(0xFDD0, 0xFDF0))
+)
+
+
+def test_a_coverage_record_holding_every_mark_character_prints_each_value_whole() -> None:
+    kind = f"{MARK_CHARACTERS} \x00claim0\x00 \x00\x00claim0\x00\x00 kind"
+    record = {
+        "v": 1,
+        "tools": [{"tool": "probe", "kind": kind, "calls": 1}],
+        "negatives": [
+            {"agent": "static", "negative": "No mutex zc0z \x00claim1\x00", "coverage": "unknown"},
+            {"agent": "static", "negative": "No pipe zc1z", "coverage": "unknown"},
+        ],
+    }
+    report = MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
+        verdict="Malware",
+        run_summary={"coverage": record},
+    )
+    markdown = MarkdownRenderer().render(report)
+    assert "rendering failed" not in markdown
+    assert COVERAGE_NEGATIVES_INTRO in markdown
+    # A coverage value stays on its line (:func:`_one_line`); every other character is its own.
+    assert _one_line(kind) in markdown
+    lines = markdown.splitlines()
+    (first,) = [line for line in lines if "zc0z" in line]
+    (second,) = [line for line in lines if "zc1z" in line]
+    assert "No mutex zc0z \x00claim1\x00" in first and "zc1z" not in first
+    assert "No pipe zc1z" in second and "zc0z" not in second
