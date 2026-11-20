@@ -555,10 +555,11 @@ class TestAgainstTheSequentialBase:
     out the field code writes (``held_in``) and to list the kind and use words
     of the declared vocabularies: those are the only changes. The tally's
     unresolved rows were re-pinned when a finding came to carry the places of
-    its statements (``statements``): that key is the only change. The Markdown and the HTML
-    were re-pinned when the methodology's clause on the judge's STIX bundle came to be said
-    only from the run's counts of the two bundles (T-780): that clause is the only change, and
-    the requests did not move.
+    its statements (``statements``): that key is the only change. The Markdown and HTML
+    digests were re-pinned for the rules of T-782a and T-780: the mark beside a refused C2
+    endpoint gives the reason of the host test that refused it (T-782a), and the methodology's
+    clause on the judge's STIX bundle is said from the counts of the two bundles (T-780).
+    Those are the only changes, and the requests did not move.
     """
 
     def test_the_requests_and_the_report_are_those_of_the_base(self) -> None:

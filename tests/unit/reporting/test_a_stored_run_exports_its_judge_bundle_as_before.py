@@ -124,13 +124,14 @@ STORED_EXPORTS = {
 # (T-735): in the run summary's retry and mediator lines each backtick, star
 # and backslash the record holds is printed as a character and a pair no
 # longer forms a code span, the only change; the STIX did not change.
-# The Markdown and HTML re-pinned when the context cell of a sandbox address the
-# publish rule places in no tree came to state the sentence of the row's own
-# publish answer (T-811): fifteen §9 cells print "the sandbox report does not
-# say which process made the flows to it" where they printed "the sandbox report
-# does not say which process reached it", the only change; the STIX did not
-# change.
-HAIKU4_RENDERS = ("434411d333e3b9e2", "6f1cd5da97b3e4df", "ff5607de575fb489")
+# The Markdown and HTML re-pinned for the rules of T-780, T-781 and T-811: a platform sentence
+# about every row it speaks of is a count of those rows where they hold an exception, and each cut
+# a page makes to a technique's reason is counted in a line under the ATT&CK section, with where
+# each reason stands whole (T-780); the context cell of a sandbox address the publish rule places
+# in no tree states the sentence of the row's own publish answer (T-811); the reputation header
+# cell names each count the lookup's record holds and states no fraction (T-781). Those are the
+# only changes; the STIX did not change.
+HAIKU4_RENDERS = ("774141b000a547d4", "1b81b27047512cab", "ff5607de575fb489")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
