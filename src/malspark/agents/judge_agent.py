@@ -2429,7 +2429,12 @@ def _history_entry_text(argument: Any, number: int, total: int) -> str:
         finding = str(argument.finding or "")
         if finding.strip():
             out.append(markers_written_out(finding))
-        lines = list(dict.fromkeys([*argument.contradictions, *argument.not_blocking, *unread]))
+        # Unread lines in the order the mediator wrote them, not the set's.
+        lines = list(
+            dict.fromkeys(
+                [*argument.contradictions, *argument.not_blocking, *argument.unread_marks]
+            )
+        )
         if lines:
             out.append("Contradictions:")
             out.extend(listed(lines))

@@ -853,7 +853,8 @@ def _pe_compiler_fingerprint(blob: bytes) -> str | None:
 
     if any("libgcc" in d or "mingw" in d or "cygwin" in d for d in dlls):
         return "MinGW / GCC"
-    py_dll = next((d for d in dlls if d.startswith("python") and d.endswith(".dll")), None)
+    # Of several python libraries, the first by name.
+    py_dll = next((d for d in sorted(dlls) if d.startswith("python") and d.endswith(".dll")), None)
     if py_dll:
         return f"Python (embedded {py_dll})"
 
