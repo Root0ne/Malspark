@@ -1,11 +1,11 @@
 """Print, as JSON, the prompt texts built from one fixture state.
 
-Run as a script by ``test_a_prompt_is_one_text_under_two_hash_seeds.py``,
+Run as a script by ``test_a_prompt_is_one_text_under_every_hash_seed.py``,
 once per hash seed. No model is called and nothing leaves the process: each
 model is a stand-in that records the messages it is sent and answers a fixed
 text. The state is ``written_orders``': four analysts on one debate line, a
 ledger with an image base, rule scans naming two sub-techniques, a mediation
-with lines whose marks were not read, and a PE importing two python libraries.
+with lines whose marks were not read, and a PE importing three python libraries.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import logging
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -138,7 +138,7 @@ def judge_prompts() -> dict[str, list[str]]:
 
     mediator = _Model("No contradictions remain.\n\nCONTRADICTIONS:\nnone\n\nCONFIDENCE: 0.9")
     asyncio.run(
-        JudgeAgent(llm=mediator).mediate(
+        JudgeAgent(llm=cast(Any, mediator)).mediate(
             reports=_reports(),
             history=_mediation_history(),
             isr_reports=state.debate_isrs(),
@@ -148,7 +148,7 @@ def judge_prompts() -> dict[str, list[str]]:
     answer = json.dumps(CREDITED)
     judge = _Model(answer, answer)
     asyncio.run(
-        JudgeAgent(llm=judge).give_verdict(
+        JudgeAgent(llm=cast(Any, judge)).give_verdict(
             reports=_reports(),
             history=_mediation_history(),
             isr_reports=state.debate_isrs(),
@@ -178,10 +178,10 @@ def analyst_chunk() -> dict[str, Any]:
     with tempfile.TemporaryDirectory() as folder:
         sample = Path(folder) / "sample.exe"
         sample.write_bytes(b"MZ" + b"\0" * 510)
-        run = {"static_sample_path": "/data/samples/sample.exe", "sample_path": str(sample)}
+        run: Any = {"static_sample_path": "/data/samples/sample.exe", "sample_path": str(sample)}
         (written,) = state.with_imports(lambda: _augment_static_chunks_with_path([chunk], run))
     model = _Model()
-    StaticAnalyst(llm=model, name="static").analyze_isr(written.content)
+    StaticAnalyst(llm=cast(Any, model), name="static").analyze_isr(written.content)
     return {"chunk": written.content, "prompt": model.sent[:1]}
 
 

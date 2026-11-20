@@ -61,7 +61,9 @@ def corroboration_lists() -> dict[str, Any]:
     said = "; ".join(f"read at {eid}" for eid in CITED) + "; ev_0101; ev_0100; ev_0102"
     # A later statement's roots follow the earlier one's, lower ids or not.
     later = "read at ev_0011 and ev_0002"
-    isr = AgentISR(agent_id="static", domain="static", claims=[_claim(said), _claim(later)])
+    isr = AgentISR(
+        agent_id="static", domain="static", revision_round=0, claims=[_claim(said), _claim(later)]
+    )
     rows = corroboration({"static": isr}, _ledger())
     row = rows.get("T1027") or {}
     return {
@@ -139,8 +141,10 @@ DEBATE_LINE = (
 )
 # Lines whose marks were not read, in the order the mediator wrote them.
 UNREAD = ("zeta reads the key", "alpha reads the key", "mu reads the key", "kappa reads the key")
-# A PE's imports, two python libraries of one name length among them.
+# A PE's imports, three python libraries among them.
 IMPORTS = ("KERNEL32.dll", "python312.dll", "python3.dll", "python311.dll")
+# The interpreter's library beside a library whose name starts with the same word.
+INTERPRETER_AND_EXTENSION = ("pywintypes39.dll", "pythoncom39.dll", "python39.dll")
 
 
 def debate_ledger() -> list[Any]:
@@ -174,6 +178,7 @@ def debate_isrs() -> dict[str, Any]:
         name: AgentISR(
             agent_id=name,
             domain=name,
+            revision_round=0,
             claims=[
                 ClaimEvidence(
                     technique_id="T1027",
@@ -237,16 +242,15 @@ class _Import:
         self.dll = dll.encode()
 
 
-class _Image:
-    """The one part of a parsed PE the toolchain reading looks at: its imports."""
-
-    def __init__(self, data: Any = None, fast_load: bool = False) -> None:
-        self.DIRECTORY_ENTRY_IMPORT = [_Import(dll) for dll in IMPORTS]
-
-
-def with_imports(read: Any) -> Any:
-    """``read()`` with the PE parser answering :data:`IMPORTS` for any image."""
+def with_imports(read: Any, imports: tuple[str, ...] = IMPORTS) -> Any:
+    """``read()`` with the PE parser answering ``imports`` for any image."""
     import pefile
+
+    class _Image:
+        """The one part of a parsed PE the toolchain reading looks at: its imports."""
+
+        def __init__(self, data: Any = None, fast_load: bool = False) -> None:
+            self.DIRECTORY_ENTRY_IMPORT = [_Import(dll) for dll in imports]
 
     held = pefile.PE
     pefile.PE = _Image
@@ -256,10 +260,14 @@ def with_imports(read: Any) -> Any:
         pefile.PE = held
 
 
-def language_line() -> str | None:
+def language_lines() -> list[str | None]:
     from malspark.extractors.sample_identity import _detect_language_or_compiler
 
-    return with_imports(lambda: _detect_language_or_compiler(b"MZ" + b"\0" * 510))  # type: ignore[no-any-return]
+    blob = b"MZ" + b"\0" * 510
+    return [
+        with_imports(lambda: _detect_language_or_compiler(blob), imports)
+        for imports in (IMPORTS, INTERPRETER_AND_EXTENSION)
+    ]
 
 
 def mediation(**fields: Any) -> Any:
@@ -285,7 +293,7 @@ def model_reads() -> dict[str, Any]:
     return {
         "debate_facts": debate_facts(),
         "credit_question": credit_question(),
-        "language_line": language_line(),
+        "language_lines": language_lines(),
         "history_text": history_text(),
     }
 

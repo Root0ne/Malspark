@@ -4,8 +4,8 @@ The debate facts, the judge's credit question, the analysts' language line
 and the judge's history text each turn a set into an order, or pick one
 member of it. A set of strings is iterated differently in each process, so
 each order is a stated function of the members: analyst names longest first,
-then by the name; technique ids sorted; of two python libraries the longest
-name, then by the name; unread lines in the order the mediator wrote them.
+then by the name; technique ids sorted; of several python libraries the
+first by name; unread lines in the order the mediator wrote them.
 ``written_orders.py models`` prints them; it runs here under four seeds, one
 process each.
 """
@@ -78,9 +78,11 @@ def test_the_credit_question_lists_the_sources_of_sorted_sub_techniques() -> Non
         assert "the sources that named T1055 are capa, yara_scan, sigma_match_sandbox —" in message
 
 
-def test_the_language_line_names_the_longest_python_library_then_by_name() -> None:
-    for line in _each_seed("language_line"):
-        assert line == "Python (embedded python311.dll)"
+def test_the_language_line_names_the_first_python_library_by_name() -> None:
+    # The interpreter's own library sorts before a library whose name only
+    # starts with the same word.
+    for lines in _each_seed("language_lines"):
+        assert lines == ["Python (embedded python3.dll)", "Python (embedded python39.dll)"]
 
 
 def test_the_history_text_lists_unread_lines_in_the_order_written() -> None:

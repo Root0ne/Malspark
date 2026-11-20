@@ -3,9 +3,9 @@
 The revision directive an analyst is sent, the mediation and verdict prompts
 the judge is sent (the verdict's retry with its questions included) and the
 static chunk with the analyst's first prompt over it are built from one
-fixture state in two processes, each salting string hashes its own way. A
+fixture state in four processes, each salting string hashes its own way. A
 line whose order or member is taken from a set's iteration order makes the
-two texts differ. ``prompt_texts.py`` builds them; no model is called.
+texts differ. ``prompt_texts.py`` builds them; no model is called.
 """
 
 from __future__ import annotations
@@ -21,12 +21,12 @@ from typing import Any
 import pytest
 
 HELPER = Path(__file__).with_name("prompt_texts.py")
-SEEDS = ("1", "2")
+SEEDS = ("0", "1", "2", "3")
 
 
 @cache
 def _built() -> tuple[dict[str, Any], ...]:
-    """The helper's output per seed, the two processes run at once."""
+    """The helper's output per seed, the four processes run at once."""
     running = [
         subprocess.Popen(  # noqa: S603 - this interpreter and a script of this repository
             [sys.executable, str(HELPER)],
@@ -48,15 +48,15 @@ def _built() -> tuple[dict[str, Any], ...]:
 @pytest.mark.parametrize(
     ("part", "carries"),
     [
-        # Each text carries the line a set used to order, so an equal pair
-        # is not a pair of texts that lost it.
+        # Each text carries the line a set used to order, so equal texts
+        # are not texts that lost it.
         ("debate_directive", "is listed in ev_0002"),
         ("judge.mediation", "states match_count = 3"),
         ("judge.verdict", "the sources that named T1055 are"),
         ("analyst", "Python (embedded"),
     ],
 )
-def test_the_prompt_is_one_text_under_both_seeds(part: str, carries: str) -> None:
+def test_the_prompt_is_one_text_under_every_seed(part: str, carries: str) -> None:
     texts = []
     for built in _built():
         held: Any = built
@@ -64,7 +64,8 @@ def test_the_prompt_is_one_text_under_both_seeds(part: str, carries: str) -> Non
             held = held[key]
         texts.append(json.dumps(held, indent=1))
     assert carries in texts[0]
-    assert texts[0] == texts[1]
+    for seed, text in zip(SEEDS, texts, strict=True):
+        assert text == texts[0], f"seed {seed} differs from seed {SEEDS[0]}"
 
 
 def test_the_verdict_s_retry_and_history_are_built() -> None:
