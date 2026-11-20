@@ -201,7 +201,9 @@ def collect(
         if asserting_source(entry) is None:
             continue
         tool = bare_name(getattr(entry, "tool", ""))
-        for tid in asserted_techniques(entry):
+        # Sorted: the order rows are first added in is the order the judge's
+        # credit question lists a parent's sources in.
+        for tid in sorted(asserted_techniques(entry)):
             if tid not in invalid:
                 add(tid, tool, None)
 
