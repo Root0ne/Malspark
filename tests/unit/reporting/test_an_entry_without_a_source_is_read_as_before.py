@@ -292,11 +292,12 @@ BENCHMARK = Path(".superpowers") / "sdd" / "mandate-2026-09-17" / "benchmark" / 
 # the one dev drew, but for the capture summary's conversation lines and their heading,
 # written by the summary's own line (T-710): these records counted the packets toward each
 # peer alone, so each line says the peer was sent them and that what it sent and the other
-# end are not recorded. Every other line of the capture summary is the one dev drew.
+# end are not recorded. Every other line of the capture summary is the one dev drew. The
+# tool's indicator table heads its first column with whose kind it prints (T-778).
 STORED_REBUILDS = {
     "run7": (89, "f5f95c2eece28f65"),
-    "run5": (102, "68747843c60c739d"),
-    "run4": (92, "4d22957ad99361a5"),
+    "run5": (102, "b5777c8407fa49f2"),
+    "run4": (92, "8d8792ba1b8140d8"),
     "local8": (40, "8d89c8149fb17c4f"),
 }
 # Each run's table of the rules its undeclared tool's answers name as matched: each row's

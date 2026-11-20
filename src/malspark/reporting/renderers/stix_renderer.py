@@ -2571,12 +2571,17 @@ _EMAIL_RE = re.compile(r"^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]{1,64}@([A-Za-z0-9.\-]{
 def email_is_publishable(value: Any) -> bool:
     """Whether this literal is an address at all, and one that could exist.
 
-    A string sweep reads any run of bytes with an ``@`` in it as a mailbox:
-    ``aes128-gcm@openssh.com`` is an SSH algorithm identifier and
-    ``z@D.setdefault`` is a fragment of Python source. The syntax question
-    catches what is not an address; the domain part goes through the same host
-    rule a domain indicator does, so a mailbox at a name nothing outside the
-    analysed network could answer for is refused the way that name would be.
+    A string sweep reads any run of bytes with an ``@`` in it as a mailbox.
+    The syntax question catches what has no address's form (a local part that
+    starts or ends with a dot, a domain part holding a character no host
+    name holds); the domain part goes through the same host rule a domain
+    indicator does, so a mailbox at a name nothing outside the analysed
+    network could answer for is refused the way that name would be. A text of
+    an address's form passes both whatever it is: ``aes128-gcm@openssh.com``,
+    an SSH algorithm identifier, and ``z@D.setdefault``, a fragment of Python
+    source, are each answered ``True``. Whether anything in the run reads such
+    a text as a mailbox is asked of the IOC table's row
+    (``reporting.string_row_form``).
     """
     return email_failure(value) == ""
 

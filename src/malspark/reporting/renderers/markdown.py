@@ -323,6 +323,9 @@ LIMITATIONS_TITLE = "Limitations and analysis notes"
 INVENTORY_HEADING = "Measured limitations"
 ANALYST_LIMITATIONS_TITLE = "Limitations"
 INDICATORS_TITLE = "Indicators of compromise"
+# The §9 table of the rows read from the file's strings that no reader the
+# rule checks holds as the network value their form has (``reporting.string_row_form``).
+FORM_ROWS_TITLE = "Text with a network value's form, read from the file"
 STATIC_TITLE = "Static properties"
 
 
@@ -1682,7 +1685,8 @@ class MarkdownRenderer:
                 lines.append(
                     _row(
                         _code_span(value),
-                        ctx.value(ioc.kind),
+                        # A form row of the IOC table prints its form here too.
+                        ctx.value(_form_of(ioc, ctx.forms) or ioc.kind),
                         ctx.value(ioc.notes) if ioc.notes else "-",
                         published,
                     )
@@ -1838,10 +1842,14 @@ class MarkdownRenderer:
     def _section_indicators(self, report: MalwareReport, ctx: _Context) -> str:
         lines = [_heading(9, INDICATORS_TITLE, PER_ROW), ""]
         host = [row for row in ctx.iocs if row.kind not in _NETWORK_KINDS]
-        network = [row for row in ctx.iocs if row.kind in _NETWORK_KINDS]
+        every_network = [row for row in ctx.iocs if row.kind in _NETWORK_KINDS]
+        # A row read from the file's strings that nothing in the run reads as
+        # a network value has that value's form only: its own table, after.
+        network = [row for row in every_network if not _form_of(row, ctx.forms)]
+        formed = [row for row in every_network if _form_of(row, ctx.forms)]
         ta = report.technical_analysis
         identifiers = list(ta.host_identifiers) if ta is not None else []
-        if not host and not network and not identifiers:
+        if not host and not every_network and not identifiers:
             lines.extend(["No indicator was extracted in this run.", ""])
         if host:
             lines.extend([_subheading("", "File and host indicators", PER_ROW), ""])
@@ -1850,7 +1858,8 @@ class MarkdownRenderer:
             for row in host:
                 lines.append(
                     _row(
-                        ctx.value(row.type),
+                        # A path the extractor took from a longer string says so.
+                        ctx.value(_form_of(row, ctx.forms) or row.type),
                         # A file or host value that holds a network value
                         # ("//relay.example.net/path/" read as a path) holds
                         # it defanged; any other is printed as it is.
@@ -1879,17 +1888,19 @@ class MarkdownRenderer:
             lines.append("")
         if identifiers:
             lines.extend(_host_identifier_table(identifiers, ctx))
-        if network:
+        for title, rows_of in (("Network indicators", network), (FORM_ROWS_TITLE, formed)):
+            if not rows_of:
+                continue
             reputation = ctx.reputations
-            lines.extend([_subheading("", "Network indicators", PER_ROW), ""])
+            lines.extend([_subheading("", title, PER_ROW), ""])
             head = ["Type", "Value (defanged)", "Port/Path", "Context", "Source", "Published"]
             if reputation:
                 head.append("Reputation (post-hoc enrichment)")
             lines.append(_row(*head))
             lines.append(_divider(len(head)))
-            for row in network:
+            for row in rows_of:
                 cells = [
-                    ctx.value(row.type),
+                    ctx.value(_form_of(row, ctx.forms) or row.type),
                     _code_span(defang(row.value, row.kind or "")),
                     _port_or_path(row, report),
                     "; ".join(
@@ -2997,6 +3008,9 @@ class _Context:
         read = _indicator_rows(report, self._row_words.place)
         self._table_read = read is not None
         self.iocs = self._row_words.rows(read or [])
+        # The printed type of each row read from the file's strings that
+        # nothing in the run reads as its kind; the kind stays every key.
+        self.forms = _string_row_forms(report, self.iocs)
         indicators = run_network_values(report, self.iocs)
         self.indicators = indicators
         run_values = ProseDefanger(indicators)
@@ -6325,6 +6339,35 @@ def _published_in(ctx: _Context) -> Callable[[Any], str]:
         return ""
 
     return _where
+
+
+def _string_row_forms(report: MalwareReport, rows: list[ConsolidatedIOC]) -> dict[Any, str]:
+    """The form rows of the IOC table and their printed types (``string_row_form``); ``{}`` unread.
+
+    A table whose forms cannot be read prints each row's type as the table
+    gives it.
+    """
+    from malspark.reporting.string_row_form import string_row_forms
+
+    try:
+        return string_row_forms(report, rows)
+    except Exception as exc:  # noqa: BLE001 — the types are then printed as the table gives them
+        logger.debug("markdown: the strings rows' forms were not read (%s).", exc)
+        return {}
+
+
+def _form_of(row: Any, forms: Mapping[Any, str]) -> str:
+    """The printed type of a form row of the IOC table, ``""`` for any other row.
+
+    ``row`` is a row of the table or a string of the file, read by its kind and
+    value; a table row of another source than the file's strings has none.
+    """
+    from malspark.reporting.ledger_projection import value_key
+
+    if not forms or str(getattr(row, "source", None) or "strings") != "strings":
+        return ""
+    kind = str(row.kind or "")
+    return forms.get((kind, value_key(kind, row.value)), "")
 
 
 def _port_or_path(row: ConsolidatedIOC, report: MalwareReport) -> str:

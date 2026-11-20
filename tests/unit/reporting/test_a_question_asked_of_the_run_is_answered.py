@@ -547,11 +547,11 @@ class TestTheReport:
         # type an export carries it under (T-716); the Markdown did not.
         # The hostile Markdown re-pinned when a tool's section title came to be
         # written by the inline rule (T-735): its "|" gains a backslash, and the
-        # HTML read from it did not change; the dump did not move.
-        # The Markdown re-pinned when a platform sentence about every row came to be a count of
-        # the rows it speaks of where they hold an exception (T-780): the sandbox sentences,
-        # the tool servers line and the judge's bundle clause are the only change; the dump did
-        # not move.
+        # HTML read from it did not change; the dump did not move. Both re-pinned
+        # when the tool's indicator table came to head its first column with whose
+        # kind it prints (T-778): that header is the only change to the dump and to
+        # the rich Markdown; the hostile Markdown also prints its strings-only name
+        # as a dotted name, in §9's table of such rows and in the strings table.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the

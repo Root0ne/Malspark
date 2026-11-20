@@ -724,7 +724,8 @@ def _iocs(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -> None:
         "iocs",
         "Indicators recovered from the sample",
         "table",
-        columns=["Kind", "Value", "Notes", "Evidence"],
+        # The kind each tool gave its row, which the IOC table's type may not repeat.
+        columns=["Kind (as the tool typed it)", "Value", "Notes", "Evidence"],
     )
     for row in rows:
         if not isinstance(row, dict):

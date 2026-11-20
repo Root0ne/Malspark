@@ -294,7 +294,7 @@
  },
  {
   "columns": [
-   "Kind",
+   "Kind (as the tool typed it)",
    "Value",
    "Notes",
    "Evidence"
