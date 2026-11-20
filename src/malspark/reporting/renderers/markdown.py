@@ -4168,9 +4168,10 @@ _TAG_SPACE = re.compile(r"[\t\n\f\r ]*+")
 _ATTRIBUTE_NAME_END = re.compile(r"[\t\n\f\r />=]")
 _UNQUOTED_VALUE_END = re.compile(r"[\t\n\f\r >]")
 # The tags that change where the platform's own links lead, by name: a base that names a
-# target for every relative link, and a meta element whose http-equiv is "refresh".
+# target for every relative link, and a meta element carrying an http-equiv, whatever its
+# value (one of them refreshes the page to another address).
 _RETARGETING_TAG = "base"
-_REFRESH_TAG = "meta"
+_EQUIV_TAG = "meta"
 # A closing tag.
 _TAG_CLOSING = re.compile(r"</([A-Za-z][A-Za-z0-9-]*)\s*>")
 # How far a link's target is read: one longer is taken to reach the bundle, so its
@@ -4268,7 +4269,10 @@ class _TagReader:
     reading reaches a place between two attributes that an earlier one has read from, it
     takes that reading's result, so no part of the text is read twice in one state. A tag
     the text ends in inside a quoted value is not read safely: what ends it lies past the
-    text, so its ``<`` is written as text (:func:`_hand_links`).
+    text, so its ``<`` is written as text (:func:`_hand_links`). The values it compares are
+    read as a browser decodes them (:func:`_into_the_bundle`). ``steps`` counts its work:
+    each tag and each place it reads from, and each character of a run of white space or
+    of a value it reads.
     """
 
     def __init__(self, text: str) -> None:
@@ -4286,9 +4290,21 @@ class _TagReader:
         }
         # From a place between two attributes: where the tag ends, whether it ends inside
         # a quoted value, whether a value after the place reaches the bundle or a note's
-        # anchor, whether an attribute after it is ``http-equiv="refresh"``, and whether
-        # one is an ``href``.
+        # anchor, whether an attribute after it is an ``http-equiv``, and whether one is an
+        # ``href``.
         self._from: dict[int, tuple[int, bool, bool, bool, bool]] = {}
+        self.steps = 0
+
+    def _run(self, run: re.Pattern[str], at: int) -> int:
+        """Where ``run`` ends from ``at`` (:func:`_run_end`), its characters counted."""
+        end = _run_end(run, self.text, at)
+        self.steps += end - at
+        return end
+
+    def _reaches(self, value: str) -> bool:
+        """Whether ``value`` reaches the bundle or a note's anchor, its characters counted."""
+        self.steps += len(value)
+        return _into_the_bundle(value)
 
     def _next(self, key: str, at: int) -> int:
         """The first place at or after ``at`` where ``key``'s character stands, else the end."""
@@ -4302,6 +4318,7 @@ class _TagReader:
         bundle or to a note's anchor: a value that reaches one, or a tag that changes
         where the platform's links lead."""
         text, size = self.text, self.size
+        self.steps += 1
         at = self._next("name", start + 1)
         name = text[start + 1 : at].lower() if at - start <= 64 else ""
         passed: list[list[Any]] = []
@@ -4311,8 +4328,9 @@ class _TagReader:
             if known is not None:
                 tail = known
                 break
+            self.steps += 1
             passed.append([at, False, False, False])
-            at = _run_end(_TAG_GAP, text, at)
+            at = self._run(_TAG_GAP, at)
             if at >= size:
                 tail = (size, False, False, False, False)
                 break
@@ -4322,16 +4340,17 @@ class _TagReader:
             first = at
             at = self._next("attribute", at + 1)
             attribute = text[first:at].lower() if at - first in (4, 10) else ""
+            passed[-1][2] = passed[-1][2] or attribute == "http-equiv"
             passed[-1][3] = passed[-1][3] or attribute == "href"
-            equals = _run_end(_TAG_SPACE, text, at)
+            equals = self._run(_TAG_SPACE, at)
             if equals >= size or text[equals] != "=":
                 at = equals
                 continue
-            at = _run_end(_TAG_SPACE, text, equals + 1)
+            at = self._run(_TAG_SPACE, equals + 1)
             if at < size and text[at] in "\"'":
                 close = self._next(text[at], at + 1)
                 value = text[at + 1 : close]
-                passed[-1][1] = passed[-1][1] or _into_the_bundle(value)
+                passed[-1][1] = self._reaches(value) or passed[-1][1]
                 if close >= size:
                     tail = (size, True, False, False, False)
                     break
@@ -4339,15 +4358,13 @@ class _TagReader:
             else:
                 end = self._next("unquoted", at)
                 value = text[at:end]
-                passed[-1][1] = passed[-1][1] or _into_the_bundle(value)
+                passed[-1][1] = self._reaches(value) or passed[-1][1]
                 at = end
-            if attribute == "http-equiv" and value.strip().lower() == "refresh":
-                passed[-1][2] = True
-        end, open_quote, reaches, refresh, href = tail
-        for place, reached, refreshed, named in reversed(passed):
-            reaches, refresh, href = reaches or reached, refresh or refreshed, href or named
-            self._from[place] = (end, open_quote, reaches, refresh, href)
-        leads = reaches or (name == _RETARGETING_TAG and href) or (name == _REFRESH_TAG and refresh)
+        end, open_quote, reaches, equiv, href = tail
+        for place, reached, carried, named in reversed(passed):
+            reaches, equiv, href = reaches or reached, equiv or carried, href or named
+            self._from[place] = (end, open_quote, reaches, equiv, href)
+        leads = reaches or (name == _RETARGETING_TAG and href) or (name == _EQUIV_TAG and equiv)
         return name, end, not open_quote, leads
 
 
@@ -4363,11 +4380,11 @@ def _hand_links(text: str) -> list[int]:
     """Where ``text`` opens a link into the bundle or to a note's anchor: the ``]`` before
     such a target, and the ``<`` of a tag (:class:`_TagReader`) one of whose values holds
     one or that changes where the platform's links lead (a base with an ``href``, a meta
-    refresh), escaped by a backslash or not: a block another text left open makes a
-    backslash escape nothing there, which no text can know. A tag not read safely and
-    holding none counts too, if it is escaped only inside an HTML block of its own text.
-    With it, the first closing tag of its name after it, which a reader of raw HTML would
-    take too."""
+    with an ``http-equiv``), escaped by a backslash or not: a block another text left open
+    makes a backslash escape nothing there, which no text can know. A tag not read safely
+    and holding none counts too, if it is escaped only inside an HTML block of its own
+    text. With it, the first closing tag of its name after it, which a reader of raw HTML
+    would take too."""
     places: list[int] = []
     at = text.find("]")
     while at != -1:

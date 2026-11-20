@@ -133,8 +133,10 @@ class _Tags(HTMLParser):
         if tag in ("sup", "img", "base"):
             self.found[f"<{tag}>"] += 1
         held = dict(attrs)
-        if tag == "meta" and (held.get("http-equiv") or "").strip().lower() == "refresh":
-            self.found["<meta refresh>"] += 1
+        if tag == "meta" and "http-equiv" in held:
+            self.found["<meta http-equiv>"] += 1
+            if (held["http-equiv"] or "").strip().lower() == "refresh":
+                self.found["<meta refresh>"] += 1
         for name, value in attrs:
             if name in _TARGETS and value is not None:
                 self.found[value] += 1
@@ -452,42 +454,86 @@ def _second_key_finding(report: MalwareReport, text: str) -> None:
     report.key_findings[1].text = text
 
 
-CROSSINGS: dict[str, tuple[Callable[[MalwareReport, str], None], ...]] = {
-    "two sections": (_set_section_prose, _second_section),
-    "two list items": (_set_key_finding, _second_key_finding),
-    "a cell after a section": (_set_section_prose, _set_table_cell),
+# The text that leaves the block open, by where it is set, and every later text the
+# tag can stand in: a later section, a later list item and each other kind of text.
+OPENERS = {"section prose": _set_section_prose, "key finding": _set_key_finding}
+LATER: dict[str, Callable[[MalwareReport, str], None]] = {
+    "later section": _second_section,
+    "later list item": _second_key_finding,
+    **PLACES,
 }
+CROSSINGS = [(opener, later) for opener in OPENERS for later in LATER if later != opener]
+# The texts the value writer prints.
+_VALUES = ("note", "quoted reason")
+# The tag escaped by a backslash and as written.
+_ANCHORS = [_ESCAPED_ANCHOR, _ESCAPED_ANCHOR.replace("\\<", "<")]
 
 
-@pytest.mark.parametrize("crossing", CROSSINGS)
-def test_a_block_one_text_leaves_open_makes_no_later_tag_live(crossing: str) -> None:
-    first, second = CROSSINGS[crossing]
+@pytest.mark.parametrize("anchor", _ANCHORS, ids=["escaped", "bare"])
+@pytest.mark.parametrize(("opener", "later"), CROSSINGS)
+def test_a_block_one_text_leaves_open_makes_no_later_tag_live(
+    opener: str, later: str, anchor: str
+) -> None:
     held, plain = rich_report(), rich_report()
-    for report, text in ((held, _ESCAPED_ANCHOR), (plain, "zA plain zB")):
-        first(report, _OPEN_BLOCK)
-        second(report, text)
+    for report, text in ((held, anchor), (plain, "zA plain zB")):
+        OPENERS[opener](report, _OPEN_BLOCK)
+        LATER[later](report, text)
     baseline = _surfaces(plain)
     printed = 0
     for surface, rendered in _surfaces(held).items():
-        assert not _links(rendered) - _links(baseline[surface]), (crossing, surface)
+        assert not _links(rendered) - _links(baseline[surface]), (opener, later, surface)
         for found in re.finditer(r"zA (.*?) zB", _shown(rendered)):
             printed += 1
-            assert found.group(1) == '<a href="evidence-bundle.html#cite-1">1</a>', (
-                crossing,
+            shown = found.group(1)
+            if later in _VALUES:
+                # A value keeps its writing, a backslash included; inside the block the
+                # other text left open a reader of raw HTML shows its escapes too.
+                shown = shown.replace("\\", "")
+                assert shown.startswith('<a href="evidence-bundle.html#cite-1"'), (
+                    opener,
+                    later,
+                    surface,
+                    found.group(1),
+                )
+                continue
+            assert shown == '<a href="evidence-bundle.html#cite-1">1</a>', (
+                opener,
+                later,
                 surface,
-                found.group(1),
+                shown,
             )
-    assert printed, crossing
+    assert printed, (opener, later)
 
+
+# A meta element carrying an http-equiv, whatever its value: written with a character
+# reference, padded with a form feed, its name in upper case, with no value, another value.
+EQUIV_METAS = [
+    '<meta http-equiv="&#114;efresh" content="0;url=evidence-bundle.html#cite-1">',
+    '<meta http-equiv="&#x72;efres&#104" content="0;url=x">',
+    "<meta http-equiv=&#82;EFRESH content=0>",
+    '<meta http-equiv="\frefresh\f" content="0;url=x">',
+    '<meta HTTP-EQUIV="refresh" content="0;url=x">',
+    '<meta http-equiv content="0;url=x">',
+    "<meta http-equiv>",
+    '<meta http-equiv="content-type" content="text/html">',
+]
 
 # A tag that changes where the platform's own links lead: a base for every relative link,
-# a meta refresh; upper-case, attributes in another order.
+# a meta refresh; upper-case, attributes in another order; every meta with an http-equiv.
 RETARGETING = [
     '<base href="sub/">',
     "<BASE TARGET=_top HREF='x/'>",
     '<meta http-equiv="refresh" content="0;url=evidence-bundle.html#cite-1">',
     '<META CONTENT="0" HTTP-EQUIV=Refresh>',
+    *EQUIV_METAS,
 ]
+
+
+@pytest.mark.parametrize("tag", EQUIV_METAS, ids=range(len(EQUIV_METAS)))
+def test_a_meta_with_an_http_equiv_has_its_opening_written_as_text(tag: str) -> None:
+    from malspark.reporting.renderers.markdown import _hand_links_unlinked
+
+    assert _hand_links_unlinked(f"zA {tag} zB") == f"zA &lt;{tag[1:]} zB", tag
 
 
 @pytest.mark.parametrize("tag", RETARGETING, ids=range(len(RETARGETING)))
@@ -501,9 +547,16 @@ def test_a_tag_that_retargets_links_is_its_characters_on_every_surface(tag: str,
         found = _links(rendered)
         assert not found["<base>"] and not found["<meta refresh>"], (tag, surface)
         assert not found - _links(baseline[surface]), (tag, surface)
+        owed = " ".join(tag.split())
         for shown in re.finditer(r"zA (.*?) zB", _shown(rendered)):
             printed += 1
-            assert shown.group(1) == tag, (tag, surface, shown.group(1))
+            # Inside an HTML block of the text a reader of raw HTML shows the escape of
+            # each "&" and reads the character reference after it.
+            assert shown.group(1) == owed or (
+                "<div>" in wrap
+                and surface.endswith(".md raw")
+                and shown.group(1).replace("\\", "") == html.unescape(owed)
+            ), (tag, surface, shown.group(1))
     assert printed, tag
 
 
@@ -522,30 +575,54 @@ def test_an_ordinary_tag_is_left_as_written() -> None:
         assert _hand_links_unlinked(text) == text, text
 
 
-def _best_time(text: str) -> float:
-    import time
+def _steps(text: str, monkeypatch: pytest.MonkeyPatch) -> tuple[int, str]:
+    """The steps the tag reader takes over ``text`` in the closing pass, and its result."""
+    from malspark.reporting.renderers import markdown
 
-    from malspark.reporting.renderers.markdown import _hand_links_unlinked
+    readers: list[markdown._TagReader] = []
 
-    best = float("inf")
-    for _ in range(5):
-        started = time.perf_counter()
-        _hand_links_unlinked(text)
-        best = min(best, time.perf_counter() - started)
-    return best
+    class _Counted(markdown._TagReader):
+        def __init__(self, text: str) -> None:
+            super().__init__(text)
+            readers.append(self)
 
-
-# Ordinary prose with tags, emphasis and links, the yardstick a hostile text is timed by.
-_ORDINARY = "word <b>bold</b> [x](y) "
+    monkeypatch.setattr(markdown, "_TagReader", _Counted)
+    written = markdown._hand_links_unlinked(text)
+    return sum(reader.steps for reader in readers), written
 
 
-@pytest.mark.parametrize("unit", ["<", "<a =", '<a href="', "<a x='", "<<<<a", "<a<a "])
-def test_the_pass_costs_time_linear_in_the_text_s_length(unit: str) -> None:
-    # Ratios of the best of five runs, not seconds: a text four times as long takes less
-    # than six times as long, and no text takes many times what ordinary prose of its
-    # length takes, as a reading of every tag to a fixed bound would.
-    small, large = _best_time(unit * 5000), _best_time(unit * 20000)
-    assert large < 6 * small + 0.02, (unit, small, large)
-    length = len(unit) * 20000
-    ordinary = _best_time((_ORDINARY * (length // len(_ORDINARY) + 1))[:length])
-    assert large < 40 * ordinary + 0.02, (unit, large, ordinary)
+def _long_value(n: int) -> str:
+    # One tag whose quoted value runs long, then real tags, each read after it.
+    return '<span title="' + "x" * n + '">' + '<a href="#note-1">1</a> ' * (n // 25)
+
+
+# The shapes that cost a reading of every tag to a fixed bound or of each tag to the end
+# of the text the most, each at n and 4n units.
+SHAPES: dict[str, Callable[[int], str]] = {
+    "<": lambda n: "<" * n,
+    "<a =": lambda n: "<a =" * n,
+    '<a href="': lambda n: '<a href="' * n,
+    "<a x='": lambda n: "<a x='" * n,
+    "<<<<": lambda n: "<<<<" * n,
+    "<<<<a": lambda n: "<<<<a" * n,
+    "<a<a ": lambda n: "<a<a " * n,
+    "long value": _long_value,
+}
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_the_tag_reader_takes_steps_linear_in_the_text_s_length(
+    shape: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Steps counted, not seconds: the count is the same on any machine under any load. A
+    # text four times as long takes at most four times the steps, and no text more steps
+    # than a few per character, as a reading of every tag to a fixed bound or to the end
+    # of the text would.
+    small_text, large_text = SHAPES[shape](5000), SHAPES[shape](20000)
+    small, _ = _steps(small_text, monkeypatch)
+    large, written = _steps(large_text, monkeypatch)
+    assert large <= 4 * small + 256, (shape, small, large)
+    assert large <= 4 * len(large_text), (shape, large, len(large_text))
+    if shape == "long value":
+        # The tags after the long value are still read: each leads to a note's anchor.
+        assert written.count('&lt;a href="#note-1">') == 20000 // 25, shape
