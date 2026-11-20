@@ -2,13 +2,17 @@
 
 A scan, not a list of examples. The text places of ``MalwareReport`` are read
 from the model by reflection (:func:`_text_places`); each is of the provenance
-:data:`PROVENANCE` declares for it: platform text (``P``), a model's text
-(``M``) and mixed text (``X``, exactly the places :data:`MIXED_TEXT` lists)
-are listed there by name, and every other place is the sample's, a
+:data:`PROVENANCE` declares for it: platform text (``P``) and a model's text
+(``M``) are listed there by name, and every other place is the sample's, a
 tool's, a sandbox's or the operator's, so a new field is scanned without this
-file changing. The report is the recorded run of ``_report_shapes`` with every
-empty text place filled from its type (:func:`_filled`); every text of such a
-provenance then carries a payload with a token of its own (:func:`_payload`).
+file changing. A platform sentence quoting a model's words, alone or with a
+value, as one string, is written as text and scanned as a value
+(:data:`QUOTED_WORDS`); no place is of a mixed class (:data:`MIXED_TEXT`). A
+model's statement printed as its own list item or block under a platform
+heading is that model's prose (:data:`BODY_PROSE`).
+The report is the recorded run of ``_report_shapes`` with every empty text
+place filled from its type (:func:`_filled`); every text of such a provenance
+then carries a payload with a token of its own (:func:`_payload`).
 
 What comes from reflection: the text places of the schema and the values
 written into them. What is written by hand: :data:`PROVENANCE`; the free
@@ -16,10 +20,10 @@ mappings, which have no place in the schema — the tool and sandbox records
 (:data:`FREE_RECORDS`, written under the keys the recorded run holds) and the
 ``run_summary`` keys (:func:`_run_summary`, the keys the renderers' verdict,
 run, method and limitation sections read, each with the provenance of its
-value: the mediator's and the analysts' quoted words, the negotiation keys
-listed in :data:`NEGOTIATION_QUOTES` and a negative claim are a model's, and a
-validation finding's message is mixed text; each carries a plain token of its
-own); the states a place is printed in only
+value: the platform's sentences quoting the mediator's and the analysts'
+words, the negotiation keys, a negative claim, a validation finding's message
+and a retry's sentences are values, each listed in :data:`QUOTED_WORDS`); the
+states a place is printed in only
 under a condition (:func:`_states`); and the list of places no state prints
 (:data:`NOT_PRINTED`). A key or a record the hand lists miss is not scanned.
 
@@ -83,7 +87,7 @@ PROVENANCE: list[tuple[str, str]] = [
     (
         r"^report\.(ttp_mappings|capability_matrix)\[\]\.(technique_id|technique_name|tactic"
         r"|tactic_name|contributing_layers\[\]|sources\[\]|evidence_roots\[\]"
-        r"|confidence_source|not_published)$",
+        r"|confidence_source)$",
         "P",
     ),
     (r"^report\.identity\.hashes\.", "P"),
@@ -91,9 +95,19 @@ PROVENANCE: list[tuple[str, str]] = [
     (r"^report\.references\[\]\.url$", "P"),
     # The operator's question: a value; the answer to it is a model's.
     (r"^report\.question_answers\[\]\.question$", "V"),
-    # Mixed text (:data:`MIXED_TEXT`): the platform's words, a model's quoted
-    # words and a value nobody wrote here, arriving as one string.
-    (r"^report\.question_answers\[\]\.checks\[\]$", "X"),
+    # A platform check of the answer: the platform's words, a model's quoted
+    # words and a value nobody wrote here, as one string written as text.
+    (r"^report\.question_answers\[\]\.checks\[\]$", "V"),
+    # A status and the judge's reason in one cell, and a note that opens with the
+    # platform's words: the platform's words and a model's quoted words as one string,
+    # written as text.
+    (r"^report\.capability_matrix\[\]\.(not_published|note)$", "V"),
+    # The label of a flagged sentence's mark: the platform's words, a judge's quoted
+    # note among them, as one string written as text.
+    (r"^report\.flagged_statements\[\]\.label$", "V"),
+    # The names the platform's sentence says the body never names, read off an
+    # analyst's claim: each a value in the platform's sentence, written as text.
+    (r"^report\.claims_not_discussed\[\]\.missing\[\]$", "V"),
     # A model's text: the judge's, the analysts', the report model's.
     (r"^report\.capability_matrix\[\]\.statements\[\]$", "M"),
     (
@@ -134,15 +148,52 @@ def provenance(path: str) -> str:
     return next((kind for rule, kind in _RULES if rule.search(path)), "V")
 
 
-# The places of mixed text (``X``): one string holding the platform's words, a
-# model's quoted words and, for some kinds, a value nobody wrote here. Such a
-# string is written whole by the value writer in the change that writes a
-# model's quoted words as text; until then each is printed as it is and is
-# scanned as a model's text. The class holds these places and no other.
-MIXED_TEXT = frozenset(
+# The places of mixed text (``X``): none. A string holding the platform's
+# words, a model's quoted words and a value nobody wrote here is written whole
+# as text, as a value is; the class stays empty.
+MIXED_TEXT: frozenset[str] = frozenset()
+
+# Each place where a platform sentence quotes a model's words, alone or with a
+# value, as one string: written as text, so each is scanned with a value's
+# payload and is printed in some state.
+QUOTED_WORDS = frozenset(
     {
         "report.question_answers[].checks[]",
+        "report.capability_matrix[].not_published",
+        "report.capability_matrix[].note",
+        *(
+            f"report.run_summary.negotiation.{key}[]"
+            for key in (
+                "not_blocking",
+                "limit_rulings",
+                "mediation_notes",
+                "revision_replacements",
+                "unread_marks",
+                "ledger_facts",
+                "ledger_stated",
+            )
+        ),
         "report.run_summary.validation.unresolved[].message",
+        "report.run_summary.validation.retry_drops[].sentence",
+        "report.run_summary.validation.retry_withdrawals[].sentence",
+        "report.run_summary.coverage.negatives[].negative",
+        "report.run_summary.corroboration.key.not_published",
+        "report.flagged_statements[].label",
+        "report.claims_not_discussed[].missing[]",
+    }
+)
+
+# Each place where a model's statement is printed as its own list item or block under a
+# platform heading or lead-in line: that model's prose shown as content, which keeps the
+# writing of model prose. A line carrying the platform's words and a model's words is a
+# quote (:data:`QUOTED_WORDS`). A platform label that names a field and asserts
+# nothing, followed by the model's own field alone, is the model's item.
+BODY_PROSE = frozenset(
+    {
+        "report.claims_not_discussed[].claim",
+        "report.claims_not_discussed[].evidence_ref",
+        "report.capability_matrix[].statements[]",
+        "report.question_answers[].open_questions[]",
     }
 )
 
@@ -235,9 +286,6 @@ class _Tokens:
     def value(self, path: str) -> str:
         return _payload(self._next(path, "V"))
 
-    def plain(self, path: str, text: str, kind: str = "M") -> str:
-        return f"{text} zM{self._next(path, kind)}z"
-
 
 def _instance(tp: Any, depth: int = 0) -> Any:
     """A value of type ``tp`` with every text place holding text, read from the type alone."""
@@ -323,25 +371,11 @@ def _written(held: Any, path: str, tokens: _Tokens, places: set[str]) -> Any:
     return held
 
 
-# The negotiation keys that print a model's quoted words with the platform's
-# and a tool's text around them, by class: scanned as a model's text here.
-NEGOTIATION_QUOTES = {
-    key: "a model's quoted words; written as text by a later change"
-    for key in ("revision_replacements", "unread_marks", "ledger_facts", "ledger_stated")
-}
-
-
 def _run_summary(tokens: _Tokens) -> dict[str, Any]:
     """The keys the renderers read from ``run_summary``, each value by its provenance."""
 
     def v(path: str) -> str:
         return tokens.value(f"report.run_summary.{path}")
-
-    def m(path: str) -> str:
-        return tokens.plain(f"report.run_summary.{path}", "said")
-
-    def x(path: str) -> str:
-        return tokens.plain(f"report.run_summary.{path}", "said", "X")
 
     return {
         "elapsed_seconds": 412.5,
@@ -350,12 +384,20 @@ def _run_summary(tokens: _Tokens) -> dict[str, Any]:
             "rounds_completed": 2,
             "termination_reason": v("negotiation.termination_reason"),
             "final_confidence": 0.86,
-            # The mediator's and the analysts' quoted words.
-            "not_blocking": [m("negotiation.not_blocking[]")],
-            "limit_rulings": [m("negotiation.limit_rulings[]")],
-            # The platform's note, carrying a provider's or an exception's text.
-            "mediation_notes": [v("negotiation.mediation_notes[]")],
-            **{key: [m(f"negotiation.{key}[]")] for key in NEGOTIATION_QUOTES},
+            # The platform's sentences quoting the mediator's and the analysts'
+            # words, and its note carrying a provider's or an exception's text.
+            **{
+                key: [v(f"negotiation.{key}[]")]
+                for key in (
+                    "not_blocking",
+                    "limit_rulings",
+                    "mediation_notes",
+                    "revision_replacements",
+                    "unread_marks",
+                    "ledger_facts",
+                    "ledger_stated",
+                )
+            },
             "dropped_value_counts": [
                 {
                     "agent": v("negotiation.dropped_value_counts[].agent"),
@@ -481,6 +523,9 @@ def _run_summary(tokens: _Tokens) -> dict[str, Any]:
                 "asserted_by": [v("corroboration.key.asserted_by[]")],
                 "claimed_by": [v("corroboration.key.claimed_by[]")],
                 "associated_by": [v("corroboration.key.associated_by[]")],
+                # Why the id was not published: the platform's words around a judge's
+                # reason, copied from the matrix's cell.
+                "not_published": v("corroboration.key.not_published"),
             }
         },
         "coverage": {
@@ -496,22 +541,35 @@ def _run_summary(tokens: _Tokens) -> dict[str, Any]:
             "negatives": [
                 {
                     "agent": v("coverage.negatives[].agent"),
-                    # A model's claim, quoted.
-                    "negative": m("coverage.negatives[].negative"),
+                    # A model's claim, quoted by the platform's sentence.
+                    "negative": v("coverage.negatives[].negative"),
                     "coverage": "unknown",
                 }
             ],
         },
         "validation": {
             "retries": 1,
+            # A finding's message: the platform's sentence quoting a model's
+            # claim or an observed value, as one string; listed, answered, an
+            # export's decline of the judge's object and of a sandbox's.
             "unresolved": [
                 {
-                    "agent": "judge",
-                    "code": "stix.unpublishable_endpoint",
-                    # A finding's message: mixed text (:data:`MIXED_TEXT`).
-                    "message": x("validation.unresolved[].message"),
+                    "agent": agent,
+                    "code": code,
+                    "message": v("validation.unresolved[].message"),
+                    **({"answered": True} if answered else {}),
                 }
+                for agent, code, answered in (
+                    ("static", "report.citation_wrong_entry", False),
+                    ("dynamic", "report.citation_wrong_entry", True),
+                    ("judge", "stix.unpublishable_endpoint", False),
+                    ("sandbox", "stix.unpublishable_endpoint", False),
+                )
             ],
+            # What a kept retry left out and what a retry withdrew: the
+            # platform's sentence quoting the analyst's item and reason.
+            "retry_drops": [{"sentence": v("validation.retry_drops[].sentence")}],
+            "retry_withdrawals": [{"sentence": v("validation.retry_withdrawals[].sentence")}],
         },
     }
 
@@ -533,6 +591,19 @@ def _report() -> tuple[MalwareReport, _Tokens]:
         ),
     ]
     report.run_summary = _run_summary(tokens)
+    # The names a claim's row says the body never names: beside the payload, a
+    # name for each structure on its own (emphasis by underscores, a code span,
+    # a cell, a link, a tag), each with a token of its own.
+    for row in report.claims_not_discussed:
+        names = [tokens._next("report.claims_not_discussed[].missing[]", "V") for _ in range(5)]
+        row.missing = [
+            *row.missing,
+            f"__zB{names[0]}z__",
+            f"`zC{names[1]}z`",
+            f"|zP{names[2]}z|",
+            f"[zL{names[3]}z](#zT{names[3]}z)",
+            f"<u>zU{names[4]}z</u>",
+        ]
     return report, tokens
 
 
@@ -547,7 +618,10 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     (the publish answer quoting it, in the host table and among the strings),
     a path string carries a note (the path row's context), and an analyst's
     artifact table lists a mutex (the analyst named in its row and its
-    publish answer). The third: whether the processes are the sample's is not
+    publish answer), and a technique is published, so its row prints its
+    note, a sentence a check left standing stands in the prose (the label
+    of its mark), and a claim no revision carried forward is listed (the names
+    it lacks). The third: whether the processes are the sample's is not
     known (the processes only a mark or only a file names, and the mark's
     sandbox), the binding's call is made through a slot, and the run is
     degraded (the tools it went without; the banner's reason for a skipped
@@ -571,6 +645,14 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
         held.model_copy(update={"kind": "mutex", "value": "Global\\listed", "cut_from": cut}),
         held.model_copy(update={"kind": "path", "value": "C:\\Users\\listed.txt"}),
     ]
+    second.capability_matrix[0].not_published = ""
+    # A claim no revision carried forward: listed whole, with the names it lacks.
+    second.claims_not_discussed[0].carried_since_round = None
+    # A sentence a check left standing, in the prose, with the label of its mark.
+    flagged = second.flagged_statements[0]
+    flagged.left_out = []
+    flagged.sentence = "The sample was flagged."
+    second.executive_summary = f"{second.executive_summary} {flagged.sentence}"
     second.sections = [
         *second.sections,
         EvidenceSection(
@@ -868,13 +950,65 @@ def test_the_operator_s_reference_is_one_link_on_every_markdown_surface() -> Non
         assert [t for t in targets if f"zL{n}z" in t and f"zQ{n}z" in t], surface
 
 
-def test_mixed_text_is_a_class_of_its_listed_places_and_of_no_other() -> None:
-    # A place classed as mixed text is one :data:`MIXED_TEXT` lists, and each
-    # listed place is one the scan classes so: a third place fails here.
-    _report_held, tokens = _report()
-    schema = {place for place in _text_places() if provenance(place) == "X"}
-    summary = {tokens.places[n] for n, kind in tokens.kinds.items() if kind == "X"}
-    assert schema | summary == MIXED_TEXT
+def test_no_place_is_mixed_text_and_each_quoting_place_is_a_value_that_prints() -> None:
+    # A string holding the platform's words, a model's quoted words and a
+    # value is written whole as text: no place is of a mixed class, and each
+    # place where a platform sentence quotes a model's words is scanned with a
+    # value's payload and printed in some state.
+    assert MIXED_TEXT == frozenset()
+    report, tokens = _report()
+    assert not {place for place in _text_places() if provenance(place) not in "PMV"}
+    assert set(tokens.kinds.values()) == {"V"}
+    values = {tokens.places[n] for n, kind in tokens.kinds.items() if kind == "V"}
+    assert sorted(QUOTED_WORDS - values) == []
+    assert not QUOTED_WORDS & NOT_PRINTED
+    printed = {
+        tokens.places[int(found.group(2))]
+        for state in _states(report, tokens)
+        for rendered in _surfaces(state).values()
+        for found in _TOKEN.finditer(rendered)
+        if int(found.group(2)) in tokens.places
+    }
+    assert sorted(QUOTED_WORDS - printed) == []
+
+
+def test_a_model_s_statement_printed_as_its_own_item_is_body_prose() -> None:
+    # A statement printed as its own list item or block under a platform heading is
+    # that model's prose: a place of the schema, of a model's provenance, no quote.
+    places = _text_places()
+    assert BODY_PROSE <= places
+    assert {provenance(place) for place in BODY_PROSE} == {"M"}
+    assert not BODY_PROSE & QUOTED_WORDS
+
+
+def test_a_quoted_place_cut_to_its_width_is_cut_on_its_characters() -> None:
+    # A judge's reason long enough to be cut on every surface: the cut is made on the
+    # record's characters and each piece is written after it, so the written text holds
+    # no backslash left dangling before the cut mark, no reference a reader decodes and
+    # no code span, and no payload part forms structure.
+    report, tokens = _report()
+    n = tokens._next("report.capability_matrix[].not_published", "V")
+    long = " ".join(_payload(n).replace("\n", " ") for _ in range(4))
+    for cell in report.capability_matrix:
+        cell.not_published = long
+    cut = 0
+    for surface, rendered in _surfaces(report).items():
+        assert not _faults(surface, rendered, tokens), surface
+        tree = _Tree()
+        tree.feed(rendered)
+        for tag, _attrs, texts in tree.elements:
+            assert not (tag == "code" and f"z{n}z" in "".join(texts)), surface
+        shown = " ".join("".join(tree.text).split())
+        assert f"<zE{n}z" not in shown, surface
+    products = render_products(report)
+    for markdown in (products.report_markdown, products.bundle_markdown):
+        for line in markdown.split("\n"):
+            if f"zH{n}z" not in line or "\u2026" not in line:
+                continue
+            cut += 1
+            before = line[: line.rindex("\u2026")]
+            assert (len(before) - len(before.rstrip("\\"))) % 2 == 0, line
+    assert cut >= 3
 
 
 # Each place whose line is set in after its writing (:func:`_placed`), and a

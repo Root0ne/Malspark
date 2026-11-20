@@ -18,6 +18,7 @@ from typing import Any
 from malspark.reporting.models import MalwareReport
 from malspark.reporting.renderers import MarkdownRenderer
 from malspark.reporting.renderers.layout import ANALYST, BUNDLE
+from malspark.reporting.renderers.markdown import _inline_safe
 from malspark.reporting.section_agreement import (
     DROPPED_CODE,
     LISTED_CODE,
@@ -95,7 +96,9 @@ def test_a_judge_s_words_in_that_state_stay_printed_and_are_listed_as_standing()
     assert [(r.sentence, r.code, r.asked, r.left_out) for r in report.flagged_statements] == [
         (reason, LISTED_CODE, True, [])
     ]
-    assert f"the judge dropped it ({reason})" in MarkdownRenderer(layout=ANALYST).render(report)
+    # The judge's words are written as text.
+    written = _inline_safe(f"the judge dropped it ({reason})")
+    assert written in MarkdownRenderer(layout=ANALYST).render(report)
 
 
 def test_a_keep_no_check_passes_leaves_it_out() -> None:

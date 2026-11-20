@@ -113,11 +113,24 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # A stored run's Markdown and HTML re-pinned when a tool's failure message came to be
 # written by the inline rule (T-735): each backtick it holds is printed as a
 # character in the tool failures list, the only change.
+# A stored run's Markdown and HTML re-pinned when a platform sentence quoting a
+# model's words, alone or with a value, came to be written whole as text
+# (T-735): in the validation findings, retry and mediator lines each
+# backtick, star and backslash the record holds is printed as a character and
+# a pair no longer forms a code span, the only change.
+# A stored run's Markdown re-pinned when a judge's reason in the ATT&CK table
+# came to be written as text, cut and marked on its characters (T-735): each
+# backtick and backslash of the reason is printed as a character, the only
+# change.
+# A stored run's Markdown re-pinned when a judge's reason in the run summary's
+# corroboration table came to be written as text (T-735): each character Markdown
+# reads in the reason gains a backslash in that table, the only change, and the
+# HTML did not change.
 STORED_RENDERS = {
-    "run7": ("0da0666bd97caecb", "8a6ba9c0670cf1b5", "af1240b0f29bfd9c"),
-    "run5": ("87bb84a09091c0de", "156a645b3d568bd2", "2e717357e24fbfe2"),
-    "run4": ("de3f3fc895e0ef55", "60cfad50c120e58b", "0a90e4edd679e2be"),
-    "local8": ("08d6d34474336223", "b78721cb9ba4f766", "75d022862e3237de"),
+    "run7": ("e7ad1248bae77340", "7c27693f82b034f8", "af1240b0f29bfd9c"),
+    "run5": ("1420ab7b523a91ac", "d2bafe2177886290", "2e717357e24fbfe2"),
+    "run4": ("e5ffe74339534ae2", "798ce36070468515", "0a90e4edd679e2be"),
+    "local8": ("85f44b070da2bb25", "a6ba8a2626516ed8", "75d022862e3237de"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

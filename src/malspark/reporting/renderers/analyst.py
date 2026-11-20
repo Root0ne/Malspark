@@ -85,6 +85,7 @@ from malspark.reporting.renderers.markdown import (
     _placed,
     _prose_item,
     _prose_step,
+    _quote_written,
     _ransomware_block,
     _reputation_line,
     _resolved_only,
@@ -93,6 +94,7 @@ from malspark.reporting.renderers.markdown import (
     _states_ransomware,
     _title_heading,
     _titled_format,
+    _value_parts,
     _whole,
     confidence_word,
     dropped_size_cell,
@@ -2554,7 +2556,7 @@ class _Analyst:
 
     def _held(self, cell: Any) -> str:
         """A technique named and not published, with the status the single-file report gives it."""
-        from malspark.reporting.judge_reasons import JUDGE_REASON_WIDTH, status_shown
+        from malspark.reporting.judge_reasons import JUDGE_REASON_WIDTH, status_parts
         from malspark.schemas.isr_models import UNVERIFIED_TECHNIQUE_MARKER
 
         if not cell.technique_id_valid:
@@ -2562,19 +2564,33 @@ class _Analyst:
         else:
             # The judge's reason as printed: a sentence the agreement question left out is
             # counted, and the reason printed without it (T-613).
+            raw = status_parts(cell.not_published, JUDGE_REASON_WIDTH, lambda text: [(text, False)])
             reason, cut = self._judge_words(
                 f"attack_note.{cell.technique_id.strip().upper()}",
                 f"ATT&CK table, the reason {cell.technique_id} is not published",
-                status_shown(cell.not_published, JUDGE_REASON_WIDTH),
+                "".join(piece for piece, _set in raw),
                 cell.technique_id,
                 cell.not_published,
             )
             self.left += cut
-            shown = (
-                self.ctx.plain(reason)
-                if cut
-                else status_shown(cell.not_published, JUDGE_REASON_WIDTH, self.ctx.plain)
-            )
+            # A quote: the cut and its marks are made on the record's characters, and each
+            # piece between them is written as text (``_quote_written``).
+            if cut:
+                after = raw[-1][0] if raw[-1][1] else ""
+                words = (
+                    reason[: len(reason) - len(after)]
+                    if after and reason.endswith(after)
+                    else reason
+                )
+                parts = _value_parts(words, self.ctx.plain)
+                parts += [(after, True)] if words != reason else []
+            else:
+                parts = status_parts(
+                    cell.not_published,
+                    JUDGE_REASON_WIDTH,
+                    lambda text: _value_parts(text, self.ctx.plain),
+                )
+            shown = _quote_written(parts)
             status = "claimed, not published" + (f": {shown}" if shown.strip() else "")
         return _item(
             f"{cell.technique_id} {_one_line(cell.technique_name)}: {status}"
@@ -2622,7 +2638,7 @@ class _Analyst:
             )
             self.left += cut
             if shown.strip():
-                said.append(self.ctx.plain(shown))
+                said.append(_quote_written(_value_parts(shown, self.ctx.plain), pipes=False))
         # Under which detonations a further detonation's signatures tag it.
         mapping = next(
             (m for m in self.report.ttp_mappings if m.technique_id == technique_id), None

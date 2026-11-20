@@ -83,11 +83,29 @@ def status_shown(text: str, width: int, plain: Callable[[str], str] = str) -> st
     (:func:`closed_cut`). ``plain`` is the report's defanger, applied before anything is
     cut.
     """
+    return "".join(
+        piece for piece, _set in status_parts(text, width, lambda t: [(plain(t), False)])
+    )
+
+
+# A text in pieces, each with whether the platform set it: a mark it prints
+# after a sentence, the cut mark and the brackets a cut closes.
+Parts = list[tuple[str, bool]]
+
+
+def status_parts(text: str, width: int, parts: Callable[[str], Parts]) -> Parts:
+    """The status :func:`status_shown` prints, in its pieces: ``parts`` gives the pieces of a
+    text before any cut (the marks the platform sets in it among them), and the cut is made on
+    their characters as :func:`status_shown` makes it, the cut mark and the brackets it closes
+    one piece the platform set. A piece is cut where the cut falls in it, never written again."""
     said, through = judge_reasons_shown(str(text or ""))
     if not through:
-        return closed_cut(plain(said), width)
-    head, tail = plain(said[:through]), plain(said[through:])
-    return head + closed_cut(tail, max(0, width - len(head))) if tail else head
+        return closed_cut_parts(parts(said), width)
+    head, tail = parts(said[:through]), parts(said[through:])
+    used = sum(len(piece) for piece, _set in head)
+    if not "".join(piece for piece, _set in tail):
+        return head
+    return [*head, *closed_cut_parts(tail, max(0, width - used))]
 
 
 def closed_cut(text: str, width: int) -> str:
@@ -95,15 +113,39 @@ def closed_cut(text: str, width: int) -> str:
     closed after the cut mark, the closing brackets within the width too."""
     if len(text) <= width:
         return text
+    kept, marks = _closed_cut_at(text, width)
+    return text[:kept] + marks
+
+
+def closed_cut_parts(pieces: Parts, width: int) -> Parts:
+    """``pieces`` cut as :func:`closed_cut` cuts the text they make, the cut mark and the
+    brackets it closes one piece the platform set."""
+    text = "".join(piece for piece, _set in pieces)
+    if len(text) <= width:
+        return pieces
+    kept, marks = _closed_cut_at(text, width)
+    out: Parts = []
+    at = 0
+    for piece, platform in pieces:
+        if at >= kept:
+            break
+        out.append((piece[: kept - at], platform))
+        at += len(piece)
+    return [*out, (marks, True)]
+
+
+def _closed_cut_at(text: str, width: int) -> tuple[int, str]:
+    """How much of ``text``, longer than ``width``, :func:`closed_cut` keeps, and what it sets
+    after: the cut mark and the brackets that close every bracket the kept text leaves open."""
     room = width
     while room > len(CUT_MARK):
-        cut = word_cut(text, room)
-        closing = _closing(cut)
-        over = len(cut) + len(closing) - width
+        kept = _word_kept(text, room)
+        closing = _closing(text[:kept])
+        over = kept + len(CUT_MARK) + len(closing) - width
         if over <= 0:
-            return cut + closing
+            return kept, CUT_MARK + closing
         room -= over
-    return CUT_MARK
+    return 0, CUT_MARK
 
 
 # Each opening bracket and the one that closes it.
@@ -125,11 +167,15 @@ def word_cut(text: str, width: int) -> str:
     """``text`` whole when it fits ``width``, else cut at the last word that fits and marked."""
     if len(text) <= width:
         return text
+    return text[: _word_kept(text, width)] + CUT_MARK
+
+
+def _word_kept(text: str, width: int) -> int:
+    """How much of ``text``, longer than ``width``, :func:`word_cut` keeps before its mark."""
     cut = text[: max(0, width - len(CUT_MARK))]
     if " " in cut:
         cut = cut[: cut.rfind(" ")]
-    cut = cut.rstrip(" ,;:")
-    return f"{cut}{CUT_MARK}" if cut else CUT_MARK
+    return len(cut.rstrip(" ,;:"))
 
 
 def judge_reason_spans(text: str) -> list[tuple[int, int, int]]:

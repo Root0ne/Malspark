@@ -468,9 +468,10 @@ def test_the_run_appendix_says_what_the_platform_recorded_of_the_debate() -> Non
 
     assert "beta, round 2: 13 values from 2 earlier claims are no longer stated" in md
     assert "A WHOLE CLAIM" not in md
-    assert "[not blocking: a count]" in md
+    # The mediator's words print as text: each bracket escaped, shown as written.
+    assert "\\[not blocking: a count\\]" in md
     assert "entry ev_0007 (t) states total = 41" in md
-    assert "c vs d [not blocking]" in md
+    assert "c vs d \\[not blocking\\]" in md
 
 
 def test_the_headline_says_when_listed_lines_were_marked_not_blocking() -> None:

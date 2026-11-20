@@ -9,7 +9,12 @@ item, a step or a paragraph, the block-start rule (``_paragraph_line``) writes
 it after the inline rule; a heading escapes each ``#`` of its title. A run of
 backticks opens a fence only where no backtick follows it on the line, so a
 value printed as a code span with a longer fence stays one span at an item's
-start. A model's line keeps the writing model prose has.
+start. A platform sentence quoting a model's words, alone or with a value, as
+one string, is written whole by the inline rule, the model's words shown as
+the record holds them; where the platform cuts it to a width or marks a
+sentence in it, the cut and the marks are made on its characters and each
+piece between them is written by the inline rule after the cut. A model's
+line keeps the writing model prose has.
 
 What is read: the HTML report's own reader and a reader that takes raw HTML.
 Between its markers a payload forms no element its plain baseline does not,
@@ -29,6 +34,7 @@ from malspark.analysis.coverage import NEGATIVES_INTRO as COVERAGE_NEGATIVES_INT
 from malspark.pipeline.mediation_models import mediator_no_answer_note
 from malspark.reporting.ledger_report import shortened_sentence
 from malspark.reporting.models import (
+    CapabilityCell,
     DynamicBehavior,
     EvidenceIndexRow,
     EvidenceSection,
@@ -37,6 +43,7 @@ from malspark.reporting.models import (
     FileHashes,
     MalwareReport,
     PESection,
+    QuestionAnswer,
     ReportFrontMatter,
     SampleIdentity,
     SandboxSignature,
@@ -324,12 +331,57 @@ def _report(text: str, n: int) -> MalwareReport:
         dynamic=DynamicBehavior(
             sandbox_signatures=[SandboxSignature(name=v(), description=v(), technique_ids=[v()])]
         ),
+        # The platform's sentences quoting a model's words, alone or with a
+        # value, each one string.
+        question_answers=[QuestionAnswer(question=v(), outcome="not_determinable", checks=[v()])],
+        # A status with the judge's reason in one cell, and a note opening with the
+        # platform's words: each one string the platform's words and a model's share.
+        capability_matrix=[
+            CapabilityCell(
+                tactic="TA0005",
+                tactic_name="Defense Evasion",
+                technique_id="T1055",
+                technique_name="Process Injection",
+                not_published=v(),
+            ),
+            CapabilityCell(
+                tactic="TA0007",
+                tactic_name="Discovery",
+                technique_id="T1057",
+                technique_name="Process Discovery",
+                evidence=["Lists processes."],
+                note=v(),
+            ),
+        ],
         run_summary={
             "profile": {"name": v(), "analysts": [v()]},
             "stages": [{"key": "static", "ran": False, "reason": v()}],
             "evidence": {
                 "entries": 1,
                 "failures": [{"tool": "probe", "server": v(), "error": v(), "remediation": v()}],
+            },
+            "negotiation": {
+                "rounds_completed": 1,
+                **{
+                    key: [v()]
+                    for key in (
+                        "not_blocking",
+                        "limit_rulings",
+                        "revision_replacements",
+                        "unread_marks",
+                        "ledger_facts",
+                        "ledger_stated",
+                    )
+                },
+            },
+            "validation": {
+                "retries": 1,
+                "unresolved": [
+                    {"agent": "static", "code": "report.citation_wrong_entry", "message": v()},
+                    {"agent": "sandbox", "code": "stix.unpublishable_endpoint", "message": v()},
+                ],
+                "retry_drops": [{"sentence": v()}],
+                "retry_withdrawals": [{"sentence": v()}],
             },
         },
     )
@@ -477,6 +529,67 @@ def test_a_mediation_note_carrying_a_provider_s_text_forms_no_structure() -> Non
         for reading, baseline in zip(_readings(written), _readings(plain), strict=True):
             assert _elements(reading) == _elements(baseline), (layout, reading)
             assert _same_words(note) in _shown(reading), layout
+
+
+def _shown_whole(report: Any, baseline: Any, said: str, layouts: tuple[str, ...]) -> None:
+    """Each layout of ``report`` forms the elements of ``baseline`` and shows ``said`` whole."""
+    for layout in layouts:
+        written = MarkdownRenderer(layout=layout).render(report)
+        plain = MarkdownRenderer(layout=layout).render(baseline)
+        for reading, held in zip(_readings(written), _readings(plain), strict=True):
+            assert _elements(reading) == _elements(held), (layout, reading)
+            assert _same_words(said) in _shown(reading), layout
+
+
+def test_an_operator_s_model_name_in_a_check_of_an_answer_is_shown_whole() -> None:
+    # A stop reason names the operator's model inside the platform's check of
+    # an answer: the check is written whole as text, its backticks shown.
+    from malspark.core.spend import SpendCeilingStop
+    from malspark.reporting.question_round import unanswered
+
+    def report(model: str) -> MalwareReport:
+        stop = SpendCeilingStop(f"a report call of {model} was not made: over the ceiling")
+        return MalwareReport(
+            identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
+            verdict="Malware",
+            question_answers=unanswered(["Q?"], f"the question round was not written: {stop}"),
+        )
+
+    model = "acme`x [l](#t) | # h \\ &lt;`-v2"
+    held = report(model)
+    said = _defanged_lines(held.question_answers[0].checks[0])
+    # The analyst report lists each question with its outcome, not its checks.
+    _shown_whole(held, report("acme-v2"), said, ("bundle", "full"))
+
+
+def test_an_observed_endpoint_quoted_by_a_finding_is_shown_whole() -> None:
+    # An export's decline quotes a URL a sandbox observed: the finding's
+    # message is written whole as text, its backticks shown.
+    from malspark.pipeline.nodes import _note_export_findings
+    from malspark.reporting.models import NetworkIOCs, NetworkURL
+    from malspark.reporting.renderers.stix_renderer import _unpublishable_endpoints
+
+    def report(url: str) -> MalwareReport:
+        made = MalwareReport(
+            identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
+            verdict="Malware",
+            network=NetworkIOCs(urls=[NetworkURL(url=url, source="sandbox")]),
+        )
+        _note_export_findings(made, _unpublishable_endpoints(made, []))
+        return made
+
+    held = report("http://intranet.local/a`b [x](#t) | # h \\ &lt; <b>y</b>`c")
+    (row,) = held.run_summary["validation"]["unresolved"]
+    assert row["agent"] == "sandbox"
+    said = _defanged_lines(row["message"])
+    # The export's decisions are listed with the run's checks, which the
+    # analyst report leaves to the bundle.
+    _shown_whole(held, report("http://intranet.local/abc"), said, ("bundle", "full"))
+
+
+def _defanged_lines(text: str) -> str:
+    """``text`` as a reader is shown it: defanged, on one line."""
+    return _context().plain(_one_line(text))
 
 
 # Every character a placeholder of a quoted claim could be made of, and the

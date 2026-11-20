@@ -119,7 +119,12 @@ STORED_EXPORTS = {
 # A stored run's Markdown re-pinned when a sentence quoting the mediator's words came
 # to keep the writing of model prose again (T-735): those lines of the run
 # summary are the only change, and the HTML did not change.
-HAIKU4_RENDERS = ("326e24c856379df9", "7e7c99ce92d9ede7", "ff5607de575fb489")
+# A stored run's Markdown and HTML re-pinned when a platform sentence quoting a
+# model's words, alone or with a value, came to be written whole as text
+# (T-735): in the run summary's retry and mediator lines each backtick, star
+# and backslash the record holds is printed as a character and a pair no
+# longer forms a code span, the only change; the STIX did not change.
+HAIKU4_RENDERS = ("686fb956d5f25ddc", "017e09781de38859", "ff5607de575fb489")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
