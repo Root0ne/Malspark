@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import functools
 import json
 import os
 import re
@@ -83,7 +84,14 @@ def record() -> dict[str, Any]:
 
 
 def _flags(entry: dict[str, Any]) -> list[dict[str, Any]]:
-    return [{k: v for k, v in flag.items() if k != "message"} for flag in entry["flags"]]
+    """Each finding without its words or their digest."""
+    return [
+        {k: v for k, v in flag.items() if k not in ("message", "words")} for flag in entry["flags"]
+    ]
+
+
+def _without_words(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{k: v for k, v in row.items() if k != "words"} for row in rows]
 
 
 def _copy_run(tmp_path: Path, **edits: Callable[[dict[str, Any]], None]) -> Path:
@@ -219,14 +227,18 @@ def test_a_validator_change_moves_what_is_published(
     assert stricter["analysts"]["static"]["in_force"]["not_valid"] == ["T1105"]
 
     indicator = diff_records(record, looser)
-    assert indicator["codes_lost"] == [
+    assert _without_words(indicator["codes_lost"]) == [
         {
             "part": "judge",
             "path": "objects[3] 'indicator--1'",
             "code": "stix.ungrounded_indicator",
             "count": 1,
+            "in_a": 1,
+            "in_b": 0,
         }
     ]
+    [dropped] = [f for f in record["judge"]["flags"] if f["code"] == "stix.ungrounded_indicator"]
+    assert indicator["codes_lost"][0]["words"] == dropped["words"]
     assert list(indicator["report"]["indicators"]["only_b"]) == ["domain:2d5a0519f25d"]
     assert indicator["judge"] == {"indicators_dropped": {"a": 1, "b": 0}}
 
@@ -374,10 +386,12 @@ def _values_of(run: Path, shown: dict[str, Any]) -> set[str]:
         )
     judge = run / "stix-judge.json"
     if judge.is_file():
-        for obj in json.loads(judge.read_text(encoding="utf-8"))["bundle"].get("objects") or []:
+        # A judge that answered no bundle stored none.
+        bundle = json.loads(judge.read_text(encoding="utf-8")).get("bundle") or {}
+        for obj in bundle.get("objects") or []:
             if obj.get("type") == "indicator":
                 values.update(_QUOTED.findall(str(obj.get("pattern") or "")))
-        for obj in json.loads(judge.read_text(encoding="utf-8"))["bundle"].get("objects") or []:
+        for obj in bundle.get("objects") or []:
             # The judge's own names for its objects, and the id parts that are not a
             # number or a UUID: a path quotes the label.
             if obj.get("type") == "malware" and obj.get("name"):
@@ -389,6 +403,12 @@ def _values_of(run: Path, shown: dict[str, Any]) -> set[str]:
     for flag in _all_flags(shown):
         if flag.get("subject_text"):
             values.add(str(flag["subject_text"]).partition(":")[2] or str(flag["subject_text"]))
+    # The judge's category words, and each detection draft's name and body, which carry them
+    # and the run's values.
+    if shown["report"].get("category_text"):
+        values.add(str(shown["report"]["category_text"]))
+    for draft in shown["report"].get("detection_drafts") or []:
+        values.update(str(draft[key]) for key in ("name_text", "body_text") if draft.get(key))
     return {value for value in values if len(value) >= 4}
 
 
@@ -403,6 +423,295 @@ def _all_flags(record: dict[str, Any]) -> Iterator[dict[str, Any]]:
         yield from section.get("flags") or []
 
 
+# What a word is stripped of at either end, and the length from which one word alone is
+# searched.
+_PUNCTUATION = ".,;:!?()[]{}<>\"'`"
+_LONG_WORD = 8
+_PHRASES = (3, 4)
+# A word that reads as a value whatever source holds it: one with a digit or a dot extension
+# (``ws2_32.dll``), or one of six characters or more with a capital after its first letter and
+# a small letter in it (``RegSetValueExA``).
+_VALUE_WORD = re.compile(r"\d|\w\.[A-Za-z0-9]{1,4}$")
+_MIXED_CASE = re.compile(r"^(?=.*[a-z]).+[A-Z]")
+_MIXED_FROM = 6
+# Where a clause ends: no phrase spans one.
+_CLAUSE = re.compile(r"[;:\n()\[\]{}]|\.(?=\s|$)")
+
+
+def _words(text: str) -> list[str]:
+    """``text`` lower case, split at white space, each word without punctuation at its ends."""
+    return [w for w in (raw.strip(_PUNCTUATION) for raw in text.lower().split()) if w]
+
+
+def _text_only(shown: Any, quiet: Any) -> Iterator[tuple[str, str]]:
+    """Every text the record made with the text holds where the one without it holds nothing:
+    the words, the ``*_text`` fields, a claim's sentence, an argument's values, at any depth.
+    Each comes with the words of the value-free fields beside it (a finding's path, subject,
+    code, entries), which the record without the text holds by design. A ``*_text`` field
+    equal to its value-free twin (a path that quotes no value) adds nothing."""
+    if isinstance(shown, dict) and isinstance(quiet, dict):
+        flat = [
+            v for v in quiet.values() if isinstance(v, str | int | float | list) and v is not True
+        ]
+        beside = " ".join(" ".join(_words(text)) for text in _strings(flat))
+        for key, inner in shown.items():
+            if key in quiet:
+                yield from _text_only(inner, quiet[key])
+            elif key.endswith("_text") and quiet.get(key.removesuffix("_text")) == inner:
+                continue
+            else:
+                yield from ((s, f" {beside} ") for s in _strings(inner) if s != str(key))
+    elif isinstance(shown, list) and isinstance(quiet, list):
+        for inner_shown, inner_quiet in zip(shown, quiet, strict=False):
+            yield from _text_only(inner_shown, inner_quiet)
+
+
+def _stored_texts(run: Path) -> Iterator[str]:
+    """Every text value of every JSON file the stored run holds: what its models and its
+    tools wrote, and what the platform wrote from them."""
+    for path in sorted(run.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        stack = [data]
+        while stack:
+            value = stack.pop()
+            if isinstance(value, dict):
+                stack.extend(value.values())
+            elif isinstance(value, list):
+                stack.extend(value)
+            elif isinstance(value, str):
+                yield value
+
+
+@functools.cache
+def _platform_words() -> tuple[frozenset[str], str]:
+    """The platform's own source (its package and the replay): its words, and its clauses as
+    lines of words, so a phrase found in it never spans a clause."""
+    root = Path(__file__).resolve().parents[3]
+    words: set[str] = set()
+    lines: list[str] = []
+    for tree in (root / "src", root / "scripts" / "replay"):
+        for path in sorted(tree.rglob("*.py")):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            words.update(_words(text))
+            for clause in _clauses(text):
+                words.update(clause)
+                lines.append(f" {' '.join(clause)} ")
+    return frozenset(words), "\n".join(lines)
+
+
+def _clauses(text: str) -> list[list[str]]:
+    """``text``'s clauses (cut at ``;``, ``:``, a full stop, a line break, a bracket), each as
+    its words (:func:`_words`)."""
+    return [words for part in _CLAUSE.split(text) if (words := _words(part))]
+
+
+def _grams(text: str) -> Iterator[str]:
+    """Every run of three and of four consecutive words inside one clause of ``text``
+    (:data:`_PHRASES`), and every word of :data:`_LONG_WORD` characters or more."""
+    for words in _clauses(text):
+        for size in _PHRASES:
+            yield from (" ".join(words[i : i + size]) for i in range(len(words) - size + 1))
+    yield from (w for w in _words(text) if len(w) >= _LONG_WORD)
+
+
+def _value_words(text: str) -> set[str]:
+    """The words of ``text`` that read as a value, lower case: one with a digit or a dot
+    extension (:data:`_VALUE_WORD`), or one of :data:`_MIXED_FROM` characters or more with a
+    capital after its first letter beside a small letter (:data:`_MIXED_CASE`)."""
+    raw = (w.strip(_PUNCTUATION) for w in text.split())
+    return {
+        w.lower()
+        for w in raw
+        if w and (_VALUE_WORD.search(w) or (len(w) >= _MIXED_FROM and _MIXED_CASE.match(w)))
+    }
+
+
+def _an_id(word: str) -> bool:
+    """Whether a word is an id the record writes as it is (an ATT&CK id, a ledger entry, a
+    STIX id whose id part is a number or a UUID): an id, not a value."""
+    from scripts.replay.record import value_free_label
+
+    return value_free_subject(word) == word or ("--" in word and value_free_label(word) == word)
+
+
+def _names(record: Any) -> set[str]:
+    """The names a record keys or lists its parts by, lower case: every key at any depth and
+    every whole one-word element of a list (an agent, a report section, a code)."""
+    found: set[str] = set()
+    stack = [record]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            found.update(str(key).lower() for key in value)
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            found.update(v.lower() for v in value if isinstance(v, str) and len(v.split()) == 1)
+            stack.extend(v for v in value if isinstance(v, dict | list))
+    return found
+
+
+def _leaks(run: Path) -> list[str]:
+    """What of the run's own words its record made without the text holds (:func:`_leaked`)."""
+    return _leaked(run, replay_run(read_run(run), show_text=True), replay_run(read_run(run)))
+
+
+def _leaked(run: Path, shown: dict[str, Any], quiet: dict[str, Any]) -> list[str]:
+    """What of the run's own words ``quiet``, the record made without the text, holds, sorted.
+
+    The haystack is ``quiet`` (its keys and values, but not the bookkeeping that names
+    where it was made) and its printed form. Words are compared lower case, split at white
+    space, with punctuation at a word's ends removed. The needles, all read from the run
+    and none from a list of words:
+
+    1. every whole value of :func:`_values_of` (indicator values, the judge's names, a
+       subject's value, the category, each draft's name and body), found as a substring;
+    2. every text the record made with the text adds (:func:`_text_only`), whole, found
+       word-bounded;
+    3. every phrase of three or four consecutive words inside one clause (cut at ``;``,
+       ``:``, a full stop, a line break, a bracket: no phrase spans a clause), and every word
+       of eight characters or more, of each text of 1 and 2 and of every text value of the
+       stored run's JSON files (:func:`_stored_texts`), found when one clause of the
+       haystack holds it word-bounded;
+    4. every word of those texts that reads as a value (:func:`_value_words`: a digit or a
+       dot extension, or six characters or more with a capital after the first letter beside
+       a small one), found word-bounded, counted even where the platform's source holds it
+       (an API or module name standing alone). A word under six characters with no digit
+       and no extension is never a value by itself.
+
+    A hit of 4 is not counted only when it is an id or a name as below, or held beside its
+    text. A hit of 2 or 3 is not counted when one clause of the platform's own source
+    (``src`` and ``scripts/replay``, cut the same way) holds it word-bounded (the
+    platform's wording, not the run's), when
+    every word of it is an id the record writes as it is (:func:`_an_id`), a name the
+    record keys or lists its parts by (:func:`_names`), a word without a letter, or a path
+    made of such pieces and the platform's words; when it holds at least one such word and
+    every other word of it is a word of the platform's source (the platform's wording around
+    an id or a name it writes); or, for a text of 2, when the value-free fields beside that
+    text hold it (a finding's message quoting the finding's own path).
+
+    What it cannot see: a run's single word that the platform's source also holds and that
+    has no digit, no dot extension and no mixed case of six characters or more (``loader``);
+    a run's phrase the platform also writes in one clause of its source; a phrase the run's
+    text and the record cut at different clause marks; a value the record writes
+    value-free by design (an id, a key, a one-word list element).
+    """
+    from scripts.replay.record import BOOKKEEPING_KEYS
+
+    values = _values_of(run, shown)
+    kept = {k: v for k, v in quiet.items() if k not in BOOKKEEPING_KEYS}
+    texts = [text.lower() for text in [*_strings(kept), render_record(quiet)]]
+    leaked = {v for v in values if any(v.lower() in text for text in texts)}
+    hay = " ".join(f" {' '.join(_words(text))} " for text in texts)
+    held = {gram for text in texts for gram in _grams(text)}
+    held_words = {word for text in texts for word in _words(text)}
+    own_words, own = _platform_words()
+    names = _names(kept)
+
+    def a_name(word: str) -> bool:
+        """An id, a name, a word without a letter, or a path made of them and the platform's
+        words that indexes a list, starts at a name or ends at an id (``objects[2``,
+        ``steps[1].action``, ``<agent>.claims[4``, ``capability_matrix.t1059.004``); a file name
+        (``advapi32.dll``) is none of them."""
+        if _an_id(word) or word in names or not any(c.isalpha() for c in word):
+            return True
+        pieces = [p for p in re.split(r"[.\[\]]", word) if p]
+        a_path = (
+            "[" in word
+            or "]" in word
+            or pieces[0] in names
+            or _an_id(pieces[-1])
+            or _an_id(word.partition(".")[2])
+        )
+        return (
+            a_path
+            and len(pieces) > 1
+            and all(p.isdigit() or _an_id(p) or p in names or p in own_words for p in pieces)
+        )
+
+    def counted(needle: str, beside: str = " ") -> bool:
+        bounded = f" {needle} "
+        words = needle.split()
+        named = [a_name(word) for word in words]
+        return not (
+            bounded in beside
+            or needle in own_words
+            or bounded in own
+            or all(named)
+            # The platform's own words around an id or a name it writes.
+            or (any(named) and all(n or w in own_words for n, w in zip(named, words, strict=True)))
+        )
+
+    def a_value(word: str, beside: str = " ") -> bool:
+        """A word that reads as a value counts even where the platform's source holds it."""
+        return f" {word} " not in beside and not a_name(word)
+
+    for text, beside in _text_only(shown, quiet):
+        words = _words(text)
+        if len(text) >= 4 and words and f" {' '.join(words)} " in hay:
+            if counted(" ".join(words), beside):
+                leaked.add(" ".join(words))
+        leaked.update(g for g in _grams(text) if g in held and counted(g, beside))
+        leaked.update(w for w in _value_words(text) if w in held_words and a_value(w, beside))
+    for text in [*values, *_stored_texts(run)]:
+        leaked.update(g for g in _grams(text) if g in held and counted(g))
+        leaked.update(w for w in _value_words(text) if w in held_words and a_value(w))
+    return sorted(leaked)
+
+
+def test_the_leak_scan_finds_a_phrase_or_a_word_of_the_run_inside_a_longer_value() -> None:
+    """The scan reads its needles from the run: a phrase of a claim's sentence or one long word
+    of it inside a longer value is found; the platform's own wording around it is not."""
+    shown = replay_run(read_run(FIXTURE), show_text=True)
+    quiet = replay_run(read_run(FIXTURE))
+    assert _leaked(FIXTURE, shown, quiet) == []
+    sentence = "It registers a scheduled task named Updater"
+    assert any(sentence in text for text, _beside in _text_only(shown, quiet))
+    for inside, found in (
+        (f"the judge dropped it ({sentence.lower()} at boot)", "registers a scheduled task"),
+        ("the judge dropped it (it registers xorshift-encoded updaters)", None),
+    ):
+        moved = copy.deepcopy(quiet)
+        moved["report"]["techniques"]["T1105"] = {"published": False, "why": inside}
+        said = _leaked(FIXTURE, shown, moved)
+        assert "the judge dropped it" not in said
+        if found is None:
+            assert said == []
+        else:
+            assert found in said and "scheduled task named updater" in said
+    # One long word of the run alone, inside a longer sentence, that the platform never writes.
+    own_words = _platform_words()[0]
+    long_word = min(
+        w
+        for text, _beside in _text_only(shown, quiet)
+        for w in _words(text)
+        if len(w) >= _LONG_WORD and w not in own_words
+    )
+    moved = copy.deepcopy(quiet)
+    moved["report"]["techniques"]["T1105"] = {"published": False, "why": f"names {long_word} here"}
+    assert _leaked(FIXTURE, shown, moved) == [long_word]
+    # A word of the run that reads as a value counts even where the platform's source holds it.
+    value_word = min(
+        w
+        for text, _beside in _text_only(shown, quiet)
+        for w in _value_words(text)
+        if any(c.isalpha() for c in w) and not _an_id(w) and w in own_words
+    )
+    moved["report"]["techniques"]["T1105"]["why"] = f"names {value_word} here"
+    assert value_word in _leaked(FIXTURE, shown, moved)
+    # And three words of the run's sentence inside a longer value are a phrase of it.
+    words = _words(sentence)
+    three = next(
+        " ".join(words[i : i + 3])
+        for i in range(len(words) - 2)
+        if f" {' '.join(words[i : i + 3])} " not in _platform_words()[1]
+    )
+    moved["report"]["techniques"]["T1105"]["why"] = f"first: {three}, then"
+    assert three in _leaked(FIXTURE, shown, moved)
+
+
 def test_no_value_of_the_run_is_in_the_record_without_the_text() -> None:
     runs = [FIXTURE]
     extra = os.environ.get("MALSPARK_REPLAY_RUN")
@@ -411,17 +720,20 @@ def test_no_value_of_the_run_is_in_the_record_without_the_text() -> None:
     for run in runs:
         shown = replay_run(read_run(run), show_text=True)
         quiet = replay_run(read_run(run))
-        values = _values_of(run, shown)
-        texts = [text.lower() for text in [*_strings(quiet), render_record(quiet)]]
-        assert values, run
-        leaked = sorted(v for v in values if any(v.lower() in text for text in texts))
-        assert leaked == [], run
+        assert _values_of(run, shown), run
+        assert _leaked(run, shown, quiet) == [], run
         # The same value-free fields either way: the text only adds fields.
         assert {k: v for k, v in shown["report"].items() if not k.endswith("_text")}.keys() == (
             quiet["report"].keys()
         )
     # The tiny run's IOC answers quote a value, so the scan has one to find.
     shown = replay_run(read_run(FIXTURE), show_text=True)
+    # Each draft's name is in the scan, and the record without the text holds its digest.
+    drafts = shown["report"]["detection_drafts"]
+    assert drafts and all(draft["name_text"] in _values_of(FIXTURE, shown) for draft in drafts)
+    assert [d["name"] for d in replay_run(read_run(FIXTURE))["report"]["detection_drafts"]] == [
+        digest(d["name_text"]) for d in drafts
+    ]
     answers = [str(row.get("answer_text") or "") for row in shown["report"]["indicators"].values()]
     assert any("https://cdn.stage-two-host.net/live/" in answer for answer in answers)
     # And a finding's path quotes a judge's label that names its object.
@@ -636,18 +948,28 @@ def test_two_records_are_told_apart_by_what_moved(record: dict[str, Any]) -> Non
     diff = diff_records(record, moved)
 
     assert differs(diff) and not has_errors(diff) and not is_partial(diff)
-    assert diff["codes_lost"] == [
+    assert _without_words(diff["codes_lost"]) == [
         {
             "part": "analyst answer",
             "owner": "static round 1",
             "path": "static.claims[2]",
             "subject": "T9999",
             "code": "attck.unknown_id",
+            "fields": {"entries": ["ev_0002"]},
             "count": 1,
+            "in_a": 1,
+            "in_b": 0,
         }
     ]
     assert diff["codes_gained"] == [
-        {"part": "judge", "path": "objects[9]", "code": "stix.malformed_hash", "count": 1}
+        {
+            "part": "judge",
+            "path": "objects[9]",
+            "code": "stix.malformed_hash",
+            "count": 1,
+            "in_a": 0,
+            "in_b": 1,
+        }
     ]
     assert diff["report"]["severity"] == {"a": "Medium", "b": "High"}
     assert diff["report"]["techniques"]["changed"]["T1105"]["b"]["published"] is False
@@ -696,6 +1018,8 @@ def test_two_schemas_make_a_partial_comparison(record: dict[str, Any]) -> None:
         "b": [
             "claims in force: kept_after_absence_question",
             "claims in force: not_valid",
+            "findings: the fields beside code, path and subject",
+            "findings: words",
             "report.degradation",
             "report.degraded",
         ],
