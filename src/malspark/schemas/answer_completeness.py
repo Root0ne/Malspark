@@ -39,6 +39,16 @@ shape decides, never the name). A flag is read in any mapping at any depth.
   else at the call's ``offset`` argument for the top level, else at page N
   times its size counted from 0 or from 1, else at 0 when no page field is
   given. A last page (offset plus rows shown reaching the count) is complete.
+* *Where a page starts.* A paged mapping's own start field (``offset``,
+  ``page_offset``, ``skip``, ``start_index``, a key of the mapping that holds
+  the rows) is kept as read (:attr:`AnswerReading.starts`), beside an explicit
+  word too and on a last page: a start above 0 says the rows before it are not
+  in the answer. One that only a list-free child holds is kept apart
+  (:attr:`AnswerReading.block_starts`), and only where that child is a paging
+  block: it also holds a page number or count, a size, a total, a flag or a
+  next field. A start in any other child is a record of its own whose offset
+  is a place in a file, and is not kept. Neither is ever read into
+  :attr:`AnswerReading.partial` or the line.
 * *Pages.* A page number with a page count is partial only when it is before
   the last whichever way pages are counted (page 0 of 1 is complete). A page
   number with no count, no bound count and no explicit word is a known paged
@@ -133,6 +143,21 @@ def _names_next(name: str) -> bool:
     return lowered.startswith("next") and len(lowered) > 4 and lowered.endswith(_NEXT_ENDINGS)
 
 
+def _paging_block(block: Mapping[str, Any]) -> bool:
+    """Whether a list-free block is a paging block: it holds a paging word of these lists.
+
+    A page number or count, a page size, a total, a flag, or a next field. A
+    start word alone makes no paging block: it may be a place in a file.
+    """
+    words = (*_PAGE_WORDS, *_PAGES_WORDS, *_SIZE_WORDS, *_TOTAL_WORDS)
+    return any(
+        name in words
+        or (_norm(name) in _FLAG_WORDS and isinstance(value, bool))
+        or _names_next(name)
+        for name, value in block.items()
+    )
+
+
 @dataclass
 class AnswerReading:
     """What one answer says about how much of its rows it holds.
@@ -150,6 +175,13 @@ class AnswerReading:
     page_unknown: tuple[int, bool] | None = None
     top_rows: int | None = None
     top_said: bool = False
+    starts: list[tuple[int, bool]] = field(default_factory=list)
+    block_starts: list[tuple[int, bool]] = field(default_factory=list)
+
+    @property
+    def starts_after_first(self) -> bool:
+        """Whether a paged mapping's own start field places its rows after the first row."""
+        return any(start > 0 for start, _ in self.starts)
 
     @property
     def partial(self) -> bool:
@@ -179,8 +211,11 @@ class _Reader:
         self.args = args or {}
         self.text_chars = text_chars
 
-    def count(self, value: Any) -> int | None:
-        """``value`` as a count, or ``None``; a count too long for the answer marks it malformed."""
+    def count(self, value: Any, *, marks: bool = True) -> int | None:
+        """``value`` as a count, or ``None``; a count too long for the answer marks it malformed.
+
+        With ``marks`` false a count too long is ``None`` and marks nothing.
+        """
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             return None
         if self.text_chars is not None:
@@ -189,14 +224,17 @@ class _Reader:
             except ValueError:
                 digits = self.text_chars + 1
             if digits > self.text_chars:
-                self.reading.malformed = True
+                if marks:
+                    self.reading.malformed = True
                 return None
         return value
 
-    def first(self, held: Mapping[str, Any], words: Sequence[str]) -> int | None:
+    def first(
+        self, held: Mapping[str, Any], words: Sequence[str], *, marks: bool = True
+    ) -> int | None:
         for word in words:
             if word in held:
-                found = self.count(held[word])
+                found = self.count(held[word], marks=marks)
                 if found is not None:
                     return found
         return None
@@ -249,6 +287,21 @@ class _Reader:
                         nexts.append(name)
                 else:
                     scope.setdefault(name, value)
+        # Where the rows start, read whatever else the mapping says, and read
+        # into nothing the line says.
+        own = {str(key): value for key, value in node.items() if str(key) not in ignored}
+        start = self.first(own, _OFFSET_WORDS, marks=False)
+        if start is not None:
+            reading.starts.append((start, top))
+        else:
+            for block in blocks[1:]:
+                words = {str(key): value for key, value in block.items()}
+                if not _paging_block(words):
+                    continue
+                beside = self.first(words, _OFFSET_WORDS, marks=False)
+                if beside is not None:
+                    reading.block_starts.append((beside, top))
+                    break
         if explicit:
             reading.nexts.extend((name, top) for name in nexts)
             if top:
