@@ -102,6 +102,9 @@ PROVENANCE: list[tuple[str, str]] = [
     # platform's words: the platform's words and a model's quoted words as one string,
     # written as text.
     (r"^report\.capability_matrix\[\]\.(not_published|note)$", "V"),
+    # The label of a flagged sentence's mark: the platform's words, a judge's quoted
+    # note among them, as one string written as text.
+    (r"^report\.flagged_statements\[\]\.label$", "V"),
     # A model's text: the judge's, the analysts', the report model's.
     (r"^report\.capability_matrix\[\]\.statements\[\]$", "M"),
     (
@@ -171,6 +174,8 @@ QUOTED_WORDS = frozenset(
         "report.run_summary.validation.retry_drops[].sentence",
         "report.run_summary.validation.retry_withdrawals[].sentence",
         "report.run_summary.coverage.negatives[].negative",
+        "report.run_summary.corroboration.key.not_published",
+        "report.flagged_statements[].label",
     }
 )
 
@@ -512,6 +517,9 @@ def _run_summary(tokens: _Tokens) -> dict[str, Any]:
                 "asserted_by": [v("corroboration.key.asserted_by[]")],
                 "claimed_by": [v("corroboration.key.claimed_by[]")],
                 "associated_by": [v("corroboration.key.associated_by[]")],
+                # Why the id was not published: the platform's words around a judge's
+                # reason, copied from the matrix's cell.
+                "not_published": v("corroboration.key.not_published"),
             }
         },
         "coverage": {
@@ -592,7 +600,8 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     a path string carries a note (the path row's context), and an analyst's
     artifact table lists a mutex (the analyst named in its row and its
     publish answer), and a technique is published, so its row prints its
-    note. The third: whether the processes are the sample's is not
+    note, and a sentence a check left standing stands in the prose (the label
+    of its mark). The third: whether the processes are the sample's is not
     known (the processes only a mark or only a file names, and the mark's
     sandbox), the binding's call is made through a slot, and the run is
     degraded (the tools it went without; the banner's reason for a skipped
@@ -617,6 +626,11 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
         held.model_copy(update={"kind": "path", "value": "C:\\Users\\listed.txt"}),
     ]
     second.capability_matrix[0].not_published = ""
+    # A sentence a check left standing, in the prose, with the label of its mark.
+    flagged = second.flagged_statements[0]
+    flagged.left_out = []
+    flagged.sentence = "The sample was flagged."
+    second.executive_summary = f"{second.executive_summary} {flagged.sentence}"
     second.sections = [
         *second.sections,
         EvidenceSection(

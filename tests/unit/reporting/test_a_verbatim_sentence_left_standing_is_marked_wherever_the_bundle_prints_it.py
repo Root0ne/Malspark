@@ -190,7 +190,8 @@ def test_a_judge_reason_left_standing_is_marked_in_the_run_s_corroboration_table
     _dropped(report, "attack_note.T1055", _REASON, sources=[], reason="No.")
 
     (row,) = [line for line in _bundle(report).splitlines() if line.startswith("| T1055 (")]
-    assert f"{_REASON} {_mark('attack_note.T1055')}" in row
+    # The reason is a quote: written as text, the platform's mark after it.
+    assert f"{_inline_safe(_REASON, pipes=False)} {_mark('attack_note.T1055')}" in row
 
 
 def test_a_sentence_left_out_is_left_out_of_a_text_holding_it_twice_and_of_every_other() -> None:

@@ -290,9 +290,13 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # came to be written as text, cut and marked on its characters (T-735): each
 # backtick and backslash of the reason is printed as a character, the only
 # change.
+# A stored run's Markdown re-pinned when a judge's reason in the run summary's
+# corroboration table came to be written as text (T-735): each character Markdown
+# reads in the reason gains a backslash in that table, the only change, and the
+# HTML did not change.
 STORED_RENDERS = {
-    "run7": ("a2c7db2998b1b669", "7c27693f82b034f8"),
-    "run5": ("079353e1d5adb8cc", "d2bafe2177886290"),
+    "run7": ("e7ad1248bae77340", "7c27693f82b034f8"),
+    "run5": ("1420ab7b523a91ac", "d2bafe2177886290"),
     "run4": ("e5ffe74339534ae2", "798ce36070468515"),
     "local8": ("85f44b070da2bb25", "a6ba8a2626516ed8"),
     "haiku4": ("686fb956d5f25ddc", "017e09781de38859"),

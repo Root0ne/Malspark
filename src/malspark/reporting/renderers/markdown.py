@@ -2652,11 +2652,14 @@ class MarkdownRenderer:
                 # A retired id's reason is the catalogue's sentence, written as one.
                 if isinstance(row, dict) and row.get("retired_reason"):
                     row = {**row, "retired_reason": inline(str(row["retired_reason"]))}
+                # The reason an id was not published, a judge's words among them, is a
+                # quote: each sentence a check left standing marked as every other place
+                # marks it, every other piece written as text (:func:`_quote_written`).
+                if isinstance(row, dict) and row.get("not_published"):
+                    quoted = ctx.quoted if ctx is not None else _value_parts
+                    reason = _quote_written(quoted(str(row["not_published"])), pipes=False)
+                    row = {**row, "not_published": reason}
                 label = technique_label(str(tid), row if isinstance(row, dict) else None)
-                # The reason an id was not published, a judge's words among them: each
-                # sentence a check left standing marked as every other place marks it.
-                if ctx is not None:
-                    label = ctx.marked(label)
                 lines.append(_row(label, asserted_by, claimed_by, associated))
         # What the run sent beyond this machine, where its summary records it
         # (``analysis.disclosure``); a summary stored without the record shows
