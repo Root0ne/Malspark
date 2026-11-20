@@ -48,6 +48,22 @@ def test_more_than_one_job_is_refused_with_the_state_that_is_per_process(jobs: i
     assert "Set max_jobs to 1" in refusal
 
 
+def test_the_refusal_says_the_whole_reason() -> None:
+    assert analysis_worker.PROCESS_WIDE_JOB_STATE == (
+        "the job's settings, installed as the process's settings (install_settings)",
+        "the configured values the event scrub masks by value (pipeline.events, scope 'job')",
+        "the API names the job's hash resolution read (pipeline.events.remember_resolved_names)",
+    )
+    assert analysis_worker.concurrent_analyses_refusal(2) == (
+        "max_jobs is 2; the analysis worker runs one analysis at a time, because "
+        "the job's settings, installed as the process's settings (install_settings); "
+        "the configured values the event scrub masks by value (pipeline.events, scope 'job'); "
+        "the API names the job's hash resolution read (pipeline.events.remember_resolved_names)"
+        " are held for the whole process, and two analyses at once would read each other's. "
+        "Set max_jobs to 1 and run more worker processes for more analyses at once."
+    )
+
+
 @pytest.mark.parametrize("value", [True, 1.9, "1"])
 def test_a_value_that_only_converts_to_one_is_refused(value: object) -> None:
     refusal = analysis_worker.concurrent_analyses_refusal(value)

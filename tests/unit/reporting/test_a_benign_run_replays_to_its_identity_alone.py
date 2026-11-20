@@ -56,7 +56,9 @@ def test_a_benign_run_publishes_no_technique_and_keeps_every_cell(tmp_path: Path
     assert any(row["published"] for row in malware["techniques"].values())
     assert set(benign["techniques"]) == set(malware["techniques"])
     assert not any(row["published"] for row in benign["techniques"].values())
+    # The record holds a reason as a digest; its words are held with the text.
     assert all(
-        row["why"].startswith("the verdict is Benign") for row in benign["techniques"].values()
+        row["why_text"].startswith("the verdict is Benign") for row in benign["techniques"].values()
     )
+    assert all(row["why"].startswith("sha256:") for row in benign["techniques"].values())
     assert benign["export"]["attack_patterns"] == []

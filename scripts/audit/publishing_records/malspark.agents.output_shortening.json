@@ -1,0 +1,9 @@
+{
+ "entries": [
+  {
+   "function": "malspark.agents.output_shortening:shortening_sentence",
+   "not_published": {"reason": "model_text", "basis": "The notice appended to a shortened tool answer that is handed back to the model; the ledger keeps the answer read before the notice, and no report, export or console page carries it."},
+   "text_digest": "e78ffbaf35a9d2a9b45f2b86cc0329537c6be626e7885db3cbcaa7812b6bf3b7"
+  }
+ ]
+}

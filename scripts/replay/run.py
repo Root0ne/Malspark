@@ -24,7 +24,25 @@ limit by default); one still running then is stopped and named. The exit
 status is 0 when the two refs decide the same over every run, 1 when they
 differ, and 2 when a part raised in either tree, when a part was defined on
 one side only and left uncompared (a partial comparison), when a ref predates
-the replay tool or was stopped at its time limit, or on an error.
+the replay tool or was stopped at its time limit, or on an error. A partial
+comparison, or one where a part raised, also says how many differences the
+parts it compared hold.
+
+Every difference is also a canonical line (``compare.difference_lines``),
+naming the run by its path under the stored runs' root, which ``--runs-root``
+names and which ``--lines`` and ``--expect`` require; a run outside it, or two
+runs of one path under it, is an error. ``--lines OUT`` writes them, one per
+line, to a file outside the repository, for a reviewer to approve.
+``--expect FILE`` compares them with the lines FILE approves, as a multiset
+and exactly, and is never taken without ``--expect-sha256 HEX``, the SHA-256
+its reviewer approved: a FILE with another is refused. Equal is status 0 with
+one line saying so, any line produced and not approved (``UNEXPECTED:``) or
+approved and not produced (``EXPECTED BUT ABSENT:``) is status 1. No two of
+``--json``, ``--lines`` and ``--expect`` name one file, however it is spelled:
+that is refused with status 2 before anything is compared or written. An
+error, a part that raised, a partial comparison and records of two schemas
+are never expected: whatever FILE says, the status is then 2, as it is for a
+FILE that is missing, cannot be read or names one of them.
 
 ``--job ID`` reads a job from the database, read-only, into a directory in the
 same layout (``--job-dir``, a temporary one by default) and replays that.
@@ -44,6 +62,7 @@ named and a temporary directory of the replay's own.
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import sys
 import tempfile
@@ -87,6 +106,31 @@ def _parser() -> argparse.ArgumentParser:
         type=float,
         metavar="SECONDS",
         help="how long --compare gives each ref's replay before stopping it (no limit by default)",
+    )
+    parser.add_argument(
+        "--runs-root",
+        type=Path,
+        help="the directory --compare names each run's path under in its difference lines "
+        "(required with --lines and --expect)",
+    )
+    parser.add_argument(
+        "--lines",
+        type=Path,
+        metavar="OUT",
+        help="write --compare's difference lines to OUT, a file outside the repository",
+    )
+    parser.add_argument(
+        "--expect",
+        type=Path,
+        metavar="FILE",
+        help="the difference lines --compare is expected to produce, exactly "
+        "(only with --expect-sha256)",
+    )
+    parser.add_argument(
+        "--expect-sha256",
+        metavar="HEX",
+        help="the approved SHA-256 of --expect's FILE (required with it); "
+        "a FILE with another is refused",
     )
     parser.add_argument(
         "--repo",
@@ -217,17 +261,169 @@ def _compare(
             shutil.rmtree(base, ignore_errors=True)
 
 
+def _labels(runs: list[Path], root: Path) -> list[str]:
+    """Each run's path under the stored runs' root; a run outside it, or two runs of one path
+    under it, is an error."""
+    from scripts.replay import compare
+
+    try:
+        labels = [compare.run_label(run, root) for run in runs]
+    except compare.CompareError as exc:
+        _error("{}", exc)
+    for label in labels:
+        if labels.count(label) > 1:
+            _error(
+                "the stored runs' root {} names two runs {}: their lines would be one", root, label
+            )
+    return labels
+
+
+def _lines(runs: list[Path], diffs: list[dict[str, Any]], labels: list[str]) -> list[str]:
+    """Every run's difference lines, each naming the run by its label, sorted."""
+    from scripts.replay import compare
+
+    return sorted(
+        line
+        for label, diff in zip(labels, diffs, strict=True)
+        for line in compare.difference_lines(diff, label)
+    )
+
+
+def _one_file(first: Path, second: Path) -> bool:
+    """Whether two paths name one file: resolved alike (a ``..``, a symlink, a relative
+    spelling) or, where both exist, the same file under two names."""
+    if first.resolve() == second.resolve():
+        return True
+    try:
+        return first.exists() and second.exists() and first.samefile(second)
+    except OSError:
+        return False
+
+
+def _inside_a_repository(path: Path, repo: Path) -> Path | None:
+    """The repository tree ``path`` lies in: this checkout, ``repo`` or the checkout either
+    is a worktree of; ``None`` when it lies in none of them."""
+    from scripts.replay import compare
+
+    trees = {_ROOT.resolve()}
+    for at in (_ROOT, repo):
+        for asked in (("rev-parse", "--show-toplevel"), ("rev-parse", "--git-common-dir")):
+            try:
+                said = compare._git(at, *asked).decode().strip()
+            except compare.CompareError:
+                continue
+            found = Path(said) if Path(said).is_absolute() else at / said
+            trees.add(found.resolve().parent if asked[1] == "--git-common-dir" else found.resolve())
+    target = path.resolve()
+    for tree in sorted(trees):
+        if target == tree or tree in target.parents:
+            return tree
+    return None
+
+
+def _judge_expected(
+    diffs: list[dict[str, Any]],
+    lines: list[str],
+    status: int,
+    *,
+    expect: Path | None,
+    sha256: str | None,
+    quiet: bool,
+) -> int:
+    """The status the comparison ends with, the expected-difference file read where given.
+
+    A partial comparison, or one where a part raised, says how many differences the parts
+    it compared hold. An error, a part that raised, a partial comparison and records of two
+    schemas are never expected: they end with status 2 whatever the file says.
+    """
+    from collections import Counter
+
+    from scripts.replay import compare
+    from scripts.replay.output import terminal_safe
+
+    def say(words: str) -> None:
+        if not quiet:
+            print(words)
+
+    not_a_decision = any(compare.has_errors(d) or compare.is_partial(d) for d in diffs)
+    if not_a_decision:
+        say(
+            "replay: the comparison is partial or a part raised, so it is not a decision "
+            f"(status 2); the parts it compared hold {len(lines)} difference line(s)"
+        )
+    if expect is None:
+        return status
+    try:
+        approved, found = compare.read_expected(expect, sha256)
+    except compare.ExpectedFileError as exc:
+        _error("{}", exc)
+    two_schemas = any(d.get("schema") for d in diffs)
+    if not_a_decision or two_schemas:
+        say(
+            "replay: NOT AS EXPECTED: an error, a partial comparison or records of two schemas "
+            "are never expected (status 2)"
+        )
+        return 2
+    produced = Counter(lines)
+    unexpected, absent = produced - approved, approved - produced
+    for line in sorted(unexpected.elements()):
+        say(f"UNEXPECTED: {terminal_safe(line)}")
+    for line in sorted(absent.elements()):
+        say(f"EXPECTED BUT ABSENT: {terminal_safe(line)}")
+    if unexpected or absent:
+        return 1
+    say(f"replay: clean by {sum(approved.values())} approved line(s) with sha256 {found}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     if args.timeout is not None and not args.timeout > 0:
         parser.error("--timeout takes a number of seconds above 0")
+    if not args.compare and (args.expect or args.expect_sha256 or args.lines or args.runs_root):
+        parser.error("--expect, --expect-sha256, --lines and --runs-root go with --compare")
+    if args.expect_sha256 is not None and (
+        args.expect is None or not re.fullmatch(r"[0-9a-fA-F]{64}", args.expect_sha256)
+    ):
+        parser.error("--expect-sha256 takes the 64 hex digits of --expect's FILE's SHA-256")
+    if args.expect is not None and args.expect_sha256 is None:
+        _error("refused: --expect is never taken without --expect-sha256, its approved digest")
+    if (args.lines or args.expect) and args.runs_root is None:
+        _error("refused: --lines and --expect name each run under --runs-root, which is required")
+    # No option writes the file another option of the same invocation reads or writes.
+    named = [
+        (flag, path)
+        for flag, path in (
+            ("--json", args.json),
+            ("--lines", args.lines),
+            ("--expect", args.expect),
+        )
+        if path is not None
+    ]
+    for i, (flag, path) in enumerate(named):
+        for other_flag, other in named[i + 1 :]:
+            if _one_file(path, other):
+                _error(
+                    "refused: {} and {} name one file ({}); nothing is compared or written",
+                    flag,
+                    other_flag,
+                    other,
+                )
     runs = [Path(run) for run in args.runs]
     job_dirs: list[Path] = []
     try:
-        for written in (args.json, args.work, args.job_dir):
+        for written in (args.json, args.work, args.job_dir, args.lines):
             if written is not None:
                 _outside(written, runs)
+        if args.lines is not None:
+            tree = _inside_a_repository(args.lines, args.repo)
+            if tree is not None:
+                _error(
+                    "refused: --lines writes outside the repository; {} is inside {}",
+                    args.lines,
+                    tree,
+                )
         if args.job:
             from scripts.replay.database import StoredRunExists, export_jobs
 
@@ -256,6 +452,13 @@ def main(argv: list[str] | None = None) -> int:
             if not run.is_dir():
                 _error("no stored run at {}", run)
         if args.compare:
+            # Without --runs-root (and so without --lines and --expect) the lines are only
+            # counted, and a run's name serves as its label.
+            labels = (
+                [run.name for run in runs]
+                if args.runs_root is None
+                else _labels(runs, args.runs_root)
+            )
             diffs, status = _compare(
                 runs,
                 (args.compare[0], args.compare[1]),
@@ -266,7 +469,17 @@ def main(argv: list[str] | None = None) -> int:
                 timeout=args.timeout,
             )
             _write(args.json, diffs[0] if len(diffs) == 1 else diffs)
-            return status
+            lines = _lines(runs, diffs, labels)
+            if args.lines is not None:
+                args.lines.write_bytes("".join(f"{line}\n" for line in lines).encode("ascii"))
+            return _judge_expected(
+                diffs,
+                lines,
+                status,
+                expect=args.expect,
+                sha256=args.expect_sha256,
+                quiet=args.quiet,
+            )
         records = _replay(runs, args.show_text)
         _write(args.json, records[0] if len(records) == 1 else records)
         from scripts.replay.output import render_record, terminal_safe

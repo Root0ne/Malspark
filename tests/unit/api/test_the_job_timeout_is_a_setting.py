@@ -116,6 +116,26 @@ class TestTheClock:
                 "stopped, and nothing the run would have done after it."
             )
 
+    @pytest.mark.parametrize(
+        ("kind", "why"),
+        [
+            (STOP_TIMEOUT, "Stopped by the job timeout (60 s, core.job_timeout)"),
+            (STOP_CANCEL, "Cancelled by the operator"),
+            (STOP_SHUTDOWN, "Stopped because the worker running it shut down"),
+            (
+                STOP_UNEXPLAINED,
+                "Stopped by a cancellation inside the pipeline that neither the operator, the "
+                "job timeout nor a worker shutdown made",
+            ),
+        ],
+    )
+    def test_each_stop_note_is_said_whole(self, kind: str, why: str) -> None:
+        assert stop_note(kind, seconds=61.2, where="while node report was running", limit=60) == (
+            f"{why} 61 s into the run, while node report was running. The report kept is "
+            "partial: it holds what the run produced before it stopped, and nothing the run "
+            "would have done after it."
+        )
+
 
 async def _job(ctx: dict) -> None:
     return None
