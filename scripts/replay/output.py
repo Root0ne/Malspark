@@ -7,15 +7,17 @@ them (``--show-text``), and are printed only then.
 
 from __future__ import annotations
 
+import difflib
 import json
 import re
 import sys
 import unicodedata
+from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from scripts.replay.record import errors
+from scripts.replay.record import NEVER_COMPARED, errors
 
 # Controls, format characters (bidirectional overrides, zero-width marks) and the
 # line and paragraph separators, and lone surrogates: none of them is printable text.
@@ -512,6 +514,9 @@ def render_diff(diff: Mapping[str, Any], ref_a: str, ref_b: str) -> str:
     sides.
     """
     lines = [f"Compare {_s(diff.get('run'))}: A = {_s(ref_a)}, B = {_s(ref_b)}"]
+    lines.append(
+        "  never compared: " + "; ".join(f"{name} ({why})" for name, why in NEVER_COMPARED)
+    )
     raised = diff.get("errors") or {}
     for side, ref in (("a", ref_a), ("b", ref_b)):
         for row in raised.get(side) or []:
@@ -557,7 +562,18 @@ def render_diff(diff: Mapping[str, Any], ref_a: str, ref_b: str) -> str:
                 where = _join(
                     " | ", (row[k] for k in ("part", "owner", "path", "subject") if row.get(k))
                 )
-                lines.append(f"    {_s(row['code'])} x{_s(row['count'])}: {where}")
+                if row.get("words"):
+                    where += f" | words {_s(row['words'])}"
+                if row.get("fields"):
+                    where += f" | {_show(row['fields'])}"
+                held = (
+                    f" (A {_s(row['in_a'])}, B {_s(row['in_b'])})"
+                    if "in_a" in row and "in_b" in row
+                    else ""
+                )
+                lines.append(f"    {_s(row['code'])} x{_s(row['count'])}{held}: {where}")
+                if "message" in row:
+                    lines.append(f"        said: {_s(row['message'])}")
     for key, title in (
         ("totals", "Counts by producer and code"),
         ("answers", "Claims each answer parsed into"),
@@ -572,11 +588,99 @@ def render_diff(diff: Mapping[str, Any], ref_a: str, ref_b: str) -> str:
         if diff.get(key):
             lines.append(f"  {title}:")
             lines.extend(f"    {line}" for line in _nested(diff[key]))
-    report = diff.get("report") or {}
+    report = dict(diff.get("report") or {})
+    drafts = report.pop("detection_drafts", None) or {}
     if report:
         lines.append("  Report:")
         lines.extend(f"    {line}" for line in _nested(report))
+    if drafts:
+        lines.append(
+            "  Detection drafts (kind, name digest, body digest; compile error, evidence and "
+            "values left out digests where held):"
+        )
+        lines.extend(f"    {line}" for line in _draft_lines(drafts))
     return "\n".join(lines)
+
+
+def _draft_lines(drafts: Mapping[str, Any]) -> list[str]:
+    """The drafts one side holds more often, and the body lines of a draft whose body changed.
+
+    A draft of one kind and name lost once and gained once is one draft whose body changed:
+    its two digests are printed, and the lines its body lost and gained when the records
+    hold the words. Any other row is printed as lost or gained.
+    """
+    lost = [row for row in drafts.get("lost") or [] if isinstance(row, Mapping)]
+    gained = [row for row in drafts.get("gained") or [] if isinstance(row, Mapping)]
+
+    def named(row: Mapping[str, Any]) -> tuple[str, str]:
+        return (str(row.get("kind") or ""), str(row.get("name") or ""))
+
+    lost_by = Counter(named(row) for row in lost)
+    gained_by = Counter(named(row) for row in gained)
+    paired = {key for key in lost_by if lost_by[key] == 1 and gained_by[key] == 1}
+    out: list[str] = []
+    for row in lost:
+        if named(row) not in paired:
+            continue
+        other = next(g for g in gained if named(g) == named(row))
+        out.append(
+            f"changed: {_s(row.get('kind'))} {_s(row.get('name'))}: body "
+            f"{_s(row.get('body'))} -> {_s(other.get('body'))}" + _compiled(row, other)
+        )
+        if "name_text" in row:
+            out.append(f"    name: {_s(row['name_text'])}")
+        for side, held in (("A", row), ("B", other)):
+            if "compile_error_text" in held and row.get("compile_error") != other.get(
+                "compile_error"
+            ):
+                out.append(f"    compile error under {side}: {_s(held['compile_error_text'])}")
+        if "body_text" in row and "body_text" in other:
+            out.extend(
+                f"    {_s(line)}"
+                for line in difflib.unified_diff(
+                    str(row["body_text"]).splitlines(),
+                    str(other["body_text"]).splitlines(),
+                    lineterm="",
+                    n=0,
+                )
+                if not line.startswith(("---", "+++"))
+            )
+    for side, rows in (("in A, not in B", lost), ("in B, not in A", gained)):
+        for row in rows:
+            if named(row) in paired:
+                continue
+            out.append(
+                f"{side}: {_s(row.get('kind'))} {_s(row.get('name'))} body {_s(row.get('body'))}"
+                f" x{_s(row.get('count'))} (A {_s(row.get('in_a'))}, B {_s(row.get('in_b'))})"
+                + (" not compiled" if row.get("not_compiled") else "")
+                + "".join(
+                    f" {named} {_s(row[field])}"
+                    for field, named in (
+                        ("compile_error", "compile error"),
+                        ("evidence", "evidence"),
+                        ("left_out", "values left out"),
+                    )
+                    if row.get(field)
+                )
+            )
+            if "name_text" in row:
+                out.append(f"    name: {_s(row['name_text'])}")
+    return out
+
+
+def _compiled(a: Mapping[str, Any], b: Mapping[str, Any]) -> str:
+    said = {False: "compiled", True: "not compiled"}
+    left, right = bool(a.get("not_compiled")), bool(b.get("not_compiled"))
+    out = "" if left == right else f"; A {said[left]}, B {said[right]}"
+    for field, named in (
+        ("compile_error", "compile error"),
+        ("evidence", "evidence"),
+        ("left_out", "values left out"),
+    ):
+        held_a, held_b = a.get(field), b.get(field)
+        if held_a != held_b:
+            out += f"; {named} {_s(held_a or 'none')} -> {_s(held_b or 'none')}"
+    return out
 
 
 def _nested(value: Any, prefix: str = "") -> list[str]:

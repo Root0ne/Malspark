@@ -1,0 +1,63 @@
+{
+ "type": "object",
+ "required": ["entries"],
+ "additionalProperties": false,
+ "properties": {
+  "entries": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "oneOf": [
+     {
+      "required": ["condition", "basis", "test", "text_digest"],
+      "additionalProperties": false,
+      "oneOf": [{"required": ["function"]}, {"required": ["constant"]}],
+      "properties": {
+       "function": {"type": "string", "pattern": "^[A-Za-z_][\\w.]*:[A-Za-z_][\\w.<>]*$"},
+       "constant": {"type": "string", "pattern": "^[A-Za-z_][\\w.]*:[A-Za-z_][\\w.]*$"},
+       "condition": {"type": "string", "pattern": "\\S"},
+       "basis": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "\\S"}},
+       "test": {
+        "oneOf": [
+         {"type": "string", "pattern": "^tests/[^:\\[\\]]+\\.py::[A-Za-z_]\\w*(::[A-Za-z_]\\w*)?(\\[.+\\])?$"},
+         {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "pattern": "^tests/[^:\\[\\]]+\\.py::[A-Za-z_]\\w*(::[A-Za-z_]\\w*)?(\\[.+\\])?$"}
+         }
+        ]
+       },
+       "no_published_surface": {"type": "string", "pattern": "\\S"},
+       "text_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+     },
+     {
+      "required": ["not_published", "text_digest"],
+      "additionalProperties": false,
+      "oneOf": [{"required": ["function"]}, {"required": ["constant"]}],
+      "properties": {
+       "function": {"type": "string", "pattern": "^[A-Za-z_][\\w.]*:[A-Za-z_][\\w.<>]*$"},
+       "constant": {"type": "string", "pattern": "^[A-Za-z_][\\w.]*:[A-Za-z_][\\w.]*$"},
+       "not_published": {
+        "type": "object",
+        "required": ["reason", "basis"],
+        "additionalProperties": false,
+        "reasons_by_class": {
+         "a": ["operator_text", "schema_text", "non_sentence", "model_text"],
+         "b": ["operator_text", "schema_text", "non_sentence", "model_text"],
+         "c": ["operator_text", "schema_text", "non_sentence", "model_text"],
+         "h": ["operator_text", "schema_text", "non_sentence", "model_text", "compared_only"]
+        },
+        "properties": {
+         "reason": {"type": "string", "enum": ["operator_text", "schema_text", "non_sentence", "model_text", "compared_only"]},
+         "basis": {"type": "string", "pattern": "^\\S[^\\n]*$", "maxLength": 400}
+        }
+       },
+       "text_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+     }
+    ]
+   }
+  }
+ }
+}

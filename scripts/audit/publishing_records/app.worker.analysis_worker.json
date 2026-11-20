@@ -1,0 +1,30 @@
+{
+ "entries": [
+  {
+   "constant": "app.worker.analysis_worker:PROCESS_WIDE_JOB_STATE",
+   "condition": "joined into the refusal concurrent_analyses_refusal returns when max_jobs is an integer other than 1",
+   "basis": ["WorkerSettings.max_jobs"],
+   "test": "tests/api/test_the_worker_refuses_concurrent_analyses.py::test_the_refusal_says_the_whole_reason",
+   "no_published_surface": "only inside the refusal, which worker startup logs and raises before any job is taken; no report, export, job row or route carries it",
+   "text_digest": "c779e97021bf912004712f5c239c13319d0c503d5a687dc14fbf665ae77dd990"
+  },
+  {
+   "function": "app.worker.analysis_worker:concurrent_analyses_refusal",
+   "condition": "returned when max_jobs is not the integer 1, then logged and raised at worker startup: one sentence for a value that is no number of jobs, another naming the per-process state for any other integer",
+   "basis": ["WorkerSettings.max_jobs"],
+   "test": [
+    "tests/api/test_the_worker_refuses_concurrent_analyses.py::test_the_refusal_says_the_whole_reason",
+    "tests/api/test_the_worker_refuses_concurrent_analyses.py::test_a_value_that_is_no_number_is_refused"
+   ],
+   "no_published_surface": "worker startup logs it and raises it before any job is taken; no report, export, job row or route carries it",
+   "text_digest": "19e8d1848868fa83b686cdee1385c8a2fad5fc8c2b30bae4ad15e3ed14a9a815"
+  },
+  {
+   "function": "app.worker.analysis_worker:stop_note",
+   "condition": "prints on a stopped job's row and its partial report: the reason by the kind of stop (job timeout, operator cancel, worker shutdown, any other cancellation), then how far into the run and where the pipeline was",
+   "basis": ["the stop kind", "seconds into the run", "Cancellation.where_stopped", "core.job_timeout"],
+   "test": "tests/unit/api/test_the_job_timeout_is_a_setting.py::TestTheClock::test_each_stop_note_is_said_whole",
+   "text_digest": "21459aad194d3c9d5564db22159776ea38e7498b32cc09aca644647dcd6c14d6"
+  }
+ ]
+}

@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -207,3 +209,24 @@ def read_run(root: Path, name: str | None = None) -> StoredRun:
     job = loaded.get("job.json")
     run.job = job if isinstance(job, dict) else None
     return run
+
+
+def stored_clock(report: Mapping[str, Any] | None, job: Mapping[str, Any] | None) -> datetime:
+    """When the stored report was built, else when its job completed or was made; the epoch
+    with none of them.
+
+    The one clock a rebuilt report is dated by: the replay's detection drafts
+    (``scripts.replay.rules``) and the surface render's build (``render_surfaces.py``) both
+    read it.
+    """
+    for said in (
+        (report or {}).get("generated_at"),
+        (job or {}).get("completed_at"),
+        (job or {}).get("created_at"),
+    ):
+        if said:
+            try:
+                return datetime.fromisoformat(str(said).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+    return datetime(1970, 1, 1, tzinfo=UTC)

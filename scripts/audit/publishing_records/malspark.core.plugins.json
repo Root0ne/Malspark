@@ -1,0 +1,9 @@
+{
+ "entries": [
+  {
+   "function": "malspark.core.plugins:registration_refusal",
+   "not_published": {"reason": "operator_text", "basis": "The refusal kept as a plugin's load error, which the settings refusal and the settings probe show the operator; a failed job's error carries only the exception class, and no report or export carries it."},
+   "text_digest": "fc77e2e2339974d65b05fcee08034fc408302ff5acbdbd387ac5ede685c8e69d"
+  }
+ ]
+}

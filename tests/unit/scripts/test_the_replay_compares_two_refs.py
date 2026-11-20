@@ -191,16 +191,28 @@ def test_each_ref_is_replayed_by_its_own_harness_and_a_crash_is_never_no_differe
     argv = [str(FIXTURE), "--repo", str(repo), "--json", str(moved), "--quiet"]
     assert replay_cli.main([*argv, "--compare", made["tool"], renamed]) == 1
     diff = json.loads(moved.read_text(encoding="utf-8"))
+    fields = {"arguments": ["pattern"], "entries": ["ev_0002"], "tool": "strings"}
     assert diff["codes_lost"] == [
         {
             "part": "tool",
             "owner": "ev_0002",
             "code": "tool.argument_names_its_parameter",
+            "fields": fields,
             "count": 1,
+            "in_a": 1,
+            "in_b": 0,
         }
     ]
     assert diff["codes_gained"] == [
-        {"part": "tool", "owner": "ev_0002", "code": "tool.argument_is_its_own_name", "count": 1}
+        {
+            "part": "tool",
+            "owner": "ev_0002",
+            "code": "tool.argument_is_its_own_name",
+            "fields": fields,
+            "count": 1,
+            "in_a": 0,
+            "in_b": 1,
+        }
     ]
     assert set(diff) <= {"run", "codes_lost", "codes_gained", "totals"}
 

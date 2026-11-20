@@ -1,0 +1,9 @@
+{
+ "entries": [
+  {
+   "function": "malspark.core.config:agent_reference_problems",
+   "not_published": {"reason": "operator_text", "basis": "The refusals the settings model and the API's agent definition editor give the operator for a definition's agent references; no report, export or job row carries them."},
+   "text_digest": "0bfe99ba380444da278cfd5b796f01de6cf5f8dc9729702bf15bc88db184ff86"
+  }
+ ]
+}

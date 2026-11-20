@@ -1,0 +1,9 @@
+{
+ "entries": [
+  {
+   "function": "app.main:create_app",
+   "not_published": {"reason": "schema_text", "basis": "The application's description in its OpenAPI schema, which is served only when debug is on; no report, export, job row or report route carries it."},
+   "text_digest": "455cdc2b143a973f6f3903b0a6613d3b4f350958605e1a250372ce88f5ae540f"
+  }
+ ]
+}

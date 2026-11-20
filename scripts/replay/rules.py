@@ -34,9 +34,11 @@ the way the platform composes them:
 
 What a model would have been asked is what is counted: no model is called.
 The record carries codes, ids, kinds, counts and digests, and no value from
-the run; a finding's words, a claim's text, a subject's value and an
-indicator's are added only when asked for (``show_text``), in fields of their
-own (``scripts.replay.record``). Every input the stored record does not hold
+the run; a finding's words, the reason beside an unpublished technique and a
+detection draft's name, body and compile error are digests, and they, a
+claim's text, a subject's value and an indicator's are added only when asked
+for (``show_text``), in fields of their own
+(``scripts.replay.record``). Every input the stored record does not hold
 is listed in ``not_replayed`` with why, and a part that raised is listed there
 marked as an error (``"error": true``): a crash is not a decision, and the
 command ends with status 2 on one.
@@ -457,8 +459,11 @@ def _flag(
     listed = sorted(dict.fromkeys(ids))
     if listed:
         row["entries"] = listed
+    message = str(getattr(violation, "message", "") or "")
+    # The finding's words, as a digest; the words themselves only with the text.
+    row["words"] = digest(message)
     if show_text:
-        row["message"] = str(getattr(violation, "message", "") or "")
+        row["message"] = message
     return row
 
 
@@ -1728,11 +1733,9 @@ def _report_values(run: _Run, built: _Built, judged: _Judged) -> dict[str, Any]:
             "the IOC table is the build's own",
         )
 
-    from malspark.schemas.isr_models import judge_dropped_reason
-
-    # A technique the judge dropped carries the judge's own reason; it is the
-    # judge's text, added only with the text.
-    dropped = judge_dropped_reason("")
+    # The reason beside an unpublished technique can carry the judge's own words
+    # whatever sentence the platform puts around them: it is a digest, and its
+    # words are added only with the text, as a finding's are.
     techniques: dict[str, Any] = {}
     for cell in report.capability_matrix or []:
         tid = str(cell.technique_id or "").strip().upper()
@@ -1741,8 +1744,8 @@ def _report_values(run: _Run, built: _Built, judged: _Judged) -> dict[str, Any]:
         row: dict[str, Any] = {"published": not cell.not_published}
         if cell.not_published:
             why = str(cell.not_published)
-            row["why"] = dropped if why.startswith(dropped) else why
-            if run.show_text and row["why"] != why:
+            row["why"] = f"sha256:{digest(why)}"
+            if run.show_text:
                 row["why_text"] = why
         techniques[tid] = row
     for mapping in report.ttp_mappings or []:
@@ -2204,18 +2207,60 @@ def _claims_not_discussed(run: _Run, built: _Built) -> dict[str, list[int]]:
 
 
 def _drafts(run: _Run, report: Any) -> dict[str, Any]:
-    """The detection rules drafted from what the export published, by format."""
+    """The detection rules drafted from what the export published: by format, and each draft
+    by its kind, a digest of its name, a digest of its body and, where it has them, a digest
+    of its compile error, of the evidence entries it was drafted from and of the values its
+    selection left out (the name's, body's and error's words only with the text).
+
+    The drafts are dated by the stored run's clock (``stored.stored_clock``), as the
+    surface render dates them, so a body differs only where the rules write it differently;
+    the rebuilt report's own ``generated_at`` is put back once they are drafted.
+    """
     try:
+        from scripts.replay.stored import stored_clock
+
         from malspark.reporting.builder import MalwareReportBuilder
 
-        rules = MalwareReportBuilder.attach_detection_signatures(report).detection_signatures
+        byjob = run.stored.byjob.get("malware_report")
+        stored = byjob if isinstance(byjob, dict) else run.stored.report
+        held = report.generated_at
+        report.generated_at = stored_clock(stored, run.stored.job)
+        try:
+            rules = MalwareReportBuilder.attach_detection_signatures(report).detection_signatures
+        finally:
+            report.generated_at = held
     except Exception as exc:  # noqa: BLE001 — named as an error, the report values stand
         _failed(run, "detection rules", exc)
         return {}
     kinds = Counter(str(rule.kind) for rule in rules)
+    drafts: list[dict[str, Any]] = []
+    for rule in rules:
+        row: dict[str, Any] = {
+            "kind": str(rule.kind),
+            "name": digest(str(rule.name)),
+            "body": digest(str(rule.body)),
+        }
+        if rule.compile_error:
+            row["not_compiled"] = True
+            row["compile_error"] = digest(str(rule.compile_error))
+        # The evidence entries it was drafted from and the values its selection left out,
+        # each a digest of the list in the draft's order.
+        if rule.source_evidence:
+            row["evidence"] = digest(json.dumps(list(rule.source_evidence)))
+        if rule.values_left_out:
+            row["left_out"] = digest(
+                json.dumps([[value.value, value.why] for value in rule.values_left_out])
+            )
+        if run.show_text:
+            row["name_text"] = str(rule.name)
+            row["body_text"] = str(rule.body)
+            if rule.compile_error:
+                row["compile_error_text"] = str(rule.compile_error)
+        drafts.append(row)
     return {
         "detection_rules": dict(sorted(kinds.items())),
         "detection_rules_not_compiled": sum(1 for rule in rules if rule.compile_error),
+        "detection_drafts": drafts,
     }
 
 
@@ -2246,6 +2291,7 @@ def _fp_linter(run: _Run, built: _Built) -> dict[str, Any]:
         row: dict[str, Any] = {"code": str(warning.rule), "severity": str(warning.severity)}
         if warning.field:
             row["path"] = str(warning.field)
+        row["words"] = digest(str(warning.message))
         if run.show_text:
             row["message"] = str(warning.message)
         flags.append(row)

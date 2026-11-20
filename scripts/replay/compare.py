@@ -24,15 +24,35 @@ and the parts one side could replay and the other could not. The values are
 compared value-free (``scripts.replay.record``), so a record made with the
 text compares with one made without it.
 
+A finding is keyed by its producer, answer, claim and code, a digest of its
+words and every value-free field beside them (``advisory``, ``asked``, the
+linter's ``severity``, the entries it names, ...), and the findings of one key
+are compared as a multiset; the fields a finding holds only as words, and its
+place in the checked text, are never compared
+(``scripts.replay.record.NOT_COMPARED_IN_A_FINDING``), and the rendered comparison
+says so in the one list of every part it never compares
+(``scripts.replay.record.NEVER_COMPARED``). A detection draft is compared by its kind,
+the digests of its name, its body, its compile error, the evidence entries it
+was drafted from and the values its selection left out, dated by the stored
+run's clock; what else a draft holds the record never holds, and the
+comparison lists it as never compared.
+
 Two records of different schemas are compared on what both define, and every
-part only one of them defines is listed under ``not_compared``: the
-comparison is then partial. A part that raised in either tree is listed under
-``errors``. Either way the comparison is not a decision, and the command ends
-with status 2.
+part only one of them defines is listed under ``not_compared``, a field inside
+a finding as well: the comparison is then partial. A part that raised in either
+tree is listed under ``errors``. Either way the comparison is not a decision,
+and the command ends with status 2.
+
+:func:`difference_lines` writes every difference of one run as canonical lines,
+each built from both records' values and naming the run by its path under the
+stored runs' root, so two different differences never give one line; an
+expected-difference file (:func:`read_expected`) is compared with them as a
+multiset, exactly.
 """
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -49,6 +69,7 @@ from typing import Any
 from scripts.replay.guard import ATTCK_CACHE_VARIABLE
 from scripts.replay.record import (
     BOOKKEEPING_KEYS,
+    NOT_COMPARED_IN_A_FINDING,
     answer_head,
     digest,
     errors,
@@ -79,6 +100,22 @@ HARNESS = "scripts/replay/run.py"
 # from which the object labels in its paths are too.
 VALUE_FREE_SCHEMA = 3
 LABEL_FREE_SCHEMA = 4
+# The schema from which every finding carries a digest of its words (``words``), the report
+# lists each detection draft (``detection_drafts``), and the reason beside an unpublished
+# technique is a digest.
+WORDS_SCHEMA = 5
+
+# What a finding's key names besides its producer and answer.
+_KEY_FIELDS = ("code", "path", "subject")
+# The fields a finding holds only with the text: its words (compared by their digest), the
+# text forms of its subject and path (compared value-free), its claim's sentence and the
+# values of a self-named argument.
+_TEXT_FIELDS = frozenset({"message", "subject_text", "path_text", "claim", "values"})
+_OUTSIDE_THE_KEY = frozenset(
+    {*_KEY_FIELDS, *_TEXT_FIELDS, "words", *(name for name, _why in NOT_COMPARED_IN_A_FINDING)}
+)
+# The parts a record of the words schema defines inside its findings.
+_FINDING_PARTS = ("findings: words", "findings: the fields beside code, path and subject")
 
 
 class CompareError(RuntimeError):
@@ -255,10 +292,14 @@ def _is_item() -> Any:
     return is_item_id
 
 
-def _flag_key(part: str, owner: str, flag: Mapping[str, Any], schema: int) -> tuple[str, ...]:
+def _flag_key(
+    part: str, owner: str, flag: Mapping[str, Any], schema: int, *, words: bool = False
+) -> tuple[str, ...]:
     """A finding's key. A record from before the value-free schemas wrote its subject
     (before 3) or the object labels in its paths (before 4) with the values in them: they
-    are made value-free here as a later record writes them, so the two compare."""
+    are made value-free here as a later record writes them, so the two compare. With
+    ``words`` the key adds the digest of the finding's words and every value-free field
+    beside the code, path and subject, as canonical JSON."""
     subject = str(flag.get("subject") or "")
     path = str(flag.get("path") or "")
     if schema < VALUE_FREE_SCHEMA:
@@ -267,36 +308,67 @@ def _flag_key(part: str, owner: str, flag: Mapping[str, Any], schema: int) -> tu
         subject = value_free_subject(subject, is_item)
     elif schema < LABEL_FREE_SCHEMA:
         path = value_free_path(path)
-    return (part, owner, path, subject, str(flag.get("code") or ""))
+    said, fields = "", ""
+    if words:
+        said = str(flag.get("words") or "")
+        beside = {k: v for k, v in flag.items() if k not in _OUTSIDE_THE_KEY}
+        fields = _canonical(beside) if beside else ""
+    return (part, owner, path, subject, str(flag.get("code") or ""), said, fields)
 
 
-def flag_keys(record: Mapping[str, Any]) -> Counter[tuple[str, ...]]:
-    """Every finding of a record, keyed by producer, answer, claim and code, counted."""
+def _canonical(value: Any) -> str:
+    """``value`` as one line of JSON that the same value always writes the same way."""
+    return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
+def _findings(
+    record: Mapping[str, Any], words: bool
+) -> Iterable[tuple[tuple[str, ...], Mapping[str, Any]]]:
+    """Every finding of a record with its key (:func:`_flag_key`)."""
     schema = schema_of(record)
-    out: Counter[tuple[str, ...]] = Counter()
     for agent, entry in (record.get("analysts") or {}).items():
         for answer in entry.get("answers") or []:
             owner = f"{agent} {answer.get('answer', '')}"
             for flag in answer.get("flags") or []:
-                out[_flag_key("analyst answer", owner, flag, schema)] += 1
+                yield _flag_key("analyst answer", owner, flag, schema, words=words), flag
         for flag in (entry.get("in_force") or {}).get("flags") or []:
-            out[_flag_key("claims in force", agent, flag, schema)] += 1
+            yield _flag_key("claims in force", agent, flag, schema, words=words), flag
     for part in ("judge", "narrative", "tool", "fp_linter"):
         for flag in (record.get(part) or {}).get("flags") or []:
             owner = ",".join(flag.get("entries") or []) if part == "tool" else ""
-            out[_flag_key(part, owner, flag, schema)] += 1
+            yield _flag_key(part, owner, flag, schema, words=words), flag
     for section, entry in ((record.get("composer") or {}).get("sections") or {}).items():
         for flag in entry.get("flags") or []:
-            out[_flag_key("composer", section, flag, schema)] += 1
+            yield _flag_key("composer", section, flag, schema, words=words), flag
+
+
+def flag_keys(record: Mapping[str, Any], *, words: bool | None = None) -> Counter[tuple[str, ...]]:
+    """Every finding of a record, keyed by producer, answer, claim and code, counted.
+
+    ``words`` (by default: the record is of the words schema) adds each finding's words
+    digest and its other value-free fields to its key."""
+    if words is None:
+        words = schema_of(record) >= WORDS_SCHEMA
+    return Counter(key for key, _flag in _findings(record, words))
+
+
+def _keyed(
+    rows: Iterable[tuple[tuple[str, ...], int]],
+    counts_a: Counter[tuple[str, ...]],
+    counts_b: Counter[tuple[str, ...]],
+    said: Mapping[tuple[str, ...], str],
+) -> list[dict[str, Any]]:
+    names = ("part", "owner", "path", "subject", "code", "words")
+    out: list[dict[str, Any]] = []
+    for key, count in sorted(rows):
+        row: dict[str, Any] = {n: v for n, v in zip(names, key, strict=False) if v}
+        if key[6]:
+            row["fields"] = json.loads(key[6])
+        row.update(count=count, in_a=counts_a[key], in_b=counts_b[key])
+        if key in said:
+            row["message"] = said[key]
+        out.append(row)
     return out
-
-
-def _keyed(rows: Iterable[tuple[tuple[str, ...], int]]) -> list[dict[str, Any]]:
-    names = ("part", "owner", "path", "subject", "code")
-    return [
-        {**{n: v for n, v in zip(names, key, strict=True) if v}, "count": count}
-        for key, count in sorted(rows)
-    ]
 
 
 def _changed(a: Any, b: Any) -> dict[str, Any] | None:
@@ -366,6 +438,8 @@ def _defined(record: Mapping[str, Any], schema: int) -> set[str]:
     composer = record.get("composer")
     if isinstance(composer, dict):
         names.update(f"composer section: {name}" for name in composer.get("sections") or {})
+    if schema >= WORDS_SCHEMA:
+        names.update(_FINDING_PARTS)
     return names
 
 
@@ -374,16 +448,26 @@ def _has_reasons(record: Mapping[str, Any]) -> bool:
     return any(isinstance(row, dict) and "why" in row for row in techniques.values())
 
 
+def _reasons_compare(schema_a: int, schema_b: int) -> bool:
+    """Whether two records write the reason beside an unpublished technique in one form."""
+
+    def form(schema: int) -> int:
+        return 0 if schema < VALUE_FREE_SCHEMA else 1 if schema < WORDS_SCHEMA else 2
+
+    return form(schema_a) == form(schema_b) != 0
+
+
 def _common(
     a: Mapping[str, Any], b: Mapping[str, Any], schema_a: int, schema_b: int
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, list[str]]]:
     """The two records cut to what both define, and the parts left uncompared.
 
     ``a`` and ``b`` list the parts only that record defines. ``differently``
-    lists the parts both define in forms that cannot be compared: before the
-    value-free schema, the reason beside an unpublished technique was the
-    judge's words when the record was made with the text, and the record does
-    not say whether it was.
+    lists the parts both define in forms that cannot be compared: the reason
+    beside an unpublished technique was, before the value-free schema, the
+    judge's words when the record was made with the text (and the record does
+    not say whether it was), then the reason or the judge's marker, and from
+    the words schema a digest of the whole reason.
     """
     keys = set(a) & set(b)
     a2 = {k: a[k] for k in keys}
@@ -399,7 +483,7 @@ def _common(
         "b": sorted(defined_b - defined_a),
         "differently": [],
     }
-    if min(schema_a, schema_b) < VALUE_FREE_SCHEMA and (_has_reasons(a) or _has_reasons(b)):
+    if not _reasons_compare(schema_a, schema_b) and (_has_reasons(a) or _has_reasons(b)):
         not_compared["differently"].append("report.techniques: why")
     return a2, b2, not_compared
 
@@ -454,9 +538,17 @@ def diff_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any]:
     a, b, not_compared = _common(a, b, schema_a, schema_b)
     if any(not_compared.values()):
         out["not_compared"] = {key: rows for key, rows in not_compared.items() if rows}
-    keys_a, keys_b = flag_keys(a), flag_keys(b)
-    gained = _keyed((k, c) for k, c in (keys_b - keys_a).items())
-    lost = _keyed((k, c) for k, c in (keys_a - keys_b).items())
+    words = schema >= WORDS_SCHEMA
+    keys_a, keys_b = flag_keys(a, words=words), flag_keys(b, words=words)
+    # The words a record made with the text holds, shown beside their digest.
+    said = {
+        key: str(flag["message"])
+        for record in (a, b)
+        for key, flag in _findings(record, words)
+        if "message" in flag
+    }
+    gained = _keyed(((k, c) for k, c in (keys_b - keys_a).items()), keys_a, keys_b, said)
+    lost = _keyed(((k, c) for k, c in (keys_a - keys_b).items()), keys_a, keys_b, said)
     if gained:
         out["codes_gained"] = gained
     if lost:
@@ -508,8 +600,14 @@ def diff_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any]:
             "only_b": [s for s in sections_b if s not in held_a],
             "order_changed": [s for s in sections_a if s in held_b]
             != [s for s in sections_b if s in held_a],
+            # Both orders, so two different moves never read as one difference.
+            "a": list(sections_a),
+            "b": list(sections_b),
         }
-    with_why = schema >= VALUE_FREE_SCHEMA
+    drafts = _draft_diff(report_a, report_b)
+    if drafts:
+        report["detection_drafts"] = drafts
+    with_why = _reasons_compare(schema_a, schema_b)
     techniques = _mapping_diff(
         _free_techniques(report_a.get("techniques") or {}, with_why),
         _free_techniques(report_b.get("techniques") or {}, with_why),
@@ -600,6 +698,56 @@ def diff_records(a: Mapping[str, Any], b: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _draft_key(row: Mapping[str, Any]) -> tuple[str, str, str, bool, str, str, str]:
+    return (
+        str(row.get("kind") or ""),
+        str(row.get("name") or ""),
+        str(row.get("body") or ""),
+        bool(row.get("not_compiled")),
+        str(row.get("compile_error") or ""),
+        str(row.get("evidence") or ""),
+        str(row.get("left_out") or ""),
+    )
+
+
+def _draft_diff(report_a: Mapping[str, Any], report_b: Mapping[str, Any]) -> dict[str, Any]:
+    """The detection drafts one report holds more often than the other, by kind and the digests
+    of its name, body, compile error, evidence entries and values left out; the words beside
+    them when a record holds them."""
+    if "detection_drafts" not in report_a or "detection_drafts" not in report_b:
+        return {}
+    rows_a = [r for r in report_a.get("detection_drafts") or [] if isinstance(r, Mapping)]
+    rows_b = [r for r in report_b.get("detection_drafts") or [] if isinstance(r, Mapping)]
+    counts_a = Counter(_draft_key(r) for r in rows_a)
+    counts_b = Counter(_draft_key(r) for r in rows_b)
+    texts = {
+        _draft_key(r): {
+            k: str(r[k]) for k in ("name_text", "body_text", "compile_error_text") if k in r
+        }
+        for r in (*rows_a, *rows_b)
+    }
+    out: dict[str, Any] = {}
+    for side, rows in (("lost", counts_a - counts_b), ("gained", counts_b - counts_a)):
+        listed = []
+        for key, count in sorted(rows.items()):
+            kind, name, body, not_compiled, compile_error, evidence, left_out = key
+            row: dict[str, Any] = {"kind": kind, "name": name, "body": body}
+            if not_compiled:
+                row["not_compiled"] = True
+            for field, held in (
+                ("compile_error", compile_error),
+                ("evidence", evidence),
+                ("left_out", left_out),
+            ):
+                if held:
+                    row[field] = held
+            row.update(count=count, in_a=counts_a[key], in_b=counts_b[key], **texts.get(key, {}))
+            listed.append(row)
+        if listed:
+            out[side] = listed
+    return out
+
+
 # The keys of a diff that say how the comparison went rather than what differs.
 _NOT_A_DIFFERENCE = frozenset({"run", "errors", "schema", "not_compared"})
 
@@ -618,3 +766,141 @@ def has_errors(diff: Mapping[str, Any]) -> bool:
 def is_partial(diff: Mapping[str, Any]) -> bool:
     """Whether a part was left uncompared: a part not compared is not a decision either."""
     return any((diff.get("not_compared") or {}).values())
+
+
+# ---------------------------------------------------------------------------
+# The canonical lines, and the expected-difference file
+# ---------------------------------------------------------------------------
+
+# The parts of a diff that are never a line: how the comparison went, never what differs.
+# A line in an expected file that names one of them is refused.
+NEVER_EXPECTED = _NOT_A_DIFFERENCE
+# The fields of a finding's or a draft's row that make its unit; the rest are its counts
+# and the words beside them.
+_FINDING_UNIT = ("part", "owner", "path", "subject", "code", "words", "fields")
+_DRAFT_UNIT = ("kind", "name", "body", "not_compiled", "compile_error", "evidence", "left_out")
+
+
+class ExpectedFileError(CompareError):
+    """An expected-difference file that cannot be read, or that may not be used as given."""
+
+
+def run_label(run: Path, root: Path) -> str:
+    """A stored run named by its path under the stored runs' root, written with ``/``."""
+    resolved, base = run.resolve(), root.resolve()
+    if resolved == base or base not in resolved.parents:
+        raise CompareError(f"the stored run {run} is not inside the stored runs' root {root}")
+    return resolved.relative_to(base).as_posix()
+
+
+def _units(part: str, value: Any) -> Iterable[tuple[str, Any, Any, Any]]:
+    """Each unit of one part of a diff: its name, and its value under A and under B."""
+    if not isinstance(value, Mapping):
+        raise TypeError(f"the diff's part {part} is not a mapping")
+    if part == "report.detection_drafts":
+        for side in ("lost", "gained"):
+            for row in value.get(side) or []:
+                unit = {k: row[k] for k in _DRAFT_UNIT if k in row}
+                yield part, unit, row["in_a"], row["in_b"]
+        return
+    if "a" in value and "b" in value:
+        yield part, None, value["a"], value["b"]
+        return
+    if value and set(value) <= {"only_a", "only_b", "changed"}:
+        only_a, only_b = value.get("only_a"), value.get("only_b")
+        if "changed" in value or isinstance(only_a, Mapping) or isinstance(only_b, Mapping):
+            for key, held in (only_a or {}).items():
+                yield part, key, held, None
+            for key, held in (only_b or {}).items():
+                yield part, key, None, held
+            for key, row in (value.get("changed") or {}).items():
+                yield part, key, row["a"], row["b"]
+        else:
+            for held in only_a or []:
+                yield part, held, True, False
+            for held in only_b or []:
+                yield part, held, False, True
+        return
+    for key, inner in value.items():
+        yield from _units(f"{part}.{key}", inner)
+
+
+def difference_lines(diff: Mapping[str, Any], run: str) -> list[str]:
+    """Every difference of one run's diff as canonical lines, sorted.
+
+    A line is one JSON array, ASCII only: the run (its path under the stored runs'
+    root), the part, the unit, and the unit's value under A and under B (``null`` where
+    a side does not hold it). A finding's or a draft's unit is its whole key and its
+    values the times each record holds it. The words a record made with the text holds
+    are never in a line, so a comparison writes the same lines with the text or without
+    it. How the comparison went (an error, a schema, a part not compared) is never a
+    line.
+    """
+    raised = {
+        _canonical({"part": row.get("part"), "why": row.get("why")})
+        for side in ("a", "b")
+        for row in (diff.get("errors") or {}).get(side) or []
+    }
+    lines: list[str] = []
+    for key, value in diff.items():
+        if key in _NOT_A_DIFFERENCE:
+            continue
+        if key in ("codes_gained", "codes_lost"):
+            for row in value:
+                unit = {k: row[k] for k in _FINDING_UNIT if k in row}
+                lines.append(_canonical([run, "findings", unit, row["in_a"], row["in_b"]]))
+            continue
+        for part, unit, held_a, held_b in _units(key, value):
+            if part == "not_replayed" and _canonical(unit) in raised:
+                continue  # a part that raised is an error, never a line
+            lines.append(_canonical([run, part, unit, held_a, held_b]))
+    return sorted(lines)
+
+
+def _never_expected(line: str) -> bool:
+    """Whether a line of an expected file names how a comparison went rather than a difference."""
+    try:
+        parsed = json.loads(line)
+    except ValueError:
+        return False
+    if not isinstance(parsed, list) or len(parsed) < 2:
+        return False
+    part = str(parsed[1])
+    return any(part == name or part.startswith(f"{name}.") for name in NEVER_EXPECTED)
+
+
+def read_expected(path: Path, sha256: str | None = None) -> tuple[Counter[str], str]:
+    """The lines an expected-difference file approves, counted, and the file's SHA-256.
+
+    Lines are split at a line feed and nothing else is removed, so a carriage return
+    stays part of its line; a line starting with ``#`` is a comment, which no canonical
+    line can be. Given ``sha256``, a file whose digest differs is refused. A file that
+    cannot be read, does not read as UTF-8 or names how a comparison went (an error, a
+    schema, a part not compared) is refused (:class:`ExpectedFileError`).
+    """
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        raise ExpectedFileError(
+            f"the expected-difference file {path} cannot be read ({type(exc).__name__})"
+        ) from exc
+    found = hashlib.sha256(data).hexdigest()
+    if sha256 is not None and found != sha256.lower():
+        raise ExpectedFileError(
+            f"the expected-difference file {path} has sha256 {found}, not the approved {sha256}"
+        )
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ExpectedFileError(f"the expected-difference file {path} is not UTF-8") from exc
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    body = [line for line in lines if not line.startswith("#")]
+    refused = [line for line in body if _never_expected(line)]
+    if refused:
+        raise ExpectedFileError(
+            f"the expected-difference file {path} expects how a comparison went, which is never "
+            f"expected: {refused[0]}"
+        )
+    return Counter(body), found
