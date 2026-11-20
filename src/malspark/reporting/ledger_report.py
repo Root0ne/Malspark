@@ -42,7 +42,7 @@ from malspark.analysis.technique_ids import (
     sigma_technique_ids,
     technique_ids_in,
 )
-from malspark.core.reputation import reputation_of
+from malspark.core.reputation import member_name, reputation_of
 from malspark.core.rule_matches import BY_SHAPE_KEY, rule_matches_of
 from malspark.core.tool_declarations import first, select
 from malspark.core.undeclared_tools import (
@@ -159,6 +159,15 @@ class _Sections:
         # The display name of the tool behind each row a rule table holds, in
         # row order (:func:`_rule_table`).
         self.row_tools: dict[str, list[str]] = {}
+        # The count rows each section holds per distinct tally, with the ids
+        # of the entries that stated it and the rows placed for it
+        # (:meth:`add_tally`).
+        self._tallies: dict[
+            str, list[tuple[tuple[tuple[str, ...], ...], list[str], list[list[str] | None]]]
+        ] = {}
+        # The sections holding count rows of an entry that recorded no source
+        # (:meth:`add_counts`).
+        self._plain_counts: set[str] = set()
 
     def _full(self, section: EvidenceSection, size: int) -> bool:
         if size < MAX_ROWS:
@@ -248,6 +257,59 @@ class _Sections:
             return
         seen.add(fingerprint)
         section.rows.append(row)
+
+    def add_counts(self, section: EvidenceSection, rows: list[list[str]]) -> None:
+        """The count rows of an entry that recorded no source, each added as any row is.
+
+        The rows of entries that recorded one are then named by their entries
+        (:meth:`add_tally`), also those placed before, so no row of theirs is
+        taken for one of these and each entry's rows stand together in one order.
+        """
+        if not rows:
+            return
+        self._plain_counts.add(section.key)
+        self._place_tallies(section)
+        for row in rows:
+            self.add_row(section, row)
+
+    def add_tally(self, section: EvidenceSection, entry_id: str, rows: list[list[str]]) -> None:
+        """One entry's count rows: one set where every entry stated the same tally.
+
+        Lookups of one tool that state the same counts are one set of rows, as
+        any repeated row is. Where they state different counts, or the section
+        holds count rows of an entry that recorded no source, each row names
+        the entries that stated it, so no count reads as another lookup's: a
+        row placed before the difference was known is named in place.
+        """
+        if not rows:
+            return
+        groups = self._tallies.setdefault(section.key, [])
+        held = tuple(tuple(row) for row in rows)
+        group = next((g for g in groups if g[0] == held), None)
+        if group is None:
+            group = (held, [], [None] * len(held))
+            groups.append(group)
+        if entry_id not in group[1]:
+            group[1].append(entry_id)
+        self._place_tallies(section)
+
+    def _place_tallies(self, section: EvidenceSection) -> None:
+        groups = self._tallies.get(section.key, [])
+        if not groups:
+            return
+        differ = len(groups) > 1 or section.key in self._plain_counts
+        for tally, ids, placed in groups:
+            for at, (label, *values) in enumerate(tally):
+                text = f"{label} ({', '.join(ids)})" if differ else label
+                row = placed[at]
+                if row is not None:
+                    row[0] = text
+                    continue
+                fresh = [text, *values]
+                self.add_row(section, fresh)
+                if section.rows and section.rows[-1] is fresh:
+                    placed[at] = fresh
+        self._seen[section.key] = {tuple(row) for row in section.rows}
 
     def merge_row(
         self,
@@ -1501,11 +1563,30 @@ def _reputation(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -> Non
     answer = reputation_of(entry)
     if answer is None:
         return
-    for name in ("malicious", "suspicious", "undetected", "harmless"):
+    rows: list[list[str]] = []
+    named = ("malicious", "suspicious", "undetected", "harmless")
+    for name in named:
         if name in answer.stats:
-            acc.add_row(section, [f"engines {name}", str(answer.stats[name])])
+            rows.append([f"engines {name}", str(answer.stats[name])])
+    if tool_kinds.read_by_name(entry):
+        # An entry that recorded no source is drawn as it always was.
+        if answer.engines is not None:
+            rows.append(["engines", str(answer.engines)])
+        acc.add_counts(section, rows)
+        return
+    # Every other member of the answer's counts object under its own name, as
+    # the answer wrote it: the whole tally stands here, where the header cell
+    # prints the members that are not zero. A name that is no plain token or
+    # is a label of these rows is written quoted (``member_name``).
+    labels = {"engines", *(f"engines {name}" for name in named)}
+    rows += [
+        [member_name(name, labels), str(value)]
+        for name, value in answer.stats.items()
+        if name not in named
+    ]
     if answer.engines is not None:
-        acc.add_row(section, ["engines", str(answer.engines)])
+        rows.append(["engines", str(answer.engines)])
+    acc.add_tally(section, entry.id, rows)
 
 
 # The purpose-built section builders, by name. Which one draws an entry is

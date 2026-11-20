@@ -74,6 +74,7 @@ from malspark.analysis.tool_effects import INTRO_SENTENCE as EFFECTS_INTRO
 from malspark.analysis.tool_effects import effects_lines
 from malspark.core.confidence_words import confidence_word
 from malspark.core.logger import logger
+from malspark.core.reputation import counts_line
 from malspark.core.rule_matches import is_rule_fact
 from malspark.core.undeclared_tools import (
     CODE_LISTING_KINDS,
@@ -5869,13 +5870,11 @@ def _reputation_line(report: MalwareReport) -> str:
             None,
         )
         if counted is not None:
-            # The service's name and date are its answer's words: escaped and defanged;
-            # the row escapes the table separator itself (:func:`_cell`).
-            service = _inline_safe(counted.service or "Reputation lookup", pipes=False)
-            said = (
-                f"{service}: {counted.malicious} of "
-                f"{counted.engine_count()} engines flag it as malicious"
-            )
+            # Each count under the record's name for it, never a fraction
+            # (:func:`counts_line`). The service's name, a member's name and the
+            # date are its answer's words: escaped and defanged; the row escapes
+            # the table separator itself (:func:`_cell`).
+            said = counts_line(counted, written=lambda text: _inline_safe(text, pipes=False))
             when = _inline_safe(counted.last_seen, pipes=False) if counted.last_seen else ""
             return said + (f" (analysis {when}; {where})" if when else f" ({where})")
         flagged = next((a for a in answers if a.malicious is not None), None)

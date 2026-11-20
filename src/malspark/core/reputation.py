@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -124,6 +124,86 @@ class ReputationRecord(BaseModel):
         """The stored form: the version and every field the answer gave."""
         dumped = self.model_dump(mode="json", exclude_defaults=True)
         return {"v": RECORD_VERSION, **{k: v for k, v in dumped.items() if k != "v"}}
+
+
+# The words the counts line uses as labels of its own (:func:`counts_line`).
+COUNT_LABELS = frozenset({"malicious", "suspicious", "engines", "total"})
+_PLAIN_NAME = re.compile(r"[A-Za-z0-9_.-]+")
+
+
+def member_name(name: str, labels: Iterable[str] = COUNT_LABELS) -> str:
+    """A counts object's member name as a line or a row prints it.
+
+    As the answer wrote it where it is a plain token (letters, digits, ``_``,
+    ``.``, ``-``) that is none of the ``labels`` the platform prints beside
+    it; otherwise as a quoted JSON string, so a reader sees it is the
+    answer's own key and no name reads as a count or a label it is not.
+    """
+    if _PLAIN_NAME.fullmatch(name) and name not in labels:
+        return name
+    return json.dumps(name, ensure_ascii=False)
+
+
+def counts_line(
+    record: ReputationRecord,
+    *,
+    unnamed: str = "Reputation lookup",
+    written: Callable[[str], str] = str,
+) -> str:
+    """The counts a record holds, as the platform prints them, or ``""`` when it holds none.
+
+    Each count under the record's own name for it: the flagged count
+    (``malicious``) always, or that the record holds none where its counts
+    object holds no member of that name either; then each member of the
+    answer's counts object (``stats``) that is not zero, in the order
+    of ``stats`` as handed in (the answer's order where the record was read
+    from the answer; a report read back from storage holds the members in
+    the order storage gave them, which is then the order printed), under
+    the name the answer wrote it under
+    (:func:`member_name`: quoted where it is no plain token or is one of
+    the line's own labels); the engine count the service gave beside them
+    (``engines``); and the total, unless it is the sum of the members (a
+    sum is never a count the answer gave). The member of the flagged or the
+    suspicious name is left out only where it equals the record's field of
+    that name, whose figure it then is (``suspicious`` printed in its
+    place); where the two differ, or the record has no field of that name,
+    the member is printed quoted, also a zero. ``suspicious`` the object
+    does not hold is printed where it is not zero. Never a fraction and no
+    "of": the line names whose counts they are and claims no tally is whole.
+    ``written`` writes the service's name and each member's name, the
+    answer's words, for the surface.
+    """
+    fields = {"malicious": record.malicious, "suspicious": record.suspicious}
+    members: list[str] = []
+    for name, value in record.stats.items():
+        field_value = fields.get(name)
+        if name in fields and value == field_value:
+            if name == "suspicious" and value:
+                members.append(f"suspicious {value}")
+            continue
+        if value != 0 or name in fields:
+            members.append(f"{written(member_name(name))} {value}")
+    held = record.stats.get("suspicious")
+    if (
+        record.suspicious is not None
+        and held != record.suspicious
+        and (record.suspicious or held is not None)
+    ):
+        members.append(f"suspicious {record.suspicious}")
+    beside: list[str] = []
+    if record.engines is not None:
+        beside.append(f"engines {record.engines}")
+    summed = bool(record.stats) and record.total == sum(record.stats.values())
+    if record.total is not None and not summed:
+        beside.append(f"total {record.total}")
+    if not members and not beside and record.malicious is None:
+        return ""
+    if record.malicious is not None:
+        members.insert(0, f"malicious {record.malicious}")
+    elif "malicious" not in record.stats:
+        members.insert(0, "malicious not counted")
+    said = "; ".join([", ".join(members), *beside])
+    return f"{written(record.service or unnamed)}, counts in the lookup's record: {said}"
 
 
 def is_lookup(facts: ToolFacts | None) -> bool:

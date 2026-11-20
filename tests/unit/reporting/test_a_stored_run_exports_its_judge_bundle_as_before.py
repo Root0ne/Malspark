@@ -124,7 +124,10 @@ STORED_EXPORTS = {
 # (T-735): in the run summary's retry and mediator lines each backtick, star
 # and backslash the record holds is printed as a character and a pair no
 # longer forms a code span, the only change; the STIX did not change.
-HAIKU4_RENDERS = ("686fb956d5f25ddc", "017e09781de38859", "ff5607de575fb489")
+# The Markdown and HTML re-pinned when the header cell's reputation came to
+# name each count the lookup's record holds, never as a fraction (T-781): that
+# one cell is the only change; the STIX did not change.
+HAIKU4_RENDERS = ("7b8e101a04741577", "3005b846a5d205c7", "ff5607de575fb489")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

@@ -341,7 +341,7 @@ class TestEveryReaderReadsIt:
 
         assert in_the_api == in_the_worker
         assert _reputation_row(in_the_api) == (
-            "| Reputation | HashRep: 9 of 40 engines flag it as malicious "
+            "| Reputation | HashRep, counts in the lookup's record: malicious 9; total 40 "
             "(analysis 2026-01-02T03:04:05Z; lookup_digest, ev_0001) |"
         )
         (answer,) = json.loads(stored)["reputation"]
@@ -349,7 +349,7 @@ class TestEveryReaderReadsIt:
         assert answer["link"] == "https://rep.invalid/s/abc"
 
     def test_the_built_in_virustotal_answer_reads_as_it_did(self, installed: Any) -> None:
-        """The shipped lookup through the same path: the report line a stored run printed."""
+        """The shipped lookup through the same path: each count under its name, no fraction."""
         installed(Settings())
         root = Path(__file__).resolve().parents[2]
         answer = (root / "fixtures" / "ledger" / "get_file_report.json").read_text()
@@ -358,7 +358,8 @@ class TestEveryReaderReadsIt:
         )
         markdown = MarkdownRenderer().render(_report([entry]))
         assert _reputation_row(markdown) == (
-            "| Reputation | VirusTotal: 52 of 75 engines flag it as malicious "
+            "| Reputation | VirusTotal, counts in the lookup's record: malicious 52, "
+            "undetected 15, timeout 1, failure 3, type-unsupported 4; engines 75 "
             "(analysis 2026-08-23T08:03:36Z; get_file_report, ev_0001) |"
         )
 
@@ -563,7 +564,7 @@ def test_the_report_states_the_engines_the_service_counted_over_the_total(
     answer = {**ANSWER, "verdict": {**ANSWER["verdict"], "engines": 38}}
     report = _report([_lookup_entry(output=json.dumps(answer))])
     assert _reputation_row(MarkdownRenderer().render(report)).startswith(
-        "| Reputation | HashRep: 9 of 38 engines flag it as malicious"
+        "| Reputation | HashRep, counts in the lookup's record: malicious 9; engines 38; total 40"
     )
 
 

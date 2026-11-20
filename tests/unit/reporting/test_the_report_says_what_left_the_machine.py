@@ -294,12 +294,15 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # corroboration table came to be written as text (T-735): each character Markdown
 # reads in the reason gains a backslash in that table, the only change, and the
 # HTML did not change.
+# haiku4 re-pinned when the header cell's reputation came to name each count
+# the lookup's record holds, never as a fraction (T-781): that one cell is the
+# only change in its Markdown and HTML; the other runs' cells are legacy rows.
 STORED_RENDERS = {
     "run7": ("e7ad1248bae77340", "7c27693f82b034f8"),
     "run5": ("1420ab7b523a91ac", "d2bafe2177886290"),
     "run4": ("e5ffe74339534ae2", "798ce36070468515"),
     "local8": ("85f44b070da2bb25", "a6ba8a2626516ed8"),
-    "haiku4": ("686fb956d5f25ddc", "017e09781de38859"),
+    "haiku4": ("7b8e101a04741577", "3005b846a5d205c7"),
 }
 
 
