@@ -61,6 +61,18 @@ from malspark.reporting.dedupe import (
 )
 from malspark.reporting.ledger_projection import later_detonation
 from malspark.reporting.models import OPEN_QUESTION_SOURCE, EvidenceSection
+from malspark.schemas.entry_reading import (
+    ABSENT,
+    BLANKED_READ,
+    BLANKED_UNREAD,
+    CUT_AS_TEXT,
+    ELEMENTS,
+    FAILED,
+    NOT_SHOWN,
+    REPEAT,
+    SHORTENED,
+    entry_reading,
+)
 from malspark.schemas.evidence import answer_not_shown
 from malspark.schemas.isr_models import would_answer_text
 from malspark.schemas.sandbox_document import DNS_NAME_KEYS, dns_name_key, signature_pids
@@ -92,6 +104,14 @@ TEXT_CUT = (
     "Cut here at {shown:,} of {total:,} characters; the evidence endpoint carries it "
     "whole under {ids}."
 )
+# The same cut, of a text built from an entry the reading does not find kept
+# whole: where the entry is held, and the job's store's copy where one is.
+TEXT_CUT_HELD = (
+    "Cut here at {shown:,} of {total:,} characters; the evidence endpoint carries the entry "
+    "under {ids}{stored}."
+)
+STORED_WHOLE = "; the store holds the answer whole"
+STORED_OUTPUT = "; the store holds the entry's output"
 # The capture summary's room. Each conversation line names both ends and what
 # each sent, so it is longer than the line that gave the peer's share alone. A
 # capture is printed whole when it fits ``CAPTURE_TEXT_CHARS``, or when the
@@ -124,12 +144,36 @@ BEACONS_LEFT_OUT = (
 _OLD_SHARE = " ({packets} pkts, {size} bytes from the host{inbound})"
 
 
-def _cut_text(text: str, ids: str) -> str:
-    """``text`` whole, or cut to ``MAX_TEXT_CHARS`` with the sentence saying where it is whole."""
+# The entry states in which an entry keeps its answer's text other than
+# whole, or in which the reading cannot tell (``schemas.entry_reading``).
+_NOT_KEPT_WHOLE = frozenset(
+    {REPEAT, ABSENT, FAILED, NOT_SHOWN, BLANKED_UNREAD, BLANKED_READ, CUT_AS_TEXT, SHORTENED}
+)
+
+
+def _cut_text(text: str, entry: Any) -> str:
+    """``text`` whole, or cut to ``MAX_TEXT_CHARS`` with the sentence saying where it is whole.
+
+    Said whole only where the entry reading keeps ``entry`` whole; otherwise
+    the sentence says where the entry is held, and that the job's store holds
+    its answer whole, or only the output of an entry already cut, where the
+    reading says so.
+    """
     if len(text) <= MAX_TEXT_CHARS:
         return text
     shown = marked_cut(text, MAX_TEXT_CHARS)
-    return f"{shown}\n\n{TEXT_CUT.format(shown=len(shown), total=len(text), ids=ids)}"
+    read = entry_reading(entry)
+    said = {"shown": len(shown), "total": len(text), "ids": entry.id}
+    if not set(read.states) & _NOT_KEPT_WHOLE:
+        return f"{shown}\n\n{TEXT_CUT.format(**said)}"
+    stored = (
+        STORED_WHOLE
+        if read.answer_stored_whole
+        else STORED_OUTPUT
+        if "output" in read.stored
+        else ""
+    )
+    return f"{shown}\n\n{TEXT_CUT_HELD.format(**said, stored=stored)}"
 
 
 class _Sections:
@@ -229,7 +273,7 @@ class _Sections:
         if not section.source:
             section.source = f"tool:{entry.tool}"
         self.cite(section, entry.id)
-        note_if_shortened(section, entry.structured)
+        note_if_shortened(section, entry)
 
     def add_column(self, section: EvidenceSection, name: str, fill: str = "-") -> None:
         """Give a table one more column, each row it holds already ``fill`` under it."""
@@ -470,30 +514,29 @@ def our_own_words(data: Any) -> frozenset[str]:
     return frozenset({BOOKKEEPING_KEY, "truncated"} | ({ours} if ours else set()))
 
 
-def shortened_sentence(data: dict[str, Any]) -> str:
-    """One sentence for an answer this system had to shorten, or ``""``.
+def shortened_sentence(entry: Any) -> str:
+    """One sentence for an entry whose answer this system had to shorten, or ``""``.
 
     The tool answered in full and the guardrail kept what fits, so the table
     below is a page of the answer rather than all of it. Said once, in words,
     because the reader of a report needs to know a list is partial far more
-    than they need the arithmetic.
+    than they need the arithmetic. Said where the entry reading finds the
+    shortener's map in the entry's own answer (``schemas.entry_reading``),
+    whatever else it reads of the entry, of the first three rows of the map
+    with something left out, as the map records it.
     """
-    book = data.get(our_key_in(data))
-    if not isinstance(book, dict) or not book:
-        return ""
-    named = []
-    for path, row in list(book.items())[:3]:
-        if not isinstance(row, dict):
-            continue
-        left = int(row.get("omitted") or row.get("omitted_chars") or 0)
-        what = "rows" if "omitted" in row else "characters"
-        named.append(f"{path} ({left} {what} not shown)")
+    read = entry_reading(entry)
+    named = [
+        f"{path} ({left} {'rows' if unit == ELEMENTS else 'characters'} not shown)"
+        for path, left, unit in read.shortened_rows
+        if left > 0
+    ][:3]
     if not named:
         return ""
     return "This answer was shortened to fit the analyst's budget: " + ", ".join(named) + "."
 
 
-def note_if_shortened(section: Any, data: Any) -> None:
+def note_if_shortened(section: Any, entry: Any) -> None:
     """Put the sentence under the section, once.
 
     Called from ``credit``, so it reaches the section a dedicated builder
@@ -501,9 +544,7 @@ def note_if_shortened(section: Any, data: Any) -> None:
     are exactly the tools whose answers are large enough to be shortened, and
     they are the ones with builders of their own.
     """
-    if not isinstance(data, dict):
-        return
-    said = shortened_sentence(data)
+    said = shortened_sentence(entry)
     if said and said not in (section.text or ""):
         section.text = f"{section.text}\n\n{said}".strip() if section.text else said
 
@@ -1226,7 +1267,7 @@ def _sandbox_section(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -
         return
     if rows or value:
         section = acc.get(f"sandbox_{name}", f"Sandbox: {name}", "text")
-        section.text = _cut_text(_whole_text(rows or value), entry.id)
+        section.text = _cut_text(_whole_text(rows or value), entry)
         acc.credit(section, entry)
 
 
@@ -1262,7 +1303,7 @@ def _sandbox_status(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) ->
     if not statement:
         return
     section = acc.get("sandbox_status", "Sandbox", "text")
-    section.text = _cut_text(statement, entry.id)
+    section.text = _cut_text(statement, entry)
     acc.credit(section, entry)
 
 
@@ -1307,7 +1348,7 @@ def _behaviour_code(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) ->
     for key, reason in (data.get(behaviour_code.NOT_READ) or {}).items():
         said.append(f"{key}: {reason}.")
     said.extend(f"{one[:1].upper()}{one[1:]}." for one in behaviour_code.unread_words(data))
-    table.text = _cut_text(" ".join(said), entry.id)
+    table.text = _cut_text(" ".join(said), entry)
     for row in links:
         kind, value = _text(row.get("kind")), _text(row.get("value"))
         items = ", ".join(str(item) for item in row.get("items") or [])
@@ -1444,7 +1485,7 @@ def _pcap(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -> None:
         # before the lines named both ends prints each direction truthfully.
         section.text = _capture_text(data, entry.id)
     else:
-        section.text = _cut_text(str(summary), entry.id)
+        section.text = _cut_text(str(summary), entry)
     acc.credit(section, entry)
 
 
@@ -1718,7 +1759,7 @@ def _generic_text(acc: _Sections, entry: LedgerEntry) -> None:
         return
     section = acc.get(_answer_key(entry), tool_kinds.section_title(entry), "text")
     if not section.text:
-        section.text = _cut_text(entry.output, entry.id)
+        section.text = _cut_text(entry.output, entry)
     acc.credit(section, entry)
 
 

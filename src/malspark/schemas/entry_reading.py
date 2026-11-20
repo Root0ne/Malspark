@@ -80,7 +80,11 @@ the answer leaves out: the counts of a kind are read from the one definition
 its own reader reads them by (:func:`_coverage_counts`), so an answer of any
 other kind, or of a tool nobody declared, reports no gap and is never read as
 reporting none. A structure dropped where the run had no store leaves no
-reference and is not seen.
+reference and is not seen. An answer nested past the decoder cannot be
+decoded to look for an error envelope in it: it is read as failed by
+``ok``, by a line of prose, or by an error key it opens with
+(:func:`_opens_with_error`); whether an error key stands later at its top
+level is unknown, and such an answer is not told apart from a whole one.
 
 **Member states.** There are five. The members are found by shape
 (:func:`_container`): an object whose every value is a text is one member per
@@ -93,14 +97,18 @@ id     member state              decided by
 M1     :data:`MEMBER_WHOLE`      a member of an entry that keeps its text whole;
                                  on E2 a member with no row and no ``others``
                                  row; on E3 a member closed before the cut
-M2     :data:`MEMBER_IN_PART`    on E2 its own row keeps ``k`` of ``t`` above 0
-M3     :data:`MEMBER_EMPTY`      its kept text is empty where it was cut: its row
-                                 keeps 0, or it has none beside an ``others``
-                                 row, or the cut of E3 fell in it before any of
-                                 its text
+M2     :data:`MEMBER_IN_PART`    on E2 its own row keeps ``k`` of ``t``, with
+                                 ``0 < k < t`` and ``k`` the length of the kept
+                                 value in the value's own unit (characters of
+                                 a text, elements of a list)
+M3     :data:`MEMBER_EMPTY`      its kept value holds no text where it was cut:
+                                 it has its own row, or none beside an
+                                 ``others`` row, or the cut of E3 fell in it
+                                 before any of its text
 M4     :data:`MEMBER_UNMEASURED` text kept and its extent not recorded: on E2
-                                 beside an ``others`` row or rows only under it;
-                                 on E3 the member the cut fell in
+                                 beside an ``others`` row, rows only under it,
+                                 or its own row with counts the kept value does
+                                 not confirm; on E3 the member the cut fell in
 M5     :data:`MEMBER_NOT_KEPT`   not in the kept answer: rows the shortener took
                                  off a list (counted, unnamed), members after an
                                  E3 cut, later pages, every member of an entry
@@ -115,8 +123,10 @@ does and is ``None`` where some may be missing uncounted, and
 :meth:`EntryReading.member` answers M5 for a key the kept answer lacks
 whenever it may be among them.
 
-**The readings it stands for.** No reader calls it yet. Each reading of an
-entry's state a reader keeps of its own today, and the states it answers for:
+**The readings it stands for.** The call map (``reporting/call_map``) and
+the shortened-answer sentence (``reporting/ledger_report.shortened_sentence``)
+read an entry through it. Each reading of an entry's state a reader keeps of
+its own today, and the states it answers for:
 
 * ``agents/function_callees._shown``: shown is not E7, not E4, not E6 by
   ``ok``; an E5 entry and an E6 entry by its answer's form count as shown.
@@ -143,7 +153,6 @@ entry's state a reader keeps of its own today, and the states it answers for:
 * ``pipeline/nodes._tools_that_were_shortened``: E2, E3 by ``chars_dropped``,
   E4, and E9 by a top-level ``truncated`` only.
 * ``pipeline/nodes._what_the_run_saw``: E5a and E5b, not told apart.
-* ``reporting/ledger_report.shortened_sentence``: E2, by the map's first rows.
 * ``reporting/renderers/stix_renderer._whole_listing``: not E9 by
   ``truncated``, ``page_offset``, ``total_matched`` or ``total``, and not
   filtered.
@@ -160,6 +169,7 @@ the index facts, the value checks) read an entry's state only through them.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -168,7 +178,9 @@ __all__ = [
     "ABSENT",
     "BLANKED_READ",
     "BLANKED_UNREAD",
+    "CHARACTERS",
     "CUT_AS_TEXT",
+    "ELEMENTS",
     "ENTRY_STATES",
     "EntryReading",
     "FAILED",
@@ -241,8 +253,9 @@ _STRUCTURED_PART = "structured"
 # The shortener's row for everything past its named rows.
 _OTHERS = "others"
 _TRUNCATED = "truncated"
-_CHARACTERS = "characters"
-_ELEMENTS = "elements"
+# The units a count of what is kept is in: characters of a text, elements of a list.
+CHARACTERS = "characters"
+ELEMENTS = "elements"
 
 
 @dataclass(frozen=True)
@@ -264,11 +277,24 @@ class EntryReading:
     ``stored`` names the parts of the answer the job's store keeps whole (a
     ``spilled`` reference with a key and a digest): ``answer`` for an answer cut
     or not shown, ``output`` for one the budget blanked, ``structured`` and
-    ``structured_content`` for structures. ``holder`` is the id a repeat names
+    ``structured_content`` for structures. ``answer_stored_whole`` is whether
+    the stored part is the answer whole: ``answer``, or ``output`` of an entry
+    that records nothing cut from its answer before the budget blanked it (no
+    ``chars_dropped``, not ``not_shown``); the stored output of an entry
+    already cut is that entry's output only. ``text_extent`` is, on E3,
+    ``(k, t)``: the ``k`` characters of the answer's head the entry keeps of a
+    ``t``-character answer, where its output is that head and the platform's
+    cut mark and it records how many it dropped (``t`` is the output and
+    ``chars_dropped``, ``0 < k < t``), else ``None``. ``holder`` is the id a repeat names
     and ``holder_reading`` the reading of the entry the caller gave for it.
     ``gap_fields`` are the coverage counts the entry's declared kind states
     (none for any other entry), ``gaps`` those the answer reports something
-    in, ``gaps_zero`` those it gives at zero.
+    in, ``gaps_zero`` those it gives at zero. ``shortened_rows`` are the
+    rows of the shortener's map the entry's own answer holds, whatever its
+    state (a failed answer or a repeat may hold one), in the map's order,
+    each with its path, what it records as not kept there and its unit
+    (:data:`ELEMENTS` for a row counting rows left out, else
+    :data:`CHARACTERS`); the ``others`` row is among them under that name.
     """
 
     entry_id: str
@@ -281,8 +307,11 @@ class EntryReading:
     gaps_zero: frozenset[str] = frozenset()
     gap_fields: tuple[str, ...] = ()
     stored: tuple[str, ...] = ()
+    answer_stored_whole: bool = False
+    text_extent: tuple[int, int] | None = None
     holder: str = ""
     holder_reading: EntryReading | None = None
+    shortened_rows: tuple[tuple[str, int, str], ...] = ()
 
     def member(self, key: Any) -> MemberReading | None:
         """The state of the member ``key`` (its key, or its row's index), or ``None``.
@@ -354,6 +383,13 @@ def _stored(entry: Any) -> tuple[str, ...]:
     return tuple(parts)
 
 
+def _answer_stored_whole(entry: Any, stored: tuple[str, ...]) -> bool:
+    """Whether the job's store holds the entry's answer whole (see :class:`EntryReading`)."""
+    if "answer" in stored:
+        return True
+    return "output" in stored and not _dropped(entry) and not _field(entry, "not_shown")
+
+
 def _structure_dropped(entry: Any) -> bool:
     return any(
         isinstance(ref, Mapping) and ref.get("part") == _STRUCTURED_PART
@@ -385,15 +421,68 @@ def _dropped(entry: Any) -> int:
     return _whole_number(_field(entry, "chars_dropped"))
 
 
+def _text_extent(output: str, dropped: int) -> tuple[int, int] | None:
+    """``(k, t)`` of a cut whose output is the answer's head and the cut mark, else ``None``.
+
+    ``k`` is the head (the mark is the platform's, not the answer's), ``t``
+    the output and the recorded drop; a summary or any other kept text is no
+    head of the answer and records no extent.
+    """
+    from malspark.agents.mcp_client import TRUNCATION_MARKER
+
+    if not dropped or not output.endswith(TRUNCATION_MARKER):
+        return None
+    kept, total = len(output) - len(TRUNCATION_MARKER), len(output) + dropped
+    return (kept, total) if 0 < kept < total else None
+
+
+# An answer that opens with an error key, read without decoding what follows it.
+_OPENS_WITH_ERROR = re.compile(r'\s*\{\s*"(?:error|tool_error)"\s*:\s*')
+
+
+def _opens_with_error(output: str) -> bool:
+    """Whether ``output`` opens with an error key holding a text that is not blank, or an object.
+
+    The failed-answer check for an answer nested past the decoder: only the
+    first key at its top level is read.
+    """
+    from json import decoder
+
+    opened = _OPENS_WITH_ERROR.match(output)
+    if opened is None:
+        return False
+    at = opened.end()
+    if output.startswith("{", at):
+        return True
+    if not output.startswith('"', at):
+        return False
+    try:
+        said, _end = decoder.scanstring(output, at + 1, False)  # type: ignore[attr-defined]
+    except ValueError:
+        return False
+    return bool(str(said).strip())
+
+
 def _text_state(entry: Any, output: str, document: Any) -> str:
     """How much of its text the entry keeps: one of E6, E4, E5a, E5b, E3, E2, or ``""``."""
     from malspark.agents.output_shortening import our_key_in
+    from malspark.core.undeclared_tools import prose_error
     from malspark.pipeline.validation import _answer_failed
     from malspark.schemas.evidence import answer_not_shown
 
     truncated = bool(_field(entry, "truncated"))
     held = _Fields(entry) if isinstance(entry, Mapping) else entry
-    if _answer_failed(held):
+    try:
+        failed = _answer_failed(held)
+    except RecursionError:
+        # Nested past the decoder: read by ``ok``, a line of prose and the key
+        # it opens with (see "Unknown, never whole").
+        failed = (
+            not getattr(held, "ok", True)
+            or prose_error(output) is not None
+            or _opens_with_error(output)
+        )
+    if failed:
         return FAILED
     if answer_not_shown(held):
         return NOT_SHOWN
@@ -514,14 +603,51 @@ def _container(document: Any, ours: str = "") -> tuple[str, list[tuple[str, Any]
 
 
 def _holds_text(value: Any) -> bool:
-    """Whether a kept member holds anything: a text that is not empty, or any other value."""
+    """Whether a kept member holds anything: a text that is not empty, or any other value.
+
+    Read with a stack of its own, so a member nested however deep is read.
+    """
+    pending = [value]
+    while pending:
+        held = pending.pop()
+        if isinstance(held, str):
+            if held:
+                return True
+        elif isinstance(held, Mapping):
+            pending.extend(held.values())
+        elif isinstance(held, list):
+            pending.extend(held)
+        elif held is not None:
+            return True
+    return False
+
+
+def _count(value: Any) -> int | None:
+    """``value`` where it is a count (a whole number, never a truth value), else ``None``."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _kept_extent(value: Any, row: Mapping[str, Any]) -> tuple[int, int, str] | None:
+    """``(kept, total, unit)`` of a member its own map row records cut, or ``None``.
+
+    Only where the kept value confirms the row: the row counts in the unit of
+    the value (characters of a text, elements of a list), its count kept is
+    the length of what is kept, and it records more than 0 left out. Anything
+    else (a count that is no count, nothing recorded as left out, a number the
+    kept value contradicts) records no extent.
+    """
     if isinstance(value, str):
-        return bool(value)
-    if isinstance(value, Mapping):
-        return any(_holds_text(item) for item in value.values())
-    if isinstance(value, list):
-        return any(_holds_text(item) for item in value)
-    return value is not None
+        unit, kept_word, left_word = CHARACTERS, "kept_chars", "omitted_chars"
+    elif isinstance(value, list):
+        unit, kept_word, left_word = ELEMENTS, "kept", "omitted"
+    else:
+        return None
+    kept, left = _count(row.get(kept_word)), _count(row.get(left_word))
+    if kept is None or left is None or not 0 < kept == len(value) or left <= 0:
+        return None
+    return kept, kept + left, unit
 
 
 def _shortened_members(
@@ -542,14 +668,13 @@ def _shortened_members(
         own = rows.get(path)
         under = [p for p in rows if isinstance(p, str) and p.startswith(path + "/")]
         if isinstance(own, Mapping) and ("kept_chars" in own or "kept" in own):
-            chars = "kept_chars" in own
-            kept = _whole_number(own.get("kept_chars" if chars else "kept"))
-            left = _whole_number(own.get("omitted_chars" if chars else "omitted"))
-            if kept <= 0 or not _holds_text(value):
+            extent = _kept_extent(value, own)
+            if not _holds_text(value):
                 members.append(MemberReading(key, path, MEMBER_EMPTY))
+            elif extent is None:
+                members.append(MemberReading(key, path, MEMBER_UNMEASURED))
             else:
-                unit = _CHARACTERS if chars else _ELEMENTS
-                members.append(MemberReading(key, path, MEMBER_IN_PART, kept, kept + left, unit))
+                members.append(MemberReading(key, path, MEMBER_IN_PART, *extent))
         elif under or others is not None:
             state = MEMBER_UNMEASURED if _holds_text(value) else MEMBER_EMPTY
             members.append(MemberReading(key, path, state))
@@ -564,6 +689,26 @@ def _shortened_members(
         elif isinstance(others, Mapping) and _whole_number(others.get("omitted")):
             missing = None
     return tuple(members), missing
+
+
+def _shortened_rows(document: Any) -> tuple[tuple[str, int, str], ...]:
+    """Each row of the shortener's map in ``document``: its path, what it left out, the unit.
+
+    A row that counts rows left out (``omitted``) is read in elements, any
+    other in characters; the ``others`` row is read so too.
+    """
+    from malspark.agents.output_shortening import our_key_in
+
+    ours = our_key_in(document)
+    book = document.get(ours) if ours else None
+    out: list[tuple[str, int, str]] = []
+    for path, row in book.items() if isinstance(book, Mapping) else ():
+        if not isinstance(row, Mapping):
+            continue
+        rows = "omitted" in row
+        left = _whole_number(row.get("omitted" if rows else "omitted_chars"))
+        out.append((str(path), left, ELEMENTS if rows else CHARACTERS))
+    return tuple(out)
 
 
 def _read_prefix(text: str, at: int, depth: int) -> tuple[Any, int, list[Any] | None]:
@@ -704,13 +849,25 @@ def entry_reading(
         return EntryReading("", ABSENT, (ABSENT,), members_not_kept=None)
     entry_id = str(_field(entry, "id") or "")
     stored = _stored(entry)
+    whole_stored = _answer_stored_whole(entry, stored)
+    output = str(_field(entry, "output") or "")
+    structured = _field(entry, "structured")
+    document = structured if structured is not None else _parsed(output)
+    rows = _shortened_rows(document)
     named = str(_field(entry, "repeated_of") or "").strip()
     if named:
         own = entry_id.strip().lower()
         first = "" if named.lower() == own else named
         if holder is None:
             return EntryReading(
-                entry_id, REPEAT, (REPEAT,), members_not_kept=None, stored=stored, holder=first
+                entry_id,
+                REPEAT,
+                (REPEAT,),
+                members_not_kept=None,
+                stored=stored,
+                answer_stored_whole=whole_stored,
+                holder=first,
+                shortened_rows=rows,
             )
         held = entry_reading(holder)
         return EntryReading(
@@ -725,13 +882,12 @@ def entry_reading(
             gaps_zero=held.gaps_zero,
             gap_fields=held.gap_fields,
             stored=stored,
+            answer_stored_whole=whole_stored,
             holder=first,
             holder_reading=held,
+            shortened_rows=rows,
         )
 
-    output = str(_field(entry, "output") or "")
-    structured = _field(entry, "structured")
-    document = structured if structured is not None else _parsed(output)
     text = _text_state(entry, output, document)
     if text in (FAILED, NOT_SHOWN, BLANKED_UNREAD, BLANKED_READ):
         return EntryReading(
@@ -740,6 +896,8 @@ def entry_reading(
             (text,),
             members_not_kept=0 if text == FAILED else None,
             stored=stored,
+            answer_stored_whole=whole_stored,
+            shortened_rows=rows,
         )
 
     from malspark.agents.output_shortening import our_key_in
@@ -776,6 +934,7 @@ def entry_reading(
     gaps, gaps_zero = _gaps(document, counts)
     if gaps:
         states.append(WHOLE_WITH_GAPS)
+    extent = _text_extent(output, _dropped(entry)) if text == CUT_AS_TEXT else None
     if shown_chars is not None and output and 0 <= int(shown_chars) < len(output):
         states.append(SHOWN_IN_PART)
     if not states or states == [SHOWN_IN_PART]:
@@ -792,4 +951,7 @@ def entry_reading(
         gaps_zero=gaps_zero,
         gap_fields=counts,
         stored=stored,
+        answer_stored_whole=whole_stored,
+        text_extent=extent,
+        shortened_rows=rows,
     )

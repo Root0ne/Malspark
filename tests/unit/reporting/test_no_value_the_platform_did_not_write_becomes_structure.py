@@ -449,8 +449,13 @@ def test_a_value_s_lookup_is_no_link_and_the_platform_s_reference_stays_one() ->
 SECTION_TEXTS = [
     shortened_sentence(
         {
-            "shortened": {
-                "/rows`QK1 [l](#t)` and `<img src=x onerror=alert(1)>`": {"omitted": 3, "kept": 2}
+            "structured": {
+                "shortened": {
+                    "/rows`QK1 [l](#t)` and `<img src=x onerror=alert(1)>`": {
+                        "omitted": 3,
+                        "kept": 2,
+                    }
+                }
             }
         }
     ),
@@ -465,6 +470,10 @@ def _table_section(text: str) -> EvidenceSection:
     return EvidenceSection(
         key="probe_table", title="Probe", kind="table", columns=["A"], rows=[["r"]], text=text
     )
+
+
+def test_the_shortened_sentence_scanned_is_said() -> None:
+    assert SECTION_TEXTS[0].startswith("This answer was shortened")
 
 
 @pytest.mark.parametrize("text", SECTION_TEXTS, ids=range(len(SECTION_TEXTS)))

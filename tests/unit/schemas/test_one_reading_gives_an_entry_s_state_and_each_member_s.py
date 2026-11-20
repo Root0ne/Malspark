@@ -884,3 +884,116 @@ class TestEdgesOfTheReading:
         assert reading.state == SHORTENED and reading.members == ()
         assert reading.members_not_kept is None
         assert reading.member("0x401004").state == MEMBER_NOT_KEPT  # type: ignore[union-attr]
+
+
+class TestANumberIsOneTheKeptValueConfirms:
+    @pytest.mark.parametrize(
+        ("value", "row", "state"),
+        [
+            ("a" * 10, {"kept_chars": 10, "omitted_chars": 40}, MEMBER_IN_PART),
+            (["y"] * 2, {"kept": 2, "omitted": 3}, MEMBER_IN_PART),
+            ("", {"kept_chars": 5, "omitted_chars": 40}, MEMBER_EMPTY),
+            ([], {"kept": 0, "omitted": 3}, MEMBER_EMPTY),
+            ("a" * 10, {"kept_chars": 0, "omitted_chars": 40}, MEMBER_UNMEASURED),
+            ("a" * 10, {"kept_chars": None, "omitted_chars": 5}, MEMBER_UNMEASURED),
+            ("a" * 10, {"kept_chars": "abc"}, MEMBER_UNMEASURED),
+            ("a" * 10, {"kept_chars": 10**30, "omitted_chars": -5}, MEMBER_UNMEASURED),
+            ("a" * 10, {"kept_chars": 10, "omitted_chars": 0}, MEMBER_UNMEASURED),
+            ("a" * 10, {"kept_chars": 12, "omitted_chars": 40}, MEMBER_UNMEASURED),
+            ("a" * 10, {"kept": 10, "omitted": 3}, MEMBER_UNMEASURED),
+            (["y"] * 2, {"kept_chars": 2, "omitted_chars": 3}, MEMBER_UNMEASURED),
+            ("a" * 10, {"kept_chars": True, "omitted_chars": 40}, MEMBER_UNMEASURED),
+        ],
+    )
+    def test_a_member_is_in_part_only_where_its_kept_value_confirms_its_row(
+        self, value: Any, row: dict[str, Any], state: str
+    ) -> None:
+        document = {"rows": [value, "whole"], "shortened": {"/rows/0": row}}
+        entry = _entry(json.dumps(document), truncated=True, structured=document)
+
+        member = entry_reading(entry).member("0")
+
+        assert member is not None and member.state == state
+        if state == MEMBER_IN_PART:
+            assert member.kept == len(value)
+            assert member.unit == ("characters" if isinstance(value, str) else "elements")
+
+    def test_a_member_nested_however_deep_is_read_without_the_interpreter_s_stack(self) -> None:
+        deep: Any = "x"
+        empty: Any = ""
+        for _ in range(100_000):
+            deep, empty = [deep], {"n": empty}
+
+        assert reading_module._holds_text(deep) is True
+        assert reading_module._holds_text(empty) is False
+
+
+class TestAnAnswerNestedPastTheDecoder:
+    @pytest.mark.parametrize(
+        ("opening", "state"),
+        [
+            ('{"error": "boom", "n": ', FAILED),
+            ('{"tool_error": "boom", "n": ', FAILED),
+            ('{"error": {"code": "x"}, "n": ', FAILED),
+            ('{"error": "  ", "n": ', WHOLE),
+            ('{"n": ', WHOLE),
+        ],
+    )
+    def test_it_is_read_as_failed_by_the_error_key_it_opens_with(
+        self, opening: str, state: str
+    ) -> None:
+        output = opening + "[" * 30_000 + "]" * 30_000 + "}"
+
+        assert entry_reading(_entry(output)).state == state
+
+
+class TestWhatTheStoreAndTheCutRecord:
+    _ANSWER = [{"part": "answer", "key": "evidence/job/cd", "bytes": 9, "sha256": "cd"}]
+
+    @pytest.mark.parametrize(
+        ("fields", "whole"),
+        [
+            ({"spilled": _ANSWER}, True),
+            ({"spilled": _SPILLED_OUTPUT}, True),
+            ({"spilled": _SPILLED_OUTPUT, "chars_dropped": 40}, False),
+            ({"spilled": _SPILLED_OUTPUT, "not_shown": True}, False),
+            ({"spilled": [*_SPILLED_OUTPUT, *_ANSWER], "chars_dropped": 40}, True),
+            ({}, False),
+        ],
+    )
+    def test_the_store_holds_the_answer_whole_only_where_the_stored_part_is_the_answer(
+        self, fields: dict[str, Any], whole: bool
+    ) -> None:
+        read = entry_reading(_entry(truncated=True, **fields))
+
+        assert read.state in (BLANKED_READ, BLANKED_UNREAD)
+        assert read.answer_stored_whole is whole
+
+    def test_a_text_cut_records_its_extent_only_where_it_records_its_drop(self) -> None:
+        head = "int f(void) { return 0; }"
+        kept = head + TRUNCATION_MARKER
+
+        # The cut mark is the platform's, not the answer's: the kept head alone is counted.
+        assert entry_reading(_entry(kept, truncated=True, chars_dropped=40)).text_extent == (
+            len(head),
+            len(kept) + 40,
+        )
+        assert entry_reading(_entry(kept, truncated=True)).text_extent is None
+        assert entry_reading(_entry(kept)).text_extent is None
+
+    @pytest.mark.parametrize(
+        "kept",
+        [
+            "The routine returns zero.",
+            "int f(void) {" + TRUNCATION_MARKER + "}",
+            TRUNCATION_MARKER,
+        ],
+        ids=["a summary", "a head and a tail", "the mark alone"],
+    )
+    def test_a_text_cut_not_ending_with_a_kept_head_and_the_mark_records_no_extent(
+        self, kept: str
+    ) -> None:
+        read = entry_reading(_entry(kept, truncated=True, chars_dropped=400))
+
+        assert read.state == CUT_AS_TEXT
+        assert read.text_extent is None

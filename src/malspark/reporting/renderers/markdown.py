@@ -2480,6 +2480,7 @@ class MarkdownRenderer:
                     section,
                     ctx.plain,
                     declared_code=declares_code(section.evidence_ids, report.evidence_index),
+                    cites_cut=cites_a_cut_entry(section.evidence_ids, report.evidence_index),
                 )
             )
             if section.evidence_ids:
@@ -7060,7 +7061,11 @@ def _as_is(text: str) -> str:
 
 
 def _evidence_body(
-    section: Any, write: Callable[[str], str] = _as_is, *, declared_code: bool = False
+    section: Any,
+    write: Callable[[str], str] = _as_is,
+    *,
+    declared_code: bool = False,
+    cites_cut: bool = False,
 ) -> list[str]:
     """One evidence section's rows, items and text, whichever of them it carries.
 
@@ -7076,9 +7081,12 @@ def _evidence_body(
 
     Code the section holds is drawn whole, each function as a listing under
     the table (:func:`_evidence_rows`); ``declared_code`` is whether an entry
-    the section cites declares its answer code (:func:`declares_code`).
+    the section cites declares its answer code (:func:`declares_code`), and
+    ``cites_cut`` whether one its index row says was cut (:func:`cites_a_cut_entry`).
     """
-    rows = _evidence_rows(section, write, listings=True, declared_code=declared_code)
+    rows = _evidence_rows(
+        section, write, listings=True, declared_code=declared_code, cites_cut=cites_cut
+    )
     if not rows:
         return _fenced(write(section.text)) if section.text else []
     if not section.text:
@@ -7110,6 +7118,7 @@ def _evidence_rows(
     *,
     listings: bool = False,
     declared_code: bool = False,
+    cites_cut: bool = False,
 ) -> list[str]:
     """The tabular and bulleted parts of a section, or nothing.
 
@@ -7126,7 +7135,8 @@ def _evidence_rows(
     (:func:`holds_code`) is no cell: the table points to a listing under
     it, and the listing draws the code whole in a fence, headed by the
     function it is. A one-line value is still cut to the page, and a
-    section with a value cut says under it where the value is whole.
+    section with a value cut says under it where the value is whole, or,
+    where it ``cites_cut`` an entry, where that entry is held.
     Without ``listings`` (a section printed in the body) nothing is cut.
     """
     out: list[str] = []
@@ -7175,12 +7185,12 @@ def _evidence_rows(
             cut = cut or shown != whole
             out.append(_item(shown))
     if listings and cut:
-        out += ["", _cut_note(section)]
+        out += ["", _cut_note(section, cites_cut)]
     for number, (where, body) in enumerate(code, 1):
         out += ["", _listing_heading(number, where, body, section), ""]
         out += _fenced(write(body.strip("\n")))
         if body.rstrip().endswith(CUT_MARK):
-            out += ["", _stored_cut_note(section)]
+            out += ["", _stored_cut_note(section, cites_cut)]
     return out
 
 
@@ -7199,6 +7209,23 @@ def declares_code(evidence_ids: Iterable[Any], evidence_index: Iterable[Any]) ->
     for row in evidence_index or []:
         said = row if isinstance(row, dict) else {"id": row.id, "facts": row.facts}
         if str(said.get("id")) in cited and str((said.get("facts") or {}).get("kind")) in kinds:
+            return True
+    return False
+
+
+def cites_a_cut_entry(evidence_ids: Iterable[Any], evidence_index: Iterable[Any]) -> bool:
+    """Whether an entry a section cites (``evidence_ids``) was cut, as its index row says.
+
+    Read from ``EvidenceIndexRow.truncated``, the one record of a cut the
+    report holds; an index row read from a stored report's JSON is read as
+    the model's is.
+    """
+    cited = {str(i) for i in (evidence_ids or [])}
+    if not cited:
+        return False
+    for row in evidence_index or []:
+        said = row if isinstance(row, dict) else {"id": row.id, "truncated": row.truncated}
+        if str(said.get("id")) in cited and said.get("truncated") is True:
             return True
     return False
 
@@ -7255,13 +7282,19 @@ def _listing_heading(number: int, where: str, body: str, section: Any) -> str:
     return " · ".join(parts)
 
 
-def _whole_at(section: Any) -> str:
+def _whole_at(section: Any, cites_cut: bool = False) -> str:
     """Where a value the page shows cut is whole: the section's entry or entries, else the JSON.
 
     A section that cites several entries names them once, on its own
-    ``_Evidence:`` line under it, and is pointed to there.
+    ``_Evidence:`` line under it, and is pointed to there. Where an entry it
+    cites was cut (``cites_cut``), the value is not said whole anywhere: the
+    words say only where the entry is held.
     """
     ids = [str(i) for i in (getattr(section, "evidence_ids", None) or []) if str(i).strip()]
+    if cites_cut and len(ids) == 1:
+        return f"the evidence ledger holds the entry under {_ids(ids)}"
+    if cites_cut and ids:
+        return "the evidence ledger holds the entries cited below"
     if len(ids) == 1:
         return f"the evidence ledger carries it whole under {_ids(ids)}"
     if ids:
@@ -7270,17 +7303,20 @@ def _whole_at(section: Any) -> str:
     return f"the JSON report carries it whole under the section {_code_span(key)}"
 
 
-def _cut_note(section: Any) -> str:
+def _cut_note(section: Any, cites_cut: bool = False) -> str:
     """The line under a section with a value cut to the page: where that value is whole."""
     return (
         f"_A value above that ends in … is cut to fit the page ({CELL_WIDTH} characters "
-        f"a cell, {ITEM_WIDTH} an item; no code is cut to fit it); {_whole_at(section)}._"
+        f"a cell, {ITEM_WIDTH} an item; no code is cut to fit it); "
+        f"{_whole_at(section, cites_cut)}._"
     )
 
 
-def _stored_cut_note(section: Any) -> str:
+def _stored_cut_note(section: Any, cites_cut: bool = False) -> str:
     """The line under a listing the report was built with cut: where the code is whole."""
-    return f"_The report was built with this listing cut at the …; {_whole_at(section)}._"
+    return (
+        f"_The report was built with this listing cut at the …; {_whole_at(section, cites_cut)}._"
+    )
 
 
 # The sections whose table columns hold the sample's or a sandbox's own text,

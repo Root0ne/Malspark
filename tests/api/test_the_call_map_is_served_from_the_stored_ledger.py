@@ -8,6 +8,7 @@ written; another account's job is not found.
 
 from __future__ import annotations
 
+import json
 import uuid
 from types import SimpleNamespace
 from typing import Any
@@ -119,3 +120,35 @@ def test_a_job_that_read_no_code_has_an_empty_map(stored: Any) -> None:
         "functions": [],
         "roots": [],
     }
+
+
+def test_a_listing_kept_in_part_is_served_with_its_note(stored: Any) -> None:
+    cut = f"int FUN_{CHECK:x}(int a)\n"
+    batch = LedgerEntry(
+        id="ev_0003",
+        seq=3,
+        tool="lift_many",
+        agent="reader_one",
+        args={"functions": f"{hex(GATE)},{hex(CHECK)}"},
+        output=json.dumps(
+            {
+                hex(GATE): f"int FUN_{GATE:x}(int a)\n{{\n  return a;\n}}\n",
+                hex(CHECK): cut,
+                "shortened": {f"/{hex(CHECK)}": {"kept_chars": len(cut), "omitted_chars": 90}},
+                "truncated": True,
+            }
+        ),
+        truncated=True,
+        facts={"v": 1, "kind": "decompile_batch", "reader": "listing"},
+    )
+    stored.session.add(_evidence_row(batch.model_dump(mode="json"), job_id=stored.job.id))
+    stored.session.commit()
+
+    res = _client(stored, stored.owner).get(f"/api/v1/jobs/{stored.job.id}/evidence/call-map")
+
+    assert res.status_code == 200
+    rows = {f["address"]: f for f in res.json()["functions"]}
+    assert rows[hex(CHECK)]["notes"] == [
+        f"in part: {len(cut)} of {len(cut) + 90} characters (ev_0003)"
+    ]
+    assert "notes" not in rows[hex(GATE)]

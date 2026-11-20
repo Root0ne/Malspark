@@ -325,8 +325,8 @@ class TestTheBookkeepingIsInOnePlaceAndIsOurs:
 
         notice = shortened_notice(parsed, narrowing=["pattern"])
         assert f"`{ours}`" in notice
-        assert shortened_sentence(json.loads(parsed))
-        assert "/rows" in shortened_sentence(json.loads(parsed))
+        assert shortened_sentence({"structured": json.loads(parsed)})
+        assert "/rows" in shortened_sentence({"structured": json.loads(parsed)})
 
     def test_a_tool_that_owns_the_name_keeps_it_out_of_the_fact_table(self) -> None:
         """Both names are filtered: the tool's, and the one ours moved to."""
