@@ -891,21 +891,33 @@ def compared_words(row: Mapping[str, Any]) -> str:
     return f"[{row.get('entry')}] {row.get('what')} ({said})"
 
 
+# What the links say they do not cover: the inputs and report sections they
+# could not read, the items with no value, the values not linked, and where the
+# budget stopped them. Read by :func:`unread_words` and the behaviour lines of
+# the report and the pack, and, as the one definition, by the reading of an
+# entry's state (``schemas.entry_reading``).
+NOT_READ = "absent"
+NO_VALUE = "no_value"
+NOT_LINKED = "not_linked"
+PARTIAL = "partial"
+COVERAGE_FIELDS = (NOT_READ, NO_VALUE, NOT_LINKED, PARTIAL)
+
+
 def unread_words(data: Mapping[str, Any]) -> list[str]:
     """What the reading could not use, as sentences: items with no value, values not linked."""
     out: list[str] = []
-    no_value = data.get("no_value") or {}
+    no_value = data.get(NO_VALUE) or {}
     if no_value:
         listed = ", ".join(f"{name} {count:,}" for name, count in no_value.items())
         out.append(f"items with no value under the fields read: {listed}")
-    other = (data.get("not_linked") or {}).get("other processes")
+    other = (data.get(NOT_LINKED) or {}).get("other processes")
     if other:
         out.append(
             f"{other:,} network values the sandbox attributes only to processes outside the "
             "sample's tree were not linked"
         )
-    if data.get("partial"):
-        out.append(str(data["partial"]))
+    if data.get(PARTIAL):
+        out.append(str(data[PARTIAL]))
     return out
 
 
