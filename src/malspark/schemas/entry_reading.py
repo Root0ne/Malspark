@@ -32,33 +32,56 @@ E3     :data:`CUT_AS_TEXT`       ``truncated`` or ``chars_dropped`` above 0, and
                                  no map: a prefix of the text is kept
 E2     :data:`SHORTENED`         the shortener's map in the answer
                                  (``output_shortening.our_key_in``)
-E5c    :data:`STRUCTURE_DROPPED` the text kept, the structure beside it dropped
-                                 (a ``spilled`` reference of part ``structured``)
 E9     :data:`ONE_PAGE`          the answer's own paging markers
                                  (``answer_completeness.read_answer``): a flag,
-                                 a next field, a bound count, a page number
-E10    :data:`WHOLE_WITH_GAPS`   a gap field the answer reports something in
-                                 (:data:`GAP_FIELDS`)
+                                 a next field, a bound count, a page number, or
+                                 a start field above 0 that the mapping holding
+                                 the rows holds itself (``AnswerReading.starts``),
+                                 whether or not a next field is given or the
+                                 page is the last
+E10    :data:`WHOLE_WITH_GAPS`   a coverage count of the entry's declared kind
+                                 the answer reports something in
+E5c    :data:`STRUCTURE_DROPPED` the text kept, the structure beside it dropped
+                                 (a ``spilled`` reference of part ``structured``)
 E11    :data:`SHOWN_IN_PART`     the reader shows fewer characters than the
                                  ledger holds (``shown_chars``)
 E1     :data:`WHOLE`             none of the above (also beside E11 alone)
 =====  ========================  ===============================================
 
-The order is the precedence: E7 is resolved to its holder first, then the most
-restrictive state governs. E6, E4, E5a, E5b, E3 and E2 say how much of the text
-the entry keeps and exclude one another; E5c, E9, E10 and E11 stand beside any
-of them that keeps text (E2 with E9, E9 with E10, ...). On E2 a top-level
-``truncated: true`` may be the tool's own or the shortener's, which writes it
-only where the tool's is not true, so paging is unknown
-(:attr:`EntryReading.paging_unknown`). E9 reads the answer's markers only: the
-full page under a bounding argument needs the tool's declared arguments, which
-the entry does not carry. A structure dropped where the run had no store leaves
-no reference and is not seen.
+The order is the precedence: E7 is resolved to its holder first, then the
+state first in the order is :attr:`EntryReading.state`. The order is no ranking
+of what may be said: a sentence takes, per column of what it asserts, the most
+restrictive cell over ALL of :attr:`EntryReading.states`, never the governing
+state alone. E6, E4, E5a, E5b, E3 and E2 say how much of the text the entry
+keeps and exclude one another; E9, E10, E5c and E11 stand beside any of them
+that keeps text (E2 with E9, E3 with E9, E9 with E10, ...).
 
-**Member states.** The members are found by shape (:func:`_container`): an
-object whose every value is a text is one member per key; a list, or an
-object's one list beside nothing but single values, is one member per row.
-Any other answer has no members.
+**Unknown, never whole.** Where the entry cannot tell whether it holds all,
+the reading says so instead of whole. Paging is unknown
+(:attr:`EntryReading.paging_unknown`) on E2 with a top-level ``truncated:
+true``, which may be the tool's own or the shortener's (it writes one only
+where the tool's is not true; the map's count of what it took stays); where a
+start field above 0 stands only in a list-free block beside the rows, or only
+the call's own ``offset`` argument places the answer after the first row and
+no start field of the answer's own does (either may be a place in a file, so
+it makes no page); and on a full page under a bounding argument: a
+numeric argument equal to the length of the answer's primary list, with no
+marker (``answer_completeness`` reads a full page so under a declared bounding
+argument; the entry carries no declaration, so any numeric argument is read,
+and the outcome is unknown, never a page). On these, as on E9, the members
+not kept are unknown (:attr:`EntryReading.members_not_kept` is ``None``).
+Gaps are unknown (:attr:`EntryReading.gaps_unknown`) for an entry whose
+declared kind states no coverage counts, and for a count its kind states that
+the answer leaves out: the counts of a kind are read from the one definition
+its own reader reads them by (:func:`_coverage_counts`), so an answer of any
+other kind, or of a tool nobody declared, reports no gap and is never read as
+reporting none. A structure dropped where the run had no store leaves no
+reference and is not seen.
+
+**Member states.** There are five. The members are found by shape
+(:func:`_container`): an object whose every value is a text is one member per
+key; a list, or an object's one list beside nothing but single values, is one
+member per row. Any other answer has no members.
 
 =====  ========================  ===============================================
 id     member state              decided by
@@ -139,7 +162,6 @@ __all__ = [
     "ENTRY_STATES",
     "EntryReading",
     "FAILED",
-    "GAP_FIELDS",
     "MEMBER_EMPTY",
     "MEMBER_IN_PART",
     "MEMBER_NOT_KEPT",
@@ -182,9 +204,9 @@ ENTRY_STATES = (
     BLANKED_READ,
     CUT_AS_TEXT,
     SHORTENED,
-    STRUCTURE_DROPPED,
     ONE_PAGE,
     WHOLE_WITH_GAPS,
+    STRUCTURE_DROPPED,
     SHOWN_IN_PART,
     WHOLE,
 )
@@ -195,25 +217,6 @@ MEMBER_EMPTY = "empty"
 MEMBER_UNMEASURED = "text_kept_extent_not_recorded"
 MEMBER_NOT_KEPT = "not_in_the_kept_answer"
 MEMBER_STATES = (MEMBER_WHOLE, MEMBER_IN_PART, MEMBER_EMPTY, MEMBER_UNMEASURED, MEMBER_NOT_KEPT)
-
-# The fields an answer reports its own gaps in, read at its top level, for any
-# tool: a value that is not zero or empty says the answer is whole as an answer
-# and still not whole over what it read. A field that is absent is unknown
-# (:meth:`EntryReading.gap_unknown`), never zero.
-GAP_FIELDS = (
-    "calls_unnamed",
-    "undecoded_functions",
-    "imports_cut",
-    "import_count_cut",
-    "absent",
-    "unplaced",
-    "unavailable",
-    "not_read",
-    "unread",
-    "skipped",
-    "errors",
-    "partial",
-)
 
 # The stage and the agent an entry the pack's budget blanked was filed under,
 # for an entry stored before ``blanked_by`` was recorded.
@@ -253,8 +256,9 @@ class EntryReading:
     or not shown, ``output`` for one the budget blanked, ``structured`` and
     ``structured_content`` for structures. ``holder`` is the id a repeat names
     and ``holder_reading`` the reading of the entry the caller gave for it.
-    ``gaps`` holds the gap fields reporting something, ``gaps_zero`` those
-    present at zero.
+    ``gap_fields`` are the coverage counts the entry's declared kind states
+    (none for any other entry), ``gaps`` those the answer reports something
+    in, ``gaps_zero`` those it gives at zero.
     """
 
     entry_id: str
@@ -265,6 +269,7 @@ class EntryReading:
     paging_unknown: bool = False
     gaps: Mapping[str, Any] = field(default_factory=dict)
     gaps_zero: frozenset[str] = frozenset()
+    gap_fields: tuple[str, ...] = ()
     stored: tuple[str, ...] = ()
     holder: str = ""
     holder_reading: EntryReading | None = None
@@ -285,8 +290,13 @@ class EntryReading:
         return MemberReading(said, "", MEMBER_NOT_KEPT)
 
     def gap_unknown(self, name: str) -> bool:
-        """Whether the answer leaves the gap field ``name`` unstated."""
+        """Whether the answer leaves the gap ``name`` unstated; any name its kind counts not."""
         return name not in self.gaps and name not in self.gaps_zero
+
+    @property
+    def gaps_unknown(self) -> bool:
+        """Whether what the answer left unread is unknown: its kind counts none, or it omits one."""
+        return not self.gap_fields or any(self.gap_unknown(name) for name in self.gap_fields)
 
 
 def _field(entry: Any, name: str) -> Any:
@@ -343,11 +353,18 @@ def _blanked_by_pack(entry: Any) -> bool:
     )
 
 
-def _dropped(entry: Any) -> int:
-    try:
-        return max(0, int(_field(entry, "chars_dropped") or 0))
-    except (TypeError, ValueError):
+def _whole_number(value: Any) -> int:
+    """``value`` as a count of 0 or more; anything that is no count reads as 0."""
+    if isinstance(value, bool):
         return 0
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _dropped(entry: Any) -> int:
+    return _whole_number(_field(entry, "chars_dropped"))
 
 
 def _text_state(entry: Any, output: str, document: Any) -> str:
@@ -371,35 +388,68 @@ def _text_state(entry: Any, output: str, document: Any) -> str:
     return ""
 
 
-def _pages(entry: Any, document: Any, shortened: bool) -> bool:
-    """Whether the answer's own markers say it is one page of more (E9)."""
-    from malspark.schemas.answer_completeness import read_answer
+def _pages(entry: Any, document: Any, shortened: bool) -> tuple[bool, bool]:
+    """``(page, unknown)``: whether the answer's own fields make it one page of more
+    (E9), and, where they do not, whether its paging is unknown.
 
-    if document is None:
-        return False
-    args = _field(entry, "args")
+    A page by a flag, a next field, a bound count, a page number, or a paged
+    mapping's own start above 0. Unknown where a start above 0 stands only in
+    a list-free block beside the rows, or only the call's own ``offset``
+    argument places the answer after the first row, or a numeric argument
+    equals the length of the answer's primary list and no marker stands
+    beside it.
+    """
+    from malspark.schemas.answer_completeness import _OFFSET_ARGUMENT, _bounded, read_answer
+
+    raw = _field(entry, "args")
+    args = raw if isinstance(raw, Mapping) else None
     held = _field(entry, "structured") is not None
     reading = read_answer(
         document,
-        args=args if isinstance(args, Mapping) else None,
+        args=args,
         text_chars=None if held else len(str(_field(entry, "output") or "")),
         platform_shortened=shortened,
     )
     if reading.malformed:
-        return False
+        return False, False
     if shortened:
         # Beside the map, the top-level flag and the counts may be the shortener's.
         flags = [name for name, top in reading.flags if not (top and name == _TRUNCATED)]
-        return bool(flags or reading.nexts or reading.pages or reading.page_unknown is not None)
-    return reading.partial or reading.page_unknown is not None
+        page = bool(flags or reading.nexts or reading.pages or reading.page_unknown is not None)
+    else:
+        page = reading.partial or reading.page_unknown is not None
+    if page or reading.starts_after_first:
+        return True, False
+    if any(start > 0 for start, _ in reading.block_starts):
+        return False, True
+    if not args:
+        return False, False
+    offset = args.get(_OFFSET_ARGUMENT)
+    placed = isinstance(offset, int) and not isinstance(offset, bool) and offset > 0
+    full = _bounded(reading, args, [name for name in args if isinstance(name, str)])
+    return False, (placed and not reading.starts and not reading.block_starts) or full is not None
 
 
-def _gaps(document: Any) -> tuple[dict[str, Any], frozenset[str]]:
+def _coverage_counts(entry: Any) -> tuple[str, ...]:
+    """The coverage counts the entry's declared kind states, or ``()``.
+
+    Each kind's are imported from the one definition that kind's own reader
+    reads them by; a kind whose gaps no reader counts states none.
+    """
+    from malspark.agents.function_map import _INDEX_KIND
+    from malspark.core.declared_reading import kind_of
+    from malspark.pipeline.function_claims import INDEX_COVERAGE_COUNTS
+
+    counted = {_INDEX_KIND: INDEX_COVERAGE_COUNTS}
+    return counted.get(kind_of(entry), ())
+
+
+def _gaps(document: Any, counts: tuple[str, ...]) -> tuple[dict[str, Any], frozenset[str]]:
     if not isinstance(document, Mapping):
         return {}, frozenset()
     reported: dict[str, Any] = {}
     zero: set[str] = set()
-    for name in GAP_FIELDS:
+    for name in counts:
         if name not in document or document[name] is None:
             continue
         if document[name]:
@@ -459,7 +509,8 @@ def _shortened_members(
     others = rows.get(_OTHERS)
     found = _container(document, ours)
     if found is None:
-        return (), 0
+        # No container found by shape: whether every member is kept is not known.
+        return (), None
     at, items = found
     members: list[MemberReading] = []
     for key, value in items:
@@ -468,8 +519,8 @@ def _shortened_members(
         under = [p for p in rows if isinstance(p, str) and p.startswith(path + "/")]
         if isinstance(own, Mapping) and ("kept_chars" in own or "kept" in own):
             chars = "kept_chars" in own
-            kept = int(own.get("kept_chars" if chars else "kept") or 0)
-            left = int(own.get("omitted_chars" if chars else "omitted") or 0)
+            kept = _whole_number(own.get("kept_chars" if chars else "kept"))
+            left = _whole_number(own.get("omitted_chars" if chars else "omitted"))
             if kept <= 0 or not _holds_text(value):
                 members.append(MemberReading(key, path, MEMBER_EMPTY))
             else:
@@ -485,8 +536,8 @@ def _shortened_members(
     if at:
         own_row = rows.get(at)
         if isinstance(own_row, Mapping) and "omitted" in own_row:
-            missing = int(own_row.get("omitted") or 0)
-        elif isinstance(others, Mapping) and int(others.get("omitted") or 0):
+            missing = _whole_number(own_row.get("omitted"))
+        elif isinstance(others, Mapping) and _whole_number(others.get("omitted")):
             missing = None
     return tuple(members), missing
 
@@ -641,12 +692,14 @@ def entry_reading(
         return EntryReading(
             entry_id,
             REPEAT,
-            (REPEAT, *held.states),
+            # A holder that is itself a repeat gives each state once.
+            tuple(dict.fromkeys((REPEAT, *held.states))),
             members=held.members,
             members_not_kept=held.members_not_kept,
             paging_unknown=held.paging_unknown,
             gaps=held.gaps,
             gaps_zero=held.gaps_zero,
+            gap_fields=held.gap_fields,
             stored=stored,
             holder=first,
             holder_reading=held,
@@ -686,12 +739,17 @@ def entry_reading(
         members, missing = _whole_members(document), 0
     if output and _structure_dropped(entry):
         states.append(STRUCTURE_DROPPED)
-    if text != CUT_AS_TEXT and _pages(entry, document, text == SHORTENED):
-        states.append(ONE_PAGE)
-        # The rows of the page are whole; the later pages are not in it.
-        if missing == 0:
-            missing = None
-    gaps, gaps_zero = _gaps(document)
+    # Read on an entry cut as text too: what still parses says what it says.
+    page, unknown = _pages(entry, document, text == SHORTENED)
+    if page or unknown:
+        # The rows held are whole; rows of other pages, if any, are not in it.
+        missing = None
+        if page:
+            states.append(ONE_PAGE)
+        else:
+            paging_unknown = True
+    counts = _coverage_counts(entry)
+    gaps, gaps_zero = _gaps(document, counts)
     if gaps:
         states.append(WHOLE_WITH_GAPS)
     if shown_chars is not None and output and 0 <= int(shown_chars) < len(output):
@@ -708,5 +766,6 @@ def entry_reading(
         paging_unknown=paging_unknown,
         gaps=gaps,
         gaps_zero=gaps_zero,
+        gap_fields=counts,
         stored=stored,
     )

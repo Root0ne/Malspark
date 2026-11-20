@@ -4,10 +4,11 @@
 ``repeated_of``, ``ok`` and its answer's failure form, the record of an answer
 not shown, an empty output with ``truncated`` and the stage that blanked it,
 ``chars_dropped``, the shortener's map, ``spilled``, the answer's own paging
-markers and gap fields — and never the tool's name, its server or its source.
-Every state is reachable, the precedence decides the one that governs, the
-states that stand beside it are kept, and an entry that fits no state does not
-exist.
+markers and the coverage counts of its declared kind — and never the tool's
+name, its server or its source. Every state is reachable, the precedence
+decides the one that governs, the states that stand beside it are kept, an
+entry that fits no state does not exist, and where the entry cannot tell
+whether it holds all the reading says unknown, never whole.
 """
 
 from __future__ import annotations
@@ -19,9 +20,12 @@ from typing import Any
 
 import pytest
 
+from malspark.agents.function_map import _INDEX_KIND
 from malspark.agents.mcp_client import TRUNCATION_MARKER
 from malspark.agents.output_shortening import our_key_in, shorten_json_document
+from malspark.pipeline.function_claims import INDEX_COVERAGE_COUNTS, function_facts
 from malspark.schemas import entry_reading as reading_module
+from malspark.schemas.answer_completeness import completeness_line, read_answer
 from malspark.schemas.entry_reading import (
     ABSENT,
     BLANKED_READ,
@@ -91,6 +95,14 @@ def _cut(text: str, at: int) -> dict[str, Any]:
     return _entry(text[:at] + TRUNCATION_MARKER, truncated=True, chars_dropped=len(text) - at)
 
 
+# The record a tool of the index's declared kind stores.
+_INDEX_FACTS = {"v": 1, "kind": _INDEX_KIND}
+
+
+def _indexed(document: Any, **fields: Any) -> dict[str, Any]:
+    return _entry(json.dumps(document), source="pack", facts=_INDEX_FACTS, **fields)
+
+
 _BATCH = {
     "0x401000": _routine(0x401000, 0x403000, 5),
     "0x402000": _routine(0x402000, 0x403000, 5),
@@ -119,7 +131,7 @@ _EACH_STATE: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
         {},
     ),
     ONE_PAGE: (_entry(json.dumps({"rows": [1, 2, 3], "next_offset": 3})), {}),
-    WHOLE_WITH_GAPS: (_entry(json.dumps({"rows": [], "calls_unnamed": {"0x1000": 2}})), {}),
+    WHOLE_WITH_GAPS: (_indexed({"rows": [], "calls_unnamed": {"0x1000": 2}}), {}),
     SHOWN_IN_PART: (_entry("a" * 100), {"shown_chars": 40}),
     WHOLE: (_entry(json.dumps(_BATCH)), {}),
 }
@@ -151,7 +163,7 @@ class TestEveryStateIsReachable:
 
 class TestPrecedence:
     def test_a_page_that_reports_its_own_gaps_is_governed_by_the_page(self) -> None:
-        entry = _entry(json.dumps({"rows": [1], "next_offset": 1, "calls_unnamed": {"0x10": 1}}))
+        entry = _indexed({"rows": [1], "next_offset": 1, "calls_unnamed": {"0x10": 1}})
 
         reading = entry_reading(entry)
 
@@ -219,7 +231,7 @@ class TestPrecedence:
             spilled=[{"part": "structured", "key": "k", "bytes": 4, "sha256": "cd"}],
         )
 
-        assert entry_reading(entry).states == (STRUCTURE_DROPPED, ONE_PAGE)
+        assert entry_reading(entry).states == (ONE_PAGE, STRUCTURE_DROPPED)
 
     def test_a_cut_without_a_count_is_still_cut_as_text(self) -> None:
         entry = _entry("the first part of a long prose answer…", truncated=True)
@@ -227,14 +239,15 @@ class TestPrecedence:
         assert entry_reading(entry).state == CUT_AS_TEXT
 
     def test_gap_fields_at_zero_are_not_gaps_and_a_missing_one_is_unknown(self) -> None:
-        reading = entry_reading(
-            _entry(json.dumps({"rows": [], "calls_unnamed": {}, "undecoded_functions": 0}))
-        )
+        zero = entry_reading(_indexed({"rows": [], "calls_unnamed": {}, "undecoded_functions": 0}))
+        left_out = entry_reading(_indexed({"rows": [], "calls_unnamed": {}}))
 
-        assert reading.states == (WHOLE,)
-        assert reading.gaps_zero == frozenset({"calls_unnamed", "undecoded_functions"})
-        assert not reading.gap_unknown("calls_unnamed")
-        assert reading.gap_unknown("imports_cut")
+        assert zero.states == (WHOLE,)
+        assert zero.gaps_zero == frozenset({"calls_unnamed", "undecoded_functions"})
+        assert not zero.gap_unknown("calls_unnamed") and not zero.gaps_unknown
+        assert zero.gap_unknown("imports_cut")
+        assert left_out.states == (WHOLE,) and left_out.gaps_unknown
+        assert left_out.gap_unknown("undecoded_functions")
 
 
 class TestBlankedEntries:
@@ -421,7 +434,7 @@ class TestTheToolIsNotRead:
             _entry(text),
             _cut(text, text.index('"0x403000"') + 40),
             _entry("", truncated=True, stage="triage_pack"),
-            _entry(json.dumps({"rows": [], "calls_unnamed": {"0x1": 1}})),
+            _indexed({"rows": [], "calls_unnamed": {"0x1": 1}}),
         ]
         reference = [entry_reading(entry) for entry in entries]
 
@@ -450,7 +463,7 @@ _OUTPUTS = {
     "cut at a key": json.dumps(_BATCH)[:2] + TRUNCATION_MARKER,
     "page": json.dumps({"rows": ["a", "b"], "total": 9}),
     "gaps": json.dumps({"rows": [], "undecoded_functions": 3}),
-    "page and gaps": json.dumps({"rows": ["a"], "has_more": True, "unplaced": {"t": 1}}),
+    "page and gaps": json.dumps({"rows": ["a"], "has_more": True, "calls_unnamed": {"0x1": 1}}),
     "shortened": _EACH_STATE[SHORTENED][0]["output"],
     "shortened folded": json.dumps(
         {
@@ -486,6 +499,7 @@ def _combinations() -> list[tuple[Any, ...]]:
             (False, True),
             (None, 5),
             (False, True),
+            (None, _INDEX_FACTS),
         )
     )
 
@@ -505,6 +519,7 @@ class TestNoEntryFitsNoState:
             structured,
             shown,
             with_holder,
+            facts,
         ) in _combinations():
             text = _OUTPUTS[output]
             entry = _entry(
@@ -517,6 +532,7 @@ class TestNoEntryFitsNoState:
                 agent=agent,
                 spilled=_SPILLED[spilled],
                 structured=_parsed(text) if structured else None,
+                facts=facts,
             )
 
             reading = entry_reading(
@@ -541,3 +557,233 @@ def _parsed(text: str) -> Any:
     except ValueError:
         return None
     return value if isinstance(value, dict | list) else None
+
+
+_STRINGS = [f"s{i}" for i in range(6)]
+
+
+class TestALaterPageIsAPage:
+    @pytest.mark.parametrize("word", ["offset", "page_offset", "skip", "start_index"])
+    @pytest.mark.parametrize(
+        "beside",
+        [
+            {},
+            {"next_offset": None},
+            {"next_offset": 106},
+            {"total": 106},
+            {"total": 300},
+            {"truncated": False},
+        ],
+    )
+    def test_a_paged_mapping_s_own_start_after_the_first_row_makes_a_page(
+        self, word: str, beside: dict[str, Any]
+    ) -> None:
+        for start, nested in itertools.product((1, 100), (False, True)):
+            page = {"strings": _STRINGS, word: start, **beside}
+            document = {"tool": "t", "result": page} if nested else page
+
+            reading = entry_reading(_entry(json.dumps(document)))
+
+            assert ONE_PAGE in reading.states, (start, nested)
+            assert reading.members_not_kept is None
+            missing = reading.member(str(len(_STRINGS)))
+            assert missing is not None and missing.state == MEMBER_NOT_KEPT
+
+    @pytest.mark.parametrize("word", ["offset", "page_offset", "skip", "start_index"])
+    def test_a_start_at_the_first_row_alone_is_no_page(self, word: str) -> None:
+        reading = entry_reading(_entry(json.dumps({"strings": _STRINGS, word: 0})))
+
+        assert reading.states == (WHOLE,) and reading.members_not_kept == 0
+
+    def test_the_line_agents_read_does_not_read_the_start(self) -> None:
+        last = {"strings": _STRINGS, "total": 106, "page_offset": 100, "next_offset": None}
+
+        line = completeness_line(last, args={"offset": 100}, text_chars=len(json.dumps(last)))
+        held = read_answer(last, args={"offset": 100})
+
+        assert entry_reading(_entry(json.dumps(last))).state == ONE_PAGE
+        assert line == "" and not held.partial and not held.capped
+        assert held.starts == [(100, True)]
+
+    @pytest.mark.parametrize(
+        "output",
+        [
+            "Rows 120 to 519 of 1,162; the next page starts at 520.",
+            json.dumps(_STRINGS),
+            json.dumps({"strings": _STRINGS}),
+            "",
+        ],
+    )
+    def test_only_the_call_s_offset_argument_leaves_the_paging_unknown(self, output: str) -> None:
+        for start in (1, 120):
+            reading = entry_reading(_entry(output, args={"offset": start, "limit": 400}))
+
+            assert ONE_PAGE not in reading.states
+            assert reading.paging_unknown is True
+            assert reading.members_not_kept is None
+        assert entry_reading(_entry(output, args={"offset": 0})).paging_unknown is False
+
+    @pytest.mark.parametrize("block", ["meta", "overlay"])
+    def test_a_start_only_a_block_beside_the_rows_holds_leaves_the_paging_unknown(
+        self, block: str
+    ) -> None:
+        for start in (1, 4096):
+            document = {"rows": _STRINGS, block: {"offset": start, "size": 10}}
+
+            reading = entry_reading(_entry(json.dumps(document)))
+
+            assert reading.states == (WHOLE,)
+            assert reading.paging_unknown is True and reading.members_not_kept is None
+
+    def test_an_own_start_at_the_first_row_is_read_over_the_argument(self) -> None:
+        document = {"strings": _STRINGS, "offset": 0}
+
+        reading = entry_reading(_entry(json.dumps(document), args={"offset": 50}))
+
+        assert reading.states == (WHOLE,) and reading.paging_unknown is False
+
+
+class TestGapsAreReadOnlyWhereTheKindCountsThem:
+    def test_the_kind_s_counts_are_its_reader_s_one_definition(self) -> None:
+        for name in INDEX_COVERAGE_COUNTS:
+            reported = entry_reading(_indexed({"rows": [], name: 3}))
+            zero = entry_reading(_indexed({"rows": [], name: 0}))
+
+            assert reported.gap_fields == INDEX_COVERAGE_COUNTS
+            assert reported.states == (WHOLE_WITH_GAPS,) and reported.gaps == {name: 3}
+            assert zero.states == (WHOLE,) and name in zero.gaps_zero
+
+    @pytest.mark.parametrize(
+        "facts", [None, {"v": 1, "kind": "unclassified"}, {"v": 1, "kind": "strings"}]
+    )
+    def test_an_answer_whose_kind_counts_no_gap_has_its_gaps_unknown(
+        self, facts: dict[str, Any] | None
+    ) -> None:
+        names = [*INDEX_COVERAGE_COUNTS, "absent", "errors", "skipped", "missing"]
+        documents: list[dict[str, Any]] = [{"rows": [], **dict.fromkeys(names, 3)}, {"rows": []}]
+        for document in documents:
+            entry = _entry(json.dumps(document), source="mcp:x", facts=facts)
+
+            reading = entry_reading(entry)
+
+            assert reading.states == (WHOLE,)
+            assert reading.gap_fields == () and reading.gaps == {}
+            assert reading.gaps_unknown
+            assert all(reading.gap_unknown(name) for name in names)
+
+    def test_the_module_holds_no_word_of_a_gap_field(self) -> None:
+        source = Path(reading_module.__file__).read_text(encoding="utf-8")
+
+        for name in INDEX_COVERAGE_COUNTS:
+            assert f'"{name}"' not in source
+
+    def test_the_kind_s_reader_reads_the_same_counts(self) -> None:
+        document = {"image_base": "0x400000", "rows": [], "calls_unnamed": {"0x401000": 2}}
+        entry = LedgerEntry.model_validate(
+            _indexed(document, tool="index", stage="analysis", agent="static")
+        )
+
+        facts = function_facts([entry], None)
+
+        assert entry_reading(entry).gaps == {"calls_unnamed": {"0x401000": 2}}
+        assert facts.unnamed == {0x1000: 2}
+
+
+class TestAFullPageUnderABoundingArgument:
+    @pytest.mark.parametrize("name", ["limit", "k", "n", "max_results", "count"])
+    def test_a_primary_list_as_long_as_a_numeric_argument_leaves_the_paging_unknown(
+        self, name: str
+    ) -> None:
+        for document in (_STRINGS, {"query": "q", "matches": _STRINGS}):
+            full = entry_reading(_entry(json.dumps(document), args={name: len(_STRINGS)}))
+            short = entry_reading(_entry(json.dumps(document), args={name: len(_STRINGS) + 1}))
+
+            assert full.states == (WHOLE,) and full.paging_unknown is True
+            assert full.members_not_kept is None
+            assert full.member(str(len(_STRINGS))).state == MEMBER_NOT_KEPT  # type: ignore[union-attr]
+            assert short.paging_unknown is False and short.members_not_kept == 0
+
+    def test_a_marker_beside_the_full_page_decides_instead(self) -> None:
+        document = {"matches": _STRINGS, "has_more": False}
+
+        reading = entry_reading(_entry(json.dumps(document), args={"limit": len(_STRINGS)}))
+
+        assert reading.paging_unknown is False and reading.members_not_kept == 0
+
+
+class TestTheStatesAreCounted:
+    def test_there_are_five_member_states_and_the_module_says_five(self) -> None:
+        doc = reading_module.__doc__ or ""
+
+        assert len(MEMBER_STATES) == len(set(MEMBER_STATES)) == 5
+        assert "There are five." in doc
+        assert [f"M{n}" in doc for n in range(1, 7)] == [True] * 5 + [False]
+
+    def test_a_sentence_takes_every_state_and_a_dropped_structure_stands_after_the_gaps(
+        self,
+    ) -> None:
+        entry = _indexed(
+            {"rows": [], "calls_unnamed": {"0x10": 1}},
+            spilled=[{"part": "structured", "key": "k", "bytes": 4, "sha256": "cd"}],
+        )
+
+        reading = entry_reading(entry)
+
+        order = ENTRY_STATES.index
+        assert order(ONE_PAGE) < order(WHOLE_WITH_GAPS) < order(STRUCTURE_DROPPED)
+        assert reading.states == (WHOLE_WITH_GAPS, STRUCTURE_DROPPED)
+        assert "most restrictive cell over ALL" in " ".join((reading_module.__doc__ or "").split())
+
+
+class TestReviewedEdges:
+    def test_an_entry_cut_as_text_that_is_still_a_document_has_its_pages_and_gaps_read(
+        self,
+    ) -> None:
+        document = {"rows": ["a", "b", "c"], "next": "t", "calls_unnamed": {"0x10": 1}}
+        for fields in ({"truncated": True}, {"chars_dropped": 40}):
+            entry = _indexed(document, **fields)
+
+            reading = entry_reading(entry)
+
+            assert reading.states == (CUT_AS_TEXT, ONE_PAGE, WHOLE_WITH_GAPS), fields
+
+    def test_a_repeat_held_by_a_repeat_gives_each_state_once(self) -> None:
+        for holder_fields in ({"repeated_of": "ev_0000"}, {"repeated_of": "ev_0002"}):
+            holder = _entry("served again", id="ev_0002", **holder_fields)
+            repeat = _entry("served again", repeated_of="ev_0002")
+
+            reading = entry_reading(repeat, holder=holder)
+
+            assert reading.states == (REPEAT,)
+
+    @pytest.mark.parametrize(
+        "value", ["abc", [1], {"x": 1}, None, True, -5, 1e300, float("inf"), "12"]
+    )
+    def test_a_tool_s_own_key_in_the_shortener_s_shape_never_raises(self, value: Any) -> None:
+        for row in (
+            {"kept": value, "omitted": value},
+            {"kept_chars": value, "omitted_chars": value},
+        ):
+            document = {"a": "x", "b": ["y"], "shortened": {"/a": row, "/b": {"omitted": value}}}
+            others = {**document, "shortened": {"others": {"omitted": value}}}
+            for held in (document, others):
+                entry = _entry("{}", structured=held)
+
+                reading = entry_reading(entry)
+
+                assert reading.state in ENTRY_STATES
+
+    def test_a_shortened_batch_whose_container_is_not_found_keeps_its_members_unknown(
+        self,
+    ) -> None:
+        document = {
+            f"0x{0x401000 + i * 4:x}": {"code": _routine(0x401000 + i * 4, 0x400000, 60), "n": i}
+            for i in range(8)
+        }
+
+        entry = _shortened(document, len(json.dumps(document)) // 4)
+        reading = entry_reading(entry)
+
+        assert reading.state == SHORTENED and reading.members == ()
+        assert reading.members_not_kept is None
+        assert reading.member("0x401004").state == MEMBER_NOT_KEPT  # type: ignore[union-attr]
