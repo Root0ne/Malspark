@@ -281,12 +281,17 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # A stored run's Markdown and HTML re-pinned when a tool's failure message came to be
 # written by the inline rule (T-735): each backtick it holds is printed as a
 # character in the tool failures list, the only change.
+# A stored run's Markdown and HTML re-pinned when a platform sentence quoting a
+# model's words, alone or with a value, came to be written whole as text
+# (T-735): in the validation findings, retry and mediator lines each
+# backtick, star and backslash the record holds is printed as a character and
+# a pair no longer forms a code span, the only change.
 STORED_RENDERS = {
-    "run7": ("0da0666bd97caecb", "8a6ba9c0670cf1b5"),
-    "run5": ("87bb84a09091c0de", "156a645b3d568bd2"),
-    "run4": ("de3f3fc895e0ef55", "60cfad50c120e58b"),
-    "local8": ("08d6d34474336223", "b78721cb9ba4f766"),
-    "haiku4": ("326e24c856379df9", "7e7c99ce92d9ede7"),
+    "run7": ("b380cc74224737dd", "7c27693f82b034f8"),
+    "run5": ("079353e1d5adb8cc", "d2bafe2177886290"),
+    "run4": ("e5ffe74339534ae2", "798ce36070468515"),
+    "local8": ("85f44b070da2bb25", "a6ba8a2626516ed8"),
+    "haiku4": ("686fb956d5f25ddc", "017e09781de38859"),
 }
 
 

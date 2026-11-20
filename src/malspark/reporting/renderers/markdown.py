@@ -600,7 +600,12 @@ class MarkdownRenderer:
                 ("Open questions it rests on", "; ".join(answer.open_questions)),
             ]
             said = [_item(f"{label}: {ctx.inline(value)}") for label, value in facts if value]
-            said.extend(_item(f"_Platform check:_ {ctx.inline(check)}") for check in answer.checks)
+            # A check is the platform's sentence quoting a model's words or a
+            # value, as one string: written whole by the value writer.
+            said.extend(
+                _item(f"_Platform check:_ {ctx.value(check, pipes=True)}")
+                for check in answer.checks
+            )
             if said:
                 lines.extend(["", *said])
         return "\n".join(lines)
@@ -2371,8 +2376,11 @@ class MarkdownRenderer:
                 lines.extend(["**Items a kept validation retry left out:**", ""])
                 from malspark.pipeline.validation import retry_drop_sentences
 
+                # The platform's sentence quoting a model's words, as one
+                # string: written whole by the value writer.
                 lines.extend(
-                    _prose_item(ctx.plain(sentence)) for sentence in retry_drop_sentences(drops)
+                    _item(ctx.value(sentence, pipes=True))
+                    for sentence in retry_drop_sentences(drops)
                 )
                 lines.append("")
             # What a retry withdrew with a WITHDRAW line, with its reason.
@@ -2382,7 +2390,8 @@ class MarkdownRenderer:
             if withdrawn:
                 lines.extend(["**Items a validation retry withdrew:**", ""])
                 lines.extend(
-                    _prose_item(ctx.plain(str(row.get("sentence") or ""))) for row in withdrawn
+                    _item(ctx.value(str(row.get("sentence") or ""), pipes=True))
+                    for row in withdrawn
                 )
                 lines.append("")
         if exports:
@@ -2468,7 +2477,7 @@ class MarkdownRenderer:
             return ctx.value(text) if ctx is not None else _inline_safe(text, pipes=False)
 
         def named(text: Any) -> str:
-            """A tool's or the operator's name inside an item, by the inline rule."""
+            """A value, or a sentence quoting a model's words, inside an item, as text."""
             return ctx.value(text, pipes=True) if ctx is not None else _inline_safe(text)
 
         def spoken(
@@ -2524,10 +2533,10 @@ class MarkdownRenderer:
                     lines.append(_item(f"{NEGOTIATION_CONFIDENCE_LABEL}: {float(final_conf):.3f}"))
                 except (TypeError, ValueError):
                     pass
-            # A sentence that quotes the mediator's or an analyst's words keeps
-            # the writing of model prose.
+            # A sentence of the platform's that quotes the mediator's or an
+            # analyst's words, as one string: written whole by the value writer.
             for sentence in negotiation.get("revision_replacements") or []:
-                lines.append(_prose_item(str(sentence)))
+                lines.append(_item(named(str(sentence))))
             # A mediation note is the platform's, carrying a provider's or an
             # exception's text and no model's words: by the inline rule.
             for sentence in negotiation.get("mediation_notes") or []:
@@ -2548,19 +2557,23 @@ class MarkdownRenderer:
                             f"{'is' if row.get('values') == 1 else 'are'} no longer stated"
                         )
                     )
-            # A line that quotes the mediator's words keeps the writing of model prose.
+            # A line that quotes the mediator's or an analyst's words prints them
+            # as text: the quote by the value writer after the platform's words,
+            # a sentence that arrives as one string written whole by it.
             for sentence in negotiation.get("not_blocking") or []:
-                lines.append(_prose_item(f"Marked not blocking by the mediator: {sentence}"))
+                lines.append(_item(f"Marked not blocking by the mediator: {named(str(sentence))}"))
             for sentence in negotiation.get("unread_marks") or []:
-                lines.append(_prose_item(f"A mark that was not read; the line blocked: {sentence}"))
+                lines.append(
+                    _item(f"A mark that was not read; the line blocked: {named(str(sentence))}")
+                )
             for sentence in negotiation.get("ledger_facts") or []:
                 # The rule-match fact was the mediator's; the report prints counts.
                 if not is_rule_fact(sentence):
-                    lines.append(_prose_item(str(sentence)))
+                    lines.append(_item(named(str(sentence))))
             for sentence in negotiation.get("ledger_stated") or []:
-                lines.append(_prose_item(str(sentence)))
+                lines.append(_item(named(str(sentence))))
             for sentence in negotiation.get("limit_rulings") or []:
-                lines.append(_prose_item(str(sentence)))
+                lines.append(_item(named(str(sentence))))
         # A model's configured endpoint prints as configured, set aside where
         # this line writes it and nowhere else.
         model_name = ctx.endpoint_kept if ctx is not None else None
@@ -4883,19 +4896,19 @@ def _held_by_clauses(
 
 
 def _finding_text(row: dict[str, Any], plain: Callable[[str], str] = _defanged_text) -> str:
-    """A finding's message as the report prints it: escaped, then every network value defanged.
+    """A finding's message as the report prints it: written whole by the value writer.
 
-    A message quotes the claim, the value or the object it is about, which a
-    sample, a tool or a model wrote: its Markdown is escaped like any such
-    value, so a quote cannot open a link or a tag, a balanced backtick pair
-    stays a code span no backtick inside can close, and a claim's URL, once
-    printed live in the list of findings, is defanged. ``plain`` is the
-    render's own defanger (``ctx.plain``): the run's recorded values first,
-    as a tool's text is read (``ctx.inline``), then every other value.
+    A message is the platform's sentence quoting the claim, the value or the
+    object it is about, which a sample, a tool or a model wrote, all in one
+    string: it is written as text (:func:`_inline_safe`), so every character
+    the record holds is shown, a backtick pair included, and nothing in it
+    opens a link, a tag, a code span or emphasis. ``plain`` is the render's
+    own defanger (``ctx.plain``): the run's recorded values first, then every
+    other value.
     """
     message = str(row.get("message") or "")
     try:
-        return _emphasis_escaped(plain(_escaped_keeping_spans(message, _INLINE_META)))
+        return _inline_safe(message, plain=plain)
     except Exception as exc:  # noqa: BLE001 — never the raw values
         logger.debug("markdown: a finding was not written (%s).", exc)
         return STATE_UNKNOWN
