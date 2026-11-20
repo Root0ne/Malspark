@@ -115,9 +115,15 @@ from malspark.tools.call_sites import (
 from malspark.tools.pe_image import Code, Image, Section, read_as_bytes
 
 __all__ = [
+    "CALLS_UNNAMED",
+    "COVERAGE_FIELDS",
     "FUNCTION_LISTS_ABSENT",
+    "IMPORTS_CUT",
+    "NOT_JOINED",
     "SELF",
     "TOOL",
+    "UNDECODED_FUNCTIONS",
+    "UNPLACED",
     "function_index",
     "index_image",
 ]
@@ -1990,6 +1996,20 @@ def sample_text(value: Any) -> str:
     return f'"{pack_escaped(str(value or ""), ids=True)}"'
 
 
+# What the index says it does not cover: the sources it did not join, how many
+# functions the decoder stopped in, the places no function holds, the cut of the
+# import table, and per function the calls that name nothing. Read by the head
+# of its table (:func:`head_text`) and the function facts
+# (``pipeline.function_claims.function_facts``), and, as the one definition, by
+# the reading of an entry's state (``schemas.entry_reading``).
+NOT_JOINED = "absent"
+UNDECODED_FUNCTIONS = "undecoded_functions"
+UNPLACED = "unplaced"
+IMPORTS_CUT = "imports_cut"
+CALLS_UNNAMED = "calls_unnamed"
+COVERAGE_FIELDS = (NOT_JOINED, UNDECODED_FUNCTIONS, UNPLACED, IMPORTS_CUT, CALLS_UNNAMED)
+
+
 def head_text(data: Mapping[str, Any], rows: int) -> str:
     """What the index is: how many functions hold artefacts, where the functions come from."""
     known = int(data.get("functions_known") or 0)
@@ -1998,20 +2018,20 @@ def head_text(data: Mapping[str, Any], rows: int) -> str:
     said = f"{rows} of the {known} functions the run knows hold artefacts of their own"
     said += f" (functions from {listed}; " if listed else " ("
     said += f"{data.get('function_lists') or FUNCTION_LISTS_ABSENT})"
-    for source, reason in (data.get("absent") or {}).items():
+    for source, reason in (data.get(NOT_JOINED) or {}).items():
         said += f"; {source}: {reason}"
-    undecoded = int(data.get("undecoded_functions") or 0)
+    undecoded = int(data.get(UNDECODED_FUNCTIONS) or 0)
     if undecoded:
         said += (
             f"; in {undecoded} functions the decoder stopped at a byte it does not read, so "
             "their calls and strings past it are absent"
         )
-    unplaced = data.get("unplaced") or {}
+    unplaced = data.get(UNPLACED) or {}
     if unplaced:
         counted = ", ".join(f"{tool} {n}" for tool, n in unplaced.items())
         said += f"; places no function holds, not counted: {counted}"
-    if data.get("imports_cut"):
-        said += f"; imports: {data['imports_cut']}"
+    if data.get(IMPORTS_CUT):
+        said += f"; imports: {data[IMPORTS_CUT]}"
     if not rows:
         return said
     return (

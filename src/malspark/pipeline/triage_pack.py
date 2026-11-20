@@ -5600,7 +5600,7 @@ def _behaviour_code(data: dict[str, Any], max_chars: int | None = None) -> str:
     total = len(rows)
     functions = data.get("functions")
     compared = [c for c in data.get("compared") or [] if isinstance(c, Mapping)]
-    absent = data.get("absent") or {}
+    absent = data.get(behaviour_code.NOT_READ) or {}
     read = ", ".join(behaviour_code.compared_words(c) for c in compared) or "no static answer"
     only = str(data.get("observed_only_label") or behaviour_code.OBSERVED_ONLY)
     if isinstance(functions, Mapping):
@@ -6076,7 +6076,7 @@ def _unpacked(data: dict[str, Any], max_chars: int | None = None) -> str:
         f"(sha256 {child.get('sha256')}, {_n(child.get('size'))} bytes, "
         f"{len(data.get('sections') or [])} sections, {_n(data.get('import_count'))} imports "
         f"from {_n(data.get('import_libraries'))} libraries"
-        + (f" ({data['import_count_cut']})" if data.get("import_count_cut") else "")
+        + (f" ({data[upx.IMPORT_COUNT_CUT]})" if data.get(upx.IMPORT_COUNT_CUT) else "")
         + f", entry point {data.get('entry_point')})"
     )
     for line in (whole, where):
@@ -6203,8 +6203,10 @@ def _directed_text(data: dict[str, Any], max_chars: int | None = None) -> str:
     sources = _directed_sources(
         [r for r in data.get("scanned") or [] if isinstance(r, dict)], views
     )
-    unread = _directed_unread([r for r in data.get("not_scanned") or [] if isinstance(r, dict)])
-    partial = f"; {data['partial']}" if data.get("partial") else ""
+    unread = _directed_unread(
+        [r for r in data.get(directed_text.NOT_SCANNED) or [] if isinstance(r, dict)]
+    )
+    partial = f"; {data[directed_text.PARTIAL]}" if data.get(directed_text.PARTIAL) else ""
     families = f"the {_n(len(checked))} phrase families ({', '.join(checked)})"
     if not rows:
         if unread or partial:

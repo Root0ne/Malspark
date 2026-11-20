@@ -642,7 +642,7 @@ def function_facts(
     and ``bases`` the image bases the run read.
     """
     from malspark.agents.function_map import function_artefacts, merged_artefacts
-    from malspark.tools.artefact_index import row_line
+    from malspark.tools.artefact_index import CALLS_UNNAMED, UNDECODED_FUNCTIONS, row_line
 
     found = merged_artefacts(artefacts, function_artefacts(entries))
     facts = FunctionFacts(emulators=attached_emulators())
@@ -718,7 +718,7 @@ def function_facts(
             facts.edges[start] = listed
             facts.known.add(start)
             facts.known.update(listed)
-    unnamed = data.get("calls_unnamed")
+    unnamed = data.get(CALLS_UNNAMED)
     if isinstance(unnamed, Mapping):
         facts.unnamed = {}
         for address, count in unnamed.items():
@@ -730,7 +730,7 @@ def function_facts(
     if isinstance(undecoded, list):
         facts.undecoded = {o for o in map(offset_of, undecoded) if o is not None}
         facts.known |= facts.undecoded
-    elif not int(data.get("undecoded_functions") or 0):
+    elif not int(data.get(UNDECODED_FUNCTIONS) or 0):
         facts.undecoded = set()
     if facts_block.strip():
         lines = set(facts_block.splitlines())

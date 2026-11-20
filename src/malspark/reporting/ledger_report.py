@@ -1242,7 +1242,7 @@ def _behaviour_code(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) ->
         said.append(f"Functions from [{functions.get('entry')}] {functions.get('tool')}.")
     else:
         said.append(f"Functions: {functions}.")
-    for key, reason in (data.get("absent") or {}).items():
+    for key, reason in (data.get(behaviour_code.NOT_READ) or {}).items():
         said.append(f"{key}: {reason}.")
     said.extend(f"{one[:1].upper()}{one[1:]}." for one in behaviour_code.unread_words(data))
     table.text = _cut_text(" ".join(said), entry.id)
