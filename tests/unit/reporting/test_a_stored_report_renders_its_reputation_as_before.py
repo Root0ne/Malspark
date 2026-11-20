@@ -118,8 +118,12 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # (T-735): in the validation findings, retry and mediator lines each
 # backtick, star and backslash the record holds is printed as a character and
 # a pair no longer forms a code span, the only change.
+# A stored run's Markdown re-pinned when a judge's reason in the ATT&CK table
+# came to be written as text, cut and marked on its characters (T-735): each
+# backtick and backslash of the reason is printed as a character, the only
+# change.
 STORED_RENDERS = {
-    "run7": ("b380cc74224737dd", "7c27693f82b034f8", "af1240b0f29bfd9c"),
+    "run7": ("a2c7db2998b1b669", "7c27693f82b034f8", "af1240b0f29bfd9c"),
     "run5": ("079353e1d5adb8cc", "d2bafe2177886290", "2e717357e24fbfe2"),
     "run4": ("e5ffe74339534ae2", "798ce36070468515", "0a90e4edd679e2be"),
     "local8": ("85f44b070da2bb25", "a6ba8a2626516ed8", "75d022862e3237de"),

@@ -11,7 +11,10 @@ backticks opens a fence only where no backtick follows it on the line, so a
 value printed as a code span with a longer fence stays one span at an item's
 start. A platform sentence quoting a model's words, alone or with a value, as
 one string, is written whole by the inline rule, the model's words shown as
-the record holds them; a model's line keeps the writing model prose has.
+the record holds them; where the platform cuts it to a width or marks a
+sentence in it, the cut and the marks are made on its characters and each
+piece between them is written by the inline rule after the cut. A model's
+line keeps the writing model prose has.
 
 What is read: the HTML report's own reader and a reader that takes raw HTML.
 Between its markers a payload forms no element its plain baseline does not,
@@ -31,6 +34,7 @@ from malspark.analysis.coverage import NEGATIVES_INTRO as COVERAGE_NEGATIVES_INT
 from malspark.pipeline.mediation_models import mediator_no_answer_note
 from malspark.reporting.ledger_report import shortened_sentence
 from malspark.reporting.models import (
+    CapabilityCell,
     DynamicBehavior,
     EvidenceIndexRow,
     EvidenceSection,
@@ -330,6 +334,25 @@ def _report(text: str, n: int) -> MalwareReport:
         # The platform's sentences quoting a model's words, alone or with a
         # value, each one string.
         question_answers=[QuestionAnswer(question=v(), outcome="not_determinable", checks=[v()])],
+        # A status with the judge's reason in one cell, and a note opening with the
+        # platform's words: each one string the platform's words and a model's share.
+        capability_matrix=[
+            CapabilityCell(
+                tactic="TA0005",
+                tactic_name="Defense Evasion",
+                technique_id="T1055",
+                technique_name="Process Injection",
+                not_published=v(),
+            ),
+            CapabilityCell(
+                tactic="TA0007",
+                tactic_name="Discovery",
+                technique_id="T1057",
+                technique_name="Process Discovery",
+                evidence=["Lists processes."],
+                note=v(),
+            ),
+        ],
         run_summary={
             "profile": {"name": v(), "analysts": [v()]},
             "stages": [{"key": "static", "ran": False, "reason": v()}],

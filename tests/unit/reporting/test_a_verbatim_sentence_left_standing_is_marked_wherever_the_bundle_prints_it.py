@@ -21,6 +21,7 @@ from typing import Any
 from malspark.reporting.models import FlaggedStatement, MalwareReport
 from malspark.reporting.renderers import MarkdownRenderer
 from malspark.reporting.renderers.layout import ANALYST, BUNDLE
+from malspark.reporting.renderers.markdown import _inline_safe
 from malspark.reporting.section_agreement import (
     CLAIM_LED,
     DROPPED_CODE,
@@ -70,10 +71,12 @@ def test_a_judge_reason_left_standing_is_marked_in_every_bundle_line_it_prints_i
     _dropped(report, "attack_note.T1055", _REASON, sources=[], reason="No.")
 
     assert [(r.sentence, r.code) for r in report.flagged_statements] == [(_REASON, LISTED_CODE)]
-    lines = [line for line in _bundle(report).splitlines() if _REASON in line]
-    # The status cell of the ATT&CK table and the list of claims not published.
+    # The status cell of the ATT&CK table and the list of claims not published, the
+    # judge's words written as text and the mark after them the platform's.
+    written = _inline_safe(_REASON, pipes=False)
+    lines = [line for line in _bundle(report).splitlines() if written in line]
     assert len(lines) == 2
-    assert all(f"{_REASON} {_mark('attack_note.T1055')}" in line for line in lines)
+    assert all(f"{written} {_mark('attack_note.T1055')}" in line for line in lines)
 
 
 def test_a_judge_note_left_standing_is_marked_in_the_status_cell() -> None:
@@ -83,7 +86,7 @@ def test_a_judge_note_left_standing_is_marked_in_the_status_cell() -> None:
     (row,) = [
         line for line in _bundle(report).splitlines() if "| T1622 | Debugger Evasion |" in line
     ]
-    assert f"{_NOTE} {_mark('attack_note.T1622')}" in row
+    assert f"{_inline_safe(_NOTE, pipes=False)} {_mark('attack_note.T1622')}" in row
 
 
 def test_a_drop_naming_a_source_only_passage_and_an_invalid_source_leaves_it_out() -> None:

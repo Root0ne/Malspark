@@ -24,7 +24,7 @@ import pytest
 from malspark.pipeline.validation import EntryTexts
 from malspark.reporting.models import KeyFinding, MalwareReport
 from malspark.reporting.renderers.layout import ANALYST, BUNDLE
-from malspark.reporting.renderers.markdown import MarkdownRenderer
+from malspark.reporting.renderers.markdown import MarkdownRenderer, _inline_safe
 from malspark.reporting.section_agreement import (
     DROPPED_CODE,
     _uncited,
@@ -267,9 +267,11 @@ def test_the_printed_report_leaves_the_sentence_out_and_lists_its_record() -> No
     assert "\n- -\n" not in analyst and "\n- \n" not in analyst
     assert "_1 sentence of this section was left out" in analyst
     # The bundle prints the passages without it: the sentence stands only in the findings it
-    # lists, a record of it left out among them for each passage.
+    # lists, a record of it left out among them for each passage, each finding's message
+    # written as text.
     bundle = MarkdownRenderer(layout=BUNDLE).render(report)
-    printed = [line for line in bundle.splitlines() if _UNKNOWN.rstrip(".") in line]
+    written = _inline_safe(_UNKNOWN.rstrip("."))
+    printed = [line for line in bundle.splitlines() if written in line]
     assert all(line.startswith("- `agreement.") for line in printed), printed
     left = [line for line in printed if line.startswith("- `agreement.dropped`")]
     assert len(left) == 2 and any("12.3 Background" in line for line in left), left

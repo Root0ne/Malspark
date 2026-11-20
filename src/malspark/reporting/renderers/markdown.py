@@ -93,7 +93,7 @@ from malspark.reporting.defang import ProseDefanger, defang
 from malspark.reporting.judge_reasons import (
     JUDGE_REASON_WIDTH,
     judge_reasons_shown,
-    status_shown,
+    status_parts,
 )
 from malspark.reporting.ledger_projection import (
     FORM_URL,
@@ -3150,6 +3150,10 @@ class _Context:
 
     def marked(self, text: str) -> str:
         """``text`` with each flagged sentence followed by its mark; the words are unchanged."""
+        return "".join(piece for piece, _mark in self.marked_parts(text))
+
+    def marked_parts(self, text: str) -> list[tuple[str, bool]]:
+        """``text`` as :meth:`marked` prints it, in pieces, each with whether it is a mark."""
         # One pass over positions, keyed by the sentence: every place a flagged
         # sentence stands gets its own mark, the longest sentence first so one
         # inside another is marked as itself, and a place already marked is
@@ -3162,9 +3166,22 @@ class _Context:
                 if not inside and not text.startswith(f" {mark}", end):
                     claimed.append((start, end))
                     inserts.append((end, mark))
-        for end, mark in sorted(inserts, reverse=True):
-            text = f"{text[:end]} {mark}{text[end:]}"
-        return text
+        parts: list[tuple[str, bool]] = []
+        at = 0
+        for end, mark in sorted(inserts):
+            parts += [(text[at:end], False), (f" {mark}", True)]
+            at = end
+        return [*parts, (text[at:], False)]
+
+    def quoted(self, text: str) -> list[tuple[str, bool]]:
+        """A platform sentence quoting a model's words, in pieces, before any cut: each
+        flagged sentence's mark the platform's, every other piece read as a value is
+        (:func:`_value_parts`)."""
+        return [
+            part
+            for piece, mark in self.marked_parts(text)
+            for part in ([(piece, True)] if mark else _value_parts(piece, self.plain))
+        ]
 
     def places(self, form: str, text: str, sentence: str | None = None) -> list[tuple[int, int]]:
         """Where ``form`` of the flagged ``sentence`` (``form`` itself where not given) stands
@@ -4643,6 +4660,51 @@ def _inline_safe(
         return _emphasis_escaped(plain(meta.sub(r"\\\1", text)))
     finally:
         _IN_A_VALUE.reset(token)
+
+
+def _value_parts(text: str, plain: Callable[[str], str] = _defanged_text) -> list[tuple[str, bool]]:
+    """``text`` as the value writer reads it (:func:`_inline_safe`: escaped, then defanged, no
+    link in it kept), in pieces before any cut, each character as the reader is shown it: the
+    marks the defanger sets (the brackets of ``[.]``) the platform's, every other piece the
+    value's own characters."""
+    token = _IN_A_VALUE.set(True)
+    try:
+        read = plain(_INLINE_META.sub(r"\\\1", _LINE_ENDING.sub(" ", str(text or ""))))
+    finally:
+        _IN_A_VALUE.reset(token)
+    # Every character of the value Markdown reads is escaped above: one the defanged text
+    # holds unescaped is a mark the defanger set.
+    parts: list[tuple[str, bool]] = []
+    run: list[str] = []
+    at = 0
+    while at < len(read):
+        if read[at] == "\\" and at + 1 < len(read):
+            run.append(read[at + 1])
+            at += 2
+            continue
+        if _INLINE_META.match(read[at]):
+            if run:
+                parts.append(("".join(run), False))
+                run = []
+            parts.append((read[at], True))
+        else:
+            run.append(read[at])
+        at += 1
+    return [*parts, ("".join(run), False)] if run else parts
+
+
+def _quote_written(parts: list[tuple[str, bool]], *, pipes: bool = True) -> str:
+    """A platform sentence quoting a model's words, from its pieces after any cut: each piece
+    the platform set (a mark, a defanger's mark, the cut mark, the brackets a cut closes) as it
+    is, every other piece, the value's characters as :func:`_value_parts` reads them, escaped
+    as the value writer escapes them (:func:`_inline_safe`), so no escape is cut and every
+    character shows as the record holds it. ``pipes=False`` leaves the table separator to the
+    row."""
+    meta = _INLINE_META if pipes else _INLINE_META_NO_PIPE
+    return "".join(
+        piece if platform else _emphasis_escaped(meta.sub(r"\\\1", piece))
+        for piece, platform in parts
+    )
 
 
 # What Markdown reads as the end of a line.
@@ -6161,8 +6223,10 @@ def _attack_row(
     elif cell.not_published:
         # A judge's reason is shortened by its own rule and never cut into;
         # what follows it, and any other reason, keeps the cell's cut.
-        status = "claimed, not published: " + status_shown(
-            cell.not_published, JUDGE_REASON_WIDTH, lambda text: ctx.plain(ctx.marked(text))
+        # The cut and the marks are made on the record's characters; each piece
+        # between them is then written as text (:func:`_quote_written`).
+        status = "claimed, not published: " + _quote_written(
+            status_parts(cell.not_published, JUDGE_REASON_WIDTH, ctx.quoted), pipes=False
         )
     else:
         status = "published" + _corroborated_words(mapping, rules)
@@ -6170,7 +6234,8 @@ def _attack_row(
         if rule_only:
             status += f"; {rule_only}"
         if cell.note:
-            status += f"; {ctx.plain(ctx.marked(judge_reasons_shown(cell.note)[0]))}"
+            note = ctx.quoted(judge_reasons_shown(cell.note)[0])
+            status += f"; {_quote_written(note, pipes=False)}"
     # The platform's unresolved findings about this technique, beside its
     # row: the ATT&CK checks, and the judge crediting a source that never
     # named it. Matched on what the finding is about (``subject``), because
@@ -7070,12 +7135,13 @@ def _not_published_lines(report: MalwareReport, ctx: _Context | None = None) -> 
     lines = ["", _plain_heading("Claims that were not published as techniques"), ""]
     # The reason by the table's own rule, a judge's reason sentence by
     # sentence, each sentence a check left standing marked as every other place marks it,
-    # and every network value in it defanged.
-    plain = (lambda text: ctx.plain(ctx.marked(text))) if ctx is not None else _defanged_text
+    # and every network value in it defanged; each piece between the marks
+    # written as text after the cut (:func:`_quote_written`).
+    parts = ctx.quoted if ctx is not None else _value_parts
     lines.extend(
         _item(
             f"{cell.technique_id} {cell.technique_name}: "
-            f"{status_shown(cell.not_published, _NOT_PUBLISHED_WIDTH, plain)}"
+            f"{_quote_written(status_parts(cell.not_published, _NOT_PUBLISHED_WIDTH, parts))}"
         )
         for cell in rows
     )

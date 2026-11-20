@@ -7,7 +7,9 @@ from the model by reflection (:func:`_text_places`); each is of the provenance
 tool's, a sandbox's or the operator's, so a new field is scanned without this
 file changing. A platform sentence quoting a model's words, alone or with a
 value, as one string, is written as text and scanned as a value
-(:data:`QUOTED_WORDS`); no place is of a mixed class (:data:`MIXED_TEXT`).
+(:data:`QUOTED_WORDS`); no place is of a mixed class (:data:`MIXED_TEXT`). A
+model's statement printed as its own list item or block under a platform
+heading is that model's prose (:data:`BODY_PROSE`).
 The report is the recorded run of ``_report_shapes`` with every empty text
 place filled from its type (:func:`_filled`); every text of such a provenance
 then carries a payload with a token of its own (:func:`_payload`).
@@ -85,7 +87,7 @@ PROVENANCE: list[tuple[str, str]] = [
     (
         r"^report\.(ttp_mappings|capability_matrix)\[\]\.(technique_id|technique_name|tactic"
         r"|tactic_name|contributing_layers\[\]|sources\[\]|evidence_roots\[\]"
-        r"|confidence_source|not_published)$",
+        r"|confidence_source)$",
         "P",
     ),
     (r"^report\.identity\.hashes\.", "P"),
@@ -96,6 +98,10 @@ PROVENANCE: list[tuple[str, str]] = [
     # A platform check of the answer: the platform's words, a model's quoted
     # words and a value nobody wrote here, as one string written as text.
     (r"^report\.question_answers\[\]\.checks\[\]$", "V"),
+    # A status and the judge's reason in one cell, and a note that opens with the
+    # platform's words: the platform's words and a model's quoted words as one string,
+    # written as text.
+    (r"^report\.capability_matrix\[\]\.(not_published|note)$", "V"),
     # A model's text: the judge's, the analysts', the report model's.
     (r"^report\.capability_matrix\[\]\.statements\[\]$", "M"),
     (
@@ -147,6 +153,8 @@ MIXED_TEXT: frozenset[str] = frozenset()
 QUOTED_WORDS = frozenset(
     {
         "report.question_answers[].checks[]",
+        "report.capability_matrix[].not_published",
+        "report.capability_matrix[].note",
         *(
             f"report.run_summary.negotiation.{key}[]"
             for key in (
@@ -163,6 +171,18 @@ QUOTED_WORDS = frozenset(
         "report.run_summary.validation.retry_drops[].sentence",
         "report.run_summary.validation.retry_withdrawals[].sentence",
         "report.run_summary.coverage.negatives[].negative",
+    }
+)
+
+# Each place where a model's statement is printed as its own list item or block under a
+# platform heading or lead-in line: that model's prose shown as content, which keeps the
+# writing of model prose. A line carrying the platform's words and a model's words is a
+# quote (:data:`QUOTED_WORDS`).
+BODY_PROSE = frozenset(
+    {
+        "report.claims_not_discussed[].claim",
+        "report.claims_not_discussed[].evidence_ref",
+        "report.capability_matrix[].statements[]",
     }
 )
 
@@ -571,7 +591,8 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     (the publish answer quoting it, in the host table and among the strings),
     a path string carries a note (the path row's context), and an analyst's
     artifact table lists a mutex (the analyst named in its row and its
-    publish answer). The third: whether the processes are the sample's is not
+    publish answer), and a technique is published, so its row prints its
+    note. The third: whether the processes are the sample's is not
     known (the processes only a mark or only a file names, and the mark's
     sandbox), the binding's call is made through a slot, and the run is
     degraded (the tools it went without; the banner's reason for a skipped
@@ -595,6 +616,7 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
         held.model_copy(update={"kind": "mutex", "value": "Global\\listed", "cut_from": cut}),
         held.model_copy(update={"kind": "path", "value": "C:\\Users\\listed.txt"}),
     ]
+    second.capability_matrix[0].not_published = ""
     second.sections = [
         *second.sections,
         EvidenceSection(
@@ -912,6 +934,45 @@ def test_no_place_is_mixed_text_and_each_quoting_place_is_a_value_that_prints() 
         if int(found.group(2)) in tokens.places
     }
     assert sorted(QUOTED_WORDS - printed) == []
+
+
+def test_a_model_s_statement_printed_as_its_own_item_is_body_prose() -> None:
+    # A statement printed as its own list item or block under a platform heading is
+    # that model's prose: a place of the schema, of a model's provenance, no quote.
+    places = _text_places()
+    assert BODY_PROSE <= places
+    assert {provenance(place) for place in BODY_PROSE} == {"M"}
+    assert not BODY_PROSE & QUOTED_WORDS
+
+
+def test_a_quoted_place_cut_to_its_width_is_cut_on_its_characters() -> None:
+    # A judge's reason long enough to be cut on every surface: the cut is made on the
+    # record's characters and each piece is written after it, so the written text holds
+    # no backslash left dangling before the cut mark, no reference a reader decodes and
+    # no code span, and no payload part forms structure.
+    report, tokens = _report()
+    n = tokens._next("report.capability_matrix[].not_published", "V")
+    long = " ".join(_payload(n).replace("\n", " ") for _ in range(4))
+    for cell in report.capability_matrix:
+        cell.not_published = long
+    cut = 0
+    for surface, rendered in _surfaces(report).items():
+        assert not _faults(surface, rendered, tokens), surface
+        tree = _Tree()
+        tree.feed(rendered)
+        for tag, _attrs, texts in tree.elements:
+            assert not (tag == "code" and f"z{n}z" in "".join(texts)), surface
+        shown = " ".join("".join(tree.text).split())
+        assert f"<zE{n}z" not in shown, surface
+    products = render_products(report)
+    for markdown in (products.report_markdown, products.bundle_markdown):
+        for line in markdown.split("\n"):
+            if f"zH{n}z" not in line or "\u2026" not in line:
+                continue
+            cut += 1
+            before = line[: line.rindex("\u2026")]
+            assert (len(before) - len(before.rstrip("\\"))) % 2 == 0, line
+    assert cut >= 3
 
 
 # Each place whose line is set in after its writing (:func:`_placed`), and a
