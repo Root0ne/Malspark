@@ -915,6 +915,33 @@ def _stix_is_draft(run: RunRecord) -> bool:
     return isinstance(bundle, Mapping) and bundle.get("x_malspark_published") is False
 
 
+def _with_files_named_in_their_folders(objects: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """``objects`` with each file in a folder of the bundle named by the folder joined to its name.
+
+    A process image the export writes in its ``directory`` (``parent_directory_ref``)
+    is keyed, labelled and compared by its whole path, so it pairs with the
+    same image written whole and two images of one name in two folders are two
+    files; the folder it is read in is not an item of its own.
+    """
+    from malspark.reporting.renderers.stix_renderer import image_path
+
+    folders = {
+        _text(obj.get("id")): _text(obj.get("path"))
+        for obj in objects
+        if _text(obj.get("type")) == "directory" and _text(obj.get("path"))
+    }
+    read: set[str] = set()
+    out: list[Mapping[str, Any]] = []
+    for obj in objects:
+        parent = _text(obj.get("parent_directory_ref"))
+        name = _text(obj.get("name"))
+        if _text(obj.get("type")) == "file" and name and parent in folders:
+            read.add(parent)
+            obj = {**obj, "name": image_path(folders[parent], name)}
+        out.append(obj)
+    return [obj for obj in out if _text(obj.get("id")) not in read]
+
+
 def _stix_items(run: RunRecord) -> tuple[list[_Item], list[_Item], bool]:
     """Keyed objects, objects with no stable key, and whether a bundle was recorded.
 
@@ -926,7 +953,7 @@ def _stix_items(run: RunRecord) -> tuple[list[_Item], list[_Item], bool]:
     bundle = run.stix_bundle
     if not isinstance(bundle, Mapping) or _stix_is_draft(run):
         return [], [], False
-    objects = [_map(o) for o in _list(bundle.get("objects"))]
+    objects = _with_files_named_in_their_folders([_map(o) for o in _list(bundle.get("objects"))])
     keys: dict[str, str | None] = {}
     for obj in objects:
         oid = _text(obj.get("id"))

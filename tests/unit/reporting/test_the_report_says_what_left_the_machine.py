@@ -270,12 +270,23 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # run5's Markdown and HTML re-pinned when a count of trimmed ledger entries came
 # to take the verb its number takes (T-749): "1 of 350 ledger entries was
 # trimmed" is the only change; no other stored run prints a count of one.
+# The Markdown re-pinned when text of the sample, a tool, a sandbox or the
+# operator came to be written by the inline rule and every list item and step
+# by the block-start rule (T-735): characters Markdown reads gain a backslash
+# in the evidence appendix and the run summary, and the HTML, read from it,
+# did not change.
+# A stored run's Markdown re-pinned when a sentence quoting the mediator's words came
+# to keep the writing of model prose again (T-735): those lines of the run
+# summary are the only change, and the HTML did not change.
+# A stored run's Markdown and HTML re-pinned when a tool's failure message came to be
+# written by the inline rule (T-735): each backtick it holds is printed as a
+# character in the tool failures list, the only change.
 STORED_RENDERS = {
-    "run7": ("0c85258e0bc3f825", "5d209181f98213e8"),
-    "run5": ("8f6a96e40d09f13e", "156a645b3d568bd2"),
-    "run4": ("6645defcf074ad3d", "60cfad50c120e58b"),
-    "local8": ("d59ab7b6c10001fa", "b78721cb9ba4f766"),
-    "haiku4": ("f2b01c295b9813f0", "7e7c99ce92d9ede7"),
+    "run7": ("0da0666bd97caecb", "8a6ba9c0670cf1b5"),
+    "run5": ("87bb84a09091c0de", "156a645b3d568bd2"),
+    "run4": ("de3f3fc895e0ef55", "60cfad50c120e58b"),
+    "local8": ("08d6d34474336223", "b78721cb9ba4f766"),
+    "haiku4": ("326e24c856379df9", "7e7c99ce92d9ede7"),
 }
 
 

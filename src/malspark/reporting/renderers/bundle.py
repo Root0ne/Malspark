@@ -31,6 +31,7 @@ from malspark.reporting.renderers.markdown import (
     _PIPE,
     MEASURED,
     _appendix_heading,
+    _inline_safe,
     _item,
     report_title,
     stored_report_id,
@@ -98,7 +99,10 @@ def _notes_section(report: MalwareReport, notes: list[CitationNote]) -> str:
     lines.append("")
     missing: list[str] = []
     for note in notes:
-        ids = ", ".join(f"[{i}](#{i})" if i in indexed else i for i in note.evidence_ids)
+        # An id no entry carries is the cited text as written, by the inline rule.
+        ids = ", ".join(
+            f"[{i}](#{i})" if i in indexed else _inline_safe(i) for i in note.evidence_ids
+        )
         missing.extend(i for i in note.evidence_ids if i not in indexed and i not in missing)
         section = SECTION_TITLES.get(note.section, note.section)
         lines.append(_item(f"**Note {note.number}** ({section}): {ids}"))
@@ -107,7 +111,8 @@ def _notes_section(report: MalwareReport, notes: list[CitationNote]) -> str:
             ["", "Cited by the analyst report and not in this report's evidence index:", ""]
         )
         lines.extend(
-            _item(f"**{i}**: no entry of the evidence index carries this id.") for i in missing
+            _item(f"**{_inline_safe(i)}**: no entry of the evidence index carries this id.")
+            for i in missing
         )
     return "\n".join(lines)
 

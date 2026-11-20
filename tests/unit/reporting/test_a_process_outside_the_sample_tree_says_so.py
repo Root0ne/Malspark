@@ -21,7 +21,7 @@ from stix2validator import ValidationOptions, validate_instance
 from malspark.agents.judge_postprocess import PROPERTY_NOT_CARRIED_CODE, lift_misplaced_extensions
 from malspark.reporting.builder import MalwareReportBuilder
 from malspark.reporting.models import DynamicBehavior, MalwareReport, ProcessNode
-from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer
+from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer, image_path
 from malspark.schemas.stix_models import LINEAGE_DISPUTED_PROPERTY, SAMPLE_TREE_PROPERTY
 
 SHA256 = "36dabc40fa8983ce900a90b8156d2c754875fe1b5413a997843c4a0ef3908220"
@@ -74,8 +74,15 @@ def _exported(report: MalwareReport) -> dict[str, Any]:
 
 def _processes(dumped: dict[str, Any]) -> dict[str, dict[str, Any]]:
     by_id = {o["id"]: o for o in dumped["objects"]}
+
+    def _image(ref: str) -> str:
+        # An image wholly one path is its base name in its directory object.
+        image = by_id[ref]
+        folder = by_id.get(image.get("parent_directory_ref", ""))
+        return image_path(folder["path"], image["name"]) if folder else image["name"]
+
     return {
-        by_id[o["image_ref"]]["name"]: o
+        _image(o["image_ref"]): o
         for o in dumped["objects"]
         if o["type"] == "process" and "image_ref" in o
     }

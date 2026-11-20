@@ -42,7 +42,7 @@ reference once, and every lookup is a dict.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -569,10 +569,14 @@ def bound_value(report: Any, kind: str, value: str) -> BoundValue | None:
     return None
 
 
-def binding_context(bound: BoundValue) -> str:
-    """The row's context: the argument and the call, in a few words."""
-    parameter = f" ({bound.parameter})" if bound.parameter else ""
-    return f"argument {bound.argument}{parameter} of {bound.api} at {bound.call_at}"
+def binding_context(bound: BoundValue, word: Callable[[str], str] = str) -> str:
+    """The row's context: the argument and the call, in a few words.
+
+    ``word`` writes each name and address the binding holds, as recorded unless a
+    renderer writes it by its own rule.
+    """
+    parameter = f" ({word(bound.parameter)})" if bound.parameter else ""
+    return f"argument {bound.argument}{parameter} of {word(bound.api)} at {word(bound.call_at)}"
 
 
 def binding_words(bound: BoundValue) -> str:

@@ -28,7 +28,7 @@ import ipaddress
 import json
 import re
 import uuid
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -113,9 +113,11 @@ from malspark.schemas.stix_models import (
     OBSERVED_IN_PROPERTY,
     PROPERTY_NOT_CARRIED_CODE,
     SAMPLE_TREE_PROPERTY,
+    SCO_NAMESPACE,
     STIX_ID_NAMESPACE,
     AttackPattern,
     Bundle,
+    Directory,
     File,
     Identity,
     Indicator,
@@ -129,6 +131,7 @@ from malspark.schemas.stix_models import (
     _Observable,
     attack_pattern_id,
     crediting_only,
+    json_canonical,
     produced_by,
     tlp_marking,
 )
@@ -1648,6 +1651,34 @@ def _ref_fields(obj: Any) -> list[str]:
     return [n for n in names if n.endswith(("_ref", "_refs"))]
 
 
+def unresolved_references(objects: Sequence[Any]) -> list[tuple[str, str, str]]:
+    """Every reference of a bundle's objects that names no object of the bundle.
+
+    ``(object id, property, reference)`` for each value of a top-level
+    ``*_ref`` or ``*_refs`` property the standard defines, of a dumped object
+    or a model alike, in order; a custom ``x_`` property names what its writer
+    says (``x_malspark_evidence_refs`` names ledger entries) and is not read.
+    The OASIS validator reads each object alone and does not ask this.
+    """
+
+    def _fields(obj: Any) -> dict[str, Any]:
+        if isinstance(obj, Mapping):
+            return dict(obj)
+        return {name: getattr(obj, name, None) for name in _ref_fields(obj) + ["id"]}
+
+    read = [_fields(obj) for obj in objects]
+    held = {str(fields.get("id") or "") for fields in read}
+    found: list[tuple[str, str, str]] = []
+    for fields in read:
+        for name, value in fields.items():
+            if not name.endswith(("_ref", "_refs")) or name.startswith("x_"):
+                continue
+            for ref in value if isinstance(value, list) else [value]:
+                if isinstance(ref, str) and ref and ref not in held:
+                    found.append((str(fields.get("id") or ""), name, ref))
+    return found
+
+
 def _relinked_refs(obj: Any, remap: Mapping[str, str]) -> Any:
     """A copy of ``obj`` with every reference ``remap`` moves moved, or ``obj`` itself."""
     update: dict[str, Any] = {}
@@ -2212,6 +2243,49 @@ def joined_path(directory: str, name: str) -> str:
     if not directory or directory[-1] in _SEPARATORS:
         return directory + name
     return directory + _separator_of(directory) + name
+
+
+# What a name wholly one path holds nowhere: a quote, a character Windows
+# refuses in a name, a control character. A colon stands only after a drive.
+_NOT_IN_ONE_PATH_RE = re.compile(r'["*?<>|\x00-\x1f]')
+_ONE_PATH_ROOT_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/](?![\\/]))")
+
+
+def image_path_parts(name: str) -> tuple[str, str] | None:
+    """``(directory, base name)`` of a process image name that is wholly one path, else ``None``.
+
+    Wholly one path: rooted at a drive (``C:\\``) or at one separator
+    (``/usr``), written with one kind of separator and no run of it, holding no
+    quote, no character a Windows name refuses, no control character and no
+    colon but the drive's, and a base name with no white space that is not
+    ``.`` or ``..``; and the directory joined to the base name
+    (:func:`image_path`) is the name again, character for character. A white
+    space inside the folder is a folder's (``C:\\Program Files``). Anything
+    else is no one path and is left whole: a path followed by arguments
+    (``svchost.exe -k GPSvcGroup``) or by a note (``rundll32.exe (cmdline:
+    …)``), a quoted path, a name with no folder, an ordinal form, a share, a
+    namespace or an ``%VARIABLE%`` spelling.
+    """
+    if not name or name != name.strip() or not _ONE_PATH_ROOT_RE.match(name):
+        return None
+    if _NOT_IN_ONE_PATH_RE.search(name) or ":" in name[2:]:
+        return None
+    if ("\\" in name and "/" in name) or "\\\\" in name or "//" in name:
+        return None
+    directory, base = split_path(name)
+    if not directory or base in {"", ".", ".."} or any(c.isspace() for c in base):
+        return None
+    return (directory, base) if image_path(directory, base) == name else None
+
+
+def image_path(directory: str, base: str) -> str:
+    """The name :func:`image_path_parts` split: the directory and the base name, joined back.
+
+    By the one kind of separator the directory is written with, which its
+    root holds, and none added after a root's own.
+    """
+    separator = "\\" if "\\" in directory else "/"
+    return directory + ("" if directory.endswith(separator) else separator) + base
 
 
 def _separator_of(directory: str) -> str:
@@ -4712,40 +4786,42 @@ def emulation_kwargs(
     }
 
 
-def _recovery_words(how: RecoveredValue, entries: Sequence[str] = ()) -> str:
+def _recovery_words(
+    how: RecoveredValue, entries: Sequence[str] = (), word: Callable[[str], str] = str
+) -> str:
     """One tool's recovery of a value, as the IOC table states it.
 
     ``entries`` are the entries that recorded this same recovery, the place
     and all, in place of ``how.entry`` alone: the place is stated once after
-    them.
+    them; ``word`` writes each name, entry and place (:func:`recovered_by_words`).
     """
-    named = ", ".join(entries) if entries else how.entry
-    head = f"{_named(how)}, {named}" if named else _named(how)
-    where = _recovery_place(how)
+    named = ", ".join(map(word, entries)) if entries else (word(how.entry) if how.entry else "")
+    head = f"{word(_named(how))}, {named}" if named else word(_named(how))
+    where = _recovery_place(how, word)
     return f"{head} ({', '.join(where)})" if where else head
 
 
-def _recovery_place(how: RecoveredValue) -> list[str]:
-    """Where in the file one tool's recovery of a value stands."""
+def _recovery_place(how: RecoveredValue, word: Callable[[str], str] = str) -> list[str]:
+    """Where in the file one tool's recovery of a value stands, each value by ``word``."""
     where: list[str] = []
     if how.scheme:
-        where.append(f"{how.scheme} string" if _is_emulated(how) else how.scheme)
+        where.append(f"{word(how.scheme)} string" if _is_emulated(how) else word(how.scheme))
     if how.offset:
-        where.append(f"at file offset {how.offset}")
+        where.append(f"at file offset {word(str(how.offset))}")
     if _is_emulated(how) and how.scheme == "decoded":
         # An emulator's decoded string names the routine that decoded it and where
         # that routine was called, which is the emulator's own wording.
         if how.functions:
-            where.append("routine " + ", ".join(how.functions))
+            where.append("routine " + ", ".join(map(word, how.functions)))
         if how.sites:
-            where.append("called at " + ", ".join(how.sites))
+            where.append("called at " + ", ".join(map(word, how.sites)))
     else:
         if how.functions:
-            where.append("in function " + ", ".join(how.functions))
+            where.append("in function " + ", ".join(map(word, how.functions)))
         if how.sites:
-            where.append("used at " + ", ".join(how.sites))
+            where.append("used at " + ", ".join(map(word, how.sites)))
         if how.passed_to:
-            where.extend(how.passed_to)
+            where.extend(map(word, how.passed_to))
     return where
 
 
@@ -4765,7 +4841,9 @@ def recovered_entries(record: EmulatedStrings, kind: str, value: str) -> list[st
     return list(dict.fromkeys(listed or [entry]))
 
 
-def recovered_by_words(record: EmulatedStrings, kind: str, value: str) -> str:
+def recovered_by_words(
+    record: EmulatedStrings, kind: str, value: str, word: Callable[[str], str] = str
+) -> str:
     """Which tools recovered a network value the sample hid, and where; ``""`` for any other.
 
     Read from the run's record (:func:`emulation_record`): every tool that
@@ -4773,7 +4851,8 @@ def recovered_by_words(record: EmulatedStrings, kind: str, value: str) -> str:
     functions around the code that uses it. A value the static sweep also read
     is the sweep's and states none. A record stored before ``recovered_by``
     existed names the entry and FLOSS, the only tool such a record was built
-    from.
+    from. ``word`` writes each name, entry and place a recovery holds, as
+    recorded unless a renderer writes it by its own rule.
     """
     if kind not in ("domain", "ip", "url"):
         return ""
@@ -4790,7 +4869,7 @@ def recovered_by_words(record: EmulatedStrings, kind: str, value: str) -> str:
         _first, entries = places.setdefault((_named(how), tuple(_recovery_place(how))), (how, []))
         if how.entry and how.entry not in entries:
             entries.append(how.entry)
-    return "; ".join(_recovery_words(how, entries) for how, entries in places.values())
+    return "; ".join(_recovery_words(how, entries, word) for how, entries in places.values())
 
 
 _WHOLE_DIGEST_RE = re.compile(r"^[0-9a-fA-F]+$")
@@ -6539,13 +6618,16 @@ def _lineage_marks(
 def _processes_to_observables(
     roots: list[ProcessNode],
     marks: Mapping[tuple[int, int, str, str], Mapping[str, Any]] | None = None,
-) -> list[File | Process]:
+) -> list[File | Process | Directory]:
     """The process tree as STIX 2.1 observables: processes, their images, their children.
 
     A process's name is the file it ran from — STIX 2.1 has no ``name`` on a
     process — so it becomes a ``file`` observable the process names by
-    ``image_ref``, and one image run twice is one file. The tree is kept by
-    ``child_refs``.
+    ``image_ref``, and one image run twice is one file. An image name wholly
+    one path (:func:`image_path_parts`) is the file's base name in a
+    ``directory`` object its ``parent_directory_ref`` names, one per folder,
+    written before the first file in it; any other name is the file's whole.
+    The tree is kept by ``child_refs``.
 
     One process is one object: a process that stands under two parents (two
     readings of its parent that differ, each holding it) is written once, with
@@ -6556,8 +6638,29 @@ def _processes_to_observables(
     (``marks``, :func:`_lineage_marks`): the sandbox watched it, and it is not
     the sample's, or its lineage is disputed.
     """
-    out: list[File | Process] = []
+    out: list[File | Process | Directory] = []
     images: dict[str, File] = {}
+    folders: dict[str, Directory] = {}
+
+    def _image(name: str) -> File:
+        """The file of an image name, in its directory where the name is wholly one path."""
+        parts = image_path_parts(name)
+        if parts is None:
+            return File(name=name)
+        directory, base = parts
+        folder = folders.get(directory)
+        if folder is None:
+            folder = folders[directory] = Directory(path=directory)
+            out.append(folder)
+        # The id the standard derives from the name and the parent, passed in:
+        # the file model a judge's answer is read with derives its own as before.
+        derived = json_canonical({"name": base, "parent_directory_ref": folder.id})
+        return File(
+            id=f"file--{uuid.uuid5(SCO_NAMESPACE, derived)}",
+            name=base,
+            parent_directory_ref=folder.id,
+        )
+
     places: dict[tuple[int, int, str, str], list[ProcessNode]] = {}
     pending = list(reversed(roots))
     while pending:
@@ -6596,7 +6699,7 @@ def _processes_to_observables(
         if node.name:
             image = images.get(node.name)
             if image is None:
-                image = images[node.name] = File(name=node.name)
+                image = images[node.name] = _image(node.name)
                 out.append(image)
             image_ref = image.id
         process = process.model_copy(update={"image_ref": image_ref, "child_refs": children})

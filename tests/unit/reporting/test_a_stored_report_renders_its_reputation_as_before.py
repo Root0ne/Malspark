@@ -99,11 +99,25 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # run5's Markdown and HTML re-pinned when a count of trimmed ledger entries came
 # to take the verb its number takes (T-749): "1 of 350 ledger entries was
 # trimmed" is the only change; no other stored run prints a count of one.
+# The STIX re-pinned when a process image wholly one path came to be exported as
+# its base name in a ``directory`` object (T-763(d)): each such image file
+# carries its base name and ``parent_directory_ref``, one directory per folder
+# is added to the observed-data, and the process and report objects name the
+# new ids; directory joined to name is each stored name, and nothing else
+# changed. The Markdown and HTML did not change.
+# The Markdown re-pinned when text of the sample, a tool, a sandbox or the
+# operator came to be written by the inline rule and every list item and step
+# by the block-start rule (T-735): characters Markdown reads gain a backslash
+# in the evidence appendix and the run summary, and the HTML, read from it,
+# did not change.
+# A stored run's Markdown and HTML re-pinned when a tool's failure message came to be
+# written by the inline rule (T-735): each backtick it holds is printed as a
+# character in the tool failures list, the only change.
 STORED_RENDERS = {
-    "run7": ("0c85258e0bc3f825", "5d209181f98213e8", "7c44bdac869da068"),
-    "run5": ("8f6a96e40d09f13e", "156a645b3d568bd2", "dc0e6cbb57f1ec13"),
-    "run4": ("6645defcf074ad3d", "60cfad50c120e58b", "f6a60e13df655e75"),
-    "local8": ("d59ab7b6c10001fa", "b78721cb9ba4f766", "dd7785fc7f53b528"),
+    "run7": ("0da0666bd97caecb", "8a6ba9c0670cf1b5", "af1240b0f29bfd9c"),
+    "run5": ("87bb84a09091c0de", "156a645b3d568bd2", "2e717357e24fbfe2"),
+    "run4": ("de3f3fc895e0ef55", "60cfad50c120e58b", "0a90e4edd679e2be"),
+    "local8": ("08d6d34474336223", "b78721cb9ba4f766", "75d022862e3237de"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

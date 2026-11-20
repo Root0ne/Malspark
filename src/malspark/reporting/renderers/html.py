@@ -49,6 +49,7 @@ from malspark.reporting.renderers.markdown import (
     ABSENCE_PREFIXES,
     MarkdownRenderer,
     _defanged_text,
+    family_qualifier,
     report_title,
     run_network_values,
 )
@@ -265,8 +266,9 @@ def _cover(report: MalwareReport, title_block: str) -> str:
     """The title block inside a cover that leads with the verdict, as the console's header does.
 
     The verdict word in its colour, the confidence the analysis put on it, the
-    severity on the console's five-rung scale and the family; every value is
-    escaped. A verdict nobody assessed says so and is drawn in the neutral tone.
+    severity on the console's five-rung scale and the family, with who named it
+    where the report head says so; every value is escaped. A verdict nobody
+    assessed says so and is drawn in the neutral tone.
     """
     verdict = str(report.verdict or "").strip().lower()
     bucket = "unknown" if report.verdict_not_assessed else _VERDICT_BUCKETS.get(verdict, "unknown")
@@ -287,7 +289,10 @@ def _cover(report: MalwareReport, title_block: str) -> str:
         facts.append('<span class="cover-fact">Severity <b>not assessed</b></span>')
     family = str(report.attribution.family or "").strip()
     if family and family.lower() != "unknown":
-        facts.append(f'<span class="cover-fact">Family <b>{escape(family)}</b></span>')
+        # Who named it, where the report head says so (``_family_words``).
+        qualifier = family_qualifier(report.attribution)
+        said = f" ({escape(qualifier)})" if qualifier else ""
+        facts.append(f'<span class="cover-fact">Family <b>{escape(family)}</b>{said}</span>')
     else:
         facts.append('<span class="cover-fact">Family <b>not identified</b></span>')
     return (

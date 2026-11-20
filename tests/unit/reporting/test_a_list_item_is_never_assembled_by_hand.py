@@ -34,6 +34,8 @@ ALLOWED: dict[str, str] = {
     "_plain_heading": "writes an unnumbered H3",
     "_item": "writes one bullet, flattened onto its line",
     "_step": "writes one numbered step, flattened onto its line",
+    "_prose_item": "writes one bullet that begins with a model's line",
+    "_prose_step": "writes one numbered step that begins with a model's line",
     "_escape_block": "names the openers it escapes out of a paragraph",
 }
 
@@ -200,24 +202,34 @@ class TestTheRendererCannotWriteACodeSpanByHand:
 
 
 @pytest.mark.parametrize(
-    ("text", "written"),
+    ("text", "written", "item"),
     [
-        ("> x", "\\> x"),
-        ("1. > x", "1. \\> x"),
-        ("- - > x", "- - \\> x"),
-        ("-\t> x", "-\t\\> x"),
-        ("2) > x", "2) \\> x"),
-        ("a > b", "a > b"),
-        ("->x", "->x"),
-        ("1234567890. > x", "1234567890. > x"),
+        ("> x", "\\> x", "\\> x"),
+        ("1. > x", "1. \\> x", "1\\. \\> x"),
+        ("- - > x", "- - \\> x", "\\- - \\> x"),
+        ("-\t> x", "-\t\\> x", "\\-\t\\> x"),
+        ("2) > x", "2) \\> x", "2\\) \\> x"),
+        ("a > b", "a > b", "a > b"),
+        ("->x", "->x", "->x"),
+        ("1234567890. > x", "1234567890. > x", "1234567890. > x"),
     ],
 )
-def test_a_quote_mark_after_list_markers_is_escaped(text: str, written: str) -> None:
-    from malspark.reporting.renderers.markdown import _item, _step, _unquoted
+def test_a_quote_mark_after_list_markers_is_escaped(text: str, written: str, item: str) -> None:
+    # An item or a step escapes the list marker its text begins with too, so
+    # neither a nested list nor a quote opens; a model's line keeps its list.
+    from malspark.reporting.renderers.markdown import (
+        _item,
+        _prose_item,
+        _prose_step,
+        _step,
+        _unquoted,
+    )
 
     assert _unquoted(text) == written
-    assert _item(text) == f"- {written}"
-    assert _step(3, text) == f"3. {written}"
+    assert _item(text) == f"- {item}"
+    assert _step(3, text) == f"3. {item}"
+    assert _prose_item(text) == f"- {written}"
+    assert _prose_step(3, text) == f"3. {written}"
 
 
 def test_a_step_is_one_line() -> None:
