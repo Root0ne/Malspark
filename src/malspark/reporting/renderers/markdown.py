@@ -4158,17 +4158,19 @@ def _write_block(block: list[str], out: list[str]) -> None:
 # where its target starts: "(" or ":", white space with at most one line ending (and the
 # block quote marks the next line opens with), an optional "<".
 _AFTER_LINK_TEXT = re.compile(r"\]([(:])[ \t]*+(?:\r?\n[ \t>]*+)?(<?)")
-# A tag as a browser reads it (:func:`_tag_read`): where one opens, a "<" and a letter;
-# its name; the white space and slashes between its attributes; white space; an
-# attribute's name after its first character, which may be "="; a value written without
-# quotes. How far a tag is read: one that does not end within it is not read safely.
-_TAG_REACH = 4096
+# A tag as a browser reads it (:class:`_TagReader`): where one opens, a "<" and a letter;
+# what ends its name; the white space and slashes between its attributes; white space;
+# what ends an attribute's name; what ends a value written without quotes.
 _TAG_START = re.compile(r"<[A-Za-z]")
-_TAG_NAME = re.compile(rf"[^\t\n\f\r />]{{0,{_TAG_REACH}}}")
-_TAG_GAP = re.compile(rf"[\t\n\f\r /]{{0,{_TAG_REACH}}}")
-_TAG_SPACE = re.compile(rf"[\t\n\f\r ]{{0,{_TAG_REACH}}}")
-_ATTRIBUTE_NAME = re.compile(rf"[^\t\n\f\r />=]{{0,{_TAG_REACH}}}")
-_UNQUOTED_VALUE = re.compile(rf"[^\t\n\f\r >]{{0,{_TAG_REACH}}}")
+_TAG_NAME_END = re.compile(r"[\t\n\f\r />]")
+_TAG_GAP = re.compile(r"[\t\n\f\r /]*+")
+_TAG_SPACE = re.compile(r"[\t\n\f\r ]*+")
+_ATTRIBUTE_NAME_END = re.compile(r"[\t\n\f\r />=]")
+_UNQUOTED_VALUE_END = re.compile(r"[\t\n\f\r >]")
+# The tags that change where the platform's own links lead, by name: a base that names a
+# target for every relative link, and a meta element whose http-equiv is "refresh".
+_RETARGETING_TAG = "base"
+_REFRESH_TAG = "meta"
 # A closing tag.
 _TAG_CLOSING = re.compile(r"</([A-Za-z][A-Za-z0-9-]*)\s*>")
 # How far a link's target is read: one longer is taken to reach the bundle, so its
@@ -4254,50 +4256,99 @@ def _run_end(run: re.Pattern[str], text: str, at: int) -> int:
     return found.end() if found is not None else at
 
 
-def _tag_read(text: str, start: int) -> tuple[str, int, list[str], bool]:
-    """The tag that opens at ``start`` (a ``<`` and a letter) as a browser reads it: its
-    name in lower case, where it ends, its attributes' values, and whether it is read safely.
+class _TagReader:
+    """Every tag of one text read as a browser reads it, in time linear in the text's length.
 
-    A ``<`` or a ``>`` inside a quoted value is the value's; a quote opens a value only
-    after ``=``; the tag ends at the first ``>`` outside a quoted value. A tag the text
-    ends in outside a quoted value is read safely, as the line ending the render puts after
-    the text ends a value written without quotes. One left inside a quoted value, or not
-    ended within :data:`_TAG_REACH` characters, is not: what ends it lies past what is read.
+    A tag opens at a ``<`` and a letter and its name runs to white space, ``/`` or ``>``;
+    a quote opens a value only after ``=``, and a ``<`` or a ``>`` inside a quoted value is
+    the value's; the tag ends at the first ``>`` outside one. Each opening is read on its
+    own (a Markdown reader takes a tag inside another's attributes where it does not take
+    the outer one). The reader has no bound on a tag's length: what ends each name, value
+    and quote is looked up in positions found once for the whole text, and where a
+    reading reaches a place between two attributes that an earlier one has read from, it
+    takes that reading's result, so no part of the text is read twice in one state. A tag
+    the text ends in inside a quoted value is not read safely: what ends it lies past the
+    text, so its ``<`` is written as text (:func:`_hand_links`).
     """
-    size = len(text)
-    limit = start + _TAG_REACH
-    at = _run_end(_TAG_NAME, text, start + 1)
-    name = text[start + 1 : at].lower()
-    values: list[str] = []
-    close = text.find(">", at)
-    equals = text.find("=", at)
-    if equals == -1 or -1 < close < equals:
-        # No value stands before the tag's end, so no quote can.
-        return name, size if close == -1 else close + 1, values, True
-    while at <= limit:
-        at = _run_end(_TAG_GAP, text, at)
-        if at >= size:
-            return name, size, values, True
-        if text[at] == ">":
-            return name, at + 1, values, True
-        at = _run_end(_ATTRIBUTE_NAME, text, at + 1)
-        after = _run_end(_TAG_SPACE, text, at)
-        if after >= size or text[after] != "=":
-            at = after
-            continue
-        at = _run_end(_TAG_SPACE, text, after + 1)
-        if at < size and text[at] in "\"'":
-            closing = text.find(text[at], at + 1, limit)
-            if closing == -1:
-                values.append(text[at + 1 : limit])
-                return name, size, values, False
-            values.append(text[at + 1 : closing])
-            at = closing + 1
-        else:
-            end = _run_end(_UNQUOTED_VALUE, text, at)
-            values.append(text[at:end])
-            at = end
-    return name, size, values, False
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.size = len(text)
+        self._ends = {
+            key: [found.start() for found in pattern.finditer(text)]
+            for key, pattern in (
+                ("name", _TAG_NAME_END),
+                ("attribute", _ATTRIBUTE_NAME_END),
+                ("unquoted", _UNQUOTED_VALUE_END),
+                ('"', re.compile('"')),
+                ("'", re.compile("'")),
+            )
+        }
+        # From a place between two attributes: where the tag ends, whether it ends inside
+        # a quoted value, whether a value after the place reaches the bundle or a note's
+        # anchor, whether an attribute after it is ``http-equiv="refresh"``, and whether
+        # one is an ``href``.
+        self._from: dict[int, tuple[int, bool, bool, bool, bool]] = {}
+
+    def _next(self, key: str, at: int) -> int:
+        """The first place at or after ``at`` where ``key``'s character stands, else the end."""
+        places = self._ends[key]
+        index = bisect.bisect_left(places, at)
+        return places[index] if index < len(places) else self.size
+
+    def read(self, start: int) -> tuple[str, int, bool, bool]:
+        """The tag that opens at ``start``: its name in lower case (``""`` for a long one),
+        where it ends, whether it is read safely, and whether it can lead a link into the
+        bundle or to a note's anchor: a value that reaches one, or a tag that changes
+        where the platform's links lead."""
+        text, size = self.text, self.size
+        at = self._next("name", start + 1)
+        name = text[start + 1 : at].lower() if at - start <= 64 else ""
+        passed: list[list[Any]] = []
+        tail: tuple[int, bool, bool, bool, bool]
+        while True:
+            known = self._from.get(at)
+            if known is not None:
+                tail = known
+                break
+            passed.append([at, False, False, False])
+            at = _run_end(_TAG_GAP, text, at)
+            if at >= size:
+                tail = (size, False, False, False, False)
+                break
+            if text[at] == ">":
+                tail = (at + 1, False, False, False, False)
+                break
+            first = at
+            at = self._next("attribute", at + 1)
+            attribute = text[first:at].lower() if at - first in (4, 10) else ""
+            passed[-1][3] = passed[-1][3] or attribute == "href"
+            equals = _run_end(_TAG_SPACE, text, at)
+            if equals >= size or text[equals] != "=":
+                at = equals
+                continue
+            at = _run_end(_TAG_SPACE, text, equals + 1)
+            if at < size and text[at] in "\"'":
+                close = self._next(text[at], at + 1)
+                value = text[at + 1 : close]
+                passed[-1][1] = passed[-1][1] or _into_the_bundle(value)
+                if close >= size:
+                    tail = (size, True, False, False, False)
+                    break
+                at = close + 1
+            else:
+                end = self._next("unquoted", at)
+                value = text[at:end]
+                passed[-1][1] = passed[-1][1] or _into_the_bundle(value)
+                at = end
+            if attribute == "http-equiv" and value.strip().lower() == "refresh":
+                passed[-1][2] = True
+        end, open_quote, reaches, refresh, href = tail
+        for place, reached, refreshed, named in reversed(passed):
+            reaches, refresh, href = reaches or reached, refresh or refreshed, href or named
+            self._from[place] = (end, open_quote, reaches, refresh, href)
+        leads = reaches or (name == _RETARGETING_TAG and href) or (name == _REFRESH_TAG and refresh)
+        return name, end, not open_quote, leads
 
 
 def _escaped_at(text: str, index: int) -> bool:
@@ -4310,10 +4361,13 @@ def _escaped_at(text: str, index: int) -> bool:
 
 def _hand_links(text: str) -> list[int]:
     """Where ``text`` opens a link into the bundle or to a note's anchor: the ``]`` before
-    such a target, and the ``<`` of a tag one of whose attributes holds one or that is not
-    read safely (:func:`_tag_read`), escaped by a backslash only inside an HTML block (where
-    a backslash escapes nothing), and of the first closing tag of its name after it, which a
-    reader of raw HTML would take too."""
+    such a target, and the ``<`` of a tag (:class:`_TagReader`) one of whose values holds
+    one or that changes where the platform's links lead (a base with an ``href``, a meta
+    refresh), escaped by a backslash or not: a block another text left open makes a
+    backslash escape nothing there, which no text can know. A tag not read safely and
+    holding none counts too, if it is escaped only inside an HTML block of its own text.
+    With it, the first closing tag of its name after it, which a reader of raw HTML would
+    take too."""
     places: list[int] = []
     at = text.find("]")
     while at != -1:
@@ -4325,17 +4379,19 @@ def _hand_links(text: str) -> list[int]:
         at = text.find("]", at + 1)
     closings: dict[str, list[int]] | None = None
     in_block: Callable[[int], bool] | None = None
+    reader: _TagReader | None = None
     for opening in _TAG_START.finditer(text):
-        # Each opening is read on its own: a Markdown reader takes a tag inside another's
-        # attributes where it does not take the outer one.
-        name, end, values, safe = _tag_read(text, opening.start())
-        if safe and not any(_into_the_bundle(value) for value in values):
-            continue
-        if _escaped_at(text, opening.start()):
-            # Escaped, it is text wherever a backslash escapes: outside an HTML block.
-            in_block = in_block or _html_block_reader(text)
-            if not in_block(opening.start()):
+        reader = reader or _TagReader(text)
+        name, end, safe, leads = reader.read(opening.start())
+        if not leads:
+            if safe:
                 continue
+            if _escaped_at(text, opening.start()):
+                # An escaped tag merely not read safely is text wherever a backslash
+                # escapes: outside an HTML block of this text.
+                in_block = in_block or _html_block_reader(text)
+                if not in_block(opening.start()):
+                    continue
         places.append(opening.start())
         if closings is None:
             closings = {}
