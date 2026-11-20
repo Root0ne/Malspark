@@ -728,7 +728,9 @@ def published_answers(report: MalwareReport, *, rows: list[Any] | None = None) -
     network: dict[str, None] = {}
     for row in rows:
         kind = str(row.kind or "")
-        answer = str(row.published or "")
+        # The answer as the table gave it, a refused row's parts kept
+        # (``publish_parts.PublishAnswer``): every reader composes from them.
+        answer = row.published or ""
         key = (kind, value_key(kind, row.value))
         # A value with two rows is published when either publishes it.
         if key not in table or answer.startswith("yes"):

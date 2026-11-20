@@ -3045,6 +3045,12 @@ class _Context:
         self.category_mark = ""
         # The IOC table's answers, read on first use by ``publish_state``.
         self._answers: Any = None
+        # Whether this render prints a value's whole answer in an indicator row,
+        # given its kind, value and answer: a cell beside the value then prints
+        # what refused it, and else the whole answer (``publish_state``). ``None``
+        # where the render's indicator section prints every row whole; the
+        # analyst layout sets it.
+        self.whole_answer_printed: Callable[[str, str, str], bool] | None = None
         stored = list(getattr(report, "flagged_statements", None) or [])
         # The sentences printed in their writer's own words that the agreement question left
         # out (``FlaggedStatement.left_out``), by each place of the analyst report it is left
@@ -3248,8 +3254,12 @@ class _Context:
 
         The platform states the IOC table's answer beside the value; nothing
         is asked. A reference host no row holds is no indicator and gets
-        nothing. The state is the answer's first clause, as the prose marks
-        print it; one value alone is not named again. Written defanged and
+        nothing. The state is what refused the value, every refusing part of
+        the answer (``publish_parts.answer_state``), as the prose marks print
+        it, where this render prints the whole answer in an indicator row; where
+        it prints it in none (:attr:`whole_answer_printed`), the whole answer,
+        bounded at a part's end (``publish_parts.whole_answer``). One value
+        alone is not named again. Written defanged and
         with Markdown's own characters escaped (:func:`_inline_safe`). Fails
         closed: a table that cannot be read states every value refused for
         that reason, and a lookup that fails says the state is unknown.
@@ -3257,7 +3267,10 @@ class _Context:
         try:
             from malspark.reporting.defang import defang
 
-            found = self._unstated(text)
+            found = [
+                (kind, value, self._cell_state(kind, value, state))
+                for kind, value, state in self._unstated(text)
+            ]
             if not found:
                 return ""
             if len(found) == 1:
@@ -3268,6 +3281,18 @@ class _Context:
         except Exception as exc:  # noqa: BLE001 — the cell says what is not known
             logger.debug("markdown: a cell's publish state was not read (%s).", exc)
             return f" ({STATE_UNKNOWN})" if _names_a_network_value(text) else ""
+
+    def _cell_state(self, kind: str, value: str, state: str) -> str:
+        """What a cell prints beside one unpublished value: its state, or its whole answer
+        where this render prints that in no indicator row (:attr:`whole_answer_printed`)."""
+        from malspark.reporting.publish_parts import PublishAnswer, whole_answer
+
+        if self.whole_answer_printed is None:
+            return state
+        answer = self._answers(kind, value)
+        if not isinstance(answer, PublishAnswer) or self.whole_answer_printed(kind, value, answer):
+            return state
+        return whole_answer(answer)
 
     def _all_stated(self, sentence: str) -> bool:
         """Whether each unpublished value of ``sentence`` has a state the table agrees with.

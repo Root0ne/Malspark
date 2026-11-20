@@ -254,9 +254,10 @@ class TestAStoredReportsCaptureHeldValue:
             "ip", ADDRESS, "analyst", None, **emulation_kwargs(report, "ip", ADDRESS)
         )
 
+        # The judge's test refuses it beside the sandbox's fact; the listing is a fact (T-782b).
         assert answer.startswith(
-            "no: the sandbox report does not say which process made the flows to it; "
-            "an artifact of the network analyst lists it"
+            "no: the sandbox report does not say which process made the flows to it, and the "
+            "judge did not keep it as an indicator; an artifact of the network analyst lists it"
         )
 
     def test_the_judge_named_capture_value_publishes_in_both(self) -> None:

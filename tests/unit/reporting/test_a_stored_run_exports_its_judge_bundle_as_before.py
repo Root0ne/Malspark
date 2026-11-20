@@ -131,7 +131,11 @@ STORED_EXPORTS = {
 # in no tree states the sentence of the row's own publish answer (T-811); the reputation header
 # cell names each count the lookup's record holds and states no fraction (T-781). Those are the
 # only changes; the STIX did not change.
-HAIKU4_RENDERS = ("774141b000a547d4", "1b81b27047512cab", "ff5607de575fb489")
+# The Markdown and HTML re-pinned when a publish answer came to be given as its parts (T-782b):
+# a public DNS resolver's §9 row states the resolver first and the sandbox's fact after it, a
+# listed row's states the judge's test with its why and the listing after them, and a cell beside
+# such a value states its refusing parts. Those are the only changes; the STIX did not change.
+HAIKU4_RENDERS = ("477790b616709be4", "ca07a2ee7451873e", "ff5607de575fb489")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

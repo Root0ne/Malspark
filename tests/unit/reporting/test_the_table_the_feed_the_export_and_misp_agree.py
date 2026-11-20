@@ -258,10 +258,11 @@ class TestEveryRowHasAPublishAnswer:
 
         # The judge was never asked with the sandbox's fact: its keep publishes
         # nothing, and the row's own sandbox record corroborates nothing.
+        # Each test that closed a way is its own part, joined as one sentence (T-782b).
         assert answer == (
-            "no: the sandbox report does not say which process wrote it; the judge's indicator "
-            "names it, and no question with this fact is recorded for this run, so its keep "
-            "publishes nothing"
+            "no: the sandbox report does not say which process wrote it, and the judge's "
+            "indicator names it, and no question with this fact is recorded for this run, so its "
+            "keep publishes nothing"
         )
         assert STRAY not in json.dumps(_export(report))
 
@@ -309,7 +310,7 @@ class TestEveryRowHasAPublishAnswer:
 
         assert row.source == "sandbox"
         assert str(row.published).startswith(
-            "no: the sandbox report does not say which process wrote it; the judge's indicator"
+            "no: the sandbox report does not say which process wrote it, and the judge's indicator"
         )
         assert dropped not in json.dumps(_export(report))
 

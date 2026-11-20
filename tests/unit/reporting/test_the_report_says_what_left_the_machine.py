@@ -301,12 +301,16 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # address the publish rule places in no tree states the sentence of the row's own publish answer
 # (T-811); the reputation header cell names each count the lookup's record holds and states no
 # fraction (T-781). Those are the only changes.
+# The Markdown and HTML re-pinned when a publish answer came to be given as its parts (T-782b):
+# a public DNS resolver's §9 row states the resolver first and the sandbox's fact after it, a
+# listed row's states the judge's test with its why and the listing after them, and a cell beside
+# such a value states its refusing parts. Those are the only changes.
 STORED_RENDERS = {
-    "run7": ("21eba17850b8a933", "3d218ceb646bafbe"),
-    "run5": ("996b7821dc72c2a4", "622734e18cd2d733"),
-    "run4": ("64a1ebdddbc77ec1", "9ac5b154dffb12e8"),
-    "local8": ("82372dac6755e55d", "d11614eee2c447fb"),
-    "haiku4": ("774141b000a547d4", "1b81b27047512cab"),
+    "run7": ("d369c9b6dd6637e8", "fcfdb48e546dd330"),
+    "run5": ("e2078eef68da0895", "1c54e53f083ee8a3"),
+    "run4": ("241dd81d9faa8855", "5b4206854f545890"),
+    "local8": ("0aaa1f67985af5de", "0404e78804a01c56"),
+    "haiku4": ("477790b616709be4", "ca07a2ee7451873e"),
 }
 
 

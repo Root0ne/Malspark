@@ -71,10 +71,12 @@ class TestAWellKnownHostOfAPublishedURL:
     def test_an_analyst_listing_the_host_itself_does_not_publish_it(self) -> None:
         answer = _row(self._listed(), "www.googleapis.com").published
 
+        # The judge's test refuses it beside the benign name; the listing is a fact after
+        # them (T-782b).
         assert answer == (
-            f"no: a well-known benign name carried by a published URL ({CDN_URL}); an "
-            "artifact of the network analyst lists it, and a listing does not change what the "
-            "sandbox recorded about it; the judge did not keep it as an indicator"
+            f"no: a well-known benign name carried by a published URL ({CDN_URL}), and the "
+            "judge did not keep it as an indicator; an artifact of the network analyst lists "
+            "it, and a listing does not change what the sandbox recorded about it"
         )
 
     def test_the_judge_keeping_the_host_itself_publishes_it(self) -> None:

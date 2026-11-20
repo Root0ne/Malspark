@@ -29,11 +29,14 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
+    ValidatorFunctionWrapHandler,
+    WrapValidator,
     model_serializer,
 )
 from pydantic.json_schema import SkipJsonSchema
 
 from malspark.core.reputation import ReputationRecord
+from malspark.reporting.publish_parts import PublishAnswer
 from malspark.schemas.stix_models import get_utcnow
 
 # ---------------------------------------------------------------------------
@@ -1804,6 +1807,12 @@ class JudgeIndicator(BaseModel):
     indicator_types: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
+def _answer_with_its_parts(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+    """A publish answer given as its parts is kept as given, parts and all; any other text is
+    read as text (a row read from a stored file has none)."""
+    return value if isinstance(value, PublishAnswer) else handler(value)
+
+
 class ConsolidatedIOC(BaseModel):
     """One row of the consolidated, typed IOC table.
 
@@ -1824,10 +1833,13 @@ class ConsolidatedIOC(BaseModel):
     # ``hash``, …), who recorded the row (``identity``, ``sandbox``,
     # ``analyst``, ``judge``, ``strings``, ``persistence``), what else is known
     # about it, and the one publish rule's answer: ``yes`` or ``no: <reason>``.
+    # A refused row the table builds keeps the answer's parts
+    # (``publish_parts.PublishAnswer``), which every reader composes from; it is
+    # stored and served as its text.
     kind: str | None = None
     source: str | None = None
     context: str = ""
-    published: str | None = None
+    published: Annotated[str | None, WrapValidator(_answer_with_its_parts)] = None
     # What the row is to every surface, set with ``published`` by the table
     # (``builder.ioc_table``): ``sample_identity`` (a digest of the sample's
     # own bytes), ``similarity`` (its imphash, ssdeep or TLSH, which also match

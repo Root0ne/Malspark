@@ -220,9 +220,11 @@ class TestTheBackgroundAddresses:
         resolver = _row(report, RESOLVER)
         other = _row(report, BACKGROUND)
 
-        assert str(resolver.published).startswith("no: the sandbox report does not say")
-        assert "public DNS resolver" in str(resolver.published)
-        assert "which this run never publishes, whoever names it" in str(resolver.published)
+        # The resolver is the test that refuses it; the sandbox's fact follows it (T-782b).
+        assert str(resolver.published).startswith(
+            "no: a public DNS resolver, which this run never publishes, whoever names it"
+        )
+        assert "; the sandbox report does not say" in str(resolver.published)
         # The two claims that called it noise are named, and keep nothing.
         assert "a claim by the network analyst" in str(resolver.published)
         assert "a claim by the static_qu1cksc0pe analyst" in str(resolver.published)

@@ -86,6 +86,7 @@ from malspark.reporting.models import (
     SecondSourceRead,
     stated_family,
 )
+from malspark.reporting.publish_parts import PublishAnswer, refused, told_whole
 from malspark.reporting.stated_host_values import ANALYSIS_SOURCE as ANALYSIS_STATED_SOURCE
 from malspark.reporting.stated_host_values import listed_only
 from malspark.reporting.technique_evidence import (
@@ -794,7 +795,8 @@ def _judge_indicator_unpublished(
     up in the report's IOC table (``rows``), whose answer is the one rule's for
     that value (the table asks it of every judge value it has no row for,
     ``builder._with_the_judge_s_values``); one value no row publishes declines
-    the indicator, with that row's answer. Nothing is asked again here. A
+    the indicator, with that row's whole answer: every refusing part whole, then
+    the facts that fit (``publish_parts.told_whole``). Nothing is asked again here. A
     comparison of a kind the IOC table has no row for (a port, a property of a
     process) is left to the host question and the grounding check before this.
     """
@@ -804,7 +806,7 @@ def _judge_indicator_unpublished(
         kind = str(row.kind or "")
         key = (kind, _value_key(kind, row.value))
         if publishes(row.published) or key not in answers:
-            answers[key] = str(row.published or "")
+            answers[key] = row.published or ""
     for value in asserted_values(indicator.pattern or ""):
         answer = answers.get((value.kind, _value_key(value.kind, value.value)))
         if publishes(answer):
@@ -813,7 +815,7 @@ def _judge_indicator_unpublished(
         return (
             UNPUBLISHED_VALUE_CODE,
             f"the judge's indicator {named!r} names {safe_finding_value(value.value)!r}, "
-            f"which this run does not publish ({safe_finding_value(said)}). It is not in "
+            f"which this run does not publish ({told_whole(said)}). It is not in "
             "the exported bundle and is unchanged in the judge's own bundle.",
         )
     # A comparison of a kind the rule answers for, written as a shape — a
@@ -3339,18 +3341,42 @@ def _could_be_infrastructure(kind: str, value: str, source: Any) -> bool:
     return host_is_public(url_host(value) if kind == "url" else value)
 
 
-def not_kept_reason(why: str, mentioned_by: str = "", listed_by: str = "") -> str:
-    """The ``no:`` a row waiting for the judge reads, naming who listed or mentioned it."""
-    if listed_by:
-        said = (
-            f"no: {why}; {listed_by} lists it, and a listing does not change what the "
-            "sandbox recorded about it; the judge did not keep it as an indicator"
-        )
-    else:
-        said = f"no: {why}, and no model kept it as an indicator"
-    if mentioned_by:
-        said += f" ({mentioned_by} mentions it and does not keep it)"
-    return said
+# The keep test of a row waiting for the judge: the judge's, where an analyst
+# listed the value, and every model's where none did.
+JUDGE_DID_NOT_KEEP = "the judge did not keep it as an indicator"
+NO_MODEL_KEPT = "no model kept it as an indicator"
+
+
+def _mentioned(mentioned_by: str) -> str:
+    """The fact that names who mentions a value and does not keep it, or ``""``."""
+    return f"{mentioned_by} mentions it and does not keep it" if mentioned_by else ""
+
+
+def not_kept_reason(
+    why: str, mentioned_by: str = "", listed_by: str = "", recovery: str = ""
+) -> PublishAnswer:
+    """The ``no:`` a row waiting for the judge reads, naming who listed or mentioned it.
+
+    Refusing parts: ``why``, then the keep test (the judge's where an analyst
+    lists the value, every model's where none does), then a recovery's own
+    refusal where a recovering tool read the value too. Facts: who lists it,
+    and that a listing does not change what the sandbox recorded; who mentions
+    it. Where nothing but the keep test qualifies them, who mentions it is
+    said in brackets right after it.
+    """
+    keep = JUDGE_DID_NOT_KEEP if listed_by else NO_MODEL_KEPT
+    lister = (
+        f"{listed_by} lists it, and a listing does not change what the sandbox recorded about it"
+        if listed_by
+        else ""
+    )
+    return refused(
+        why,
+        keep,
+        recovery,
+        facts=(lister, _mentioned(mentioned_by)),
+        bracketed=not listed_by and not recovery,
+    )
 
 
 # What the rule says of a public DNS resolver, which it never publishes.
@@ -3359,16 +3385,18 @@ PUBLIC_RESOLVER = "a public DNS resolver, which this run never publishes, whoeve
 
 def public_resolver_reason(
     unattributed: str = "", listed_by: str = "", mentioned_by: str = ""
-) -> str:
-    """The ``no:`` a public DNS resolver reads: the sandbox's fact, the resolver, who named it."""
-    said = f"no: {PUBLIC_RESOLVER}"
-    if unattributed:
-        said = f"no: {unattributed}; it is {PUBLIC_RESOLVER}"
-    if listed_by:
-        said += f"; {listed_by} lists it"
-    if mentioned_by:
-        said += f" ({mentioned_by} mentions it and does not keep it)"
-    return said
+) -> PublishAnswer:
+    """The ``no:`` a public DNS resolver reads: the resolver, the sandbox's fact, who listed
+    it, who mentioned it (T-782b). The resolver is the test that refuses it, whoever names it;
+    the rest are facts."""
+    return refused(
+        PUBLIC_RESOLVER,
+        facts=(
+            unattributed,
+            f"{listed_by} lists it" if listed_by else "",
+            _mentioned(mentioned_by),
+        ),
+    )
 
 
 # What the rule says of a network value no tool in the run saw.
@@ -3383,7 +3411,7 @@ SEARCHED_THE_REPORT = "report"
 
 def named_only_reason(
     listed_by: str = "", searched: str = SEARCHED_THE_RUN, asked_in: str = ""
-) -> str:
+) -> PublishAnswer:
     """The ``no:`` a value only an analyst listed reads, saying what the search for it covered.
 
     "No tool in this run saw it" is said only after the whole ledger was
@@ -3397,13 +3425,10 @@ def named_only_reason(
         unseen = "no tool in this run saw it"
     else:
         unseen = "no tool answer this report keeps holds it"
-    return (
-        f"no: {NAMED_ONLY_BY_AN_ANALYST}{who}; {unseen}, and the judge did not keep it "
-        "as an indicator"
-    )
+    return refused(f"{NAMED_ONLY_BY_AN_ANALYST}{who}; {unseen}, and {JUDGE_DID_NOT_KEEP}")
 
 
-def judge_only_reason(searched: str = SEARCHED_THE_RUN, asked_in: str = "") -> str:
+def judge_only_reason(searched: str = SEARCHED_THE_RUN, asked_in: str = "") -> PublishAnswer:
     """The ``no:`` a judge value reads when no row and no tool answer holds it.
 
     "No tool answer in this run holds it" is said only after the whole-value
@@ -3417,13 +3442,20 @@ def judge_only_reason(searched: str = SEARCHED_THE_RUN, asked_in: str = "") -> s
         unseen = "no tool answer in this run holds it"
     else:
         unseen = "no tool answer this report keeps holds it"
-    return f"no: named only by the judge's indicator; {unseen}, and no second source records it"
+    return refused(
+        f"named only by the judge's indicator; {unseen}, and no second source records it"
+    )
 
 
-def seen_in_reason(seen_in: str, listed_by: str = "") -> str:
-    """The ``no:`` a listed value reads when only a tool's text, and no second source, holds it."""
-    said = f"no: seen only in the text of {seen_in}, and no second source in this run records it"
-    return f"{said}; {listed_by} lists it" if listed_by else said
+def seen_in_reason(seen_in: str, listed_by: str = "") -> PublishAnswer:
+    """The ``no:`` a listed value reads when only a tool's text, and no second source, holds it.
+
+    One refusing part, the entries' list inside it whole; who lists it is a fact.
+    """
+    return refused(
+        f"seen only in the text of {seen_in}, and no second source in this run records it",
+        facts=(f"{listed_by} lists it" if listed_by else "",),
+    )
 
 
 def listed_value_sightings(report: Any, kind: str, value: str) -> tuple[str, str]:
@@ -4960,6 +4992,8 @@ _SOURCE_WORDS = {
 
 # What a verdict-withheld answer says of what the evidence held, before it in brackets.
 EVIDENCE_ALONE = "the evidence alone would publish it"
+# What refuses a value only the string sweep read and no second source confirms.
+SEEN_ONLY_IN_THE_STRINGS = "seen only in the file's strings"
 
 
 def published_because(reason: str) -> str:
@@ -5011,9 +5045,11 @@ def publish_answer(
 
     ``yes: <reason>`` with the reason :func:`indicator_publish_reason` gave, in
     words (:func:`published_because`), or ``no: <reason>`` naming the half of
-    it that refused the row. The decision is that function's and nothing here decides
-    anything: the reason is read back from the same questions it asks, in the
-    same order. ``corroborating`` is the run's second-source record
+    it that refused the row, given as its parts (``publish_parts.PublishAnswer``):
+    each test that refused it, then what the record holds that did not decide.
+    The decision is that function's and nothing here decides anything: the
+    reason is read back from the same questions it asks, in the same order.
+    ``corroborating`` is the run's second-source record
     (:func:`corroborating_values`), asked whole-value for a string row the way
     the export asks it.
 
@@ -5049,23 +5085,23 @@ def publish_answer(
     )
     withheld = withheld_by_the_verdict(verdict, digest)
     if admitted and withheld:
-        return f"no: {withheld}; {EVIDENCE_ALONE} ({published_because(admitted)})"
+        return refused(withheld, facts=(f"{EVIDENCE_ALONE} ({published_because(admitted)})",))
     if admitted:
         return yes_because(admitted)
     if stated is not None:
         from malspark.reporting.stated_host_values import stated_refusal
 
-        return f"no: {stated_refusal(stated, verdict)}"
+        return refused(stated_refusal(stated, verdict))
     if kind == "ip" and is_public_resolver(text):
         return public_resolver_reason(unattributed, listed_by, mentioned_by)
     if kind == "url" and is_public_resolver(url_host(text).strip("[]")):
         return public_resolver_reason(unattributed, listed_by, mentioned_by)
     if kind == "domain" and not host_is_public(text):
-        return "no: not a name that resolves outside the analysed network"
+        return refused("not a name that resolves outside the analysed network")
     if kind == "url" and not host_is_public(url_host(text)):
-        return "no: its host does not resolve outside the analysed network"
+        return refused("its host does not resolve outside the analysed network")
     if kind == "ip" and not address_is_publishable(text, source):
-        return "no: not an address this run may publish"
+        return refused("not an address this run may publish")
     if kind == "domain" and in_published_url and is_well_known_benign_host(text):
         return not_kept_reason(
             f"{BENIGN_NAME_IN_A_URL} ({in_published_url})", mentioned_by, listed_by
@@ -5075,94 +5111,100 @@ def publish_answer(
             f"{TENANT_NAME_IN_A_URL} ({in_published_url})", mentioned_by, listed_by
         )
     if unattributed and kind in HOST_KINDS:
-        return f"no: {unattributed}; {untold}" if untold else f"no: {unattributed}"
+        return refused(unattributed, untold)
     if unattributed and kind in CAPTURE_KINDS:
-        return f"no: {unattributed}"
+        return refused(unattributed)
     if (
         kind in HOST_KINDS
         and _recorded_by_the_sandbox(source)
         and _host_value_could_publish(kind, text)
     ):
-        return f"no: {HOST_ROW_NOT_NAMED}"
+        return refused(HOST_ROW_NOT_NAMED)
     if unattributed and kind in ("ip", "domain", "url"):
-        refused = _recovery_refusal(recovered, verdict, url_host(text) if kind == "url" else text)
+        recovery = _recovery_refusal(recovered, verdict, url_host(text) if kind == "url" else text)
         if untold:
-            said = f"no: {unattributed}; {untold}"
-            if refused:
-                said += f"; {refused}"
-            if listed_by:
-                said += f"; {listed_by} lists it"
-            if mentioned_by:
-                said += f" ({mentioned_by} mentions it and does not keep it)"
-            return said
-        if refused:
-            # A recovering tool read the value too, and its own refusal
-            # stands: both facts are stated.
-            return not_kept_reason(f"{unattributed}; {refused}", mentioned_by, listed_by)
-        return not_kept_reason(unattributed, mentioned_by, listed_by)
+            # Each test that closed a way is its own refusing part: the
+            # sandbox's fact, why the judge's keep publishes nothing, and a
+            # recovery's own refusal; who listed and who mentioned it are facts.
+            return refused(
+                unattributed,
+                untold,
+                recovery,
+                facts=(f"{listed_by} lists it" if listed_by else "", _mentioned(mentioned_by)),
+            )
+        # A recovering tool read the value too, and its own refusal stands:
+        # both are stated, each its own part.
+        return not_kept_reason(unattributed, mentioned_by, listed_by, recovery)
     if kind == "email" and not email_is_publishable(text):
-        return "no: not a mailbox at a host that could exist"
+        return refused("not a mailbox at a host that could exist")
     if (
         kind == "email"
         and from_strings
         and not reads_as_a_host_in_the_bytes(text.rsplit("@", 1)[-1])
     ):
-        return "no: its domain part reads as code in the file, not as a host"
+        return refused("its domain part reads as code in the file, not as a host")
     if kind == "path" and not path_names_a_file(text):
-        return "no: names a directory or a root, not a file"
+        return refused("names a directory or a root, not a file")
     # The shape of a value the string sweep read is its reason where it is
     # what refused a value a second source holds; one nothing else holds is
     # refused for that first, as before the shape was asked.
     if kind == "path" and corroborated and not judge_s_value and _string_path_shape(text):
-        return f"no: {_string_path_shape(text)}"
+        return refused(_string_path_shape(text))
     if kind == "hash" and not _is_a_whole_digest(text):
-        return "no: not a whole digest"
+        return refused("not a whole digest")
     if bound and _is_benign_verdict(verdict):
-        return f"no: {BOUND}, but the verdict is Benign, which publishes no malicious indicator"
+        return refused(
+            f"{BOUND}, but the verdict is Benign, which publishes no malicious indicator"
+        )
     if bound and verdict == UNSTATED_VERDICT:
-        return f"no: {BOUND}, but the judge stated no verdict with a confidence"
+        return refused(f"{BOUND}, but the judge stated no verdict with a confidence")
     if bound and kind == "user_agent" and reads_as_a_browser_user_agent(text):
-        return f"no: {bound}; {BROWSER_LIKE}"
+        # The binding, "but" its browser shape: one refusing part, as a
+        # refused recovery's is.
+        return refused(f"{bound}; {BROWSER_LIKE}")
     if recovered and _is_benign_verdict(verdict):
-        return f"no: {recovered}, but the verdict is Benign, which publishes no malicious indicator"
+        return refused(
+            f"{recovered}, but the verdict is Benign, which publishes no malicious indicator"
+        )
     if recovered and verdict == UNSTATED_VERDICT:
-        return f"no: {recovered}, but the judge stated no verdict with a confidence"
+        return refused(f"{recovered}, but the judge stated no verdict with a confidence")
     if recovered and _spelled_as_code(spelled):
-        # The reason in the first clause, the recovery it refuses after it.
-        return f"no: {_spelled_reason(spelled)}; {recovered}"
+        # The reason refuses; the recovery it refuses is a fact after it.
+        return refused(_spelled_reason(spelled), facts=(recovered,))
     if also_plain:
-        return (
-            f"no: seen only in the file's strings — also a plain string in the file "
+        return refused(
+            f"seen only in the file's strings — also a plain string in the file "
             f"({also_plain}), so not a value the sample hid"
         )
     if recovered and is_well_known_benign_host(url_host(text) if kind == "url" else text):
-        return f"no: {recovered}, but it is a well-known benign host"
+        return refused(f"{recovered}, but it is a well-known benign host")
     if recovered and kind == "url" and on_a_denied_url_host(text):
-        return f"no: {recovered}, but it is on a developer or package-registry host"
+        return refused(f"{recovered}, but it is on a developer or package-registry host")
     if listed_only_by_an_analyst(kind, source):
         if seen_in:
             return seen_in_reason(seen_in, listed_by)
         return named_only_reason(listed_by, tool_search or SEARCHED_THE_RUN, asked_in)
     if kind == "command":
-        return "no: a command line is not an indicator this run publishes"
+        return refused("a command line is not an indicator this run publishes")
     if kind in BOUND_ONLY_KINDS:
-        return f"no: {NOT_BOUND}"
+        return refused(NOT_BOUND)
     if kind != "hash" and (kind not in STRING_IOC_KINDS or indicator_pattern(kind, text) is None):
-        return "no: the export has no object for this kind"
+        return refused("the export has no object for this kind")
     if seen_in:
         return seen_in_reason(seen_in, listed_by)
     if judge_only:
         return judge_only
-    refused = (
-        second_source_refusal(text, corroborating)
+    holders = (
+        second_source_refusal_parts(text, corroborating)
         if from_strings and kind not in ("domain", "ip", "url")
-        else ""
+        else ()
     )
-    if refused.startswith(CUT_REASON):
-        return f"no: {refused}"
-    if refused:
-        return f"no: seen only in the file's strings; {refused}"
-    return "no: seen only in the file's strings"
+    if holders and holders[0] == CUT_REASON:
+        # The cut refuses; the string as the record keeps it is a fact.
+        return refused(CUT_REASON, facts=holders[1:])
+    # The strings refuse; each tool that holds the value and confirms
+    # nothing is a fact of its own.
+    return refused(SEEN_ONLY_IN_THE_STRINGS, facts=holders)
 
 
 def corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
@@ -6134,16 +6176,22 @@ def second_source_refusal(value: Any, corroborating: Any) -> str:
     """Why nothing confirms a value :func:`second_source` refused, in words; ``""`` for no holder.
 
     Names the tools that hold the value whole and confirm nothing, so an
-    operator can see what read it.
+    operator can see what read it: :func:`second_source_refusal_parts`, joined.
     """
+    return "; ".join(second_source_refusal_parts(value, corroborating))
+
+
+def second_source_refusal_parts(value: Any, corroborating: Any) -> tuple[str, ...]:
+    """:func:`second_source_refusal`'s clauses, each whole: the cut reason and the string as
+    the record keeps it, or each tool that holds the value and confirms nothing; ``()`` for
+    no holder."""
     record = _as_record(corroborating)
     text = str(value or "").strip()
     low = text.lower()
     token = record.cut.get(low, "")
     if token:
-        # The reason in its first clause, which is the clause a model is
-        # quoted; the token, as the record keeps it, after it.
-        return f'{CUT_REASON}; the string reads "{_quoted_token(token)}"'
+        # The reason first, the token, as the record keeps it, after it.
+        return (CUT_REASON, f'the string reads "{_quoted_token(token)}"')
 
     def holders(held: tuple[tuple[str, str], ...]) -> list[str]:
         return list(dict.fromkeys(tool for tool, part in held if whole_value_in(text, part)))
@@ -6171,7 +6219,7 @@ def second_source_refusal(value: Any, corroborating: Any) -> str:
             f"{_tools_said(beside)} {verb} it only in a section that holds a cited entry "
             "beside an entry no analyst claim cites"
         )
-    return "; ".join(said)
+    return tuple(said)
 
 
 def _tools_said(tools: list[str]) -> str:

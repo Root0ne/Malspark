@@ -296,8 +296,9 @@ class TestThePublishRule:
 
         answer = _answer(_report(network), "ip", RESOLVER)
 
-        assert answer.startswith("no: the sandbox report attributes its flows to a process")
-        assert "public DNS resolver" in answer
+        # The resolver is the test that refuses it; the sandbox's fact follows it (T-782b).
+        assert answer.startswith("no: a public DNS resolver, which this run never publishes")
+        assert "; the sandbox report attributes its flows to a process" in answer
 
     def test_a_claim_that_mentions_it_keeps_nothing_and_is_named_in_the_reason(self) -> None:
         isrs = _network_analyst(claim=f"The sandbox shows only {CONTACT}:80, background noise.")
@@ -320,10 +321,12 @@ class TestThePublishRule:
 
         answer = _answer(_report(network), "ip", CONTACT)
 
+        # The judge's test refuses it beside the sandbox's fact; the listing is a fact after
+        # them (T-782b).
         assert answer == (
-            "no: the sandbox report does not say which process made the flows to it; "
-            "an artifact of the network analyst lists it, and a listing does not change what "
-            "the sandbox recorded about it; the judge did not keep it as an indicator"
+            "no: the sandbox report does not say which process made the flows to it, and the "
+            "judge did not keep it as an indicator; an artifact of the network analyst lists "
+            "it, and a listing does not change what the sandbox recorded about it"
         )
 
     def test_an_attributed_address_an_artifact_lists_stays_published(self) -> None:

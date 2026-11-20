@@ -118,9 +118,10 @@ class TestADecodedAddressTheCaptureReached:
         report = _build([_strings(), _floss(ADDRESS), _capture(ADDRESS)], verdict="Benign")
 
         answer = _published(report, ADDRESS)
+        # Each test that closed a way is its own part (T-782b).
         assert answer.startswith(
-            "no: the sandbox report does not say which process made the flows to it; "
-            "recovered by emulation (decoded strings), ev_0012"
+            "no: the sandbox report does not say which process made the flows to it, and no "
+            "model kept it as an indicator, and recovered by emulation (decoded strings), ev_0012"
         )
         assert "but the verdict is Benign" in answer
 

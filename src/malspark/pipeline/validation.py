@@ -8809,7 +8809,8 @@ def recommendation_indicator_violations(
     ``""`` when no row holds it (``narrative_agent.published_answers``). Every
     field of a recommendation is read — the action, the rationale and the
     detection the hunting notes print — and each value the table does not
-    answer ``yes`` for is named with the table's reason, one question per
+    answer ``yes`` for is named with the table's whole answer (every test that
+    refused it, then the facts that fit, ``publish_parts.told_whole``), one question per
     recommendation. The finding states the fact and names the row by its
     priority and category, as the report's table prints it; its path keeps
     the row's place in the answer. The question sent (``shown``) names the
@@ -8817,6 +8818,7 @@ def recommendation_indicator_violations(
     publishes none. Nothing is removed: what the model answers stands.
     """
     from malspark.extractors.network_extractor import is_well_known_benign_host
+    from malspark.reporting.publish_parts import told_whole
     from malspark.reporting.renderers.stix_renderer import publishes
 
     shown = _recommendation_list_question(getattr(answers, "network", None))
@@ -8828,7 +8830,7 @@ def recommendation_indicator_violations(
         values: list[str] = []
         named, gated = _values_and_gated(text)
         for kind, value in named:
-            answer = str(answers(kind, value) or "")
+            answer = answers(kind, value) or ""
             if publishes(answer):
                 continue
             # A package name, or a two-letter name only the evidence reading
@@ -8840,7 +8842,7 @@ def recommendation_indicator_violations(
                 # read, not an indicator to act on.
                 continue
             why = answer or f"no: {NO_TABLE_ROW}"
-            said = f"{safe_finding_value(value)} ({safe_finding_value(why)})"
+            said = f"{safe_finding_value(value)} ({told_whole(why)})"
             if said not in refused:
                 refused.append(said)
                 values.append(value)
@@ -8971,9 +8973,11 @@ def recommendation_technique_violations(
 _PUBLISH_STATE_RE = re.compile(r"(?<![\w-])no:\s*\S", re.IGNORECASE)
 # A publish state written under its own name: ``publish state: <what>``,
 # ``publication state is <what>``. What it says is read against the table.
+# What it says is read to the end of its own bracket: a bracket inside it, a
+# process's ``(procid 36)``, is part of what it says.
 _NAMED_PUBLISH_STATE_RE = re.compile(
     r"(?<![\w-])(?:publish(?:ed|ing)?|publication)\s+state\s*(?::|=|-|–|—|\bis\b)"
-    r"\s*(?P<said>[^)\]\n]*)",
+    r"\s*(?P<said>(?:[^()\[\]\n]|\([^()\n]*\)|\[[^\[\]\n]*\])*)",
     re.IGNORECASE,
 )
 # A named state that reads as "not published": a negation that is not of
@@ -9195,22 +9199,34 @@ def _negation_states_a_state(after: str) -> bool:
 
 
 def _restates_reason(after: str, answer: str, *, slack: float = 0.0) -> bool:
-    """Whether ``after`` restates the table's reason: its words in order, a few apart.
+    """Whether ``after`` restates the table's reason: each refusing part's words in order.
 
-    The reason is the answer's first clause. Each of its words that carries
-    meaning is looked for after the last one found, at most ``_REASON_GAP``
-    words further on; ``slack`` is the share of them that may be missing, a
-    negation of the reason never among them. A negation in the restatement
-    that the reason does not carry turns it around and is no restatement.
+    The reason is every refusing part of the answer (``publish_parts``), each
+    read whole and restated on its own (:func:`_restates_words`), so a gap
+    between two words is never read across two parts. An answer read without
+    its parts (a stored row) is read as before: its first clause.
     """
+    from malspark.reporting.publish_parts import refusing_parts
+
+    parts = refusing_parts(answer)
+    if parts is not None:
+        return all(_restates_words(after, part, slack=slack) for part in parts)
     reason = str(answer or "")
     if reason.lower().startswith("no:"):
         reason = reason[3:]
-    wanted = [
-        word
-        for word in re.findall(r"\w+", reason.split(";", 1)[0].lower())
-        if word not in _REASON_FILLER
-    ]
+    return _restates_words(after, reason.split(";", 1)[0], slack=slack)
+
+
+def _restates_words(after: str, reason: str, *, slack: float = 0.0) -> bool:
+    """Whether ``after`` restates ``reason``: its words in order, a few apart.
+
+    Each of its words that carries meaning is looked for after the last one
+    found, at most ``_REASON_GAP`` words further on; ``slack`` is the share of
+    them that may be missing, a negation of the reason never among them. A
+    negation in the restatement that the reason does not carry turns it around
+    and is no restatement.
+    """
+    wanted = [word for word in re.findall(r"\w+", reason.lower()) if word not in _REASON_FILLER]
     if len(wanted) < _REASON_MIN_WORDS:
         return False
     written = re.findall(r"\w+", after.lower())
@@ -9298,14 +9314,20 @@ def _unstated_values(
     sentence: str, answers: Callable[[str, str], str]
 ) -> list[tuple[str, str, str]]:
     """``(kind, value, state)`` for each value of ``sentence`` the table does not publish,
-    written without a ``no: <reason>`` between it and the next value the sentence names."""
+    written without a ``no: <reason>`` between it and the next value the sentence names.
+
+    The state is what refused the value: every refusing part of its answer
+    (``publish_parts.answer_state``), or, for an answer read without its parts,
+    its first clause."""
     from malspark.agents._indicator_denylists import whole_value_starts
     from malspark.extractors.network_extractor import is_well_known_benign_host
+    from malspark.reporting.publish_parts import answer_state
     from malspark.reporting.renderers.stix_renderer import publishes
 
     def _answer(kind: str, value: str) -> str:
         try:
-            return str(answers(kind, value) or "")
+            answer = answers(kind, value) or ""
+            return answer if isinstance(answer, str) else str(answer)
         except Exception as exc:  # noqa: BLE001 — a value the table cannot answer is refused
             logger.debug("validation: no publish answer for a value (%s).", exc)
             return f"no: {NO_TABLE_ANSWER}"
@@ -9343,7 +9365,7 @@ def _unstated_values(
         weighed.add((kind, value))
         if not answer and kind == "domain" and is_well_known_benign_host(value):
             continue
-        out.append((kind, value, (answer or f"no: {NO_TABLE_ROW}").split(";", 1)[0].strip()))
+        out.append((kind, value, answer_state(answer or f"no: {NO_TABLE_ROW}")))
     return out
 
 
@@ -9363,13 +9385,15 @@ def unpublished_value_violations(
     prose (:func:`_prose_of_a_section`) is read sentence by sentence; a value
     the table does not answer ``yes`` for, with no ``no: <reason>`` between it
     and the next value its sentence names, is listed. One question per
-    section names each value with its state — the answer's first clause, the
-    one that says why — and the sentences that name it, numbered in the
+    section names each value with its state — every test that refused it,
+    each whole (``publish_parts.answer_state``) — and the sentences that name it, numbered in the
     section's order. A reference host no row holds is a place to read, not an
     indicator, and raises nothing. Nothing is removed: what the model answers
     stands, and each sentence it keeps is marked where it stands with its own
     values' states (``labels``, ``MARKED_IN_PLACE``).
     """
+
+    from malspark.reporting.publish_parts import told
 
     # (state, value) -> sentence numbers, in the order first met.
     named: dict[tuple[str, str], list[int]] = {}
@@ -9413,7 +9437,7 @@ def unpublished_value_violations(
         sentences.update(numbers)
     said = "; ".join(
         f"{', '.join(safe_finding_value(value) for value in values)} "
-        f"({safe_finding_value(state)}) in "
+        f"({told(state)}) in "
         + ", ".join(
             safe_finding_value(_sentence_start(written_as[number])) for number in sorted(sentences)
         )
