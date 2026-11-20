@@ -19,8 +19,8 @@ import json
 import os
 import subprocess  # nosec B404 — this interpreter, an argument list only
 import sys
-from pathlib import Path
-from typing import Any
+from pathlib import Path, PureWindowsPath
+from typing import Any, cast
 
 import pytest
 from scripts.replay import compare
@@ -65,6 +65,21 @@ def _main(tmp_path: Path, *extra: str, root: Path | None = FIXTURE.parent) -> in
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _symlink(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"this platform refuses to create a symbolic link ({exc.strerror})")
+
+
+def _dot_dot(start: Path, target: Path) -> Path:
+    """``target`` spelled from ``start`` through ``..``; from inside ``target`` where the two
+    sit on different drives, which no relative path joins."""
+    if start.drive.casefold() == target.drive.casefold():
+        return start / os.path.relpath(target, start)
+    return target / "tests" / "unit" / ".." / ".."
 
 
 def _ended(tmp_path: Path, *extra: str, root: Path | None = FIXTURE.parent) -> int:
@@ -211,8 +226,21 @@ class TestTheExpectedFile:
         lines = tmp_path / "expected.txt"
         _main(tmp_path, "--lines", str(lines), "--quiet")
         written = lines.read_text(encoding="ascii").splitlines()
-        lines.write_text("# approved\n" + "\n".join(reversed(written)), encoding="ascii")
+        lines.write_bytes(("# approved\n" + "\n".join(reversed(written))).encode("ascii"))
         assert _main(tmp_path, "--expect", str(lines), "--expect-sha256", _sha(lines)) == 0
+
+    def test_the_lines_file_ends_each_line_with_a_line_feed_alone(
+        self, record: dict[str, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The same lines give the same bytes, and so the same digest, wherever the file is
+        # written.
+        _compare_with(monkeypatch, record, _moved(record))
+        lines = tmp_path / "lines.txt"
+        _main(tmp_path, "--lines", str(lines), "--quiet")
+        data = lines.read_bytes()
+        assert data and b"\r" not in data and data.endswith(b"\n")
+        produced = difference_lines(diff_records(record, _moved(record)), "tiny")
+        assert data == "".join(f"{line}\n" for line in produced).encode("ascii")
 
     def test_an_empty_file_against_no_difference_is_clean(
         self, record: dict[str, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -251,7 +279,7 @@ class TestTheExpectedFile:
     ) -> None:
         _compare_with(monkeypatch, record, copy.deepcopy(record))
         expected = tmp_path / "expected.txt"
-        expected.write_text(f"{line}\n", encoding="ascii")
+        expected.write_bytes(f"{line}\n".encode("ascii"))
         assert _ended(tmp_path, "--expect", str(expected), "--expect-sha256", _sha(expected)) == 2
 
     def test_a_partial_comparison_is_red_whatever_the_file_says(
@@ -380,7 +408,7 @@ class TestTheApproval:
             "hardlink": tmp_path / "hard.txt",
         }[spelling]
         if spelling == "symlink":
-            other.symlink_to(target)
+            _symlink(other, target)
         if spelling == "hardlink":
             os.link(target, other)
         capsys.readouterr()
@@ -491,10 +519,11 @@ class TestTheApproval:
     ) -> None:
         _compare_with(monkeypatch, record, _moved(record))
         link = tmp_path / "into-repo"
-        link.symlink_to(ROOT)
+        if where == "symlink into this tree":
+            _symlink(link, ROOT)
         inside = {
             "this tree": ROOT / "replay-lines.txt",
-            "dot-dot into this tree": tmp_path / os.path.relpath(ROOT, tmp_path) / "x.txt",
+            "dot-dot into this tree": _dot_dot(tmp_path, ROOT) / "x.txt",
             "symlink into this tree": link / "replay-lines.txt",
             "main checkout": _git_common_tree() / "replay-lines.txt",
         }[where]
@@ -511,3 +540,40 @@ class TestTheApproval:
         assert _main(tmp_path, "--expect", str(empty), "--expect-sha256", upper, "--quiet") == 0
         spaced = f" {_sha(empty)} "
         assert _ended(tmp_path, "--expect", str(empty), "--expect-sha256", spaced) == 2
+
+
+class _WindowsPath(PureWindowsPath):
+    """A Windows path already resolved, so the tool's checks read drives and case as Windows
+    does on any platform."""
+
+    def resolve(self, strict: bool = False) -> _WindowsPath:
+        return self
+
+
+def _windows(path: str) -> Path:
+    return cast(Path, _WindowsPath(path))
+
+
+class TestPathsOnTwoDrives:
+    def test_a_run_on_another_drive_than_the_root_is_an_error_not_a_traceback(self) -> None:
+        with pytest.raises(compare.CompareError, match="is not inside the stored runs' root"):
+            run_label(_windows("D:/runs/family-r1/1"), _windows("C:/runs"))
+
+    def test_a_run_is_named_with_slashes_and_a_drive_letter_in_either_case(self) -> None:
+        assert run_label(_windows(r"c:\Runs\family-r1\1"), _windows("C:/runs")) == "family-r1/1"
+
+    def test_a_path_on_another_drive_is_outside_a_stored_run_and_the_repository(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def no_git(*_args: Any) -> bytes:
+            raise compare.CompareError("no git")
+
+        checkout = _windows("C:/checkout")
+        monkeypatch.setattr(compare, "_git", no_git)
+        monkeypatch.setattr(replay_cli, "_ROOT", checkout)
+        elsewhere = _windows("D:/work/lines.txt")
+        replay_cli._outside(elsewhere, [_windows("C:/runs/1")])
+        assert replay_cli._inside_a_repository(elsewhere, checkout) is None
+        assert replay_cli._inside_a_repository(_windows("c:/CHECKOUT/x.txt"), checkout) is not None
+        with pytest.raises(SystemExit):
+            replay_cli._outside(_windows("c:/RUNS/1/x.json"), [_windows("C:/runs/1")])

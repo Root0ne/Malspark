@@ -31,11 +31,13 @@ record shipped with the tool checks clean for its own entries.
 from __future__ import annotations
 
 import json
+import ntpath
 import os
 import shutil
 import subprocess
-from pathlib import Path
-from typing import Any
+from pathlib import Path, PureWindowsPath
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from scripts.audit import publishing_functions as pf
@@ -291,6 +293,13 @@ def test_a_test_id_that_names_no_collected_test_is_refused(tmp_path: Path, node_
     assert not pf.test_exists(tmp_path, node_id)
 
 
+def _symlink(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"this platform refuses to create a symbolic link ({exc.strerror})")
+
+
 def test_a_test_id_outside_the_tests_directory_through_a_symlink_is_refused(
     tmp_path: Path,
 ) -> None:
@@ -298,7 +307,7 @@ def test_a_test_id_outside_the_tests_directory_through_a_symlink_is_refused(
     outside = tmp_path / "elsewhere"
     outside.mkdir()
     (outside / "test_pins.py").write_text(TEST_FILE, encoding="utf-8")
-    (tmp_path / "tests" / "linked").symlink_to(outside)
+    _symlink(tmp_path / "tests" / "linked", outside)
     assert not pf.test_exists(tmp_path, "tests/linked/test_pins.py::test_pin")
 
 
@@ -445,7 +454,7 @@ def test_a_trace_output_inside_any_checkout_of_the_repository_is_refused(
     _git("worktree", "add", "-q", "--detach", str(other), cwd=main)
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "link").symlink_to(main)
+    _symlink(outside / "link", main)
     for target in (
         main / "x.json",
         main / "deeper" / "not" / "yet" / "x.json",
@@ -463,6 +472,26 @@ def test_a_trace_output_inside_any_checkout_of_the_repository_is_refused(
         assert not pf.inside_a_checkout(Path("x.json"), main)
     finally:
         os.chdir(here)
+
+
+class _WindowsPath(PureWindowsPath):
+    """A Windows path already resolved, so the check reads drives and case as Windows does."""
+
+    def resolve(self, strict: bool = False) -> _WindowsPath:
+        return self
+
+
+def test_an_output_on_another_drive_than_every_checkout_is_outside_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _WindowsPath("C:/checkout")
+    monkeypatch.setattr(pf, "os", SimpleNamespace(path=ntpath))
+    monkeypatch.setattr(pf, "Path", _WindowsPath)
+    monkeypatch.setattr(pf, "checkouts", lambda _repo: [repo, _WindowsPath("C:/other")])
+    monkeypatch.setattr(pf, "_common_dir", lambda p: repo / ".git" if p == repo else None)
+    on_d, on_c = _WindowsPath("D:/work/trace.json"), _WindowsPath("c:/OTHER/trace.json")
+    assert not pf.inside_a_checkout(cast(Path, on_d), cast(Path, repo))
+    assert pf.inside_a_checkout(cast(Path, on_c), cast(Path, repo))
 
 
 def test_trace_refuses_an_output_inside_the_repository(
