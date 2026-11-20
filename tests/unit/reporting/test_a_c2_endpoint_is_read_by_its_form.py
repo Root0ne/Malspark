@@ -18,7 +18,8 @@ import pytest
 from malspark.reporting.ledger_projection import path_or_host_form
 from malspark.reporting.renderers.markdown import _endpoint
 
-HOST_MARK = " (not a host outside the analysed network)"
+# The mark names the test that refused the host and what it read.
+HOST_MARK = " (fails the host test: "
 ADDRESS_MARK = " (not an address this run may publish)"
 
 
@@ -110,7 +111,9 @@ def test_a_name_on_the_analysed_machine_prints_as_written_with_no_mark(value: st
         (r"\\?\UNC\evil.com\share\x", r"`\\?\UNC\evil[.]com\share\x`"),
         (
             r"\\fileserver.corp.example\share\a.exe",
-            r"`\\fileserver[.]corp[.]example\share\a.exe`" + HOST_MARK,
+            r"`\\fileserver[.]corp[.]example\share\a.exe`"
+            + HOST_MARK
+            + 'it ends in ".example", a suffix this rule lists as reserved)',
         ),
         (r"\\10.1.2.3\pipe\x", r"`\\10[.]1[.]2[.]3\pipe\x`" + ADDRESS_MARK),
         (
@@ -141,8 +144,12 @@ def test_a_network_path_keeps_its_host_defanged_and_asks_the_mark_of_it(
         (r"http:\\evil.com\gate.php", r"`hxxp:\\evil[.]com\gate.php`"),
         (r"https:/\evil.com/a", r"`hxxps:/\evil[.]com/a`"),
         (r"http:\\10.1.2.3\gate.php", r"`hxxp:\\10[.]1[.]2[.]3\gate.php`" + ADDRESS_MARK),
-        # Its slash twin's host reads as none, as that URL's does.
-        (r"hxxp:\\evil[.]com\a", r"`hxxp:\\evil[.]com\a`" + HOST_MARK),
+        # Its slash twin is a URL the parser cannot read a host from, and the
+        # mark says so rather than that it names no host.
+        (
+            r"hxxp:\\evil[.]com\a",
+            r"`hxxp:\\evil[.]com\a` (the URL parser could not read its host)",
+        ),
     ],
 )
 def test_a_url_written_with_backslashes_prints_as_written_with_its_host_read(
@@ -157,7 +164,13 @@ def test_a_url_written_with_backslashes_prints_as_written_with_its_host_read(
         ("evil.com", "`evil[.]com`"),
         ("10.0.0.5", "`10[.]0[.]0[.]5`" + ADDRESS_MARK),
         ("http://evil.com/gate.php", "`hxxp://evil[.]com/gate.php`"),
-        (r"evil\.com", r"`evil\[.]com`" + HOST_MARK),
+        (
+            r"evil\.com",
+            r"`evil\[.]com`"
+            + HOST_MARK
+            + 'its label "evil{U+005C}" holds "{U+005C}" (U+005C), which is not a letter a-z, a '
+            "digit or a hyphen)",
+        ),
         ("evil.com:8443", "`evil[.]com:8443`"),
     ],
 )

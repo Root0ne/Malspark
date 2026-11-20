@@ -548,6 +548,9 @@ class TestTheReport:
         # The hostile Markdown re-pinned when a tool's section title came to be
         # written by the inline rule (T-735): its "|" gains a backslash, and the
         # HTML read from it did not change; the dump did not move.
+        # The hostile Markdown re-pinned when the mark beside a refused C2
+        # endpoint came to give the host test's own reason (T-782a): that one
+        # cell is the only change, and the dump did not move.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the

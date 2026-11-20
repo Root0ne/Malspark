@@ -56,6 +56,7 @@ from malspark.core.tool_declarations import select
 from malspark.extractors.network_extractor import (
     address_is_publishable,
     corroboration_reason,
+    host_failure,
     host_is_public,
     host_rides_a_url,
     ip_corroboration_reason,
@@ -63,6 +64,7 @@ from malspark.extractors.network_extractor import (
     is_shared_hosting_tenant,
     is_well_known_benign_host,
     url_corroboration_reason,
+    url_failure,
     url_host,
 )
 from malspark.pipeline.events import safe_finding_value
@@ -303,29 +305,44 @@ class Declined(tuple[str, str]):
 def impossible_host_sentence(value: str, whose: str) -> str:
     """The recorded sentence for a URL no host could ever answer for.
 
-    A value with no scheme is not a URL at all, and is said to be that rather
-    than to name a host that could not exist.
+    The reason is the rule's own (:func:`url_failure`), naming the step that
+    refused it. A value with no ``://`` is told how a host is written, whichever
+    reason it is given. Asked about a URL the rule does not refuse, which no
+    caller does, it says what it said before the rule gave reasons.
     """
+    failure = url_failure(value)
     if "://" not in str(value):
-        return (
-            f"the URL indicator for {safe_finding_value(value)!r} is not in the exported bundle: "
-            "it is not a URL — it has no scheme — so there is no host in it to ask about; a "
-            "host is written as domain-name:value. It is unchanged in "
-            f"{whose}."
+        reason = failure or (
+            "it is not a URL — it has no scheme — so there is no host in it to ask about"
         )
+        hint = "; a host is written as domain-name:value"
+    else:
+        reason = failure or (
+            "its host is not a name or address that could exist outside the analysed network"
+        )
+        hint = ""
     return (
-        f"the URL indicator for {safe_finding_value(value)!r} is not in the exported bundle: its "
-        f"host is not a name or address that could exist outside the analysed network. It is "
-        f"unchanged in {whose}."
+        f"the URL indicator for {safe_finding_value(value)!r} is not in the exported bundle: "
+        f"{safe_finding_value(reason, whole=True)}{hint}. It is unchanged in {whose}."
     )
 
 
-def unpublishable_endpoint_sentence(value: str, kind_words: str, whose: str) -> str:
-    """The recorded sentence for an endpoint no export may carry, left where it is."""
+def unpublishable_endpoint_sentence(
+    value: str, kind_words: str, whose: str, *, reason: str = ""
+) -> str:
+    """The recorded sentence for an endpoint no export may carry, left where it is.
+
+    ``reason`` is the host test's (:func:`host_failure`) where that test refused
+    the value; an address the address question refused is said to be that.
+    """
+    why = (
+        f"it fails the host test: {safe_finding_value(reason, whole=True)}"
+        if reason
+        else "it is not a name or address that could exist outside the analysed network"
+    )
     return (
         f"the {kind_words} indicator for {safe_finding_value(value)!r} is not in the exported "
-        f"bundle: it is not a name or address that could exist outside the analysed network. It "
-        f"is unchanged in {whose}."
+        f"bundle: {why}. It is unchanged in {whose}."
     )
 
 
@@ -349,11 +366,13 @@ def shaped_endpoint_sentence(value: str, kind_words: str, operator: str) -> str:
 
 
 def not_an_address_sentence(value: str) -> str:
-    """The recorded sentence for a mailbox that is not one, left where it is."""
+    """The recorded sentence for a mailbox that is not one, left where it is.
+
+    The reason is the test that refused it (:func:`email_failure`).
+    """
     return (
         f"the e-mail indicator for {safe_finding_value(value)!r} is not in the exported bundle: "
-        f"it is not a mailbox — either its syntax is not an address, or its domain part is not a "
-        f"name anything outside the analysed network could answer for. It is unchanged in the "
+        f"{safe_finding_value(email_failure(value), whole=True)}. It is unchanged in the "
         f"judge's own bundle."
     )
 
@@ -552,11 +571,14 @@ def replaced_producer_sentence(obj: Any, named: str) -> str:
 
 
 def unpublishable_domain_sentence(fqdn: str) -> str:
-    """The recorded sentence for a name somebody watched that no export may carry."""
+    """The recorded sentence for a name somebody watched that no export may carry.
+
+    The reason is the host test's (:func:`host_failure`).
+    """
     return (
         f"the domain indicator for {safe_finding_value(fqdn)!r} is not in the exported bundle: it "
-        "is a name that does not resolve outside the analysed network. The report's network block "
-        "keeps the row with the source that saw it."
+        f"fails the host test: {safe_finding_value(host_failure(fqdn), whole=True)}. The report's "
+        "network block keeps the row with the source that saw it."
     )
 
 
@@ -650,7 +672,7 @@ def _endpoint_is_publishable(kind: str, literal: str) -> bool:
     trivially.
     """
     if kind == "url":
-        return host_is_public(url_host(literal))
+        return url_failure(literal) == ""
     if kind == "domain-name":
         return host_is_public(literal)
     if kind == "email-addr":
@@ -672,6 +694,18 @@ def _endpoint_is_publishable(kind: str, literal: str) -> bool:
     # it cites out of the sandbox's own evidence is lateral movement and stays.
     # Loopback, unspecified, documentation, multicast and broadcast never are.
     return address_is_publishable(literal, "judge")
+
+
+def _host_test_reason(kind: str, literal: str) -> str:
+    """The host test's reason where :func:`_endpoint_is_publishable` asks it, else ``""``."""
+    if kind == "domain-name":
+        return host_failure(literal)
+    if kind == _ENDPOINT_KIND:
+        try:
+            ipaddress.ip_address(str(literal).strip().strip("[]"))
+        except ValueError:
+            return host_failure(literal)
+    return ""
 
 
 def _judge_indicator_problem(indicator: Indicator) -> tuple[str, str] | None:
@@ -741,7 +775,12 @@ def pattern_problem(pattern: str) -> tuple[str, str] | None:
             return (code, not_an_address_sentence(literal))
         if kind == "file":
             return (code, not_a_file_sentence(literal))
-        return (code, unpublishable_endpoint_sentence(literal, words, "the judge's own bundle"))
+        return (
+            code,
+            unpublishable_endpoint_sentence(
+                literal, words, "the judge's own bundle", reason=_host_test_reason(kind, literal)
+            ),
+        )
     return None
 
 
@@ -2539,14 +2578,22 @@ def email_is_publishable(value: Any) -> bool:
     rule a domain indicator does, so a mailbox at a name nothing outside the
     analysed network could answer for is refused the way that name would be.
     """
+    return email_failure(value) == ""
+
+
+def email_failure(value: Any) -> str:
+    """Why this literal is no mailbox that could exist, ``""`` when it is one.
+
+    The syntax is asked first, and only a mailbox it passes is asked the host
+    test of its domain part (:func:`host_failure`).
+    """
     text = str(value or "").strip()
     match = _EMAIL_RE.match(text)
-    if match is None:
-        return False
     local = text.rsplit("@", 1)[0]
-    if local.startswith(".") or local.endswith(".") or ".." in local:
-        return False
-    return host_is_public(match.group(1))
+    if match is None or local.startswith(".") or local.endswith(".") or ".." in local:
+        return "it is not a mailbox by its syntax"
+    reason = host_failure(match.group(1))
+    return f"its domain part fails the host test: {reason}" if reason else ""
 
 
 # A label of a name as a program writes one. Host names are written in lower
@@ -5814,7 +5861,7 @@ def _row_description(row: Any, report: Any) -> str | None:
 def _unpublishable_endpoints(report: Any, rows: Sequence[Any]) -> list[Declined]:
     """A decline for each observed URL and name of the network block no row publishes.
 
-    Only one whose host does not resolve outside the analysed network: the
+    Only one whose host fails the host test, with that test's reason: the
     report's network block keeps the row with the source that saw it.
     """
     network = getattr(report, "network", None)
@@ -5829,7 +5876,7 @@ def _unpublishable_endpoints(report: Any, rows: Sequence[Any]) -> list[Declined]
     for url in network.urls:
         if ("url", _value_key("url", url.url)) in published:
             continue
-        if _observed(url.source) and not host_is_public(url_host(url.url)):
+        if _observed(url.source) and url_failure(url.url):
             out.append(
                 Declined(
                     UNPUBLISHABLE_ENDPOINT_CODE,

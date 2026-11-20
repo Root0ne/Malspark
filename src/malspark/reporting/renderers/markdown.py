@@ -5948,7 +5948,7 @@ def _endpoint_with_state(value: str, ctx: _Context) -> str:
 
 
 def _endpoint(value: str) -> str:
-    """One model-written endpoint, defanged, and marked when no host outside could answer.
+    """One model-written endpoint, defanged, and marked with the rule's reason where it refuses it.
 
     Read by its form first (:func:`path_or_host_form`): a name on the analysed
     machine (a device or pipe name, a local file, a registry path) names no
@@ -5959,7 +5959,8 @@ def _endpoint(value: str) -> str:
     """
     from malspark.extractors.network_extractor import (
         address_is_publishable,
-        host_is_public,
+        host_failure,
+        url_failure,
         url_host,
     )
 
@@ -5969,8 +5970,10 @@ def _endpoint(value: str) -> str:
     form = path_or_host_form(text)
     if form.form in NO_HOST_FORMS:
         return _code_span(text)
+    url = ""
     if form.host or form.form == FORM_URL:
         host = form.host
+        url = text.replace("\\", "/") if form.form == FORM_URL else ""
         start, end = form.at
         if form.form == FORM_URL:
             # The scheme renamed and the authority's dots bracketed, as the URL
@@ -5982,7 +5985,7 @@ def _endpoint(value: str) -> str:
         written = _code_span(head + text[end:])
     else:
         if "://" in text:
-            kind, host = "url", url_host(text)
+            kind, host, url = "url", url_host(text), text
         elif _is_address(text):
             kind, host = "ip", text
         else:
@@ -5994,9 +5997,14 @@ def _endpoint(value: str) -> str:
         if not address_is_publishable(host, ""):
             return f"{written} (not an address this run may publish)"
         return written
-    return (
-        written if host_is_public(host) else f"{written} (not a host outside the analysed network)"
-    )
+    # The rule's own reason, the URL's where a URL was read: the parser's, a
+    # missing host's or its host's, and the host test's for a host.
+    # Written into a table cell, whose row escapes the separator (:func:`_row`).
+    failure = url_failure(url) if url else host_failure(host)
+    if not failure:
+        return written
+    mark = failure if url else f"fails the host test: {failure}"
+    return f"{written} ({_inline_safe(mark, pipes=False)})"
 
 
 # What the purpose cell says when the report model gave none. A dash read as a

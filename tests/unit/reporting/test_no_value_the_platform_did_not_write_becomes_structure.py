@@ -587,6 +587,40 @@ def test_an_observed_endpoint_quoted_by_a_finding_is_shown_whole() -> None:
     _shown_whole(held, report("http://intranet.local/abc"), said, ("bundle", "full"))
 
 
+@pytest.mark.parametrize(
+    "mailbox",
+    [
+        # Two mailboxes the syntax refuses (a ";" and a space are outside it) and
+        # one it passes at a host the host test refuses: each decline quotes the
+        # value whole.
+        "`x`|*y*_z_~~s~~&lt;{U+0041}@LOCALHOST",
+        "a`b@x.Corp",
+        "<b>y</b> [l](#t) | # h `c`@x.com",
+    ],
+)
+def test_a_judge_mailbox_quoted_by_its_decline_is_shown_whole(mailbox: str) -> None:
+    # The export's decline of the judge's e-mail object quotes the mailbox and
+    # the host test's reason: the finding's message is written whole as text.
+    from malspark.pipeline.nodes import _note_export_findings
+    from malspark.reporting.renderers.stix_renderer import Declined, pattern_problem
+
+    def report(value: str) -> MalwareReport:
+        problem = pattern_problem(f"[email-addr:value = '{value}']")
+        assert problem is not None
+        made = MalwareReport(
+            identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)), verdict="Malware"
+        )
+        _note_export_findings(made, [Declined(*problem, by="judge")])
+        return made
+
+    held = report(mailbox)
+    (row,) = held.run_summary["validation"]["unresolved"]
+    assert row["agent"] == "judge"
+    assert "e-mail indicator" in row["message"]
+    said = _defanged_lines(row["message"])
+    _shown_whole(held, report("abc@localhost"), said, ("bundle", "full"))
+
+
 def _defanged_lines(text: str) -> str:
     """``text`` as a reader is shown it: defanged, on one line."""
     return _context().plain(_one_line(text))

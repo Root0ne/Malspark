@@ -161,7 +161,11 @@ class TestTheExportRefusesItAndSaysSo:
         rows = dict(renderer.declined)
         assert UNPUBLISHABLE_ENDPOINT_CODE in rows
         assert INTERNAL in rows[UNPUBLISHABLE_ENDPOINT_CODE]
-        assert "does not resolve outside the analysed network" in rows[UNPUBLISHABLE_ENDPOINT_CODE]
+        # The reason names the test that refused the name and what it read.
+        assert (
+            'it fails the host test: it ends in ".internal", a suffix this rule lists as not public'
+            in rows[UNPUBLISHABLE_ENDPOINT_CODE]
+        )
 
     def test_the_url_on_the_same_host_is_recorded_as_it_was(self) -> None:
         renderer = ExtendedSTIXRenderer()

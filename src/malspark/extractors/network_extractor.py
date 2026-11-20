@@ -210,7 +210,8 @@ _RESERVED_DOMAIN_SUFFIXES: tuple[str, ...] = (
     ".arpa",
 )
 
-# The suffixes a private network names its own machines with. Publishing one is
+# The suffixes no public DNS answers under: the ones a private network names its
+# own machines with, and one for names outside the DNS. Publishing one is
 # a low-value indicator in a shared bundle and a small disclosure of how the
 # analysis network is named, so no export carries one — but that is an export
 # decision and not a projection one. A sandbox that resolved
@@ -220,10 +221,11 @@ _RESERVED_DOMAIN_SUFFIXES: tuple[str, ...] = (
 # is the one reader of these, and it is asked where an indicator is minted and
 # where a name is about to be sent to a reputation provider.
 #
-# ``.internal``, ``.alt`` and ``.home.arpa`` are reserved for the purpose. The
-# rest are not reserved by anybody and are used for it anyway, and none of the
-# four has ever been delegated, so a name under one cannot be looked up from
-# outside the network that invented it.
+# ``.internal`` and ``.home.arpa`` are reserved for private networks' own names,
+# and ``.alt`` for names that are not DNS names at all (RFC 9476), so none of the
+# three is ever looked up in the DNS. The rest are not reserved by anybody and are
+# used for private names anyway, and none of the four has ever been delegated, so
+# a name under one cannot be looked up from outside the network that invented it.
 _PRIVATE_USE_SUFFIXES: tuple[str, ...] = (
     ".internal",
     ".alt",
@@ -771,32 +773,58 @@ def tor_hidden_service(fqdn: Any) -> bool:
     bytes have to check out against the first thirty-two, which is what makes
     the name impossible to produce by accident.
     """
+    name = str(fqdn or "").strip().lower().rstrip(".")
+    return name.endswith(_TOR_SUFFIX) and not _onion_failure(name)
+
+
+def _onion_failure(name: str, written_name: str | None = None) -> str:
+    """Why a name ending in ``.onion`` is no hidden-service address, ``""`` when it is one.
+
+    One reason per test, in the order :func:`tor_hidden_service` asks them.
+    ``written_name`` is the name as it was written, whose label at the same
+    place is quoted with how it was read (:func:`host_failure`).
+    """
     import base64
     import hashlib
 
-    name = str(fqdn or "").strip().lower().rstrip(".")
-    if not name.endswith(_TOR_SUFFIX):
-        return False
     label = name[: -len(_TOR_SUFFIX)].rsplit(".", 1)[-1]
-    if not label or set(label) - _TOR_ALPHABET:
-        return False
+    if not label:
+        return 'its label before ".onion" is empty'
+    given = _written_labels(name.split("."), written_name)[-2]
+    written = _quoted_as_read(label, given)
+    stray = _refused_character(label, given, _TOR_ALPHABET)
+    if stray:
+        return (
+            f"its .onion label {written} holds {quoted_host_text(stray)} ({code_point(stray)}), "
+            "which is not in the base32 alphabet a-z, 2-7"
+        )
     if len(label) == _TOR_V2_LENGTH:
-        return True
+        return ""
     if len(label) != _TOR_V3_LENGTH:
-        return False
+        return (
+            f"its .onion label {written} is {len(label)} characters long, and this rule "
+            f"accepts {_TOR_V2_LENGTH} or {_TOR_V3_LENGTH}"
+        )
     try:
         # Fifty-six base32 characters are exactly thirty-five bytes, so the
         # encoding needs no padding and adding any would corrupt it.
         decoded = base64.b32decode(label.upper())
     except Exception:  # noqa: BLE001 — a name that will not decode is not one
-        return False
-    if len(decoded) != 35 or decoded[34] != _TOR_V3_VERSION:
-        return False
+        decoded = b""
+    if len(decoded) != 35:
+        return f"its .onion label {written} does not decode as base32"
+    if decoded[34] != _TOR_V3_VERSION:
+        return (
+            f"its .onion label {written} carries version {decoded[34]}, and this rule "
+            f"accepts {_TOR_V3_VERSION}"
+        )
     public_key, checksum = decoded[:32], decoded[32:34]
     expected = hashlib.sha3_256(
         _TOR_CHECKSUM_SALT + public_key + bytes([_TOR_V3_VERSION])
     ).digest()[:2]
-    return checksum == expected
+    if checksum == expected:
+        return ""
+    return f"its .onion label {written} fails the hidden-service checksum"
 
 
 def corroboration_reason(source: Any, reputation: Any, fqdn: Any = "") -> str | None:
@@ -867,6 +895,7 @@ def host_form(value: Any) -> str:
 # hyphen, at most sixty-three characters. The internet's own rule, which is the
 # only rule that can be applied to a name nobody has tried to resolve.
 _LABEL_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+_LABEL_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-")
 
 # The last label of a name that could exist: two or more letters, or a
 # punycode label. Deliberately a shape and not a list — a 136-entry list of
@@ -895,27 +924,300 @@ def host_is_public(host: Any) -> bool:
     ``.onion`` never resolves, its own checksum is the only thing that can
     confirm it, and holding it to any other rule makes the strongest
     string-derived indicator there is unpublishable by every path.
+
+    The answer is :func:`host_failure`'s, so the reason a refused host is
+    given and the decision are one reading.
     """
-    name = str(host or "").strip().lower().rstrip(".")
+    return host_failure(host) == ""
+
+
+# How a value is quoted inside a reason the rule gives. Each character prints as
+# itself except those written out as ``{U+XXXX}``: every one that is not
+# printable, whitespace, a combining mark, the quote, the backslash, ``;``, the
+# backtick, ``…`` and the two braces. The braces are written out so that a ``{``
+# in a quoted span always opens an escape and its ``}`` always closes it: two
+# values never print as one span, and an escape never runs into the digits after
+# it. A span stops before the character that would take it past forty written
+# characters, and the ``…`` after it is the writer's own (a value's is written out).
+_QUOTE_WRITTEN_OUT = frozenset('"\\;`…{}')
+_QUOTE_LIMIT = 40
+
+
+def code_point(ch: str) -> str:
+    """One character's code point, as ``U+0430``."""
+    return f"U+{ord(ch):04X}"
+
+
+def _quoted_char(ch: str) -> str:
+    if (
+        ch in _QUOTE_WRITTEN_OUT
+        or ch.isspace()
+        or not ch.isprintable()
+        or unicodedata.category(ch).startswith("M")
+    ):
+        return "{" + code_point(ch) + "}"
+    return ch
+
+
+def quoted_host_text(span: str) -> str:
+    """``span`` quoted as a reason of the host rule prints it (the table above)."""
+    out: list[str] = []
+    size = 0
+    for ch in str(span):
+        written = _quoted_char(ch)
+        if size + len(written) > _QUOTE_LIMIT:
+            out.append("…")
+            break
+        out.append(written)
+        size += len(written)
+    return '"' + "".join(out) + '"'
+
+
+# The characters the URL parser removes wherever they stand in a URL, and those
+# it strips from the front of one (the C0 controls and the space).
+_URL_REMOVED = "\t\r\n"
+_URL_STRIPPED = "".join(chr(code) for code in range(0x21))
+
+
+def _lowered(written: str, read: str) -> bool:
+    """Whether ``read`` is ``written`` in lower case, a final sigma lowered by its place."""
+    return written.lower() == read or written.casefold() == read.casefold()
+
+
+def _read_note(written: str | None, read: str) -> str:
+    """What the host test read differently from what was written, as `` (read …)``.
+
+    ``""`` where the two are one text or nothing written is known. ``read`` is
+    ``written`` as the test reads it, so the note is named by what changed:
+    the case folded, a tab or line break the URL parser removed.
+    """
+    if written is None or written == read:
+        return ""
+    if _lowered(written, read):
+        return " (read in lower case)"
+    cleaned = "".join(ch for ch in written if ch not in _URL_REMOVED)
+    changes = ["in lower case"] if cleaned != read else []
+    removed = sorted({ch for ch in written if ch in _URL_REMOVED})
+    changes.append("with " + " and ".join(code_point(ch) for ch in removed) + " removed")
+    return f" (read {', '.join(changes)})"
+
+
+def _quoted_as_read(read: str, written: str | None) -> str:
+    return quoted_host_text(read) + _read_note(written, read)
+
+
+def _written_labels(labels: list[str], written: str | None) -> list[str | None]:
+    """The written name's labels at the places of ``labels``; ``None`` each where none is known."""
+    parts: list[str | None] = list(written.split(".")) if written is not None else []
+    return parts if len(parts) == len(labels) else [None] * len(labels)
+
+
+def _refused_character(read: str, written: str | None, allowed: frozenset[str]) -> str:
+    """The first character of ``read`` outside ``allowed``, named as the value writes it.
+
+    The written character whose reading holds it: a capital the test read in
+    lower case is named as written, and a character the URL parser removed is
+    passed over. ``""`` where every character is allowed.
+    """
+    stray = next((ch for ch in read if ch not in allowed), "")
+    if not stray or written is None:
+        return stray
+    passed = set(_URL_REMOVED) - set(read)
+    return next(
+        (
+            ch
+            for ch in written
+            if ch not in passed and any(one not in allowed for one in ch.lower())
+        ),
+        stray,
+    )
+
+
+def host_failure(host: Any, given: Any = None) -> str:
+    """Why ``host`` is no name or address that could exist on the internet, ``""`` when it is one.
+
+    The tests :func:`host_is_public` answers by, in the order they run, each
+    with its own reason naming the test and what it read. ``given`` is the
+    host as a URL writes it, when the caller read ``host`` out of a URL (the
+    parser lowers its host and removes a tab or a line break wherever it
+    stands); without it ``host`` is its own written form. A quoted span is the
+    written text at the place of what the test read, and one that is not that
+    text verbatim says how it was read.
+    """
+    text = str(host or "")
+    removed = "" if given is None else _URL_REMOVED
+    written_name = str(text if given is None else given).strip().rstrip("." + removed)
+    name = text.strip().lower().rstrip(".")
     if not name:
-        return False
+        return "it names no host"
     if name.endswith(_TOR_SUFFIX):
         # The suffix is reserved for hidden services and nothing else can ever
         # answer under it, so the checksum is the whole question: a valid
         # address is a host, and a name that merely ends in ``.onion`` is not.
-        return tor_hidden_service(name)
+        return _onion_failure(name, written_name)
     try:
         address = ipaddress.ip_address(name.strip("[]"))
     except ValueError:
         pass
     else:
-        return not (address.is_loopback or address.is_unspecified or address.is_link_local)
-    if not _is_emittable_domain(name) or host_is_private_use(name):
-        return False
+        read = _quoted_as_read(name.strip("[]"), written_name.strip("[]"))
+        if address.is_loopback:
+            return f"{read} is a loopback address"
+        if address.is_unspecified:
+            return f"{read} is the unspecified address"
+        if address.is_link_local:
+            return f"{read} is a link-local address"
+        return ""
+    if not _is_emittable_domain(name):
+        return _reserved_failure(name, written_name, removed)
+    if host_is_private_use(name):
+        return _private_use_failure(name, written_name, removed)
     labels = name.split(".")
-    if not all(_LABEL_RE.match(label) for label in labels):
-        return False
-    return bool(_PUBLIC_SUFFIX_RE.match(labels[-1]))
+    written_labels = _written_labels(labels, written_name)
+    for label, written in zip(labels, written_labels, strict=True):
+        if not _LABEL_RE.match(label):
+            return _label_failure(label, written)
+    if not _PUBLIC_SUFFIX_RE.match(labels[-1]):
+        return (
+            f"its last label {_quoted_as_read(labels[-1], written_labels[-1])} is neither "
+            "two or more letters a-z nor an xn-- label"
+        )
+    return ""
+
+
+def _quoted_suffix(suffix: str, name: str, written: str) -> str:
+    """A listed suffix ``name`` ends in, quoted by what the written name holds at its place."""
+    places = _written_labels(name.split("."), written)[len(name.split(".")) - suffix.count(".") :]
+    given = None if None in places else "." + ".".join(str(part) for part in places)
+    return _quoted_as_read(suffix, given)
+
+
+def _reserved_failure(name: str, written: str, removed: str = "") -> str:
+    """The reason :func:`_is_emittable_domain` refuses ``name`` by, read as it reads it.
+
+    ``removed`` holds the characters the reader of ``written`` removed (:func:`host_failure`).
+    """
+    lower = name.lower().strip().rstrip(".")
+    shown = written.strip().rstrip("." + removed)
+    if not lower:
+        return "it names no host"
+    if "." not in lower:
+        return f"{_quoted_as_read(lower, shown)} is a single label"
+    if lower in _RESERVED_DOMAIN_NAMES:
+        return f"{_quoted_as_read(lower, shown)} is a name this rule lists as reserved"
+    suffix = next((s for s in _RESERVED_DOMAIN_SUFFIXES if lower.endswith(s)), "")
+    return (
+        f"it ends in {_quoted_suffix(suffix, lower, shown)}, a suffix this rule lists as reserved"
+    )
+
+
+def _private_use_failure(name: str, written: str, removed: str = "") -> str:
+    """The reason :func:`host_is_private_use` refuses ``name`` by, read as it reads it.
+
+    ``removed`` holds the characters the reader of ``written`` removed (:func:`host_failure`).
+    """
+    lower = name.strip().rstrip(".").lower()
+    shown = written.strip().rstrip("." + removed)
+    if lower in _RESERVED_DOMAIN_NAMES:
+        return f"{_quoted_as_read(lower, shown)} is a name this rule lists as reserved"
+    suffix = next(
+        (s for s in _RESERVED_DOMAIN_SUFFIXES + _PRIVATE_USE_SUFFIXES if lower.endswith(s)), ""
+    )
+    listed = "reserved" if suffix in _RESERVED_DOMAIN_SUFFIXES else "not public"
+    return (
+        f"it ends in {_quoted_suffix(suffix, lower, shown)}, a suffix this rule lists as {listed}"
+    )
+
+
+def _label_failure(label: str, written: str | None) -> str:
+    """The reason ``_LABEL_RE`` refuses ``label`` by: exactly one of its four failures."""
+    if not label:
+        return "it has an empty label"
+    shown = _quoted_as_read(label, written)
+    stray = _refused_character(label, written, _LABEL_CHARACTERS)
+    if stray:
+        return (
+            f"its label {shown} holds {quoted_host_text(stray)} ({code_point(stray)}), which is "
+            "not a letter a-z, a digit or a hyphen"
+        )
+    if len(label) > 63:
+        return f"its label {shown} is {len(label)} characters long, more than 63"
+    return f"its label {shown} starts or ends with a hyphen"
+
+
+def _written_url_host(text: str) -> str | None:
+    """The host of a URL as its text writes it, found where the URL parser finds it.
+
+    The parser strips the C0 controls and spaces from the front, removes every
+    tab and line break, takes a scheme (a letter, then letters, digits, ``+``,
+    ``-`` or ``.``) before the first ``:``, and reads an authority only where
+    ``//`` follows: up to the first ``/``, ``?`` or ``#``, after its last ``@``,
+    inside brackets or before a ``:``. Read the same way here, by position, so
+    a ``://`` later in the value is never taken for the host's; the span keeps
+    a tab or line break that stands inside the host. ``None`` for no host.
+    """
+    from urllib.parse import scheme_chars
+
+    first = len(text) - len(text.lstrip(_URL_STRIPPED))
+    at = [i for i in range(first, len(text)) if text[i] not in _URL_REMOVED]
+    seen = "".join(text[i] for i in at)
+    begin = 0
+    colon = seen.find(":")
+    if (
+        colon > 0
+        and seen[0].isascii()
+        and seen[0].isalpha()
+        and all(ch in scheme_chars for ch in seen[:colon])
+    ):
+        begin = colon + 1
+    if seen[begin : begin + 2] != "//":
+        return None
+    begin += 2
+    end = next((i for i in range(begin, len(seen)) if seen[i] in "/?#"), len(seen))
+    begin = max(begin, seen.rfind("@", begin, end) + 1)
+    bracket = seen.find("[", begin, end)
+    if bracket >= 0:
+        begin = bracket + 1
+        close = seen.find("]", begin, end)
+        stop = close if close >= 0 else end
+    else:
+        stop = seen.find(":", begin, end)
+        stop = stop if stop >= 0 else end
+    if stop <= begin:
+        return None
+    return text[at[begin] : at[stop - 1] + 1]
+
+
+def url_failure(raw_url: Any) -> str:
+    """Why this URL names no host that could exist, ``""`` when it names one.
+
+    The question :func:`url_host` and :func:`host_is_public` answer together,
+    with the reason of whichever step refused it: the parser, a value with no
+    ``://`` and no host read from it, an empty host, or the host test. The
+    host is quoted as the URL writes it where that text, read the parser's
+    way, is the host the test read (:func:`_written_url_host`).
+    """
+    from urllib.parse import urlparse
+
+    text = str(raw_url or "")
+    try:
+        parsed = urlparse(text)
+        host = (parsed.hostname or "").strip().lower().rstrip(".")
+    except (ValueError, TypeError):
+        return "the URL parser could not read its host"
+    if host:
+        given = _written_url_host(text)
+        if given is not None:
+            given = given.strip().rstrip("." + _URL_REMOVED)
+            if "".join(ch for ch in given if ch not in _URL_REMOVED).lower() != host:
+                given = None
+        reason = host_failure(host, given)
+        return f"its host fails the host test: {reason}" if reason else ""
+    if "://" not in text:
+        if not parsed.scheme:
+            return "it is not a URL — it has no scheme — so there is no host in it to ask about"
+        return 'it holds no "://", so there is no host in it to ask about'
+    return "the URL parser read no host from it"
 
 
 def url_corroboration_reason(raw_url: Any, source: Any, reputation: Any = None) -> str | None:
