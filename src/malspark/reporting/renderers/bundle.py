@@ -21,12 +21,13 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from malspark.reporting.models import MalwareReport
 from malspark.reporting.renderers.analyst import CitationNote, bundle_anchor, unique_anchor
-from malspark.reporting.renderers.layout import ANALYST, BUNDLE
+from malspark.reporting.renderers.layout import ANALYST, BUNDLE, BUNDLE_HTML
 from malspark.reporting.renderers.markdown import (
     _PIPE,
     MEASURED,
@@ -36,6 +37,7 @@ from malspark.reporting.renderers.markdown import (
     report_title,
     stored_report_id,
 )
+from malspark.schemas.evidence import ENTRY_ID_RE
 
 if TYPE_CHECKING:
     from malspark.reporting.renderers.markdown import MarkdownRenderer, _Context
@@ -71,41 +73,96 @@ def bundle_sections(
     ctx: _Context,
     sections: list[str],
     notes: list[CitationNote],
+    cited: set[int] | None = None,
 ) -> list[str]:
-    """The single-file report's sections under the bundle's title, then the notes."""
+    """The single-file report's sections under the bundle's title, then the notes.
+
+    ``cited`` holds the numbers of the notes the analyst report prints a marker for; only
+    those are listed, the others counted (every note, where it is ``None``)."""
     title, _, rest = sections[0].partition("\n") if sections else ("", "", "")
     heading = "# Evidence bundle: " + title.removeprefix("# ").strip()
+    shown = [note for note in notes if cited is None or note.number in cited]
+    unheld = _unindexed(report, shown)
     intro = (
         "_The record behind the analyst report of the same name: every section the "
-        "single-file report prints, as it prints it, and the notes the analyst report cites, "
-        "each linked to the evidence entries it rests on._"
+        "single-file report prints, as it prints it, and a list of the notes the analyst "
+        "report cites (Appendix E), "
+        + (
+            "each linked to the evidence entries it rests on._"
+            if not unheld
+            else "each with the evidence entries it rests on; Appendix E names each cited id "
+            "the evidence index does not hold._"
+        )
     )
     out = ["\n".join([heading, "", intro, rest]), *sections[1:]]
-    out.append(renderer._safe_section("bundle_notes", lambda: _notes_section(report, notes)))
+    out.append(
+        renderer._safe_section(
+            "bundle_notes", lambda: _notes_section(report, shown, len(notes) - len(shown))
+        )
+    )
     return out
 
 
-def _notes_section(report: MalwareReport, notes: list[CitationNote]) -> str:
-    """Each note with its ids linked to the index; an id the index does not hold, said so."""
+# What may stand between the ids one item of a note joins ("ev_0142; ev_0212", "ev_0142 and
+# ev_0212"), once the ids are taken out.
+_ID_SEPARATORS = re.compile(r"(?:[\s,;]" + _PIPE + r"\band\b)*", re.IGNORECASE)
+
+
+def note_ids(note: CitationNote) -> list[str]:
+    """The evidence ids a note rests on, each once, as the citation reader reads them
+    (``ENTRY_ID_RE``, in the spelling the counter issues): every id it finds in an item, and the
+    item itself as written where it holds anything beyond ids and separators, so no id is lost
+    and none is made up."""
+    out: list[str] = []
+    for item in note.evidence_ids:
+        text = str(item).strip()
+        parts = [found.lower() for found in ENTRY_ID_RE.findall(text)]
+        if not parts or not _ID_SEPARATORS.fullmatch(ENTRY_ID_RE.sub("", text)):
+            parts.append(text)
+        out.extend(part for part in parts if part and part not in out)
+    return out
+
+
+def _unindexed(report: MalwareReport, notes: list[CitationNote]) -> list[str]:
+    """The ids the notes rest on that no entry of the evidence index carries, each once."""
+    indexed = {row.id for row in report.evidence_index}
+    return list(dict.fromkeys(i for note in notes for i in note_ids(note) if i not in indexed))
+
+
+def _notes_section(report: MalwareReport, notes: list[CitationNote], uncited: int = 0) -> str:
+    """Each note with its ids linked to the index; an id the index does not hold, said so;
+    the notes numbered for a passage the analyst report does not print, counted."""
     lines = [_appendix_heading("E", NOTES_TITLE, MEASURED), ""]
+    left = (
+        f"{uncited} further note{' was' if uncited == 1 else 's were'} numbered for a passage "
+        "the analyst report does not print; no marker cites "
+        f"{'it' if uncited == 1 else 'them'}, and {'it is' if uncited == 1 else 'they are'} "
+        "not listed."
+    )
     if not notes:
         lines.append("The analyst report cites no evidence entry.")
+        if uncited:
+            lines.extend(["", left])
         return "\n".join(lines)
     indexed = {row.id for row in report.evidence_index}
+    missing = _unindexed(report, notes)
     lines.append(
-        "_Each numbered note of the analyst report, the section it stands in, and the "
-        "evidence entries it rests on, each linked to its row in Appendix A._"
+        "_Each note the analyst report cites, the section it stands in, and the "
+        + (
+            "evidence entries it rests on, each linked to its row in Appendix A._"
+            if not missing
+            else "evidence entries it rests on, each the evidence index holds linked to its row "
+            "in Appendix A._"
+        )
     )
     lines.append("")
-    missing: list[str] = []
     for note in notes:
         # An id no entry carries is the cited text as written, by the inline rule.
-        ids = ", ".join(
-            f"[{i}](#{i})" if i in indexed else _inline_safe(i) for i in note.evidence_ids
-        )
-        missing.extend(i for i in note.evidence_ids if i not in indexed and i not in missing)
+        ids = ", ".join(f"[{i}](#{i})" if i in indexed else _inline_safe(i) for i in note_ids(note))
         section = SECTION_TITLES.get(note.section, note.section)
         lines.append(_item(f"**Note {note.number}** ({section}): {ids}"))
+    if uncited:
+        lines.extend(["", left])
     if missing:
         lines.extend(
             ["", "Cited by the analyst report and not in this report's evidence index:", ""]
@@ -148,7 +205,7 @@ def bundle_json(report: MalwareReport) -> str:
                 "number": note.number,
                 "anchor": f"cite-{note.number}",
                 "section": SECTION_TITLES.get(note.section, note.section),
-                "evidence_ids": list(note.evidence_ids),
+                "evidence_ids": note_ids(note),
             }
             for note in notes
         ],
@@ -183,6 +240,22 @@ def render_products(report: MalwareReport) -> Products:
     )
 
 
-def note_numbers(text: str) -> list[int]:
-    """The note numbers a rendered analyst report links to, in order."""
-    return [int(n) for n in re.findall(r"#cite-(\d+)", text)]
+# A note marker the analyst report writes (``CitationNotes.marker``, ``.linked``): its number
+# or an id, linked to the note in the bundle, set aside whole under its own token.
+_NOTE_MARKER = re.compile(
+    r"\[(?:\[\d+\]"
+    + _PIPE
+    + r"(?:"
+    + ENTRY_ID_RE.pattern
+    + r"))\]\("
+    + re.escape(BUNDLE_HTML)
+    + r"#cite-(\d+)\)",
+    re.IGNORECASE,
+)
+
+
+def marker_numbers(kept: Iterable[str]) -> list[int]:
+    """The note numbers cited by the texts a render set aside (``_Context.kept_in``) that are
+    each a whole note marker, in order: a marker is read only as the platform writes it, never
+    from text a model wrote (a draft rule's body is set aside too, and is never one)."""
+    return [int(found.group(1)) for text in kept if (found := _NOTE_MARKER.fullmatch(text))]

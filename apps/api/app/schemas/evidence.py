@@ -162,8 +162,14 @@ class CallMapFunction(BaseModel):
 
     ``address`` and ``offset`` are hex; ``offset`` is ``None`` without one image
     base, and ``address`` ``None`` for a function listed under a name alone.
-    ``read`` says whether an entry holds its listing (``listed_in``) or a call
-    only names it; ``read_by`` are the agents whose calls listed it.
+    ``listed_in`` are the entries a call listed it in, whatever the ledger keeps
+    of them now; ``read`` says whether a model was shown some of its listing
+    (an entry keeps text of it, or was blanked after its model read it), and
+    ``read_by`` are the agents of the entries it was. ``notes`` say, entry by
+    entry, a listing kept other than whole (in part, at no character, with no
+    recorded extent, or not in the ledger's text, with the store's copy where
+    one is held) and an answer that also reads as a failure; left out where
+    every listing is kept whole.
     """
 
     address: str | None
@@ -174,6 +180,7 @@ class CallMapFunction(BaseModel):
     read_by: list[str] = Field(default_factory=list)
     calls: list[str] = Field(default_factory=list)
     called_by: list[str] = Field(default_factory=list)
+    notes: list[str] | None = Field(default=None, exclude_if=_absent)
 
 
 class CallMapResponse(BaseModel):

@@ -120,17 +120,27 @@ export default function ReputationSection({
       <div className="p-4 space-y-3">
         {engines !== null ? (
           <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-            <div>
-              <div className="text-xs text-text-muted">
-                Detections
+            {reputation.counts ? (
+              // A record's counts, each under its own name, never a fraction.
+              <div>
+                <div className="text-xs text-text-muted">
+                  Counts in the lookup&apos;s record
+                </div>
+                <div className={`font-mono text-sm ${detectionClass}`}>{reputation.counts}</div>
               </div>
-              <div className={`font-mono ${figure.known ? "text-2xl" : "text-sm"} ${detectionClass}`}>
-                {figure.count}
-                <span className="text-sm text-text-muted">
-                  {figure.known ? `/${engines}` : ` of ${engines} engines`}
-                </span>
+            ) : (
+              <div>
+                <div className="text-xs text-text-muted">
+                  Detections
+                </div>
+                <div className={`font-mono ${figure.known ? "text-2xl" : "text-sm"} ${detectionClass}`}>
+                  {figure.count}
+                  <span className="text-sm text-text-muted">
+                    {figure.known ? `/${engines}` : ` of ${engines} engines`}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
             {suspicious !== null && suspicious > 0 && (
               <div>
                 <div className="text-xs text-text-muted">

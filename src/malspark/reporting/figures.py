@@ -350,6 +350,62 @@ def _published_values(report: MalwareReport) -> set[tuple[str, str]]:
         return set()
 
 
+def _form_values(report: MalwareReport) -> set[tuple[str, str]]:
+    """The IOC table's rows read from the file's strings that print their form.
+
+    As ``(kind, key)`` (``reporting.string_row_form``); none where the table
+    cannot be read, and every name is then drawn as the network block holds it.
+    """
+    from malspark.reporting.builder import ioc_table
+    from malspark.reporting.string_row_form import string_row_forms
+
+    try:
+        return set(string_row_forms(report, ioc_table(report)))
+    except Exception as exc:  # noqa: BLE001 — a figure is never worth a report
+        logger.warning("The strings rows' forms were not read (%s).", type(exc).__name__)
+        return set()
+
+
+def _endpoints_left_out(total: int, shown: int, formed: int) -> str:
+    """The legend's sentences for the endpoints and the strings values it did not draw.
+
+    ``formed`` counts the values of ``_form_values`` apart from the ``total``
+    endpoints, so the numbers printed add up to what the JSON report holds. The
+    readers are named as the rule checks them (``reporting.string_row_form``),
+    the URL reader as the host the platform reads from a URL. ``""`` where
+    nothing is left out.
+    """
+    if formed <= 0:
+        return _figure_left_out(total, shown, "endpoints")
+    rest = int(total) - int(shown)
+    endpoints = "endpoint" if int(total) == 1 else "endpoints"
+    said = ""
+    if rest > 0:
+        said = (
+            f" {rest:,} more " + ("endpoint is" if rest == 1 else "endpoints are") + " not drawn."
+        )
+    if formed == 1:
+        values = "value"
+        why = (
+            "1 value read from the file's strings is not drawn: it is not published, it is "
+            "neither a domain row of another source nor a domain the judge named, it is not the "
+            "host the platform reads from a URL of this run, and it was not recovered with a "
+            "spelling that reads as a host."
+        )
+    else:
+        values = "values"
+        why = (
+            f"{formed:,} values read from the file's strings are not drawn: none is published, "
+            "none is a domain row of another source or a domain the judge named, none is the "
+            "host the platform reads from a URL of this run, and none was recovered with a "
+            "spelling that reads as a host."
+        )
+    return (
+        f"{said} {why} The JSON report holds {'all' if rest > 0 else 'the'} {int(total):,} "
+        f"{endpoints} and the {formed:,} {values}."
+    )
+
+
 def _source_word(source: str | None, capture_only: bool = False) -> str:
     """Where a network row's value was read from, in the words its box prints.
 
@@ -385,9 +441,16 @@ def build_network_graph(report: MalwareReport) -> Figure | None:
     if not net or not (net.domains or net.ips):
         return None
     held = _published_values(report)
+    forms = _form_values(report) if any(d.source == "strings" for d in net.domains) else set()
     # ``(label, red, source word, the sample's processes reached it)``.
     every: list[tuple[str, bool, str, bool]] = []
+    # A value read from the file's strings that no reader the rule checks
+    # holds as a host is no endpoint: it is counted in the legend, never drawn.
+    formed = 0
     for d in net.domains:
+        if d.source == "strings" and ("domain", value_key("domain", d.fqdn)) in forms:
+            formed += 1
+            continue
         flagged = bool(getattr(d, "is_suspicious", False)) or (
             ("domain", value_key("domain", d.fqdn)) in held
         )
@@ -453,7 +516,7 @@ def build_network_graph(report: MalwareReport) -> Figure | None:
         legend="Red border = flagged suspicious or published. Each box names where its value "
         "was read from. A label ending in … is cut to fit."
         + joined
-        + _figure_left_out(len(every), len(endpoints), "endpoints"),
+        + _endpoints_left_out(len(every), len(endpoints), formed),
     )
 
 

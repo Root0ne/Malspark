@@ -294,12 +294,19 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # corroboration table came to be written as text (T-735): each character Markdown
 # reads in the reason gains a backslash in that table, the only change, and the
 # HTML did not change.
+# The Markdown and HTML re-pinned for the rules of T-780 and T-811, and haiku4's also for T-781: a
+# platform sentence about every row it speaks of is a count of those rows where they hold an
+# exception, and each cut a page makes to a technique's reason is counted in a line under the
+# ATT&CK section, with where each reason stands whole (T-780); the context cell of a sandbox
+# address the publish rule places in no tree states the sentence of the row's own publish answer
+# (T-811); the reputation header cell names each count the lookup's record holds and states no
+# fraction (T-781). Those are the only changes.
 STORED_RENDERS = {
-    "run7": ("e7ad1248bae77340", "7c27693f82b034f8"),
-    "run5": ("1420ab7b523a91ac", "d2bafe2177886290"),
-    "run4": ("e5ffe74339534ae2", "798ce36070468515"),
-    "local8": ("85f44b070da2bb25", "a6ba8a2626516ed8"),
-    "haiku4": ("686fb956d5f25ddc", "017e09781de38859"),
+    "run7": ("21eba17850b8a933", "3d218ceb646bafbe"),
+    "run5": ("996b7821dc72c2a4", "622734e18cd2d733"),
+    "run4": ("64a1ebdddbc77ec1", "9ac5b154dffb12e8"),
+    "local8": ("82372dac6755e55d", "d11614eee2c447fb"),
+    "haiku4": ("774141b000a547d4", "1b81b27047512cab"),
 }
 
 

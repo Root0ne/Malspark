@@ -32,6 +32,12 @@ export interface Reputation {
   link: string | null;
   /** The service's own words, kept whenever there are no counts to show. */
   summary: string;
+  /**
+   * The counts the record holds, each under the record's own name for it
+   * (`countsWords`); absent on a section read from a report stored before
+   * the records, which draws its figure as it always did.
+   */
+  counts?: string | null;
 }
 
 /** Whether a report carries reputation records, which then are all this reads. */
@@ -47,6 +53,75 @@ function count(value: unknown): number | null {
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/** The words the counts line uses as labels of its own (`COUNT_LABELS`). */
+const COUNT_LABELS = new Set(["malicious", "suspicious", "engines", "total"]);
+
+/**
+ * A counts object's member name as the line prints it (`member_name`): as the
+ * answer wrote it where it is a plain token that is none of the line's labels,
+ * otherwise as a quoted JSON string, the answer's own key.
+ */
+function memberName(name: string): string {
+  return /^[A-Za-z0-9_.-]+$/.test(name) && !COUNT_LABELS.has(name) ? name : JSON.stringify(name);
+}
+
+/**
+ * The counts a record holds, as the report's header cell prints them
+ * (`malspark.core.reputation.counts_line`), or `null` when it holds none.
+ *
+ * The flagged count (`malicious`) always, or that the record holds none where
+ * its counts object holds no member of that name either; then each member of
+ * the answer's counts object (`stats`) that is not zero, under
+ * the name the answer wrote it under (quoted where it is no plain token or is
+ * one of the line's own labels); the engine count the service gave beside
+ * them, and the total unless it is the sum of the members. The member of the
+ * flagged or the suspicious name is left out only where it equals the record's
+ * field of that name (`suspicious` then printed in its place); where the two
+ * differ, or the record has no field of that name, the member is printed
+ * quoted, also a zero. `suspicious` the object does not hold is printed where
+ * it is not zero. Never a fraction and no "of": the counts are named, and no
+ * tally is claimed whole.
+ *
+ * Members come in the order of the parsed `stats` object: the order the API
+ * served them, except that a name that is a whole number (`"0"`, `"10"`)
+ * comes first, in numeric order, as every JavaScript object orders such keys.
+ * A count is drawn as the browser parsed it: a whole number beyond 2^53 is
+ * not held exactly and may be drawn with other digits than the record's.
+ */
+export function countsWords(answer: ReputationAnswer): string | null {
+  const stats = Object.entries(answer.stats ?? {}).filter(
+    (pair): pair is [string, number] => count(pair[1]) !== null,
+  );
+  const malicious = count(answer.malicious);
+  const suspicious = count(answer.suspicious);
+  const members: string[] = [];
+  for (const [name, value] of stats) {
+    // The record's field of the member's name, where it has one.
+    const field = name === "malicious" ? malicious : name === "suspicious" ? suspicious : null;
+    if (field !== null && value === field) {
+      if (name === "suspicious" && value !== 0) members.push(`suspicious ${value}`);
+      continue;
+    }
+    if (value !== 0 || name === "malicious" || name === "suspicious") {
+      members.push(`${memberName(name)} ${value}`);
+    }
+  }
+  const held = stats.find(([name]) => name === "suspicious")?.[1] ?? null;
+  if (suspicious !== null && held !== suspicious && (suspicious !== 0 || held !== null)) {
+    members.push(`suspicious ${suspicious}`);
+  }
+  const beside: string[] = [];
+  const engines = count(answer.engines);
+  if (engines !== null) beside.push(`engines ${engines}`);
+  const total = count(answer.total);
+  const summed = stats.length > 0 && total === stats.reduce((sum, [, value]) => sum + value, 0);
+  if (total !== null && !summed) beside.push(`total ${total}`);
+  if (members.length === 0 && beside.length === 0 && malicious === null) return null;
+  if (malicious !== null) members.unshift(`malicious ${malicious}`);
+  else if (!stats.some(([name]) => name === "malicious")) members.unshift("malicious not counted");
+  return [members.join(", "), ...beside].join("; ");
 }
 
 /** One recorded answer as a section, or `null` when it established nothing. */
@@ -75,6 +150,7 @@ export function reputationFromRecord(
     lastSeen: text(answer.last_seen),
     link: link && /^https?:\/\//i.test(link) ? link : null,
     summary,
+    counts: countsWords(answer),
   };
 }
 

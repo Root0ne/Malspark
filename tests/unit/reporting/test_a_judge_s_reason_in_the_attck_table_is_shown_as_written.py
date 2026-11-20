@@ -158,10 +158,12 @@ def _report(reason: str) -> MalwareReport:
 def test_every_layout_shows_the_judge_s_words_and_forms_none_of_their_elements(
     layout: str, reason: str
 ) -> None:
-    # Against the same report with plain words, the judge's words form no element on any
-    # layout, and the reason is shown with the characters its cut keeps.
+    # Against the same report with plain words, cut where the reason is, the judge's words
+    # form no element on any layout, and the reason is shown with the characters its cut keeps.
+    words = "the claim says a l b x"
+    plain_reason = words if reason == REASON else " ".join([words] * 16)
     written = _reading(MarkdownRenderer(layout=layout).render(_report(reason)))
-    plain = _reading(MarkdownRenderer(layout=layout).render(_report("the claim says a l b x")))
+    plain = _reading(MarkdownRenderer(layout=layout).render(_report(plain_reason)))
     assert _elements(written) == _elements(plain)
     shown = _shown(written)
     assert _kept(judge_dropped_reason(reason), JUDGE_REASON_WIDTH) in shown

@@ -48,9 +48,14 @@ def judge_reason_shown(reason: str, width: int = JUDGE_REASON_WIDTH) -> str:
     Anything left out is marked with the cut mark. The record keeps the
     reason whole.
     """
+    return _reason_shown(reason, width)[0]
+
+
+def _reason_shown(reason: str, width: int) -> tuple[str, bool]:
+    """:func:`judge_reason_shown`'s text, and whether it leaves any of the reason out."""
     text = " ".join(str(reason or "").split())
     if not text:
-        return ""
+        return "", False
     sentences = _SENTENCE_BREAK_RE.split(text)
     kept: list[str] = []
     for sentence in sentences:
@@ -68,9 +73,9 @@ def judge_reason_shown(reason: str, width: int = JUDGE_REASON_WIDTH) -> str:
             break
         shown.append(sentence)
     if not shown:
-        return word_cut(kept[0], width)
+        return word_cut(kept[0], width), len(kept[0]) > width or len(sentences) > 1
     said = " ".join(shown)
-    return said if len(shown) == len(sentences) else f"{said} {CUT_MARK}"
+    return (said, False) if len(shown) == len(sentences) else (f"{said} {CUT_MARK}", True)
 
 
 def status_shown(text: str, width: int, plain: Callable[[str], str] = str) -> str:
@@ -223,9 +228,30 @@ def judge_reasons_shown(text: str) -> tuple[str, int]:
     never closed). The second value is where the last reason printed ends in
     the returned text, ``0`` when there is none.
     """
+    said, through, _cut = _reasons_shown(text)
+    return said, through
+
+
+def reasons_cut(text: str) -> int:
+    """How many of the judge's reasons in ``text`` :func:`judge_reasons_shown` prints in part,
+    counted as each is cut, never from a mark in the text: a "…" the judge wrote is no cut."""
+    return len(_reasons_shown(str(text or ""))[2])
+
+
+def reason_marks(text: str) -> list[int]:
+    """Where in :func:`judge_reasons_shown`'s text each cut mark it sets after a reason it
+    prints in part starts, one per such reason, taken where each is cut and never read from the
+    text: a "…" the judge wrote is none of them."""
+    return _reasons_shown(str(text or ""))[2]
+
+
+def _reasons_shown(text: str) -> tuple[str, int, list[int]]:
+    """:func:`judge_reasons_shown`'s two values, and where the cut mark of each reason it
+    prints in part starts in its text."""
     out: list[str] = []
     at = 0
     through = 0
+    marks: list[int] = []
     lowered = text.lower()
     while True:
         starts = [
@@ -247,8 +273,30 @@ def judge_reasons_shown(text: str) -> tuple[str, int]:
             end += 1
         closed = depth == 0
         inner = text[open_at : end - 1] if closed else text[open_at:]
-        out.append(text[at:open_at] + judge_reason_shown(inner) + (")" if closed else ""))
+        shown, left = _reason_shown(inner, JUDGE_REASON_WIDTH)
+        # A reason printed in part ends in the cut mark (:func:`_reason_shown`).
+        if left:
+            marks.append(through + open_at - at + len(shown) - len(CUT_MARK))
+        out.append(text[at:open_at] + shown + (")" if closed else ""))
         at = end
         through = len("".join(out))
     out.append(text[at:])
-    return "".join(out), through
+    return "".join(out), through, marks
+
+
+def status_cuts(text: str, width: int, parts: Callable[[str], Parts] | None = None) -> int:
+    """How many cuts the status :func:`status_parts` prints from ``text`` in ``width`` makes:
+    each judge's reason printed in part, and the status cut to the width. Read from each cut as
+    it is made, never from a mark in the text: a "…" the judge wrote is no cut. ``parts`` is
+    the one :func:`status_parts` is given (the text whole by default)."""
+    said, through, marks = _reasons_shown(str(text or ""))
+    cut = len(marks)
+    pieces = parts or (lambda t: [(t, False)])
+
+    def length(found: Parts) -> int:
+        return sum(len(piece) for piece, _set in found)
+
+    if not through:
+        return cut + (length(pieces(said)) > width)
+    used, tail = length(pieces(said[:through])), length(pieces(said[through:]))
+    return cut + (bool(tail) and tail > max(0, width - used))

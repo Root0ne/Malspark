@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import re
 from bisect import bisect_right
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -49,7 +49,7 @@ from malspark.reporting.detection_signatures import (
     not_drafted_sentence,
     rule_standing,
 )
-from malspark.reporting.judge_reasons import judge_reasons_shown
+from malspark.reporting.judge_reasons import judge_reasons_shown, reason_marks
 from malspark.reporting.models import (
     LimitationInventory,
     MalwareReport,
@@ -100,6 +100,7 @@ from malspark.reporting.renderers.markdown import (
     dropped_size_cell,
     inside_a_token_kept,
     is_carve_note,
+    judge_cut_note,
     lost_tools_sentence,
     not_started_by_the_sample_line,
     report_title,
@@ -152,6 +153,42 @@ _VALUE = re.compile(
 _OBSERVED_ONLY = frozenset({"sandbox", "strings"})
 # What an identifier row the rule's answer could not be read for says.
 _IDENTIFIER_NOT_EXPORTED = "not exported: the publish rule's answer for it could not be read"
+
+
+def _left_out_marks(
+    printed: str,
+    spans: Sequence[tuple[int, int, int]],
+    left: Iterable[str],
+    marks: Iterable[int],
+) -> tuple[str, int, int]:
+    """``printed`` without each of ``left``, the sentences the agreement question left out, in
+    each of the judge's reasons ``spans`` gives (``judge_reasons.judge_reason_spans``), a
+    bracket every word of which is left out going whole; how many were left out; and how many
+    of ``marks``, where each cut mark the platform set in ``printed`` starts, the text it
+    returns still holds. Every character it keeps is followed from where it stood in
+    ``printed``, so a mark is counted only where it still prints, whatever a sentence left out
+    or a bracket that goes takes with it: the one place a cut recorded becomes a cut counted on
+    the analyst report's ATT&CK section (T-613, T-780)."""
+    from malspark.reporting.section_agreement import left_out_where
+
+    left = tuple(left)
+    out, cut = printed, 0
+    # Where each character of ``out`` stood in ``printed``.
+    stood = list(range(len(printed)))
+    for start, end, close in reversed(spans) if left else ():
+        kept, count, where = left_out_where(out[start:end], left)
+        cut += count
+        if not count:
+            continue
+        if kept.strip():
+            out = out[:start] + kept + out[end:]
+            stood = stood[:start] + [stood[start + at] for at in where] + stood[end:]
+        else:
+            head = out[: out.rfind("(", 0, start)].rstrip()
+            out = head + out[close:]
+            stood = stood[: len(head)] + stood[close:]
+    printing = set(stood)
+    return out, cut, sum(1 for mark in marks if mark in printing)
 
 
 def _identifier_answers(report: Any) -> list[str]:
@@ -1215,20 +1252,27 @@ class _Analyst:
         return tuple(word for word in (technique_id.strip(), name) if word)
 
     def _judge_words(
-        self, pid: str, label: str, printed: str, technique_id: str, written: str
-    ) -> tuple[str, int]:
+        self,
+        pid: str,
+        label: str,
+        printed: str,
+        technique_id: str,
+        written: str,
+        marks: Sequence[int] = (),
+    ) -> tuple[str, int, int]:
         """``printed``, a status or a note the platform writes around the judge's reasons
         (``judge_reasons.judge_reason_spans``), without each sentence of those reasons the
-        agreement question left out, and how many were. Only the judge's own words are its
-        passage: the platform's words around them are none, and a bracket every word of which
-        is left out goes with them. ``written`` is the status or note as stored, whose reasons
-        are the judge's whole words (T-613)."""
+        agreement question left out, how many were, and how many of the cut marks the platform
+        set in ``printed`` (``marks``, where each starts) it still prints
+        (:func:`_left_out_marks`). Only the judge's own words are its passage: the platform's
+        words around them are none, and a bracket every word of which is left out goes with
+        them. ``written`` is the status or note as stored, whose reasons are the judge's whole
+        words (T-613, T-780)."""
         from malspark.reporting.judge_reasons import judge_reason_spans
-        from malspark.reporting.section_agreement import left_out_of
 
         spans = judge_reason_spans(printed)
         if not spans:
-            return printed, 0
+            return _left_out_marks(printed, spans, (), marks)
         words = " ".join(printed[start:end] for start, end, _close in spans)
         whole = " ".join(
             " ".join(written[start:end].split())
@@ -1244,20 +1288,7 @@ class _Analyst:
             whole if whole != words else "",
             written,
         )
-        left = self.ctx.verbatim_left.get(pid, ())
-        if not left:
-            return printed, 0
-        out, cut = printed, 0
-        for start, end, close in reversed(spans):
-            kept, count = left_out_of(out[start:end], left)
-            cut += count
-            if not count:
-                continue
-            if kept.strip():
-                out = out[:start] + kept + out[end:]
-            else:
-                out = out[: out.rfind("(", 0, start)].rstrip() + out[close:]
-        return out, cut
+        return _left_out_marks(printed, spans, self.ctx.verbatim_left.get(pid, ()), marks)
 
     def _prints(self, *passages: str) -> None:
         """Say that the section being written prints the agreement question's ``passages``: an
@@ -1574,11 +1605,18 @@ class _Analyst:
         analysts = [str(a) for a in profile.get("analysts") or []]
         team = f" ({len(analysts)} analyst{'s' if len(analysts) != 1 else ''})" if analysts else ""
         kind = _inline_safe(ident.file_type, plain=ctx.plain)
+        # Said as it happened: a run stopped before its verdict stage had no judge and no
+        # report model write (``verdict_not_assessed``).
+        who = (
+            f"it is partial: {_one_line(report.verdict_not_assessed)}, so no judge stated a "
+            "verdict. "
+            if report.verdict_not_assessed
+            else "a judge stated the verdict and a report model wrote the assessed prose. "
+        )
         said = (
             f"This report covers one file, {name} ({kind}, {ident.file_size_bytes:,} bytes), "
             "submitted for analysis and examined by an automated team of language-model "
-            f"analysts{team} working over tool servers; a judge stated the "
-            "verdict and a report model wrote the assessed prose. "
+            f"analysts{team} working over tool servers; {who}"
             + ctx.sandbox_sentence()
             + " A step or finding read from the code is marked assessed; one a sandbox watched "
             "is marked observed."
@@ -1869,7 +1907,7 @@ class _Analyst:
                     _code_span(_whole(ctx.plain(named))),
                     dropped_size_cell(op),
                     _code_span(str(op.get("sha256")).lower()) if op.get("sha256") else "-",
-                    "dropped while a sandbox watched",
+                    "in the sandbox's dropped-files list",
                 )
             )
         lines.extend(_left_out(len(carved), 10, "carved payloads"))
@@ -2248,11 +2286,11 @@ class _Analyst:
         report, ctx = self.report, self.ctx
         rows: list[tuple[str, str, str]] = []
         seen: set[str] = set()
-        recorded = 0
+        recorded: dict[str, int] = {}
         for ioc in ctx.iocs:
             exported = publishes(ioc.published)
             if not exported and str(ioc.source or "") in _OBSERVED_ONLY:
-                recorded += 1
+                recorded[str(ioc.source)] = recorded.get(str(ioc.source), 0) + 1
                 continue
             seen.add(ioc.value.strip().lower())
             value = (
@@ -2325,20 +2363,28 @@ class _Analyst:
         if left:
             lines.extend([_left_out_rows(left, "host identifier row"), ""])
         if recorded:
+            # Named by the source the indicator table records for each (T-780).
+            count = sum(recorded.values())
+            sources = sorted(recorded)
+            named = (
+                f"the source {sources[0]}"
+                if len(sources) == 1
+                else "the source "
+                + " or ".join(f"{source} ({recorded[source]})" for source in sources)
+            )
             lines.extend(
                 [
-                    f"{recorded} further value{'s' if recorded != 1 else ''} only a capture or a "
-                    f"strings pass recorded {'are' if recorded != 1 else 'is'} not exported; the "
-                    "bundle lists each with the reason.",
+                    f"{count} further value{'s' if count != 1 else ''}, recorded with {named}, "
+                    f"{'are' if count != 1 else 'is'} not exported; the bundle lists each with "
+                    "the reason.",
                     "",
                 ]
             )
         rid = _one_line(stored_report_id(report) or "{report_id}")
         lines.extend(
             [
-                "Network values are defanged for reading. A value with the publish rule's answer "
-                "beside it is not in the machine-readable outputs, which carry the exported "
-                "values live: the STIX 2.1 "
+                "Network values are defanged for reading. The machine-readable outputs carry "
+                "the exported values live: the STIX 2.1 "
                 f"bundle ({_code_span(f'/reports/{rid}/stix')}), the indicator list "
                 f"({_code_span(f'/reports/{rid}/iocs')}) and the MISP attributes of the JSON "
                 f"report ({_code_span(f'/reports/{rid}/full')}).",
@@ -2401,10 +2447,16 @@ class _Analyst:
         lines.extend(
             _item(self.ctx.inline(_one_line(not_drafted_sentence(item)))) for item in not_built
         )
-        if any(self._printed(rule) for rule in rules):
-            lines.extend(
-                ["", "The rule bodies are in the appendix. Test a rule before deploying it."]
+        printed = sum(1 for rule in rules if self._printed(rule))
+        if printed:
+            # Counted where the appendix prints some of the bodies only (T-780).
+            where = (
+                "The rule bodies are in the appendix."
+                if printed == len(rules)
+                else f"The bodies of {printed} of these {len(rules)} rules are in the appendix, "
+                "the others' in the bundle."
             )
+            lines.extend(["", f"{where} Test a rule before deploying it."])
         return [*lines, ""]
 
     def _bound_origin(self, ioc: Any) -> str:
@@ -2497,6 +2549,8 @@ class _Analyst:
         rows: list[str] = []
         seen: set[str] = set()
         held: list[str] = []
+        # The reasons this page shortens to fit, counted as each is cut (``_held``, ``_status``).
+        self.shortened = 0
         for cell in sorted(report.capability_matrix, key=_tactic_key):
             if _is_mbc_id(cell.technique_id) or cell.technique_id in seen:
                 continue
@@ -2552,11 +2606,14 @@ class _Analyst:
                     *held,
                 ]
             )
+        noted = judge_cut_note(self.shortened, report)
+        if noted:
+            lines.extend(["", noted])
         return "\n".join([*lines, "", _behind("attack")])
 
     def _held(self, cell: Any) -> str:
         """A technique named and not published, with the status the single-file report gives it."""
-        from malspark.reporting.judge_reasons import JUDGE_REASON_WIDTH, status_parts
+        from malspark.reporting.judge_reasons import JUDGE_REASON_WIDTH, status_cuts, status_parts
         from malspark.schemas.isr_models import UNVERIFIED_TECHNIQUE_MARKER
 
         if not cell.technique_id_valid:
@@ -2565,12 +2622,21 @@ class _Analyst:
             # The judge's reason as printed: a sentence the agreement question left out is
             # counted, and the reason printed without it (T-613).
             raw = status_parts(cell.not_published, JUDGE_REASON_WIDTH, lambda text: [(text, False)])
-            reason, cut = self._judge_words(
+            # Where each cut mark the platform sets in it starts: a reason's, and the cut
+            # status's, the one piece the platform sets in it.
+            at = [0]
+            for piece, _set in raw:
+                at.append(at[-1] + len(piece))
+            reason, cut, printed = self._judge_words(
                 f"attack_note.{cell.technique_id.strip().upper()}",
                 f"ATT&CK table, the reason {cell.technique_id} is not published",
                 "".join(piece for piece, _set in raw),
                 cell.technique_id,
                 cell.not_published,
+                [
+                    *reason_marks(cell.not_published),
+                    *(at[index] for index, (_piece, set_) in enumerate(raw) if set_),
+                ],
             )
             self.left += cut
             # A quote: the cut and its marks are made on the record's characters, and each
@@ -2584,12 +2650,20 @@ class _Analyst:
                 )
                 parts = _value_parts(words, self.ctx.plain)
                 parts += [(after, True)] if words != reason else []
+                # The cut marks the reason printed holds: none a bracket left out held.
+                shortened = printed
             else:
                 parts = status_parts(
                     cell.not_published,
                     JUDGE_REASON_WIDTH,
                     lambda text: _value_parts(text, self.ctx.plain),
                 )
+                shortened = status_cuts(
+                    cell.not_published,
+                    JUDGE_REASON_WIDTH,
+                    lambda text: _value_parts(text, self.ctx.plain),
+                )
+            self.shortened += shortened
             shown = _quote_written(parts)
             status = "claimed, not published" + (f": {shown}" if shown.strip() else "")
         return _item(
@@ -2629,16 +2703,20 @@ class _Analyst:
         # bundle's (T-555).
         if note and not note.lower().startswith(judge_kept_note("").lower()):
             # The judge's words: a sentence the agreement question left out is counted (T-613).
-            shown, cut = self._judge_words(
+            shown, cut, printed = self._judge_words(
                 f"attack_note.{technique_id.strip().upper()}",
                 f"ATT&CK table, the judge's note on {technique_id}",
                 judge_reasons_shown(note)[0],
                 technique_id,
                 note,
+                reason_marks(note),
             )
             self.left += cut
             if shown.strip():
                 said.append(_quote_written(_value_parts(shown, self.ctx.plain), pipes=False))
+                # A reason the note prints in part is counted where it is cut, unless the
+                # bracket that held its cut is left out.
+                self.shortened += printed
         # Under which detonations a further detonation's signatures tag it.
         mapping = next(
             (m for m in self.report.ttp_mappings if m.technique_id == technique_id), None

@@ -74,6 +74,7 @@ from malspark.analysis.tool_effects import INTRO_SENTENCE as EFFECTS_INTRO
 from malspark.analysis.tool_effects import effects_lines
 from malspark.core.confidence_words import confidence_word
 from malspark.core.logger import logger
+from malspark.core.reputation import counts_line
 from malspark.core.rule_matches import is_rule_fact
 from malspark.core.undeclared_tools import (
     CODE_LISTING_KINDS,
@@ -93,6 +94,8 @@ from malspark.reporting.defang import ProseDefanger, defang
 from malspark.reporting.judge_reasons import (
     JUDGE_REASON_WIDTH,
     judge_reasons_shown,
+    reasons_cut,
+    status_cuts,
     status_parts,
 )
 from malspark.reporting.ledger_projection import (
@@ -144,6 +147,7 @@ from malspark.reporting.renderers.prose_forms import (
     finished,
     references_for_render,
     section_reference,
+    tidied,
 )
 from malspark.reporting.technique_evidence import (
     evidence_words,
@@ -319,6 +323,9 @@ LIMITATIONS_TITLE = "Limitations and analysis notes"
 INVENTORY_HEADING = "Measured limitations"
 ANALYST_LIMITATIONS_TITLE = "Limitations"
 INDICATORS_TITLE = "Indicators of compromise"
+# The §9 table of the rows read from the file's strings that no reader the
+# rule checks holds as the network value their form has (``reporting.string_row_form``).
+FORM_ROWS_TITLE = "Text with a network value's form, read from the file"
 STATIC_TITLE = "Static properties"
 
 
@@ -377,6 +384,12 @@ class MarkdownRenderer:
         The notes are the analyst report's even when the bundle is rendered:
         the bundle prints them, so its note numbers are the analyst report's.
         """
+        markdown, notes, _cited = self.render_with_citations(report)
+        return markdown, notes
+
+    def render_with_citations(self, report: MalwareReport) -> tuple[str, list[Any], set[int]]:
+        """:meth:`render_with_notes`'s two values, and the numbers of the notes the analyst
+        report prints a marker for, read from the markers the platform writes only."""
         # The links this report keeps as links, for the whole of this render.
         token = _KEPT_LINKS.set(_Kept.of(report))
         # The references to other sections this render writes, resolved once
@@ -388,9 +401,12 @@ class MarkdownRenderer:
             end_references(references)
             _KEPT_LINKS.reset(token)
 
-    def _render(self, report: MalwareReport) -> tuple[str, list[Any]]:
+    def _render(self, report: MalwareReport) -> tuple[str, list[Any], set[int]]:
+        from malspark.reporting.renderers.bundle import marker_numbers
+
         ctx = _Context.of(report)
         notes: list[Any] = []
+        cited: set[int] = set()
         if self._layout == ANALYST:
             from malspark.reporting.renderers.analyst import analyst_sections
 
@@ -402,11 +418,18 @@ class MarkdownRenderer:
                 from malspark.reporting.renderers.bundle import bundle_sections
 
                 # The analyst report's notes, numbered over a context of their
-                # own: what it set aside is not this render's to restore.
-                _, notes = analyst_sections(self, report, _Context.of(report))
-                sections = bundle_sections(self, report, ctx, sections, notes)
+                # own: what it set aside is not this render's to restore. The
+                # notes it prints a marker for are read from the markers its
+                # own sections set aside, never from text a model wrote.
+                own = _Context.of(report)
+                written, notes = analyst_sections(self, report, own)
+                text = "\n".join(tidied(written, report, analyst=True))
+                cited = set(marker_numbers(own.kept_in(text)))
+                sections = bundle_sections(self, report, ctx, sections, notes, cited)
         sections = finished(sections, report, analyst=self._layout == ANALYST)
-        return self._closed(sections, ctx), notes
+        if self._layout == ANALYST:
+            cited = set(marker_numbers(ctx.kept_in("\n".join(sections))))
+        return self._closed(sections, ctx), notes, cited
 
     def _full_sections(self, report: MalwareReport, ctx: _Context) -> list[str]:
         # Each section is wrapped in _safe_section so a single malformed
@@ -531,11 +554,7 @@ class MarkdownRenderer:
             # themselves, with their operator remedies, are the limitations section's.
             lines.append("\n> **[DEGRADED RUN]** " + _degraded_sentence(report, ctx))
         elif report.degradation_reasons:
-            count = len(report.degradation_reasons)
-            lines.append(
-                f"\n**Notes:** this run recorded {count} limitation"
-                f"{'' if count == 1 else 's'}; see {section_reference(LIMITATIONS_TITLE)}."
-            )
+            lines.append("\n" + _limitations_note(report))
 
         evidence = (report.run_summary or {}).get("evidence") or {}
         entries = evidence.get("entries")
@@ -1666,7 +1685,8 @@ class MarkdownRenderer:
                 lines.append(
                     _row(
                         _code_span(value),
-                        ctx.value(ioc.kind),
+                        # A form row of the IOC table prints its form here too.
+                        ctx.value(_form_of(ioc, ctx.forms) or ioc.kind),
                         ctx.value(ioc.notes) if ioc.notes else "-",
                         published,
                     )
@@ -1704,7 +1724,7 @@ class MarkdownRenderer:
             lines.append("_No ATT&CK techniques mapped._")
             return "\n".join(
                 lines
-                + _not_published_lines(report, ctx)
+                + _not_published_lines(report, ctx)[0]
                 + _mbc_lines(report)
                 + _unmapped_behaviour_lines(report)
             )
@@ -1739,18 +1759,20 @@ class MarkdownRenderer:
             rules_by_tid.setdefault(str(hit.get("technique_id") or ""), []).append(hit)
         capability_ids = _capability_evidence_ids(report)
         seen: set[str] = set()
+        # The reasons this section shortens to fit, counted as each is cut.
+        cuts = 0
         for cell in sorted(cells, key=_tactic_key):
             seen.add(cell.technique_id)
-            lines.append(
-                _attack_row(
-                    cell,
-                    mappings.get(cell.technique_id),
-                    corroboration,
-                    ctx,
-                    rules_by_tid.get(cell.technique_id, []),
-                    capability_ids,
-                )
+            row, cut = _attack_row(
+                cell,
+                mappings.get(cell.technique_id),
+                corroboration,
+                ctx,
+                rules_by_tid.get(cell.technique_id, []),
+                capability_ids,
             )
+            cuts += cut
+            lines.append(row)
         # A published technique the matrix does not hold — a stored report
         # from before every id was collected into it — still gets its row.
         for tid, mapping in mappings.items():
@@ -1802,9 +1824,13 @@ class MarkdownRenderer:
                     "never fires._",
                 ]
             )
+        held, cut = _not_published_lines(report, ctx)
+        cuts += cut
+        noted = judge_cut_note(cuts, report)
         return "\n".join(
             lines
-            + _not_published_lines(report, ctx)
+            + held
+            + (["", noted] if noted else [])
             + _mbc_lines(report)
             + _unmapped_behaviour_lines(report)
         ).rstrip()
@@ -1816,10 +1842,14 @@ class MarkdownRenderer:
     def _section_indicators(self, report: MalwareReport, ctx: _Context) -> str:
         lines = [_heading(9, INDICATORS_TITLE, PER_ROW), ""]
         host = [row for row in ctx.iocs if row.kind not in _NETWORK_KINDS]
-        network = [row for row in ctx.iocs if row.kind in _NETWORK_KINDS]
+        every_network = [row for row in ctx.iocs if row.kind in _NETWORK_KINDS]
+        # A row read from the file's strings that nothing in the run reads as
+        # a network value has that value's form only: its own table, after.
+        network = [row for row in every_network if not _form_of(row, ctx.forms)]
+        formed = [row for row in every_network if _form_of(row, ctx.forms)]
         ta = report.technical_analysis
         identifiers = list(ta.host_identifiers) if ta is not None else []
-        if not host and not network and not identifiers:
+        if not host and not every_network and not identifiers:
             lines.extend(["No indicator was extracted in this run.", ""])
         if host:
             lines.extend([_subheading("", "File and host indicators", PER_ROW), ""])
@@ -1828,7 +1858,8 @@ class MarkdownRenderer:
             for row in host:
                 lines.append(
                     _row(
-                        ctx.value(row.type),
+                        # A path the extractor took from a longer string says so.
+                        ctx.value(_form_of(row, ctx.forms) or row.type),
                         # A file or host value that holds a network value
                         # ("//relay.example.net/path/" read as a path) holds
                         # it defanged; any other is printed as it is.
@@ -1857,17 +1888,19 @@ class MarkdownRenderer:
             lines.append("")
         if identifiers:
             lines.extend(_host_identifier_table(identifiers, ctx))
-        if network:
+        for title, rows_of in (("Network indicators", network), (FORM_ROWS_TITLE, formed)):
+            if not rows_of:
+                continue
             reputation = ctx.reputations
-            lines.extend([_subheading("", "Network indicators", PER_ROW), ""])
+            lines.extend([_subheading("", title, PER_ROW), ""])
             head = ["Type", "Value (defanged)", "Port/Path", "Context", "Source", "Published"]
             if reputation:
                 head.append("Reputation (post-hoc enrichment)")
             lines.append(_row(*head))
             lines.append(_divider(len(head)))
-            for row in network:
+            for row in rows_of:
                 cells = [
-                    ctx.value(row.type),
+                    ctx.value(_form_of(row, ctx.forms) or row.type),
                     _code_span(defang(row.value, row.kind or "")),
                     _port_or_path(row, report),
                     "; ".join(
@@ -2449,7 +2482,8 @@ class MarkdownRenderer:
                 # A model's table, said as one before its rows: nothing in it
                 # was measured, and no count, match or profile reads it.
                 kind = str(section.key or "").removeprefix("artifact_")
-                lines.extend([analyst_list_note(analysts, kind), ""])
+                typed = _typed_values_shown(section, kind, ctx)
+                lines.extend([analyst_list_note(analysts, kind, typed), ""])
             elif is_open_question_section(section):
                 lines.extend([OPEN_QUESTIONS_NOTE, ""])
             lines.extend(
@@ -2457,6 +2491,7 @@ class MarkdownRenderer:
                     section,
                     ctx.plain,
                     declared_code=declares_code(section.evidence_ids, report.evidence_index),
+                    cites_cut=cites_a_cut_entry(section.evidence_ids, report.evidence_index),
                 )
             )
             if section.evidence_ids:
@@ -2769,11 +2804,12 @@ class MarkdownRenderer:
                 "Every tool call is in Appendix A. " + CUT_CELL_SENTENCE
             )
         else:
+            stated, counted = _judge_bundle(summary)
             lines.append(
                 "This report was produced by an automated team of language-model analysts "
                 "working over tool servers. The analysts' claims were negotiated, a judge "
-                "stated the verdict and the STIX bundle, and a report model wrote the "
-                "assessed prose. Every tool call is in Appendix A. " + CUT_CELL_SENTENCE
+                f"stated the verdict{stated}, and a report model wrote the assessed prose."
+                f"{counted} Every tool call is in Appendix A. " + CUT_CELL_SENTENCE
             )
         lines.append("")
         profile = summary.get("profile") or {}
@@ -2793,11 +2829,15 @@ class MarkdownRenderer:
         model = _model_line(summary.get("settings_snapshot"))
         if model:
             lines.append(_item(f"Models: {ctx.value(model, pipes=True)}"))
-        servers = sorted({row.server for row in report.evidence_index if row.server})
-        if servers:
-            named = ", ".join(ctx.value(server, pipes=True) for server in servers)
-            lines.append(_item(f"Tool servers called: {named}"))
-        lines.append(_item(f"Sandbox: {_SANDBOX_STATES[ctx.sandbox_state]}"))
+        servers_line = _servers_line(report, ctx)
+        if servers_line:
+            lines.append(_item(servers_line))
+        sandbox = (
+            "; ".join(_sandbox_held(report))
+            if ctx.sandbox_state == "observed"
+            else _SANDBOX_STATES[ctx.sandbox_state]
+        )
+        lines.append(_item(f"Sandbox: {sandbox}"))
         lines.append(_item(f"Report generated: {report.generated_at.isoformat()}"))
         if report.version_history:
             lines.extend(["", _row("Version", "Date", "Authors", "Description"), _divider(4)])
@@ -2968,6 +3008,9 @@ class _Context:
         read = _indicator_rows(report, self._row_words.place)
         self._table_read = read is not None
         self.iocs = self._row_words.rows(read or [])
+        # The printed type of each row read from the file's strings that
+        # nothing in the run reads as its kind; the kind stays every key.
+        self.forms = _string_row_forms(report, self.iocs)
         indicators = run_network_values(report, self.iocs)
         self.indicators = indicators
         run_values = ProseDefanger(indicators)
@@ -3330,6 +3373,11 @@ class _Context:
         self._kept[token] = text
         return token
 
+    def kept_in(self, text: str) -> list[str]:
+        """What each token :meth:`keep` handed out that stands in ``text`` stands for, in order:
+        no text a model or a sample wrote can name a token."""
+        return [self._kept[token] for token in _KEPT_TOKEN_RE.findall(text) if token in self._kept]
+
     def restore(self, text: str) -> str:
         """``text`` with every token :meth:`keep` handed out replaced by what it stands for."""
         if not self._kept or "\x00" not in text:
@@ -3403,7 +3451,7 @@ class _Context:
         if self.sandbox_statement:
             return self.sandbox_statement + self.partial_sentence()
         if self.sandbox_state == "observed":
-            return "A sandbox recorded the sample's behaviour." + self.partial_sentence()
+            return _sandbox_held_sentence(self.report) + self.partial_sentence()
         if self.sandbox_state == "empty":
             return (
                 "No sandbox observation: the sandbox tools returned nothing for this sample, "
@@ -3445,6 +3493,28 @@ def _trimmed(evidence: dict[str, Any], inventory: LimitationInventory | None) ->
     """The entries trimmed to the budget: the limitations inventory's count, where the report
     holds one, else the run's bounds' (``run_summary.evidence.trimmed``), as held."""
     return inventory.trimmed if inventory is not None else evidence.get("trimmed", 0)
+
+
+def _limitations_note(report: MalwareReport) -> str:
+    """The title block's line on the limitations, counted from what the limitations section
+    lists under each of its headings: the measured rows the inventory marks as stating a limit
+    (a row it keeps for the record, the operator's choice among them, is not counted) and the
+    reasons the run recorded (T-780)."""
+    from malspark.reporting.limitation_inventory import inventory_rows
+
+    reasons = len(report.degradation_reasons)
+    plural = "" if reasons == 1 else "s"
+    where = section_reference(LIMITATIONS_TITLE)
+    inventory = report.limitation_inventory
+    rows = inventory_rows(inventory) if inventory is not None else []
+    limits = sum(1 for row in rows if row.printed)
+    if not limits:
+        return f"**Notes:** this run recorded {reasons} limitation{plural}; see {where}."
+    among = f" (of its {len(rows)} measured rows)" if limits != len(rows) else ""
+    return (
+        f"**Notes:** {where} states {limits} measured limitation{'' if limits == 1 else 's'} "
+        f"of this run{among} and {reasons} limitation{plural} the run recorded."
+    )
 
 
 def _redone_rows(
@@ -3510,9 +3580,92 @@ def _guardrail_cut_clause(evidence: dict[str, Any], truncation: Any) -> str:
     return f", {cut} cut by the tool-output guardrail ({dropped:,} characters dropped)"
 
 
-# How the methodology appendix names each sandbox state.
+def _servers_line(report: MalwareReport, ctx: _Context) -> str:
+    """The methodology's line on the tool servers, read from each index row as the console's
+    tab is (``section_servers``): the server it records, else the server or provider its source
+    names; the calls whose row records neither are counted, never named (T-780)."""
+    from malspark.reporting.section_servers import server_of_row
+
+    named = [server_of_row(row) for row in report.evidence_index]
+    servers = sorted({server for server in named if server})
+    unnamed = sum(1 for server in named if not server)
+    said = ", ".join(ctx.value(server, pipes=True) for server in servers)
+    if unnamed:
+        calls = f"{unnamed} call{' records' if unnamed == 1 else 's record'} no server"
+        said = f"{said}; {calls}" if said else f"none named; {calls}"
+    return f"Tool servers called: {said}" if said else ""
+
+
+def _judge_bundle(summary: Mapping[str, Any]) -> tuple[str, str]:
+    """What the methodology says of the judge and the STIX bundle, read from the run's counts of
+    the judge's own bundle and the exported one (``run_summary``): the clause after "a judge
+    stated the verdict" where the two are the same size, else a sentence giving both counts;
+    nothing where the run recorded no count of the judge's (T-780)."""
+
+    def count(key: str) -> int | None:
+        held = summary.get(key)
+        return held if isinstance(held, int) and not isinstance(held, bool) else None
+
+    judged, exported = count("judge_stix_object_count"), count("stix_object_count")
+    if judged is None:
+        return "", ""
+    if judged and judged == exported:
+        return " and the STIX bundle", ""
+    said = f" The judge's STIX bundle holds {_objects(judged)}"
+    return "", said + (
+        f"; the exported one holds {_objects(exported)}." if exported is not None else "."
+    )
+
+
+def _objects(count: int) -> str:
+    return "no object" if not count else f"{count} object{'' if count == 1 else 's'}"
+
+
+def _sandbox_held(report: MalwareReport) -> list[str]:
+    """What the report holds from a sandbox, as counts of its rows: the sandbox report's
+    processes, signatures, file operations and registry rows, and the network rows the sandbox
+    is the source of. Each is counted as held, whichever process it names (T-780)."""
+    out: list[str] = []
+    dyn = report.dynamic
+    if dyn is not None:
+
+        def processes(nodes: Iterable[ProcessNode]) -> int:
+            return sum(1 + processes(node.children) for node in nodes)
+
+        counted = (
+            (processes(dyn.process_tree), "process", "processes"),
+            (len(dyn.sandbox_signatures), "signature", "signatures"),
+            (len(dyn.file_operations), "file-operation row", "file-operation rows"),
+            (len(dyn.registry_mods), "registry row", "registry rows"),
+        )
+        listed = [f"{n} {one if n == 1 else many}" for n, one, many in counted if n]
+        out.append(
+            f"a report is held listing {_joined(listed)}"
+            if listed
+            else "a report is held listing no process, signature, file operation or registry row"
+        )
+    net = report.network
+    rows = [*(net.domains if net else []), *(net.ips if net else []), *(net.urls if net else [])]
+    sourced = sum(1 for row in rows if getattr(row, "source", None) == "sandbox")
+    if sourced:
+        out.append(f"the source of {sourced} network row{'' if sourced == 1 else 's'}")
+    return out
+
+
+def _sandbox_held_sentence(report: MalwareReport) -> str:
+    """:func:`_sandbox_held` as a sentence of the sandbox's."""
+    held = _sandbox_held(report)
+    if not held:
+        return "No sandbox observation is recorded in this report."
+    if held[0].startswith("a report"):
+        said = "A sandbox " + held[0].removeprefix("a ")
+        return said + (f", and the sandbox is {held[1]}." if len(held) > 1 else ".")
+    return f"The sandbox is {held[0]}."
+
+
+# How the methodology appendix names each sandbox state; an observed one is counted
+# (:func:`_sandbox_held`).
 _SANDBOX_STATES = {
-    "observed": "recorded the sample's behaviour",
     "empty": "called, returned no observation",
     "not_called": "not called",
     "unknown": "not recorded",
@@ -5386,16 +5539,71 @@ def _evidence_heading(section: Any, plain: Callable[[str], str] = _defanged_text
     return f"{_plain_heading(_inline_safe(section.title, plain=plain))} · _{voice}_"
 
 
-def analyst_list_note(analysts: list[str], kind: str = "") -> str:
-    """The line an analyst's table is printed under in Appendix A, saying where else it is shown."""
+def _typed_values_shown(section: Any, kind: str, ctx: _Context) -> tuple[int, int, int] | None:
+    """For an analyst's table of values, the values it types as an indicator, read as the
+    report builder reads the table (``listed_non_network_values``, ``kept_network_values``),
+    each once: how many, how many the indicator section's tables hold as the analyst's row, and
+    how many they hold under another source. ``None`` for any other table."""
+    from malspark.reporting.ledger_projection import kept_network_values, listed_non_network_values
+    from malspark.reporting.ledger_report import listed_headings, listed_rows
+
+    if listing_kind(kind) != "values":
+        return None
+    headings = listed_headings(section)
+    cells = [row for _analyst, _cited, row in listed_rows(section)]
+    values = [value for _kind, value, _payload in listed_non_network_values(kind, cells, headings)]
+    table = SimpleNamespace(kind=kind, rows=cells, columns=headings, value=None)
+    values += [value for _kind, value in kept_network_values(table)]
+
+    def key(value: Any) -> str:
+        return str(value or "").strip().lower().rstrip(".")
+
+    sources: dict[str, set[str]] = {}
+    for row in ctx.iocs:
+        sources.setdefault(key(row.value), set()).add(str(row.source or ""))
+    ta = ctx.report.technical_analysis
+    for item in ta.host_identifiers if ta is not None else []:
+        sources.setdefault(key(item.value), set()).add("")
+    keys = list(dict.fromkeys(key(value) for value in values if key(value)))
+    theirs = sum(1 for k in keys if "analyst" in sources.get(k, ()))
+    other = sum(1 for k in keys if k in sources and "analyst" not in sources[k])
+    return len(keys), theirs, other
+
+
+def analyst_list_note(
+    analysts: list[str], kind: str = "", typed: tuple[int, int, int] | None = None
+) -> str:
+    """The line an analyst's table is printed under in Appendix A, saying where else it is shown.
+
+    ``typed`` counts the values a table of values types as an indicator: how many, how many
+    the indicator section holds as the analyst's row, and how many it holds under another
+    source (:func:`_typed_values_shown`); where not each of them is the analyst's row there,
+    the line counts each case (T-780)."""
     who = ", ".join(f"the {_one_line(name)} analyst" for name in analysts)
+    indicators = section_reference(INDICATORS_TITLE)
+    values = (
+        f" Each value it types as an indicator is in {indicators} as the analyst's, with the "
+        "publish rule's answer."
+    )
+    if typed is not None and typed[1] != typed[0]:
+        total, theirs, other = typed
+        cases = [
+            (theirs, f"in {indicators} as the analyst's, with the publish rule's answer"),
+            (other, f"in {indicators} under another source"),
+            (total - theirs - other, f"not in {indicators}"),
+        ]
+        values = (
+            f" The value it types as an indicator is {next(said for n, said in cases if n)}."
+            if total == 1
+            else f" Of the {total} values it types as an indicator, "
+            + "; ".join(f"{n} {'is' if n == 1 else 'are'} {said}" for n, said in cases if n)
+            + "."
+        )
     shown = {
         "persistence": f" Its rows are in {section_reference('Persistence')} under Assessed, "
         f"and its Run keys, tasks and services in {section_reference(INDICATORS_TITLE)} as "
         "the analyst's, each with the publish rule's answer.",
-        "values": " Each value it types as an indicator is in "
-        f"{section_reference(INDICATORS_TITLE)} as the analyst's, with the publish rule's "
-        "answer.",
+        "values": values,
     }
     where = shown.get(listing_kind(kind), "")
     return (
@@ -5869,13 +6077,11 @@ def _reputation_line(report: MalwareReport) -> str:
             None,
         )
         if counted is not None:
-            # The service's name and date are its answer's words: escaped and defanged;
-            # the row escapes the table separator itself (:func:`_cell`).
-            service = _inline_safe(counted.service or "Reputation lookup", pipes=False)
-            said = (
-                f"{service}: {counted.malicious} of "
-                f"{counted.engine_count()} engines flag it as malicious"
-            )
+            # Each count under the record's name for it, never a fraction
+            # (:func:`counts_line`). The service's name, a member's name and the
+            # date are its answer's words: escaped and defanged; the row escapes
+            # the table separator itself (:func:`_cell`).
+            said = counts_line(counted, written=lambda text: _inline_safe(text, pipes=False))
             when = _inline_safe(counted.last_seen, pipes=False) if counted.last_seen else ""
             return said + (f" (analysis {when}; {where})" if when else f" ({where})")
         flagged = next((a for a in answers if a.malicious is not None), None)
@@ -5948,7 +6154,7 @@ def _endpoint_with_state(value: str, ctx: _Context) -> str:
 
 
 def _endpoint(value: str) -> str:
-    """One model-written endpoint, defanged, and marked when no host outside could answer.
+    """One model-written endpoint, defanged, and marked with the rule's reason where it refuses it.
 
     Read by its form first (:func:`path_or_host_form`): a name on the analysed
     machine (a device or pipe name, a local file, a registry path) names no
@@ -5959,7 +6165,8 @@ def _endpoint(value: str) -> str:
     """
     from malspark.extractors.network_extractor import (
         address_is_publishable,
-        host_is_public,
+        host_failure,
+        url_failure,
         url_host,
     )
 
@@ -5969,8 +6176,10 @@ def _endpoint(value: str) -> str:
     form = path_or_host_form(text)
     if form.form in NO_HOST_FORMS:
         return _code_span(text)
+    url = ""
     if form.host or form.form == FORM_URL:
         host = form.host
+        url = text.replace("\\", "/") if form.form == FORM_URL else ""
         start, end = form.at
         if form.form == FORM_URL:
             # The scheme renamed and the authority's dots bracketed, as the URL
@@ -5982,7 +6191,7 @@ def _endpoint(value: str) -> str:
         written = _code_span(head + text[end:])
     else:
         if "://" in text:
-            kind, host = "url", url_host(text)
+            kind, host, url = "url", url_host(text), text
         elif _is_address(text):
             kind, host = "ip", text
         else:
@@ -5994,9 +6203,14 @@ def _endpoint(value: str) -> str:
         if not address_is_publishable(host, ""):
             return f"{written} (not an address this run may publish)"
         return written
-    return (
-        written if host_is_public(host) else f"{written} (not a host outside the analysed network)"
-    )
+    # The rule's own reason, the URL's where a URL was read: the parser's, a
+    # missing host's or its host's, and the host test's for a host.
+    # Written into a table cell, whose row escapes the separator (:func:`_row`).
+    failure = url_failure(url) if url else host_failure(host)
+    if not failure:
+        return written
+    mark = failure if url else f"fails the host test: {failure}"
+    return f"{written} ({_inline_safe(mark, pipes=False)})"
 
 
 # What the purpose cell says when the report model gave none. A dash read as a
@@ -6127,6 +6341,35 @@ def _published_in(ctx: _Context) -> Callable[[Any], str]:
     return _where
 
 
+def _string_row_forms(report: MalwareReport, rows: list[ConsolidatedIOC]) -> dict[Any, str]:
+    """The form rows of the IOC table and their printed types (``string_row_form``); ``{}`` unread.
+
+    A table whose forms cannot be read prints each row's type as the table
+    gives it.
+    """
+    from malspark.reporting.string_row_form import string_row_forms
+
+    try:
+        return string_row_forms(report, rows)
+    except Exception as exc:  # noqa: BLE001 — the types are then printed as the table gives them
+        logger.debug("markdown: the strings rows' forms were not read (%s).", exc)
+        return {}
+
+
+def _form_of(row: Any, forms: Mapping[Any, str]) -> str:
+    """The printed type of a form row of the IOC table, ``""`` for any other row.
+
+    ``row`` is a row of the table or a string of the file, read by its kind and
+    value; a table row of another source than the file's strings has none.
+    """
+    from malspark.reporting.ledger_projection import value_key
+
+    if not forms or str(getattr(row, "source", None) or "strings") != "strings":
+        return ""
+    kind = str(row.kind or "")
+    return forms.get((kind, value_key(kind, row.value)), "")
+
+
 def _port_or_path(row: ConsolidatedIOC, report: MalwareReport) -> str:
     if row.kind == "url":
         try:
@@ -6185,7 +6428,10 @@ def _attack_row(
     ctx: _Context,
     rules: list[dict[str, Any]],
     capability_ids: list[str],
-) -> str:
+) -> tuple[str, int]:
+    """A technique's row of the ATT&CK table, and how many cuts its status makes to fit
+    (:func:`judge_reasons.status_cuts`, :func:`judge_reasons.reasons_cut`)."""
+    cuts = 0
     row = corroboration.get(cell.technique_id)
     asserted = list(row.get("asserted_by") or []) if isinstance(row, dict) else []
     claimed = list(row.get("claimed_by") or []) if isinstance(row, dict) else []
@@ -6234,6 +6480,7 @@ def _attack_row(
         status = "claimed, not published: " + _quote_written(
             status_parts(cell.not_published, JUDGE_REASON_WIDTH, ctx.quoted), pipes=False
         )
+        cuts = status_cuts(cell.not_published, JUDGE_REASON_WIDTH, ctx.quoted)
     else:
         status = "published" + _corroborated_words(mapping, rules)
         rule_only = ctx.rule_only.get(cell.technique_id)
@@ -6242,6 +6489,7 @@ def _attack_row(
         if cell.note:
             note = ctx.quoted(judge_reasons_shown(cell.note)[0])
             status += f"; {_quote_written(note, pipes=False)}"
+            cuts = reasons_cut(cell.note)
     # The platform's unresolved findings about this technique, beside its
     # row: the ATT&CK checks, and the judge crediting a source that never
     # named it. Matched on what the finding is about (``subject``), because
@@ -6261,15 +6509,18 @@ def _attack_row(
     tactic = f"{cell.tactic_name} ({cell.tactic})" if cell.tactic else cell.tactic_name
     # The statement whole: a table cell wraps, it is never cut.
     procedure = ctx.cell(str(cell.evidence[0])) if cell.evidence else "-"
-    return _row(
-        tactic,
-        cell.technique_id,
-        cell.technique_name,
-        _with_rules(procedure, rules),
-        source,
-        confidence,
-        status,
-        _technique_evidence_cell(cell, rules, capability_ids),
+    return (
+        _row(
+            tactic,
+            cell.technique_id,
+            cell.technique_name,
+            _with_rules(procedure, rules),
+            source,
+            confidence,
+            status,
+            _technique_evidence_cell(cell, rules, capability_ids),
+        ),
+        cuts,
     )
 
 
@@ -6853,7 +7104,11 @@ def _as_is(text: str) -> str:
 
 
 def _evidence_body(
-    section: Any, write: Callable[[str], str] = _as_is, *, declared_code: bool = False
+    section: Any,
+    write: Callable[[str], str] = _as_is,
+    *,
+    declared_code: bool = False,
+    cites_cut: bool = False,
 ) -> list[str]:
     """One evidence section's rows, items and text, whichever of them it carries.
 
@@ -6869,9 +7124,12 @@ def _evidence_body(
 
     Code the section holds is drawn whole, each function as a listing under
     the table (:func:`_evidence_rows`); ``declared_code`` is whether an entry
-    the section cites declares its answer code (:func:`declares_code`).
+    the section cites declares its answer code (:func:`declares_code`), and
+    ``cites_cut`` whether one its index row says was cut (:func:`cites_a_cut_entry`).
     """
-    rows = _evidence_rows(section, write, listings=True, declared_code=declared_code)
+    rows = _evidence_rows(
+        section, write, listings=True, declared_code=declared_code, cites_cut=cites_cut
+    )
     if not rows:
         return _fenced(write(section.text)) if section.text else []
     if not section.text:
@@ -6903,6 +7161,7 @@ def _evidence_rows(
     *,
     listings: bool = False,
     declared_code: bool = False,
+    cites_cut: bool = False,
 ) -> list[str]:
     """The tabular and bulleted parts of a section, or nothing.
 
@@ -6919,7 +7178,8 @@ def _evidence_rows(
     (:func:`holds_code`) is no cell: the table points to a listing under
     it, and the listing draws the code whole in a fence, headed by the
     function it is. A one-line value is still cut to the page, and a
-    section with a value cut says under it where the value is whole.
+    section with a value cut says under it where the value is whole, or,
+    where it ``cites_cut`` an entry, where that entry is held.
     Without ``listings`` (a section printed in the body) nothing is cut.
     """
     out: list[str] = []
@@ -6968,12 +7228,12 @@ def _evidence_rows(
             cut = cut or shown != whole
             out.append(_item(shown))
     if listings and cut:
-        out += ["", _cut_note(section)]
+        out += ["", _cut_note(section, cites_cut)]
     for number, (where, body) in enumerate(code, 1):
         out += ["", _listing_heading(number, where, body, section), ""]
         out += _fenced(write(body.strip("\n")))
         if body.rstrip().endswith(CUT_MARK):
-            out += ["", _stored_cut_note(section)]
+            out += ["", _stored_cut_note(section, cites_cut)]
     return out
 
 
@@ -6992,6 +7252,23 @@ def declares_code(evidence_ids: Iterable[Any], evidence_index: Iterable[Any]) ->
     for row in evidence_index or []:
         said = row if isinstance(row, dict) else {"id": row.id, "facts": row.facts}
         if str(said.get("id")) in cited and str((said.get("facts") or {}).get("kind")) in kinds:
+            return True
+    return False
+
+
+def cites_a_cut_entry(evidence_ids: Iterable[Any], evidence_index: Iterable[Any]) -> bool:
+    """Whether an entry a section cites (``evidence_ids``) was cut, as its index row says.
+
+    Read from ``EvidenceIndexRow.truncated``, the one record of a cut the
+    report holds; an index row read from a stored report's JSON is read as
+    the model's is.
+    """
+    cited = {str(i) for i in (evidence_ids or [])}
+    if not cited:
+        return False
+    for row in evidence_index or []:
+        said = row if isinstance(row, dict) else {"id": row.id, "truncated": row.truncated}
+        if str(said.get("id")) in cited and said.get("truncated") is True:
             return True
     return False
 
@@ -7048,13 +7325,19 @@ def _listing_heading(number: int, where: str, body: str, section: Any) -> str:
     return " · ".join(parts)
 
 
-def _whole_at(section: Any) -> str:
+def _whole_at(section: Any, cites_cut: bool = False) -> str:
     """Where a value the page shows cut is whole: the section's entry or entries, else the JSON.
 
     A section that cites several entries names them once, on its own
-    ``_Evidence:`` line under it, and is pointed to there.
+    ``_Evidence:`` line under it, and is pointed to there. Where an entry it
+    cites was cut (``cites_cut``), the value is not said whole anywhere: the
+    words say only where the entry is held.
     """
     ids = [str(i) for i in (getattr(section, "evidence_ids", None) or []) if str(i).strip()]
+    if cites_cut and len(ids) == 1:
+        return f"the evidence ledger holds the entry under {_ids(ids)}"
+    if cites_cut and ids:
+        return "the evidence ledger holds the entries cited below"
     if len(ids) == 1:
         return f"the evidence ledger carries it whole under {_ids(ids)}"
     if ids:
@@ -7063,17 +7346,20 @@ def _whole_at(section: Any) -> str:
     return f"the JSON report carries it whole under the section {_code_span(key)}"
 
 
-def _cut_note(section: Any) -> str:
+def _cut_note(section: Any, cites_cut: bool = False) -> str:
     """The line under a section with a value cut to the page: where that value is whole."""
     return (
         f"_A value above that ends in … is cut to fit the page ({CELL_WIDTH} characters "
-        f"a cell, {ITEM_WIDTH} an item; no code is cut to fit it); {_whole_at(section)}._"
+        f"a cell, {ITEM_WIDTH} an item; no code is cut to fit it); "
+        f"{_whole_at(section, cites_cut)}._"
     )
 
 
-def _stored_cut_note(section: Any) -> str:
+def _stored_cut_note(section: Any, cites_cut: bool = False) -> str:
     """The line under a listing the report was built with cut: where the code is whole."""
-    return f"_The report was built with this listing cut at the …; {_whole_at(section)}._"
+    return (
+        f"_The report was built with this listing cut at the …; {_whole_at(section, cites_cut)}._"
+    )
 
 
 # The sections whose table columns hold the sample's or a sandbox's own text,
@@ -7123,8 +7409,11 @@ def _mbc_lines(report: MalwareReport) -> list[str]:
     return lines
 
 
-def _not_published_lines(report: MalwareReport, ctx: _Context | None = None) -> list[str]:
-    """The techniques a producer claimed and this report does not publish.
+def _not_published_lines(
+    report: MalwareReport, ctx: _Context | None = None
+) -> tuple[list[str], int]:
+    """The techniques a producer claimed and this report does not publish, and how many cuts
+    their reasons make to fit (:func:`judge_reasons.status_cuts`).
 
     They are in the table above, with the reason in the Status column. This
     short list under it is for a reader who scans headings: the claims are in
@@ -7137,7 +7426,7 @@ def _not_published_lines(report: MalwareReport, ctx: _Context | None = None) -> 
         if cell.not_published and not _is_mbc_id(cell.technique_id)
     ]
     if not rows:
-        return []
+        return [], 0
     lines = ["", _plain_heading("Claims that were not published as techniques"), ""]
     # The reason by the table's own rule, a judge's reason sentence by
     # sentence, each sentence a check left standing marked as every other place marks it,
@@ -7151,7 +7440,30 @@ def _not_published_lines(report: MalwareReport, ctx: _Context | None = None) -> 
         )
         for cell in rows
     )
-    return lines
+    return lines, sum(status_cuts(c.not_published, _NOT_PUBLISHED_WIDTH, parts) for c in rows)
+
+
+def judge_cut_note(cuts: int, report: MalwareReport) -> str:
+    """The line under the reasons a page shortens to fit (a technique's reason it is not
+    published, the judge's reason in a row's note), counting the cuts it made, each where it is
+    made and never from a mark in the text, and saying where each stands whole: the JSON
+    report's ``capability_matrix``, which holds each as the report records it; ``""`` where the
+    page cut none (T-780)."""
+    if not cuts:
+        return ""
+    rid = _one_line(stored_report_id(report) or "{report_id}")
+    full = _code_span(f"/reports/{rid}/full")
+    held = _code_span("capability_matrix")
+    if cuts == 1:
+        return (
+            f"_1 reason above is shortened to fit this page where it shows {CUT_MARK}; "
+            f"the JSON report ({full}) carries it whole, under {held}._"
+        )
+    return (
+        f"_The reasons above are shortened to fit this page in {cuts} places, each "
+        f"where it shows {CUT_MARK}; the JSON report ({full}) carries each whole, under "
+        f"{held}._"
+    )
 
 
 # How much of a reason the list of claims not published prints.

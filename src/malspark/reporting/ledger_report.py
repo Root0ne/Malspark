@@ -42,7 +42,7 @@ from malspark.analysis.technique_ids import (
     sigma_technique_ids,
     technique_ids_in,
 )
-from malspark.core.reputation import reputation_of
+from malspark.core.reputation import member_name, reputation_of
 from malspark.core.rule_matches import BY_SHAPE_KEY, rule_matches_of
 from malspark.core.tool_declarations import first, select
 from malspark.core.undeclared_tools import (
@@ -61,6 +61,18 @@ from malspark.reporting.dedupe import (
 )
 from malspark.reporting.ledger_projection import later_detonation
 from malspark.reporting.models import OPEN_QUESTION_SOURCE, EvidenceSection
+from malspark.schemas.entry_reading import (
+    ABSENT,
+    BLANKED_READ,
+    BLANKED_UNREAD,
+    CUT_AS_TEXT,
+    ELEMENTS,
+    FAILED,
+    NOT_SHOWN,
+    REPEAT,
+    SHORTENED,
+    entry_reading,
+)
 from malspark.schemas.evidence import answer_not_shown
 from malspark.schemas.isr_models import would_answer_text
 from malspark.schemas.sandbox_document import DNS_NAME_KEYS, dns_name_key, signature_pids
@@ -92,6 +104,14 @@ TEXT_CUT = (
     "Cut here at {shown:,} of {total:,} characters; the evidence endpoint carries it "
     "whole under {ids}."
 )
+# The same cut, of a text built from an entry the reading does not find kept
+# whole: where the entry is held, and the job's store's copy where one is.
+TEXT_CUT_HELD = (
+    "Cut here at {shown:,} of {total:,} characters; the evidence endpoint carries the entry "
+    "under {ids}{stored}."
+)
+STORED_WHOLE = "; the store holds the answer whole"
+STORED_OUTPUT = "; the store holds the entry's output"
 # The capture summary's room. Each conversation line names both ends and what
 # each sent, so it is longer than the line that gave the peer's share alone. A
 # capture is printed whole when it fits ``CAPTURE_TEXT_CHARS``, or when the
@@ -124,12 +144,36 @@ BEACONS_LEFT_OUT = (
 _OLD_SHARE = " ({packets} pkts, {size} bytes from the host{inbound})"
 
 
-def _cut_text(text: str, ids: str) -> str:
-    """``text`` whole, or cut to ``MAX_TEXT_CHARS`` with the sentence saying where it is whole."""
+# The entry states in which an entry keeps its answer's text other than
+# whole, or in which the reading cannot tell (``schemas.entry_reading``).
+_NOT_KEPT_WHOLE = frozenset(
+    {REPEAT, ABSENT, FAILED, NOT_SHOWN, BLANKED_UNREAD, BLANKED_READ, CUT_AS_TEXT, SHORTENED}
+)
+
+
+def _cut_text(text: str, entry: Any) -> str:
+    """``text`` whole, or cut to ``MAX_TEXT_CHARS`` with the sentence saying where it is whole.
+
+    Said whole only where the entry reading keeps ``entry`` whole; otherwise
+    the sentence says where the entry is held, and that the job's store holds
+    its answer whole, or only the output of an entry already cut, where the
+    reading says so.
+    """
     if len(text) <= MAX_TEXT_CHARS:
         return text
     shown = marked_cut(text, MAX_TEXT_CHARS)
-    return f"{shown}\n\n{TEXT_CUT.format(shown=len(shown), total=len(text), ids=ids)}"
+    read = entry_reading(entry)
+    said = {"shown": len(shown), "total": len(text), "ids": entry.id}
+    if not set(read.states) & _NOT_KEPT_WHOLE:
+        return f"{shown}\n\n{TEXT_CUT.format(**said)}"
+    stored = (
+        STORED_WHOLE
+        if read.answer_stored_whole
+        else STORED_OUTPUT
+        if "output" in read.stored
+        else ""
+    )
+    return f"{shown}\n\n{TEXT_CUT_HELD.format(**said, stored=stored)}"
 
 
 class _Sections:
@@ -159,6 +203,15 @@ class _Sections:
         # The display name of the tool behind each row a rule table holds, in
         # row order (:func:`_rule_table`).
         self.row_tools: dict[str, list[str]] = {}
+        # The count rows each section holds per distinct tally, with the ids
+        # of the entries that stated it and the rows placed for it
+        # (:meth:`add_tally`).
+        self._tallies: dict[
+            str, list[tuple[tuple[tuple[str, ...], ...], list[str], list[list[str] | None]]]
+        ] = {}
+        # The sections holding count rows of an entry that recorded no source
+        # (:meth:`add_counts`).
+        self._plain_counts: set[str] = set()
 
     def _full(self, section: EvidenceSection, size: int) -> bool:
         if size < MAX_ROWS:
@@ -220,7 +273,7 @@ class _Sections:
         if not section.source:
             section.source = f"tool:{entry.tool}"
         self.cite(section, entry.id)
-        note_if_shortened(section, entry.structured)
+        note_if_shortened(section, entry)
 
     def add_column(self, section: EvidenceSection, name: str, fill: str = "-") -> None:
         """Give a table one more column, each row it holds already ``fill`` under it."""
@@ -248,6 +301,59 @@ class _Sections:
             return
         seen.add(fingerprint)
         section.rows.append(row)
+
+    def add_counts(self, section: EvidenceSection, rows: list[list[str]]) -> None:
+        """The count rows of an entry that recorded no source, each added as any row is.
+
+        The rows of entries that recorded one are then named by their entries
+        (:meth:`add_tally`), also those placed before, so no row of theirs is
+        taken for one of these and each entry's rows stand together in one order.
+        """
+        if not rows:
+            return
+        self._plain_counts.add(section.key)
+        self._place_tallies(section)
+        for row in rows:
+            self.add_row(section, row)
+
+    def add_tally(self, section: EvidenceSection, entry_id: str, rows: list[list[str]]) -> None:
+        """One entry's count rows: one set where every entry stated the same tally.
+
+        Lookups of one tool that state the same counts are one set of rows, as
+        any repeated row is. Where they state different counts, or the section
+        holds count rows of an entry that recorded no source, each row names
+        the entries that stated it, so no count reads as another lookup's: a
+        row placed before the difference was known is named in place.
+        """
+        if not rows:
+            return
+        groups = self._tallies.setdefault(section.key, [])
+        held = tuple(tuple(row) for row in rows)
+        group = next((g for g in groups if g[0] == held), None)
+        if group is None:
+            group = (held, [], [None] * len(held))
+            groups.append(group)
+        if entry_id not in group[1]:
+            group[1].append(entry_id)
+        self._place_tallies(section)
+
+    def _place_tallies(self, section: EvidenceSection) -> None:
+        groups = self._tallies.get(section.key, [])
+        if not groups:
+            return
+        differ = len(groups) > 1 or section.key in self._plain_counts
+        for tally, ids, placed in groups:
+            for at, (label, *values) in enumerate(tally):
+                text = f"{label} ({', '.join(ids)})" if differ else label
+                row = placed[at]
+                if row is not None:
+                    row[0] = text
+                    continue
+                fresh = [text, *values]
+                self.add_row(section, fresh)
+                if section.rows and section.rows[-1] is fresh:
+                    placed[at] = fresh
+        self._seen[section.key] = {tuple(row) for row in section.rows}
 
     def merge_row(
         self,
@@ -408,30 +514,29 @@ def our_own_words(data: Any) -> frozenset[str]:
     return frozenset({BOOKKEEPING_KEY, "truncated"} | ({ours} if ours else set()))
 
 
-def shortened_sentence(data: dict[str, Any]) -> str:
-    """One sentence for an answer this system had to shorten, or ``""``.
+def shortened_sentence(entry: Any) -> str:
+    """One sentence for an entry whose answer this system had to shorten, or ``""``.
 
     The tool answered in full and the guardrail kept what fits, so the table
     below is a page of the answer rather than all of it. Said once, in words,
     because the reader of a report needs to know a list is partial far more
-    than they need the arithmetic.
+    than they need the arithmetic. Said where the entry reading finds the
+    shortener's map in the entry's own answer (``schemas.entry_reading``),
+    whatever else it reads of the entry, of the first three rows of the map
+    with something left out, as the map records it.
     """
-    book = data.get(our_key_in(data))
-    if not isinstance(book, dict) or not book:
-        return ""
-    named = []
-    for path, row in list(book.items())[:3]:
-        if not isinstance(row, dict):
-            continue
-        left = int(row.get("omitted") or row.get("omitted_chars") or 0)
-        what = "rows" if "omitted" in row else "characters"
-        named.append(f"{path} ({left} {what} not shown)")
+    read = entry_reading(entry)
+    named = [
+        f"{path} ({left} {'rows' if unit == ELEMENTS else 'characters'} not shown)"
+        for path, left, unit in read.shortened_rows
+        if left > 0
+    ][:3]
     if not named:
         return ""
     return "This answer was shortened to fit the analyst's budget: " + ", ".join(named) + "."
 
 
-def note_if_shortened(section: Any, data: Any) -> None:
+def note_if_shortened(section: Any, entry: Any) -> None:
     """Put the sentence under the section, once.
 
     Called from ``credit``, so it reaches the section a dedicated builder
@@ -439,9 +544,7 @@ def note_if_shortened(section: Any, data: Any) -> None:
     are exactly the tools whose answers are large enough to be shortened, and
     they are the ones with builders of their own.
     """
-    if not isinstance(data, dict):
-        return
-    said = shortened_sentence(data)
+    said = shortened_sentence(entry)
     if said and said not in (section.text or ""):
         section.text = f"{section.text}\n\n{said}".strip() if section.text else said
 
@@ -621,7 +724,8 @@ def _iocs(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -> None:
         "iocs",
         "Indicators recovered from the sample",
         "table",
-        columns=["Kind", "Value", "Notes", "Evidence"],
+        # The kind each tool gave its row, which the IOC table's type may not repeat.
+        columns=["Kind (as the tool typed it)", "Value", "Notes", "Evidence"],
     )
     for row in rows:
         if not isinstance(row, dict):
@@ -1164,7 +1268,7 @@ def _sandbox_section(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -
         return
     if rows or value:
         section = acc.get(f"sandbox_{name}", f"Sandbox: {name}", "text")
-        section.text = _cut_text(_whole_text(rows or value), entry.id)
+        section.text = _cut_text(_whole_text(rows or value), entry)
         acc.credit(section, entry)
 
 
@@ -1200,7 +1304,7 @@ def _sandbox_status(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) ->
     if not statement:
         return
     section = acc.get("sandbox_status", "Sandbox", "text")
-    section.text = _cut_text(statement, entry.id)
+    section.text = _cut_text(statement, entry)
     acc.credit(section, entry)
 
 
@@ -1245,7 +1349,7 @@ def _behaviour_code(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) ->
     for key, reason in (data.get(behaviour_code.NOT_READ) or {}).items():
         said.append(f"{key}: {reason}.")
     said.extend(f"{one[:1].upper()}{one[1:]}." for one in behaviour_code.unread_words(data))
-    table.text = _cut_text(" ".join(said), entry.id)
+    table.text = _cut_text(" ".join(said), entry)
     for row in links:
         kind, value = _text(row.get("kind")), _text(row.get("value"))
         items = ", ".join(str(item) for item in row.get("items") or [])
@@ -1382,7 +1486,7 @@ def _pcap(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -> None:
         # before the lines named both ends prints each direction truthfully.
         section.text = _capture_text(data, entry.id)
     else:
-        section.text = _cut_text(str(summary), entry.id)
+        section.text = _cut_text(str(summary), entry)
     acc.credit(section, entry)
 
 
@@ -1501,11 +1605,30 @@ def _reputation(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -> Non
     answer = reputation_of(entry)
     if answer is None:
         return
-    for name in ("malicious", "suspicious", "undetected", "harmless"):
+    rows: list[list[str]] = []
+    named = ("malicious", "suspicious", "undetected", "harmless")
+    for name in named:
         if name in answer.stats:
-            acc.add_row(section, [f"engines {name}", str(answer.stats[name])])
+            rows.append([f"engines {name}", str(answer.stats[name])])
+    if tool_kinds.read_by_name(entry):
+        # An entry that recorded no source is drawn as it always was.
+        if answer.engines is not None:
+            rows.append(["engines", str(answer.engines)])
+        acc.add_counts(section, rows)
+        return
+    # Every other member of the answer's counts object under its own name, as
+    # the answer wrote it: the whole tally stands here, where the header cell
+    # prints the members that are not zero. A name that is no plain token or
+    # is a label of these rows is written quoted (``member_name``).
+    labels = {"engines", *(f"engines {name}" for name in named)}
+    rows += [
+        [member_name(name, labels), str(value)]
+        for name, value in answer.stats.items()
+        if name not in named
+    ]
     if answer.engines is not None:
-        acc.add_row(section, ["engines", str(answer.engines)])
+        rows.append(["engines", str(answer.engines)])
+    acc.add_tally(section, entry.id, rows)
 
 
 # The purpose-built section builders, by name. Which one draws an entry is
@@ -1637,7 +1760,7 @@ def _generic_text(acc: _Sections, entry: LedgerEntry) -> None:
         return
     section = acc.get(_answer_key(entry), tool_kinds.section_title(entry), "text")
     if not section.text:
-        section.text = _cut_text(entry.output, entry.id)
+        section.text = _cut_text(entry.output, entry)
     acc.credit(section, entry)
 
 

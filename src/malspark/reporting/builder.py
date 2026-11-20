@@ -1310,16 +1310,7 @@ def _build_consolidated_iocs(
                 ip.transport or "",
                 f"AS {word(ip.asn)}" if ip.asn else "",
                 "public DNS resolver" if ip.public_resolver else "",
-                _process_tree_words(
-                    ip.sample_process_tree,
-                    ip.outside_processes,
-                    ip.marked_only_processes,
-                    ip.file_only_processes,
-                    ip.marked_by,
-                    word,
-                )
-                if ip.source == "sandbox"
-                else "",
+                _process_tree_words(ip, word) if ip.source == "sandbox" else "",
             ]
             _add(
                 "IPv6" if ":" in ip.address else "IPv4",
@@ -1661,33 +1652,24 @@ def _spawned(roots: list[Any]) -> list[Any]:
     return out
 
 
-def _process_tree_words(
-    attributed: bool | None,
-    outside: list[str] | None = None,
-    marked_only: list[str] | None = None,
-    file_only: list[str] | None = None,
-    marked_by: str | None = None,
-    word: Callable[[str], str] = str,
-) -> str:
+def _process_tree_words(ip: Any, word: Callable[[str], str] = str) -> str:
     """What the sandbox report says about which process reached an address.
 
-    ``word`` writes each process and sandbox name (:func:`build_consolidated_iocs`).
+    An address the publish rule places in no tree is said in the sentence of
+    its own publish answer, built by the one function that decides it
+    (``stix_renderer.address_flow_reason``), so the cell never states another
+    fact than the answer beside it. ``word`` writes each process and sandbox
+    name (:func:`build_consolidated_iocs`).
     """
-    if attributed is True:
+    if ip.sample_process_tree is True:
         return "reached by the sample's process tree"
-    if attributed is False:
+    if ip.sample_process_tree is False:
+        outside = ip.outside_processes
         named = f" ({', '.join(map(word, outside))})" if outside else ""
         return f"reached by a process outside the sample's process tree{named}"
-    if marked_only or file_only:
-        from malspark.reporting.renderers.stix_renderer import disputed_flow_reason
+    from malspark.reporting.renderers import stix_renderer
 
-        sandbox = word(marked_by.strip()) if marked_by and marked_by.strip() else marked_by
-        return disputed_flow_reason(
-            [word(name) for name in marked_only or []],
-            [word(name) for name in file_only or []],
-            sandbox,
-        )
-    return "the sandbox report does not say which process reached it"
+    return stix_renderer.address_flow_reason(ip, word)
 
 
 def _domain_context(d: Any, word: Callable[[str], str] = str) -> str:

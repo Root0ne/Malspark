@@ -126,11 +126,17 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # corroboration table came to be written as text (T-735): each character Markdown
 # reads in the reason gains a backslash in that table, the only change, and the
 # HTML did not change.
+# The Markdown and HTML re-pinned for the rules of T-780 and T-811: a platform sentence about
+# every row it speaks of is a count of those rows where they hold an exception, and each cut a
+# page makes to a technique's reason is counted in a line under the ATT&CK section, with where
+# each reason stands whole (T-780); the context cell of a sandbox address the publish rule places
+# in no tree states the sentence of the row's own publish answer (T-811). Those are the only
+# changes; the STIX did not change.
 STORED_RENDERS = {
-    "run7": ("e7ad1248bae77340", "7c27693f82b034f8", "af1240b0f29bfd9c"),
-    "run5": ("1420ab7b523a91ac", "d2bafe2177886290", "2e717357e24fbfe2"),
-    "run4": ("e5ffe74339534ae2", "798ce36070468515", "0a90e4edd679e2be"),
-    "local8": ("85f44b070da2bb25", "a6ba8a2626516ed8", "75d022862e3237de"),
+    "run7": ("21eba17850b8a933", "3d218ceb646bafbe", "af1240b0f29bfd9c"),
+    "run5": ("996b7821dc72c2a4", "622734e18cd2d733", "2e717357e24fbfe2"),
+    "run4": ("64a1ebdddbc77ec1", "9ac5b154dffb12e8", "0a90e4edd679e2be"),
+    "local8": ("82372dac6755e55d", "d11614eee2c447fb", "75d022862e3237de"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

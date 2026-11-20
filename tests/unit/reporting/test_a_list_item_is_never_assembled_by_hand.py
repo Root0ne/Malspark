@@ -127,8 +127,9 @@ def test_no_value_opens_a_heading_or_a_fence(value: str) -> None:
     assert html.count("<table") == _TABLES
 
 
-# The tables the hostile report draws when no value adds one.
-_TABLES = 46
+# The tables the hostile report draws when no value adds one: §9's table of the
+# strings rows nothing in the run reads as their kind among them (T-778).
+_TABLES = 47
 
 
 def test_the_reviewer_s_setext_probe_opens_no_heading() -> None:

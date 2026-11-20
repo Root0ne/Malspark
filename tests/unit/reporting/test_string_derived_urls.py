@@ -364,7 +364,8 @@ class TestWhatTheBundleCarries:
         renderer.render(report)
 
         assert [code for code, _why in renderer.declined] == [UNPUBLISHABLE_ENDPOINT_CODE]
-        assert "not a name or address that could exist" in renderer.declined[0][1]
+        said = 'its host fails the host test: "localho" is a single label'
+        assert said in renderer.declined[0][1]
 
     def test_a_string_derived_url_held_back_is_not_a_finding(self) -> None:
         """The corroboration rule working is not something to report."""

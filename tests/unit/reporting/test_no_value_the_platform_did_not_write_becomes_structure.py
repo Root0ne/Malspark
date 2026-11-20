@@ -449,8 +449,13 @@ def test_a_value_s_lookup_is_no_link_and_the_platform_s_reference_stays_one() ->
 SECTION_TEXTS = [
     shortened_sentence(
         {
-            "shortened": {
-                "/rows`QK1 [l](#t)` and `<img src=x onerror=alert(1)>`": {"omitted": 3, "kept": 2}
+            "structured": {
+                "shortened": {
+                    "/rows`QK1 [l](#t)` and `<img src=x onerror=alert(1)>`": {
+                        "omitted": 3,
+                        "kept": 2,
+                    }
+                }
             }
         }
     ),
@@ -465,6 +470,10 @@ def _table_section(text: str) -> EvidenceSection:
     return EvidenceSection(
         key="probe_table", title="Probe", kind="table", columns=["A"], rows=[["r"]], text=text
     )
+
+
+def test_the_shortened_sentence_scanned_is_said() -> None:
+    assert SECTION_TEXTS[0].startswith("This answer was shortened")
 
 
 @pytest.mark.parametrize("text", SECTION_TEXTS, ids=range(len(SECTION_TEXTS)))
@@ -585,6 +594,40 @@ def test_an_observed_endpoint_quoted_by_a_finding_is_shown_whole() -> None:
     # The export's decisions are listed with the run's checks, which the
     # analyst report leaves to the bundle.
     _shown_whole(held, report("http://intranet.local/abc"), said, ("bundle", "full"))
+
+
+@pytest.mark.parametrize(
+    "mailbox",
+    [
+        # Two mailboxes the syntax refuses (a ";" and a space are outside it) and
+        # one it passes at a host the host test refuses: each decline quotes the
+        # value whole.
+        "`x`|*y*_z_~~s~~&lt;{U+0041}@LOCALHOST",
+        "a`b@x.Corp",
+        "<b>y</b> [l](#t) | # h `c`@x.com",
+    ],
+)
+def test_a_judge_mailbox_quoted_by_its_decline_is_shown_whole(mailbox: str) -> None:
+    # The export's decline of the judge's e-mail object quotes the mailbox and
+    # the host test's reason: the finding's message is written whole as text.
+    from malspark.pipeline.nodes import _note_export_findings
+    from malspark.reporting.renderers.stix_renderer import Declined, pattern_problem
+
+    def report(value: str) -> MalwareReport:
+        problem = pattern_problem(f"[email-addr:value = '{value}']")
+        assert problem is not None
+        made = MalwareReport(
+            identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)), verdict="Malware"
+        )
+        _note_export_findings(made, [Declined(*problem, by="judge")])
+        return made
+
+    held = report(mailbox)
+    (row,) = held.run_summary["validation"]["unresolved"]
+    assert row["agent"] == "judge"
+    assert "e-mail indicator" in row["message"]
+    said = _defanged_lines(row["message"])
+    _shown_whole(held, report("abc@localhost"), said, ("bundle", "full"))
 
 
 def _defanged_lines(text: str) -> str:

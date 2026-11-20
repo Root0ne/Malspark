@@ -37,6 +37,7 @@ from malspark.reporting.models import (
     ProcessNode,
     SampleIdentity,
     StaticAnalysis,
+    StringIOC,
     TTPMapping,
 )
 
@@ -104,6 +105,11 @@ def _rows(svg: str) -> list[tuple[float, float, float]]:
     ]
 
 
+def _a_url_of(host: str) -> StaticAnalysis:
+    """A URL of the file's strings whose host is ``host``, so the strings name reads as a host."""
+    return StaticAnalysis(interesting_strings=[StringIOC(kind="url", value=f"https://{host}/")])
+
+
 class TestANetworkBoxSaysWhereItsValueWasRead:
     _CASES = (
         (NetworkDomain(fqdn="seen.example", source="sandbox"), "network record"),
@@ -116,11 +122,17 @@ class TestANetworkBoxSaysWhereItsValueWasRead:
         (NetworkDomain(fqdn="unsaid.example"), "source not recorded"),
     )
 
+    # A URL of the file's strings reads its host as a host, so the strings
+    # name is an endpoint the figure draws (T-778).
+    _READ = StaticAnalysis(
+        interesting_strings=[StringIOC(kind="url", value="https://text.example/")]
+    )
+
     @pytest.mark.parametrize(("row", "word"), _CASES)
     def test_each_domain_carries_the_word_of_its_source(
         self, row: NetworkDomain, word: str
     ) -> None:
-        fig = build_network_graph(_report(network=NetworkIOCs(domains=[row])))
+        fig = build_network_graph(_report(network=NetworkIOCs(domains=[row]), static=self._READ))
         assert fig is not None
         said = _texts(fig.content)
         assert word in said
@@ -146,22 +158,23 @@ class TestANetworkBoxSaysWhereItsValueWasRead:
 
     def test_every_row_is_drawn_whatever_its_source(self) -> None:
         rows = [row for row, _w in self._CASES]
-        fig = build_network_graph(_report(network=NetworkIOCs(domains=rows)))
+        fig = build_network_graph(_report(network=NetworkIOCs(domains=rows), static=self._READ))
         assert fig is not None
         said = _texts(fig.content)
         for row in rows:
             assert row.fqdn.replace(".", "[.]") in said
 
     def test_a_label_of_wide_letters_is_cut_before_its_source_word(self) -> None:
+        host = "w" * 60 + ".example"
         fig = build_network_graph(
             _report(
-                network=NetworkIOCs(
-                    domains=[NetworkDomain(fqdn="w" * 60 + ".example", source="strings")]
-                )
+                network=NetworkIOCs(domains=[NetworkDomain(fqdn=host, source="strings")]),
+                static=_a_url_of(host),
             )
         )
         assert fig is not None
-        (label_attrs, label), (word_attrs, _word) = _TEXT.findall(fig.content)
+        (label_attrs, label), (word_attrs, word) = _TEXT.findall(fig.content)
+        assert unescape(word) == "text only, no network record"
         label = unescape(label)
         assert label.endswith("…") and set(label[:-1]) == {"w"}
         right = _number(label_attrs, "x") + (len(label) - 1) * _W_11 + _CUT_MARK_11
@@ -173,10 +186,14 @@ class TestANetworkBoxSaysWhereItsValueWasRead:
     ) -> None:
         whole, drawn, widths = _OVERLAPPING_11[value]
         fig = build_network_graph(
-            _report(network=NetworkIOCs(domains=[NetworkDomain(fqdn=value, source="strings")]))
+            _report(
+                network=NetworkIOCs(domains=[NetworkDomain(fqdn=value, source="strings")]),
+                static=_a_url_of(value),
+            )
         )
         assert fig is not None
-        (label_attrs, label), (word_attrs, _word) = _TEXT.findall(fig.content)
+        (label_attrs, label), (word_attrs, word) = _TEXT.findall(fig.content)
+        assert unescape(word) == "text only, no network record"
         assert unescape(label) == drawn
         start = _number(label_attrs, "x")
         word_at = _number(word_attrs, "x")

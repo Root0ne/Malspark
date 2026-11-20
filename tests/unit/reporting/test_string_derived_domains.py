@@ -205,8 +205,14 @@ class TestTheReportSaysWhereEachNameCameFrom:
         assert "| Type | Value (defanged) | Port/Path | Context | Source | Published |" in markdown
 
     def test_each_row_names_its_own_source_and_the_publish_answer(self) -> None:
-        rows = [line for line in self._markdown().splitlines() if line.startswith("| Domain |")]
+        # A name only the strings hold prints its form, not a host's type (T-778).
+        rows = [
+            line
+            for line in self._markdown().splitlines()
+            if line.startswith(("| Domain |", "| Dotted name |"))
+        ]
         by_fqdn = {line.split("`")[1]: line for line in rows}
+        assert by_fqdn["rosoft[.]com"].startswith("| Dotted name |")
         assert "| strings | no: seen only in the file's strings |" in by_fqdn["rosoft[.]com"]
         assert "| sandbox | yes: the sandbox recorded it |" in by_fqdn["c2[.]evil[.]tld"]
 

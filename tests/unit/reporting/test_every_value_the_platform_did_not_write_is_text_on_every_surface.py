@@ -56,7 +56,12 @@ from pydantic import BaseModel
 
 from malspark.analysis.disclosure import LEFT_THE_MACHINE_RECORD
 from malspark.analysis.isolation import REMOTE_SERVICE
-from malspark.reporting.models import EvidenceSection, ExternalReference, MalwareReport
+from malspark.reporting.models import (
+    EvidenceIndexRow,
+    EvidenceSection,
+    ExternalReference,
+    MalwareReport,
+)
 from malspark.reporting.renderers import markdown as markdown_module
 from malspark.reporting.renderers.bundle import render_products
 from malspark.reporting.renderers.html import HtmlRenderer
@@ -616,7 +621,9 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     export publishes (where the code decoded and loaded it, the call made
     through the import), a mutex string of note was cut from a longer string
     (the publish answer quoting it, in the host table and among the strings),
-    a path string carries a note (the path row's context), and an analyst's
+    a path string carries a note (the path row's context), the sample's
+    reputation lookup is in the index (the header cell prints its record's
+    service and the names of its counts), and an analyst's
     artifact table lists a mutex (the analyst named in its row and its
     publish answer), and a technique is published, so its row prints its
     note, a sentence a check left standing stands in the prose (the label
@@ -626,7 +633,10 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     sandbox), the binding's call is made through a slot, and the run is
     degraded (the tools it went without; the banner's reason for a skipped
     analyst is left out of this state, so the stage's reason is scanned where
-    the first state prints it). Every value keeps its token.
+    the first state prints it). The fourth and the fifth: no lineage fact is
+    disputed, and the report names processes it does not list, or a script
+    host naming the launcher (the address's context names them as its answer
+    does). Every value keeps its token.
     """
     second = report.model_copy(deep=True)
     assert second.static is not None and second.network is not None
@@ -644,6 +654,18 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
         *second.static.interesting_strings,
         held.model_copy(update={"kind": "mutex", "value": "Global\\listed", "cut_from": cut}),
         held.model_copy(update={"kind": "path", "value": "C:\\Users\\listed.txt"}),
+    ]
+    # The sample's reputation lookup, whose record the header cell prints: the
+    # service's name and a member of the answer's counts object, by its name.
+    second.evidence_index = [
+        *second.evidence_index,
+        EvidenceIndexRow(id="ev_0901", agent="pipeline", tool="get_file_report"),
+    ]
+    n = tokens._next("report.reputation[].stats.key", "V")
+    assert second.reputation
+    second.reputation = [
+        second.reputation[0].model_copy(update={"entry_id": "ev_0901", "stats": {_payload(n): 3}}),
+        *second.reputation[1:],
     ]
     second.capability_matrix[0].not_published = ""
     # A claim no revision carried forward: listed whole, with the names it lacks.
@@ -675,7 +697,16 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     third.degraded_mode = True
     for stage in third.run_summary["stages"]:
         stage.pop("agent_reasons", None)
-    return [report, second, third]
+    fourth = report.model_copy(deep=True)
+    assert fourth.network is not None
+    unlisted = fourth.network.ips[0]
+    unlisted.sample_process_tree = None
+    unlisted.marked_only_processes = []
+    unlisted.file_only_processes = []
+    fifth = fourth.model_copy(deep=True)
+    assert fifth.network is not None
+    fifth.network.ips[0].unlisted_processes = []
+    return [report, second, third, fourth, fifth]
 
 
 # ---------------------------------------------------------------------------
@@ -869,11 +900,9 @@ NOT_PRINTED = frozenset(
         "network.domains[].observed_in[].detonation",
         "network.domains[].observed_in[].launched_with",
         "network.ips[].kept_by[]",
-        "network.ips[].launcher_unsettled_processes[]",
         "network.ips[].mentioned_by[]",
         "network.ips[].observed_in[].detonation",
         "network.ips[].observed_in[].launched_with",
-        "network.ips[].unlisted_processes[]",
         "network.urls[].made_by.disputed[]",
         "network.urls[].made_by.launcher[]",
         "network.urls[].made_by.outside[]",
@@ -884,9 +913,7 @@ NOT_PRINTED = frozenset(
         "reputation[].entry_id",
         "reputation[].first_seen",
         "reputation[].labels[]",
-        "reputation[].last_seen",
         "reputation[].link",
-        "reputation[].service",
         "reputation[].summary",
         "reputation[].tool",
         "second_source_reads[].entry",
