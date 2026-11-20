@@ -30,6 +30,7 @@ cleanly on terminals, PDFs and ticket systems alike.
 
 from __future__ import annotations
 
+import bisect
 import ipaddress
 import re
 import secrets
@@ -138,7 +139,7 @@ from malspark.reporting.prose_decisions import (
 )
 from malspark.reporting.publish_words import NETWORK_INDICATOR_KINDS, PUBLISHED_NETWORK_LABEL
 from malspark.reporting.redone_calls import ENTRY_ID
-from malspark.reporting.renderers.layout import ANALYST, BUNDLE, FULL, checked
+from malspark.reporting.renderers.layout import ANALYST, BUNDLE, BUNDLE_FILES, FULL, checked
 from malspark.reporting.renderers.prose_forms import (
     end_references,
     finished,
@@ -405,7 +406,7 @@ class MarkdownRenderer:
                 # own: what it set aside is not this render's to restore.
                 _, notes = analyst_sections(self, report, _Context.of(report))
                 sections = bundle_sections(self, report, ctx, sections, notes)
-        sections = finished(sections, report, analyst=self._layout == ANALYST)
+        sections = finished(sections, report, analyst=self._layout == ANALYST, keep=ctx.keep)
         return self._closed(sections, ctx), notes
 
     def _full_sections(self, report: MalwareReport, ctx: _Context) -> list[str]:
@@ -452,7 +453,9 @@ class MarkdownRenderer:
         # unread. A character reference ("&#58;", "&colon;") is escaped in the
         # same pass: a viewer decodes one after the defanger has read the text,
         # so "https&#58;//evil&#46;example" would become a live link there.
-        defanged = [_defanged_text(text, ctx.run_values) for text in sections]
+        # A link into the evidence bundle or to a note's anchor the renderer did not set
+        # aside prints as its characters: only the platform cites (T-814).
+        defanged = [_hand_links_unlinked(_defanged_text(text, ctx.run_values)) for text in sections]
         # Code is read only where no line may open an HTML block, anywhere in
         # the render; the fences are followed across the sections in order.
         looked = _ReferenceScan()
@@ -4122,6 +4125,194 @@ def _write_block(block: list[str], out: list[str]) -> None:
             out += [_every_reference_escaped(line[at:start]), line[start:end]]
             at = end
         out.append(_every_reference_escaped(line[at:]))
+
+
+# What follows the "]" that closes a link's text or a reference definition's label, up to
+# where its target starts: "(" or ":", white space with at most one line ending (and the
+# block quote marks the next line opens with), an optional "<".
+_AFTER_LINK_TEXT = re.compile(r"\]([(:])[ \t]*+(?:\r?\n[ \t>]*+)?(<?)")
+# A tag's opening and what stands in it before the next "<" or ">"; each attribute value
+# in it; a closing tag.
+_TAG_OPENING = re.compile(r"<([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])([^<>]*)")
+_TAG_CLOSING = re.compile(r"</([A-Za-z][A-Za-z0-9-]*)\s*>")
+# How far a link's target is read: one longer is taken to reach the bundle, which escapes
+# a bracket outside code and so changes nothing a reader is shown.
+_TARGET_REACH = 512
+_TARGET_RUN = re.compile(rf"\S{{0,{_TARGET_REACH + 1}}}")
+_BRACKETED_TARGET_RUN = re.compile(rf"[^<>\n]{{0,{_TARGET_REACH + 1}}}")
+_ATTRIBUTE_VALUE = re.compile(
+    r'=\s*(?:"([^"]*)"' + _PIPE + r"'([^']*)'" + _PIPE + r'([^\s"' + "'" + r"=<>`]+))"
+)
+# A backslash escape as Markdown reads one inside a link's target.
+_MARKDOWN_ESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")
+# What starts a link target's fragment.
+_FRAGMENT_MARK = chr(35)
+# The anchors of the notes: ``cite-N`` in the evidence bundle, ``note-N`` in the
+# self-contained report.
+_NOTE_ANCHORS = ("cite-", "note-")
+# The code a reader takes no link from, by markdown-it's token types.
+_CODE_TOKENS = frozenset({"code_inline", "code_block", "fence"})
+_LINK_READERS: list[Any] = []
+# A line indented as code, the one kind of code a text holding no backtick or tilde fence
+# can hold.
+_INDENTED_LINE = re.compile(r"(?m)^(?: {4}" + _PIPE + r"[ ]{0,3}\t)")
+
+
+def _into_the_bundle(target: str) -> bool:
+    """Whether a link target reaches the evidence bundle or a note's anchor.
+
+    Read as a viewer resolves it: Markdown escapes and character references
+    decoded, percent-encoding decoded repeatedly, white space and control
+    characters dropped, in any case, a backslash as a slash. A target whose last
+    path segment names one of the bundle's files (``./evidence-bundle.html#…``),
+    or one naming no file whose fragment is a note's anchor (``#cite-1``,
+    ``#note-1``), does.
+    """
+    from html import unescape
+    from urllib.parse import unquote
+
+    read = unescape(_MARKDOWN_ESCAPE.sub(r"\1", target))
+    for _ in range(4):
+        decoded = unquote(read)
+        if decoded == read:
+            break
+        read = decoded
+    read = re.sub(r"[\x00-\x20\x7f]", "", read).lower().replace("\\", "/")
+    path, _, fragment = read.partition(_FRAGMENT_MARK)
+    path = path.partition("?")[0]
+    if path.rsplit("/", 1)[-1] in BUNDLE_FILES:
+        return True
+    return all(part in ("", ".") for part in path.split("/")) and fragment.startswith(_NOTE_ANCHORS)
+
+
+def _link_target_at(text: str, start: int, bracketed: bool) -> str | None:
+    """The link target that starts at ``start``: to the ``>`` where it opened with ``<``,
+    else to white space or a parenthesis that closes more than it opened; ``None`` where it
+    runs past :data:`_TARGET_REACH`."""
+    run = (_BRACKETED_TARGET_RUN if bracketed else _TARGET_RUN).match(text, start)
+    held = run.group(0) if run is not None else ""
+    if len(held) > _TARGET_REACH:
+        return None
+    if bracketed or ")" not in held:
+        return held
+    if "(" not in held:
+        return held[: held.index(")")]
+    depth = 0
+    at = 0
+    while at < len(held):
+        char = held[at]
+        if char == "\\":
+            at += 2
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            if not depth:
+                break
+            depth -= 1
+        at += 1
+    return held[:at]
+
+
+def _escaped_at(text: str, index: int) -> bool:
+    """Whether the character at ``index`` stands after an odd run of backslashes."""
+    before = index
+    while before > 0 and text[before - 1] == "\\":
+        before -= 1
+    return (index - before) % 2 == 1
+
+
+def _hand_links(text: str) -> list[int]:
+    """Where ``text`` opens a link into the bundle or to a note's anchor: the ``]`` before
+    such a target, and the ``<`` of a tag one of whose attributes holds one and of the
+    first closing tag of its name after it, which a reader of raw HTML would take too."""
+    places: list[int] = []
+    at = text.find("]")
+    while at != -1:
+        found = _AFTER_LINK_TEXT.match(text, at)
+        if found is not None and not _escaped_at(text, at):
+            target = _link_target_at(text, found.end(), bool(found.group(2)))
+            if target is None or _into_the_bundle(target):
+                places.append(at)
+        at = text.find("]", at + 1)
+    closings: dict[str, list[int]] | None = None
+    for tag in _TAG_OPENING.finditer(text):
+        if _escaped_at(text, tag.start()) or not any(
+            _into_the_bundle(next(value for value in found.groups() if value is not None))
+            for found in _ATTRIBUTE_VALUE.finditer(tag.group(2))
+        ):
+            continue
+        places.append(tag.start())
+        if closings is None:
+            closings = {}
+            for closing in _TAG_CLOSING.finditer(text):
+                if not _escaped_at(text, closing.start()):
+                    closings.setdefault(closing.group(1).lower(), []).append(closing.start())
+        ends = closings.get(tag.group(1).lower(), [])
+        after = bisect.bisect_left(ends, tag.end())
+        if after < len(ends):
+            places.append(ends[after])
+    return sorted(set(places))
+
+
+def _in_code(text: str, places: list[int]) -> set[int]:
+    """Those of ``places`` every reader takes as code: the HTML report's reader and one
+    that reads raw HTML, both markdown-it's, each over the whole text with a word of its
+    own at each place."""
+    from markdown_it import MarkdownIt
+
+    if "`" not in text and "~~~" not in text and _INDENTED_LINE.search(text) is None:
+        return set()
+    if not _LINK_READERS:
+        _LINK_READERS.extend(
+            MarkdownIt("commonmark", {"html": raw}).enable("table").enable("strikethrough")
+            for raw in (False, True)
+        )
+    mark = secrets.token_hex(8)
+    probe = list(text)
+    for index, place in enumerate(places):
+        probe[place] = f"z{mark}{index}z"
+    joined = "".join(probe)
+    word = re.compile(rf"z{mark}(\d+)z")
+    coded: set[int] | None = None
+    for reader in _LINK_READERS:
+        found: set[int] = set()
+        tokens = list(reader.parse(joined))
+        while tokens:
+            token = tokens.pop()
+            tokens.extend(token.children or ())
+            if token.type in _CODE_TOKENS:
+                found.update(int(m.group(1)) for m in word.finditer(token.content + token.info))
+        coded = found if coded is None else coded & found
+    return {places[index] for index in coded or ()}
+
+
+def _hand_links_unlinked(text: str) -> str:
+    """``text`` with every link into the evidence bundle or to a note's anchor printed as
+    its characters (T-814).
+
+    The platform's own note markers and links into the bundle are set aside from the
+    closing pass (``_Context.keep``), so a link of that kind still in the text was
+    written by a model, a sample, a tool or the operator: the ``]`` that closes its text
+    or a reference definition's label is escaped, and so is the ``<`` of a tag that holds
+    one. What a reader takes as code is left byte for byte, and nothing else of the text
+    changes.
+    """
+    if "]" not in text and "<" not in text:
+        return text
+    places = _hand_links(text)
+    if not places:
+        return text
+    coded = _in_code(text, places)
+    out: list[str] = []
+    at = 0
+    for place in places:
+        if place in coded:
+            continue
+        out += [text[at:place], "\\"]
+        at = place
+    out.append(text[at:])
+    return "".join(out)
 
 
 def _reference_spans(text: str) -> list[tuple[int, int]]:

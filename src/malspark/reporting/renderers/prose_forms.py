@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import re
 import secrets
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from contextvars import ContextVar
 from typing import Any
 
@@ -78,12 +78,15 @@ class SectionReferences:
         self._wanted.append(titles)
         return f"{_OPEN}{self._mark}:{len(self._wanted) - 1}{_CLOSE}"
 
-    def resolved(self, sections: list[str], *, bundle_beside: bool) -> list[str]:
+    def resolved(
+        self, sections: list[str], *, bundle_beside: bool, keep: Callable[[str], str] = str
+    ) -> list[str]:
         """The sections with each reference written as the heading it names.
 
         A reference names the first of its titles the render prints as a
         heading other than the one it stands under; with none, the first title
-        is linked in the evidence bundle (``bundle_beside``) or named in words.
+        is linked in the evidence bundle (``bundle_beside``), the link set aside by
+        ``keep``, or named in words.
         """
         if not self._wanted or not any(self._token.search(text) for text in sections):
             return sections
@@ -100,7 +103,7 @@ class SectionReferences:
                 if _OPEN in line:
 
                     def words(found: re.Match[str], under: frozenset[str] = under) -> str:
-                        return self._words(int(found.group(1)), printed, under, bundle_beside)
+                        return self._words(int(found.group(1)), printed, under, bundle_beside, keep)
 
                     line = self._token.sub(words, line)
                 lines.append(line)
@@ -108,7 +111,12 @@ class SectionReferences:
         return out
 
     def _words(
-        self, index: int, printed: dict[str, str], under: frozenset[str], bundle_beside: bool
+        self,
+        index: int,
+        printed: dict[str, str],
+        under: frozenset[str],
+        bundle_beside: bool,
+        keep: Callable[[str], str],
     ) -> str:
         titles = self._wanted[index]
         for title in titles:
@@ -120,7 +128,8 @@ class SectionReferences:
             from malspark.reporting.renderers.analyst import bundle_anchor
             from malspark.reporting.renderers.layout import BUNDLE_HTML
 
-            return f"[{first}]({BUNDLE_HTML}#{bundle_anchor(first)}) in the evidence bundle"
+            link = keep(f"[{first}]({BUNDLE_HTML}#{bundle_anchor(first)})")
+            return f"{link} in the evidence bundle"
         return f"the section “{first}”"
 
 
@@ -441,15 +450,18 @@ def _section_5_clauses(report: Any) -> frozenset[tuple[str, str]]:
     return frozenset(found)
 
 
-def finished(sections: list[str], report: Any, *, analyst: bool) -> list[str]:
+def finished(
+    sections: list[str], report: Any, *, analyst: bool, keep: Callable[[str], str] = str
+) -> list[str]:
     """The sections with their references resolved and their text tidied (module docstring).
 
     ``analyst`` is whether the render is the analyst report, beside which the
-    evidence bundle is served.
+    evidence bundle is served; ``keep`` sets a link into it aside from the closing
+    pass, as the render sets its note markers (``_Context.keep``).
     """
     references = _REFERENCES.get()
     if references is not None:
-        sections = references.resolved(sections, bundle_beside=analyst)
+        sections = references.resolved(sections, bundle_beside=analyst, keep=keep)
     return tidied(sections, report, analyst=analyst)
 
 

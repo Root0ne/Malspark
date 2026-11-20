@@ -122,6 +122,11 @@ INLINE_FORMS = [
     "\\\\host\\share",
     "C:\\",
     "CN=`x` a",
+    # The forms of a citation only the platform sets (T-814).
+    "[[1]](evidence-bundle.html#cite-1)",
+    "[ev_0001](evidence-bundle.html#cite-1)",
+    "[1](#note-1)",
+    '<a href="evidence-bundle.html#cite-1">1</a>',
 ]
 PAYLOADS = BLOCK_STARTS + INLINE_FORMS
 # A value printed as a code span that holds a run of two backticks, at the
@@ -274,6 +279,27 @@ def test_a_model_s_line_keeps_the_writing_of_model_prose() -> None:
     # A list a model writes at its line's start stays the model's.
     assert _prose_item("1. first, **bold**") == "- 1. first, **bold**"
     assert _prose_item("> quoted") == "- \\> quoted"
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "[[1]](evidence-bundle.html#cite-1)",
+        "[x](evidence-bundle.html#sec-key-findings)",
+        "[1](#note-1)",
+        '<a href="evidence-bundle.html#cite-1">1</a>',
+    ],
+)
+def test_a_model_s_line_cites_no_note_and_keeps_its_other_writing(marker: str) -> None:
+    # A model's line through the closing pass: a citation only the platform sets is
+    # printed as its characters, and the line's bold and code span stay its own.
+    ctx = _context()
+    line = _prose_item(f"first, **bold** `code` {marker}")
+    written = MarkdownRenderer()._closed([line], ctx)
+    plain = MarkdownRenderer()._closed([_prose_item("first, **bold** `code` x")], ctx)
+    for reading, baseline in zip(_readings(written), _readings(plain), strict=True):
+        assert _elements(reading) == _elements(baseline), (marker, reading)
+        assert _shown(reading).endswith(_same_words(html.unescape(marker))), (marker, reading)
 
 
 # ---------------------------------------------------------------------------
