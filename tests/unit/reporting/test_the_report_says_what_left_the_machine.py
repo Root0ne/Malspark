@@ -294,15 +294,18 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # corroboration table came to be written as text (T-735): each character Markdown
 # reads in the reason gains a backslash in that table, the only change, and the
 # HTML did not change.
-# haiku4 re-pinned when the header cell's reputation came to name each count
-# the lookup's record holds, never as a fraction (T-781): that one cell is the
-# only change in its Markdown and HTML; the other runs' cells are legacy rows.
+# A stored run's Markdown and HTML re-pinned when a platform sentence about every row came to
+# be a count of the rows it speaks of where they hold an exception (T-780): the sandbox
+# sentences, the tool servers line, the judge's bundle clause and an analyst table's line on
+# its typed values are the only change.
+# Re-pinned when each cut a page makes to the reasons in its ATT&CK section came to be counted in
+# a line under them, with where each stands whole (T-780): that line is the only change.
 STORED_RENDERS = {
-    "run7": ("e7ad1248bae77340", "7c27693f82b034f8"),
-    "run5": ("1420ab7b523a91ac", "d2bafe2177886290"),
-    "run4": ("e5ffe74339534ae2", "798ce36070468515"),
-    "local8": ("85f44b070da2bb25", "a6ba8a2626516ed8"),
-    "haiku4": ("7b8e101a04741577", "3005b846a5d205c7"),
+    "run7": ("e6495255e63d56c1", "0bcd8295d6ba6864"),
+    "run5": ("d4e50b63cdd307a7", "c5808a05bc8f7050"),
+    "run4": ("e97a0d792a696c61", "cfedcbc463a3e3d2"),
+    "local8": ("84fae0eb2e1f096d", "dd22b5e2cc0188b3"),
+    "haiku4": ("71bc5c1d6668265f", "c359e3178fea34b8"),
 }
 
 

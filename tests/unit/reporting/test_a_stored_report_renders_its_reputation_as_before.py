@@ -126,11 +126,17 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # corroboration table came to be written as text (T-735): each character Markdown
 # reads in the reason gains a backslash in that table, the only change, and the
 # HTML did not change.
+# A stored run's Markdown and HTML re-pinned when a platform sentence about every row came to
+# be a count of the rows it speaks of where they hold an exception (T-780): the sandbox
+# sentences, the tool servers line, the judge's bundle clause and an analyst table's line on
+# its typed values are the only change.
+# Re-pinned when each cut a page makes to the reasons in its ATT&CK section came to be counted in
+# a line under them, with where each stands whole (T-780): that line is the only change.
 STORED_RENDERS = {
-    "run7": ("e7ad1248bae77340", "7c27693f82b034f8", "af1240b0f29bfd9c"),
-    "run5": ("1420ab7b523a91ac", "d2bafe2177886290", "2e717357e24fbfe2"),
-    "run4": ("e5ffe74339534ae2", "798ce36070468515", "0a90e4edd679e2be"),
-    "local8": ("85f44b070da2bb25", "a6ba8a2626516ed8", "75d022862e3237de"),
+    "run7": ("e6495255e63d56c1", "0bcd8295d6ba6864", "af1240b0f29bfd9c"),
+    "run5": ("d4e50b63cdd307a7", "c5808a05bc8f7050", "2e717357e24fbfe2"),
+    "run4": ("e97a0d792a696c61", "cfedcbc463a3e3d2", "0a90e4edd679e2be"),
+    "local8": ("84fae0eb2e1f096d", "dd22b5e2cc0188b3", "75d022862e3237de"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

@@ -66,6 +66,9 @@ from tests.unit.reporting._report_inventory import stored_runs
 needs_engine = pytest.mark.skipif(not drafts._YARA_AVAILABLE, reason="yara-python is not installed")
 
 ROOT = Path(__file__).resolve().parents[3]
+# Re-pinned when a platform sentence about every row came to be a count of the rows it speaks
+# of where they hold an exception (T-780): the sandbox sentences, the judge's bundle clause, the
+# section 8.1 closing and recorded-values sentences are the only change.
 GOLDEN = ROOT / "tests" / "fixtures" / "golden" / "reporting" / "no_rules.json"
 HOST = "gate9.example.org"
 URL = f"https://{HOST}/live/"

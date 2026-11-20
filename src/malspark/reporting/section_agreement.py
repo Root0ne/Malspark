@@ -887,6 +887,13 @@ def left_out_of(text: str, sentences: Iterable[str]) -> tuple[str, int]:
     words whatever the white space between them (``_Sentences.every``), with the spaces
     ``left_out_span`` takes, and how many were left out: how the analyst report leaves out a
     sentence of a passage printed in its writer's own words that the round left out (T-613)."""
+    kept, count, _stood = left_out_where(text, sentences)
+    return kept, count
+
+
+def left_out_where(text: str, sentences: Iterable[str]) -> tuple[str, int, list[int]]:
+    """:func:`left_out_of`'s two values, and where in ``text`` each character of the text it
+    keeps stood (T-780)."""
     cut = _Sentences(text)
     spans = sorted(
         {
@@ -896,9 +903,11 @@ def left_out_of(text: str, sentences: Iterable[str]) -> tuple[str, int]:
         },
         reverse=True,
     )
+    stood = list(range(len(text)))
     for start, end in spans:
         text = text[:start] + text[end:]
-    return text, len(spans)
+        del stood[start:end]
+    return text, len(spans), stood
 
 
 # The ids of the judge's passages (``JUDGE``): its verdict, its family, and a technique's.

@@ -25,7 +25,7 @@ def _field(value: Any, name: str) -> Any:
     return value.get(name) if isinstance(value, Mapping) else getattr(value, name, None)
 
 
-def _server_of_row(row: Any) -> str | None:
+def server_of_row(row: Any) -> str | None:
     """The server one index row records, else the server or provider name its source carries."""
     server = _field(row, "server")
     if isinstance(server, str) and server.strip():
@@ -54,7 +54,7 @@ def source_server(section: Any, index: Mapping[str, Any]) -> str | None:
     servers = set()
     for entry_id in ids:
         row = index.get(entry_id) if isinstance(entry_id, str) else None
-        servers.add(_server_of_row(row) if row is not None else None)
+        servers.add(server_of_row(row) if row is not None else None)
     if len(servers) != 1:
         return None
     return next(iter(servers))

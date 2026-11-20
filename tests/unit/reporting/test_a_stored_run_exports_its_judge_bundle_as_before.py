@@ -124,10 +124,13 @@ STORED_EXPORTS = {
 # (T-735): in the run summary's retry and mediator lines each backtick, star
 # and backslash the record holds is printed as a character and a pair no
 # longer forms a code span, the only change; the STIX did not change.
-# The Markdown and HTML re-pinned when the header cell's reputation came to
-# name each count the lookup's record holds, never as a fraction (T-781): that
-# one cell is the only change; the STIX did not change.
-HAIKU4_RENDERS = ("7b8e101a04741577", "3005b846a5d205c7", "ff5607de575fb489")
+# A stored run's Markdown and HTML re-pinned when a platform sentence about every row came to
+# be a count of the rows it speaks of where they hold an exception (T-780): the sandbox
+# sentences, the tool servers line, the judge's bundle clause and an analyst table's line on
+# its typed values are the only change.
+# Re-pinned when each cut a page makes to the reasons in its ATT&CK section came to be counted in
+# a line under them, with where each stands whole (T-780): that line is the only change.
+HAIKU4_RENDERS = ("71bc5c1d6668265f", "c359e3178fea34b8", "ff5607de575fb489")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

@@ -449,6 +449,8 @@ class HtmlRenderer:
         self._self_contained = self_contained and self._layout == ANALYST
         self._bundle_location = bundle_location
         self._notes: list[Any] = []
+        # The numbers of the notes the analyst report prints a marker for.
+        self._cited: set[int] = set()
 
     def render(
         self, report: MalwareReport, *, embed_figures: bool = True, nonce: str | None = None
@@ -527,9 +529,9 @@ class HtmlRenderer:
 
     def _body_html(self, report: MalwareReport) -> str:
         marker = secrets.token_hex(_MARKER_BYTES)
-        markdown, self._notes = MarkdownRenderer(
+        markdown, self._notes, self._cited = MarkdownRenderer(
             failed_marker=marker, layout=self._layout
-        ).render_with_notes(report)
+        ).render_with_citations(report)
         failed = re.compile(_SECTION_FAILED.format(marker=re.escape(marker)))
         markdown = failed.sub(
             lambda m: (
@@ -545,7 +547,7 @@ class HtmlRenderer:
             html = _MERMAID_BLOCK.sub("", html)
             html = _cited_superscripts(html)
         if self._self_contained:
-            html = _notes_in_the_document(html, self._notes, self._bundle_location)
+            html = _notes_in_the_document(html, self._notes, self._bundle_location, self._cited)
         return html
 
     @staticmethod
@@ -693,7 +695,9 @@ _BUNDLE_FILE_LINK = re.compile(
 )
 
 
-def _notes_in_the_document(html: str, notes: list[Any], bundle_location: str | None) -> str:
+def _notes_in_the_document(
+    html: str, notes: list[Any], bundle_location: str | None, cited: set[int]
+) -> str:
     """The analyst report's body, readable alone: its notes listed in it, no link out of it.
 
     Each note marker links to its entry in a "Notes" section the body ends
@@ -702,7 +706,9 @@ def _notes_in_the_document(html: str, notes: list[Any], bundle_location: str | N
     words: beside a downloaded report as ``evidence-bundle.html``, and at
     ``bundle_location`` (the API path, which serves it to a signed-in user)
     where the caller names one. No link is built to it: no setting names
-    the address a reader reaches the API at.
+    the address a reader reaches the API at. ``cited`` holds the numbers of
+    the notes the body prints a marker for, read from the markers the
+    platform writes (``MarkdownRenderer.render_with_citations``).
     """
 
     def link(found: re.Match[str]) -> str:
@@ -711,12 +717,26 @@ def _notes_in_the_document(html: str, notes: list[Any], bundle_location: str | N
             return f'<a href="#note-{target[5:]}">{text}</a>'
         return text
 
+    from malspark.reporting.renderers.bundle import note_ids
+
+    # Only a note the body prints a marker for is listed; the others are counted. Each lists
+    # its ids as the bundle does (:func:`bundle.note_ids`).
+    listed = [note for note in notes if note.number in cited]
     html = _BUNDLE_FILE_LINK.sub(lambda m: m.group(2), _BUNDLE_LINK.sub(link, html))
     items = "".join(
         f'<li id="note-{note.number}">{note.number}. '
-        + ", ".join(escape(i) for i in note.evidence_ids)
+        + ", ".join(escape(i) for i in note_ids(note))
         + "</li>"
-        for note in notes
+        for note in listed
+    )
+    uncited = len(notes) - len(listed)
+    one = uncited == 1
+    left = (
+        f"<p>{uncited} further note{' was' if one else 's were'} numbered for a passage this "
+        f"report does not print; no marker cites {'it' if one else 'them'}, and "
+        f"{'it is' if one else 'they are'} not listed.</p>\n"
+        if uncited
+        else ""
     )
     where = f"the evidence bundle, downloaded beside this report as <code>{BUNDLE_HTML}</code>"
     if bundle_location:
@@ -727,6 +747,7 @@ def _notes_in_the_document(html: str, notes: list[Any], bundle_location: str | N
         + f"<p>Each numbered note and the evidence entries it rests on, which {where} "
         + "lists with every tool's output.</p>\n"
         + (f'<ol class="notes">{items}</ol>\n' if items else "")
+        + left
     )
 
 
