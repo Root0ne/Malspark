@@ -633,7 +633,10 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     sandbox), the binding's call is made through a slot, and the run is
     degraded (the tools it went without; the banner's reason for a skipped
     analyst is left out of this state, so the stage's reason is scanned where
-    the first state prints it). Every value keeps its token.
+    the first state prints it). The fourth and the fifth: no lineage fact is
+    disputed, and the report names processes it does not list, or a script
+    host naming the launcher (the address's context names them as its answer
+    does). Every value keeps its token.
     """
     second = report.model_copy(deep=True)
     assert second.static is not None and second.network is not None
@@ -694,7 +697,16 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     third.degraded_mode = True
     for stage in third.run_summary["stages"]:
         stage.pop("agent_reasons", None)
-    return [report, second, third]
+    fourth = report.model_copy(deep=True)
+    assert fourth.network is not None
+    unlisted = fourth.network.ips[0]
+    unlisted.sample_process_tree = None
+    unlisted.marked_only_processes = []
+    unlisted.file_only_processes = []
+    fifth = fourth.model_copy(deep=True)
+    assert fifth.network is not None
+    fifth.network.ips[0].unlisted_processes = []
+    return [report, second, third, fourth, fifth]
 
 
 # ---------------------------------------------------------------------------
@@ -888,11 +900,9 @@ NOT_PRINTED = frozenset(
         "network.domains[].observed_in[].detonation",
         "network.domains[].observed_in[].launched_with",
         "network.ips[].kept_by[]",
-        "network.ips[].launcher_unsettled_processes[]",
         "network.ips[].mentioned_by[]",
         "network.ips[].observed_in[].detonation",
         "network.ips[].observed_in[].launched_with",
-        "network.ips[].unlisted_processes[]",
         "network.urls[].made_by.disputed[]",
         "network.urls[].made_by.launcher[]",
         "network.urls[].made_by.outside[]",

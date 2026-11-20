@@ -126,17 +126,17 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # corroboration table came to be written as text (T-735): each character Markdown
 # reads in the reason gains a backslash in that table, the only change, and the
 # HTML did not change.
-# A stored run's Markdown and HTML re-pinned when a platform sentence about every row came to
-# be a count of the rows it speaks of where they hold an exception (T-780): the sandbox
-# sentences, the tool servers line, the judge's bundle clause and an analyst table's line on
-# its typed values are the only change.
-# Re-pinned when each cut a page makes to the reasons in its ATT&CK section came to be counted in
-# a line under them, with where each stands whole (T-780): that line is the only change.
+# The Markdown and HTML re-pinned when the context cell of a sandbox address the
+# publish rule places in no tree came to state the sentence of the row's own
+# publish answer (T-811): in §9 each such cell prints "the sandbox report does
+# not say which process made the flows to it" where it printed "the sandbox
+# report does not say which process reached it", the only change; the STIX did
+# not change.
 STORED_RENDERS = {
-    "run7": ("e6495255e63d56c1", "0bcd8295d6ba6864", "af1240b0f29bfd9c"),
-    "run5": ("d4e50b63cdd307a7", "c5808a05bc8f7050", "2e717357e24fbfe2"),
-    "run4": ("e97a0d792a696c61", "cfedcbc463a3e3d2", "0a90e4edd679e2be"),
-    "local8": ("84fae0eb2e1f096d", "dd22b5e2cc0188b3", "75d022862e3237de"),
+    "run7": ("dd19bdec584e6b46", "39d35f15c1cea1d5", "af1240b0f29bfd9c"),
+    "run5": ("5e3c6ad7db77edb4", "034c33de58248e2c", "2e717357e24fbfe2"),
+    "run4": ("064e289ee9664ed0", "9fdc5f8c1dc3a94d", "0a90e4edd679e2be"),
+    "local8": ("418e9abbd01d4501", "41651ef6279c54ee", "75d022862e3237de"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

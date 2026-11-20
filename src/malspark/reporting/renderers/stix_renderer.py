@@ -3755,13 +3755,16 @@ MADE_BY_WHOM: dict[str, str] = {
 MADE_BY_MORE = "; and by further processes each address it resolved to names"
 
 
-def made_by_reason(makers: Any) -> str:
-    """Why traffic is not the sample's, by whose it is (``TrafficMakers``); ``""`` for none."""
+def made_by_reason(makers: Any, word: Callable[[str], str] = str) -> str:
+    """Why traffic is not the sample's, by whose it is (``TrafficMakers``); ``""`` for none.
+
+    ``word`` writes each process name the sandbox wrote.
+    """
     parts = []
     for kind, whose in MADE_BY_WHOM.items():
         named = [str(p) for p in (_field(makers, kind) or []) if str(p)]
         if named:
-            parts.append(f"{whose} ({', '.join(named)})")
+            parts.append(f"{whose} ({', '.join(map(word, named))})")
     if not parts:
         return ""
     more = MADE_BY_MORE if _field(makers, "more") else ""
@@ -3909,19 +3912,21 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
     )
 
 
-def address_flow_reason(row: Any) -> str:
+def address_flow_reason(row: Any, word: Callable[[str], str] = str) -> str:
     """Why no flow of the sample's process tree is recorded to a sandbox address row, by its facts.
 
     The one sentence of what the sandbox's records say of the process behind
     an address none of whose flows the tree made: the processes outside the
     tree it names, the processes its two lineage facts dispute, those the
     report does not list, a script host naming the launcher, or that it does
-    not say which process made them. The AS fact is the caller's.
+    not say which process made them. The AS fact is the caller's. ``word``
+    writes each process and sandbox name (the IOC table's context cell,
+    ``builder._process_tree_words``, states this same sentence).
     """
-    return _address_flow(row)[1]
+    return _address_flow(row, word)[1]
 
 
-def _address_flow(row: Any) -> tuple[str, str]:
+def _address_flow(row: Any, word: Callable[[str], str] = str) -> tuple[str, str]:
     """:func:`address_flow_reason`'s decision, as the ``MADE_BY_WHOM`` kind it names, and sentence.
 
     The kind is ``""`` where the sentence names no process of
@@ -3935,17 +3940,21 @@ def _address_flow(row: Any) -> tuple[str, str]:
     # reader can check against the process table.
     made_by = [str(p) for p in (_field(row, "outside_processes") or []) if str(p)]
     if made_by and _field(row, "sample_process_tree") is False:
-        why += f" ({', '.join(made_by)})"
+        why += f" ({', '.join(map(word, made_by))})"
     marked_only = [str(p) for p in (_field(row, "marked_only_processes") or []) if str(p)]
     file_only = [str(p) for p in (_field(row, "file_only_processes") or []) if str(p)]
     if _field(row, "sample_process_tree") is None and (marked_only or file_only):
+        marked_by = _field(row, "marked_by")
+        sandbox = word(marked_by.strip()) if marked_by and marked_by.strip() else marked_by
         decided, why = (
             "disputed",
-            disputed_flow_reason(marked_only, file_only, _field(row, "marked_by")),
+            disputed_flow_reason(
+                [word(name) for name in marked_only], [word(name) for name in file_only], sandbox
+            ),
         )
     unlisted = [str(p) for p in (_field(row, "unlisted_processes") or []) if str(p)]
     if _field(row, "sample_process_tree") is None and unlisted and not (marked_only or file_only):
-        decided, why = "unlisted", made_by_reason({"unlisted": unlisted})
+        decided, why = "unlisted", made_by_reason({"unlisted": unlisted}, word)
     # The report names the process: a script host naming the launcher
     # whose attribution it does not establish. The decision is the
     # unattributed one; the reason names the host.
@@ -3955,7 +3964,10 @@ def _address_flow(row: Any) -> tuple[str, str]:
         and unsettled
         and not (marked_only or file_only or unlisted)
     ):
-        decided, why = "launcher_unsettled", made_by_reason({"launcher_unsettled": unsettled})
+        decided, why = (
+            "launcher_unsettled",
+            made_by_reason({"launcher_unsettled": unsettled}, word),
+        )
     return decided, why
 
 
