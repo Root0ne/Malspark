@@ -2190,18 +2190,31 @@ def _serve(stored: _Stored) -> _Mode:
 
 
 def _clock(stored: _Stored) -> datetime:
-    """When the stored report was built, else when its job was made; the epoch with neither."""
-    for said in (
-        (stored.report or {}).get("generated_at"),
-        stored.job.get("completed_at"),
-        stored.job.get("created_at"),
-    ):
-        if said:
-            try:
-                return datetime.fromisoformat(str(said).replace("Z", "+00:00"))
-            except ValueError:
-                continue
-    return datetime(1970, 1, 1, tzinfo=UTC)
+    """When the stored report was built, else when its job was made; the epoch with neither.
+
+    Read by ``scripts.replay.stored.stored_clock``, the one clock the replay's detection
+    drafts are dated by too. The driver loads that module from its own directory, never
+    from the tree it renders, so a tree from before the function is rendered by the same
+    clock.
+    """
+    clock: Callable[[Any, Any], datetime] = _own_module("stored").stored_clock
+    return clock(stored.report, stored.job)
+
+
+def _own_module(name: str) -> Any:
+    """A module of this driver's own directory, loaded from its file under a private name."""
+    import importlib.util
+
+    private = f"_render_surfaces_own_{name}"
+    if private in sys.modules:
+        return sys.modules[private]
+    spec = importlib.util.spec_from_file_location(private, Path(__file__).with_name(f"{name}.py"))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"this driver has no {name}.py beside it")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[private] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def pin_clock(report: Any, stored: Mapping[str, Any] | None, clock: datetime) -> None:

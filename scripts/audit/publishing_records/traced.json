@@ -1,0 +1,14 @@
+[
+ "app.main:create_app",
+ "malspark.agents.output_shortening:shortening_sentence",
+ "malspark.core.config:agent_reference_problems",
+ "malspark.core.plugins:registration_refusal",
+ "malspark.core.settings_annotations:mcp_server_annotations",
+ "malspark.core.tool_declarations:ErrorPattern._code_is_a_word",
+ "malspark.core.tool_declarations:ErrorPattern._match_compiles",
+ "malspark.core.tool_declarations:TechniqueField._format_is_a_word",
+ "malspark.enrichment.declared:CredentialSetting.description",
+ "malspark.enrichment.declared:CredentialSetting.title",
+ "malspark.reporting.renderers.markdown:_AnalystStates.clauses",
+ "malspark.reporting.renderers.prose_forms:SectionReferences._words"
+]

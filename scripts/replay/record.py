@@ -16,6 +16,16 @@ whole answer (:func:`answer_head`), and every model-written word is a digest.
 ``--show-text`` adds the words beside them, in fields of their own
 (``*_text``, ``message``, ``claim``, ``value``), so the record has the same
 value-free fields either way and two records compare on those.
+
+From version 5 every finding with words carries their digest (``words``), and
+the report lists each detection draft (``detection_drafts``) by its kind, a
+digest of its name, a digest of its body and, where it has them, a digest of
+its compile error, of the evidence entries it was drafted from (``evidence``)
+and of the values its selection left out (``left_out``), drafted under the
+stored run's clock; the name's, the body's and the error's words
+are added only with the text (``name_text``, ``body_text``,
+``compile_error_text``). The reason beside an unpublished technique is a digest
+(``why``), its words added only with the text (``why_text``).
 """
 
 from __future__ import annotations
@@ -28,11 +38,38 @@ from typing import Any
 # The version of the record a replay writes. Two records of different versions
 # are compared on what both define, the rest is listed as not compared, and a
 # comparison that left a part out is partial (status 2).
-REPLAY_SCHEMA = 4
+REPLAY_SCHEMA = 5
+
+# The fields of a finding no comparison reads, and what each is: a comparison says them.
+NOT_COMPARED_IN_A_FINDING: tuple[tuple[str, str], ...] = (
+    ("claim", "the sentence of the claim it is about, held only with the text"),
+    ("values", "a self-named argument's values, held only with the text"),
+    ("statements", "its place in the checked text"),
+)
 
 # The record's own keys, which say how and where it was made: never compared.
 BOOKKEEPING_KEYS: frozenset[str] = frozenset(
     {"schema", "format", "run", "rules", "stored", "show_text", "against_stored"}
+)
+
+# Every part of a record no comparison reads, and what each is: a comparison says them, all in
+# one list. A field held only with the text is compared by its digest or its value-free twin.
+NEVER_COMPARED: tuple[tuple[str, str], ...] = (
+    *((f"a finding's {name}", why) for name, why in NOT_COMPARED_IN_A_FINDING),
+    (
+        "the record's own keys (" + ", ".join(sorted(BOOKKEEPING_KEYS)) + ")",
+        "how and where each record was made",
+    ),
+    (
+        "the words held only with the text (message, *_text)",
+        "compared by their digest or their value-free twin",
+    ),
+    (
+        "a detection draft's sample check (matches_sample, matched_by, sample_strings, "
+        "sample_not_checked), what the report says of it (printed, standing), auto_generated, "
+        "and why a format was not drafted (drafts_not_built)",
+        "not held by the record",
+    ),
 )
 
 # How a version-1 record named a part that raised:

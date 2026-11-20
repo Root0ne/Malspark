@@ -1,0 +1,9 @@
+{
+ "entries": [
+  {
+   "function": "malspark.core.settings_annotations:mcp_server_annotations",
+   "not_published": {"reason": "operator_text", "basis": "The titles and descriptions of an MCP server block's settings in the catalogue the console's settings form draws; no report, export or job row carries them."},
+   "text_digest": "97706c77c6c25f7ae39db619ac2c2fd14d16745cba50872c80f7a9428ce9e608"
+  }
+ ]
+}

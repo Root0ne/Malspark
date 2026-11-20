@@ -1,0 +1,14 @@
+{
+ "entries": [
+  {
+   "function": "malspark.enrichment.declared:CredentialSetting.description",
+   "not_published": {"reason": "operator_text", "basis": "The description of an enrichment source's credential in the settings catalogue the console's settings form draws; no report, export or job row carries it."},
+   "text_digest": "b1b2101fd00e009caa398bc29ad5e2c8acdfcb7d37222d5be4fa5b1c5954f36f"
+  },
+  {
+   "function": "malspark.enrichment.declared:CredentialSetting.title",
+   "not_published": {"reason": "operator_text", "basis": "The title of an enrichment source's credential in the settings catalogue the console's settings form draws; no report, export or job row carries it."},
+   "text_digest": "eb270891b4ea168b0fb5b9365f67fba15e16a1a482cfbb628c5589412a51c305"
+  }
+ ]
+}

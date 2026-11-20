@@ -1,0 +1,19 @@
+{
+ "entries": [
+  {
+   "function": "malspark.core.tool_declarations:ErrorPattern._code_is_a_word",
+   "not_published": {"reason": "non_sentence", "basis": "A field label that appears only inside the refusal of a tool declaration the operator saves; the function returns the validated value."},
+   "text_digest": "c7c021c2ac7001d6777ae47f70694e99237f176b98972d4b84d338d471369370"
+  },
+  {
+   "function": "malspark.core.tool_declarations:ErrorPattern._match_compiles",
+   "not_published": {"reason": "non_sentence", "basis": "A field label that appears only inside the refusal of a tool declaration the operator saves; the function returns the validated pattern."},
+   "text_digest": "6092b58d85ea20c2126cb9e92f10be4eac8ad4283ff91844f60c8bb3c8e00f21"
+  },
+  {
+   "function": "malspark.core.tool_declarations:TechniqueField._format_is_a_word",
+   "not_published": {"reason": "non_sentence", "basis": "A field label that appears only inside the refusal of a tool declaration the operator saves; the function returns the validated value."},
+   "text_digest": "21a5d86cbb9ce084ee2de7c8f0754bbefc88ff749635c7060dc59a7b03a935e4"
+  }
+ ]
+}

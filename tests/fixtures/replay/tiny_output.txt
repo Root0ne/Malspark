@@ -20,7 +20,7 @@ Report linter: C7 1
 Report: Malware, severity Medium, category sha256:d47712cceb4c, confidence 0.8; 7 section(s); 3 of 4 technique(s) published; 3 of 3 indicator(s) published
   degraded: True (0 reason(s) decided again, 0 stored one(s) of that kind replaced, 2 kept as stored)
   exported techniques: T1027, T1055, T1105
-  not published: T9998 (the ATT&CK catalogue has no entry for this id in any domain)
+  not published: T9998 (sha256:a309baf389ce)
   detection rules drafted: suricata 1, yara 1; 0 not compiled
   claims in force the body does not discuss: 5 (network 1; static 1, 2, 3, 4)
 Corroboration: 3 technique(s), 0 corroborated
