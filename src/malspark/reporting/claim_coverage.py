@@ -44,7 +44,7 @@ own words and is not a discussion of it.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -324,10 +324,15 @@ def claims_not_discussed(
     return [row for row in rows if row is not None]
 
 
-def carried_sentence(row: ClaimNotDiscussed) -> str:
-    """What the check found for one listed claim, in words."""
+def carried_sentence(row: ClaimNotDiscussed, *, name: Callable[[str], str] | None = None) -> str:
+    """What the check found for one listed claim, in words.
+
+    ``name`` writes each name the body never names before the sentence is
+    joined: a renderer passes its value writer, since the names are read off
+    an analyst's claim; without it each name is joined as the claim wrote it.
+    """
     if row.missing:
-        return "the body never names " + ", ".join(row.missing)
+        return "the body never names " + ", ".join(map(name or str, row.missing))
     if not row.named:
         return "it names nothing the check can look for"
     return f"the body carries {row.carried} of the {row.named} {row.counted} it names"

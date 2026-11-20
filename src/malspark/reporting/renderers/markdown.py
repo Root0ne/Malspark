@@ -5179,10 +5179,13 @@ def _claims_not_discussed_lines(report: MalwareReport, ctx: _Context) -> list[st
             shown = _inline_safe(tid, plain=ctx.plain)
             written.append(f"{shown} ({'; '.join(notes)})" if notes else shown)
         mapped = f"technique{'s' if len(ids) > 1 else ''} {', '.join(written)}; " if ids else ""
+        # The names the body never names are read off the claim: each is a value
+        # in the platform's sentence, written as the ids beside it are.
+        found = carried_sentence(row, name=lambda held: _inline_safe(held, plain=ctx.plain))
         lines.append(
             _item(
                 f"**{claim_label(row.agent, row.claim_number)}** ({added}{mapped}{stated}"
-                f"{carried_sentence(row)}): {ctx.plain(row.claim)}{ctx.plain(evidence)}"
+                f"{found}): {ctx.plain(row.claim)}{ctx.plain(evidence)}"
             )
         )
     return lines

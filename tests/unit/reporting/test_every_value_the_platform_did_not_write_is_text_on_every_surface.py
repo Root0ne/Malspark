@@ -105,6 +105,9 @@ PROVENANCE: list[tuple[str, str]] = [
     # The label of a flagged sentence's mark: the platform's words, a judge's quoted
     # note among them, as one string written as text.
     (r"^report\.flagged_statements\[\]\.label$", "V"),
+    # The names the platform's sentence says the body never names, read off an
+    # analyst's claim: each a value in the platform's sentence, written as text.
+    (r"^report\.claims_not_discussed\[\]\.missing\[\]$", "V"),
     # A model's text: the judge's, the analysts', the report model's.
     (r"^report\.capability_matrix\[\]\.statements\[\]$", "M"),
     (
@@ -176,18 +179,21 @@ QUOTED_WORDS = frozenset(
         "report.run_summary.coverage.negatives[].negative",
         "report.run_summary.corroboration.key.not_published",
         "report.flagged_statements[].label",
+        "report.claims_not_discussed[].missing[]",
     }
 )
 
 # Each place where a model's statement is printed as its own list item or block under a
 # platform heading or lead-in line: that model's prose shown as content, which keeps the
 # writing of model prose. A line carrying the platform's words and a model's words is a
-# quote (:data:`QUOTED_WORDS`).
+# quote (:data:`QUOTED_WORDS`). A platform label that names a field and asserts
+# nothing, followed by the model's own field alone, is the model's item.
 BODY_PROSE = frozenset(
     {
         "report.claims_not_discussed[].claim",
         "report.claims_not_discussed[].evidence_ref",
         "report.capability_matrix[].statements[]",
+        "report.question_answers[].open_questions[]",
     }
 )
 
@@ -585,6 +591,19 @@ def _report() -> tuple[MalwareReport, _Tokens]:
         ),
     ]
     report.run_summary = _run_summary(tokens)
+    # The names a claim's row says the body never names: beside the payload, a
+    # name for each structure on its own (emphasis by underscores, a code span,
+    # a cell, a link, a tag), each with a token of its own.
+    for row in report.claims_not_discussed:
+        names = [tokens._next("report.claims_not_discussed[].missing[]", "V") for _ in range(5)]
+        row.missing = [
+            *row.missing,
+            f"__zB{names[0]}z__",
+            f"`zC{names[1]}z`",
+            f"|zP{names[2]}z|",
+            f"[zL{names[3]}z](#zT{names[3]}z)",
+            f"<u>zU{names[4]}z</u>",
+        ]
     return report, tokens
 
 
@@ -600,8 +619,9 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     a path string carries a note (the path row's context), and an analyst's
     artifact table lists a mutex (the analyst named in its row and its
     publish answer), and a technique is published, so its row prints its
-    note, and a sentence a check left standing stands in the prose (the label
-    of its mark). The third: whether the processes are the sample's is not
+    note, a sentence a check left standing stands in the prose (the label
+    of its mark), and a claim no revision carried forward is listed (the names
+    it lacks). The third: whether the processes are the sample's is not
     known (the processes only a mark or only a file names, and the mark's
     sandbox), the binding's call is made through a slot, and the run is
     degraded (the tools it went without; the banner's reason for a skipped
@@ -626,6 +646,8 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
         held.model_copy(update={"kind": "path", "value": "C:\\Users\\listed.txt"}),
     ]
     second.capability_matrix[0].not_published = ""
+    # A claim no revision carried forward: listed whole, with the names it lacks.
+    second.claims_not_discussed[0].carried_since_round = None
     # A sentence a check left standing, in the prose, with the label of its mark.
     flagged = second.flagged_statements[0]
     flagged.left_out = []
