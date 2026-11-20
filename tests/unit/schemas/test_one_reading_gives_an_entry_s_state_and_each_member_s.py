@@ -13,6 +13,7 @@ whether it holds all the reading says unknown, never whole.
 
 from __future__ import annotations
 
+import ast
 import itertools
 import json
 from pathlib import Path
@@ -23,7 +24,8 @@ import pytest
 from malspark.agents.function_map import _INDEX_KIND
 from malspark.agents.mcp_client import TRUNCATION_MARKER
 from malspark.agents.output_shortening import our_key_in, shorten_json_document
-from malspark.pipeline.function_claims import INDEX_COVERAGE_COUNTS, function_facts
+from malspark.analysis import behaviour_code, directed_text
+from malspark.pipeline.function_claims import function_facts
 from malspark.schemas import entry_reading as reading_module
 from malspark.schemas.answer_completeness import completeness_line, read_answer
 from malspark.schemas.entry_reading import (
@@ -50,6 +52,7 @@ from malspark.schemas.entry_reading import (
     entry_reading,
 )
 from malspark.schemas.evidence import LedgerEntry, not_shown_record
+from malspark.tools import artefact_index, upx
 from tests.tool_name_reads import findings
 
 
@@ -101,6 +104,19 @@ _INDEX_FACTS = {"v": 1, "kind": _INDEX_KIND}
 
 def _indexed(document: Any, **fields: Any) -> dict[str, Any]:
     return _entry(json.dumps(document), source="pack", facts=_INDEX_FACTS, **fields)
+
+
+# Each kind whose own reader reads coverage fields, and the one definition it reads them by.
+_COVERED_KINDS = {
+    _INDEX_KIND: artefact_index.COVERAGE_FIELDS,
+    behaviour_code.KIND: behaviour_code.COVERAGE_FIELDS,
+    directed_text.KIND: directed_text.COVERAGE_FIELDS,
+    upx.KIND: upx.COVERAGE_FIELDS,
+}
+
+
+def _of_kind(kind: str, document: Any) -> dict[str, Any]:
+    return _entry(json.dumps(document), source="pack", facts={"v": 1, "kind": kind})
 
 
 _BATCH = {
@@ -239,13 +255,21 @@ class TestPrecedence:
         assert entry_reading(entry).state == CUT_AS_TEXT
 
     def test_gap_fields_at_zero_are_not_gaps_and_a_missing_one_is_unknown(self) -> None:
-        zero = entry_reading(_indexed({"rows": [], "calls_unnamed": {}, "undecoded_functions": 0}))
+        given = {
+            "rows": [],
+            "calls_unnamed": {},
+            "undecoded_functions": 0,
+            "unplaced": {},
+            "absent": {},
+            "imports_cut": "",
+        }
+        zero = entry_reading(_indexed(given))
         left_out = entry_reading(_indexed({"rows": [], "calls_unnamed": {}}))
 
         assert zero.states == (WHOLE,)
-        assert zero.gaps_zero == frozenset({"calls_unnamed", "undecoded_functions"})
+        assert zero.gaps_zero == frozenset(artefact_index.COVERAGE_FIELDS)
         assert not zero.gap_unknown("calls_unnamed") and not zero.gaps_unknown
-        assert zero.gap_unknown("imports_cut")
+        assert zero.gap_unknown("errors")
         assert left_out.states == (WHOLE,) and left_out.gaps_unknown
         assert left_out.gap_unknown("undecoded_functions")
 
@@ -623,17 +647,50 @@ class TestALaterPageIsAPage:
             assert reading.members_not_kept is None
         assert entry_reading(_entry(output, args={"offset": 0})).paging_unknown is False
 
-    @pytest.mark.parametrize("block", ["meta", "overlay"])
-    def test_a_start_only_a_block_beside_the_rows_holds_leaves_the_paging_unknown(
-        self, block: str
+    @pytest.mark.parametrize(
+        "paging",
+        [
+            {"limit": 6},
+            {"page_size": 6},
+            {"total": 60},
+            {"page": 3},
+            {"pages": 10},
+            {"has_more": False},
+            {"next_offset": None},
+            {"cursor": "c"},
+        ],
+    )
+    @pytest.mark.parametrize("word", ["offset", "page_offset", "skip", "start_index"])
+    def test_a_start_in_a_paging_block_beside_the_rows_makes_a_page(
+        self, word: str, paging: dict[str, Any]
     ) -> None:
-        for start in (1, 4096):
-            document = {"rows": _STRINGS, block: {"offset": start, "size": 10}}
+        for start in (1, 54):
+            document = {"rows": _STRINGS, "paging": {word: start, **paging}}
 
             reading = entry_reading(_entry(json.dumps(document)))
 
-            assert reading.states == (WHOLE,)
-            assert reading.paging_unknown is True and reading.members_not_kept is None
+            assert ONE_PAGE in reading.states, (start, paging)
+            assert reading.paging_unknown is False and reading.members_not_kept is None
+
+    @pytest.mark.parametrize(
+        "block",
+        [
+            {"offset": 4096},
+            {"offset": 4096, "present": True, "size": 10},
+            {"page_offset": 4096, "length": 10, "name": "x"},
+        ],
+    )
+    def test_a_start_in_a_block_with_no_paging_word_is_no_signal(
+        self, block: dict[str, Any]
+    ) -> None:
+        document = {"rows": _STRINGS, "overlay": block}
+
+        reading = entry_reading(_entry(json.dumps(document)))
+        argued = entry_reading(_entry(json.dumps(document), args={"offset": 50}))
+
+        assert reading.states == (WHOLE,)
+        assert reading.paging_unknown is False and reading.members_not_kept == 0
+        assert argued.states == (WHOLE,) and argued.paging_unknown is True
 
     def test_an_own_start_at_the_first_row_is_read_over_the_argument(self) -> None:
         document = {"strings": _STRINGS, "offset": 0}
@@ -644,14 +701,20 @@ class TestALaterPageIsAPage:
 
 
 class TestGapsAreReadOnlyWhereTheKindCountsThem:
-    def test_the_kind_s_counts_are_its_reader_s_one_definition(self) -> None:
-        for name in INDEX_COVERAGE_COUNTS:
-            reported = entry_reading(_indexed({"rows": [], name: 3}))
-            zero = entry_reading(_indexed({"rows": [], name: 0}))
+    @pytest.mark.parametrize("kind", sorted(_COVERED_KINDS))
+    def test_every_coverage_field_the_kind_s_reader_reads_is_a_gap(self, kind: str) -> None:
+        fields = _COVERED_KINDS[kind]
+        for name in fields:
+            reported = entry_reading(_of_kind(kind, {"rows": [], name: 3}))
+            zero = entry_reading(_of_kind(kind, {"rows": [], name: 0}))
 
-            assert reported.gap_fields == INDEX_COVERAGE_COUNTS
+            assert reported.gap_fields is fields
             assert reported.states == (WHOLE_WITH_GAPS,) and reported.gaps == {name: 3}
             assert zero.states == (WHOLE,) and name in zero.gaps_zero
+
+    @pytest.mark.parametrize("kind", sorted(_COVERED_KINDS))
+    def test_a_kind_s_gaps_are_read_from_its_reader_s_one_definition(self, kind: str) -> None:
+        assert reading_module._coverage_counts(_of_kind(kind, {})) is _COVERED_KINDS[kind]
 
     @pytest.mark.parametrize(
         "facts", [None, {"v": 1, "kind": "unclassified"}, {"v": 1, "kind": "strings"}]
@@ -659,7 +722,8 @@ class TestGapsAreReadOnlyWhereTheKindCountsThem:
     def test_an_answer_whose_kind_counts_no_gap_has_its_gaps_unknown(
         self, facts: dict[str, Any] | None
     ) -> None:
-        names = [*INDEX_COVERAGE_COUNTS, "absent", "errors", "skipped", "missing"]
+        covered = {name for fields in _COVERED_KINDS.values() for name in fields}
+        names = [*sorted(covered), "errors", "skipped", "missing"]
         documents: list[dict[str, Any]] = [{"rows": [], **dict.fromkeys(names, 3)}, {"rows": []}]
         for document in documents:
             entry = _entry(json.dumps(document), source="mcp:x", facts=facts)
@@ -672,10 +736,35 @@ class TestGapsAreReadOnlyWhereTheKindCountsThem:
             assert all(reading.gap_unknown(name) for name in names)
 
     def test_the_module_holds_no_word_of_a_gap_field(self) -> None:
-        source = Path(reading_module.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(Path(reading_module.__file__).read_text(encoding="utf-8"))
+        texts = {
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        }
+        covered = {name for fields in _COVERED_KINDS.values() for name in fields}
 
-        for name in INDEX_COVERAGE_COUNTS:
-            assert f'"{name}"' not in source
+        # An entry state's own name may spell a field; no other text of the module does.
+        assert not (texts - set(ENTRY_STATES)) & covered
+
+    def test_the_index_s_head_says_every_gap_the_reading_reads(self) -> None:
+        document = {
+            "rows": [{"address": "0x401000"}],
+            "calls_unnamed": {},
+            "undecoded_functions": 2,
+            "unplaced": {"hashes": 3},
+            "absent": {"rules": "no: not joined"},
+            "imports_cut": "import table cut at 512",
+        }
+
+        head = artefact_index.head_text(document, 1)
+        reading = entry_reading(_indexed(document))
+
+        assert reading.states == (WHOLE_WITH_GAPS,)
+        assert set(reading.gaps) == {"undecoded_functions", "unplaced", "absent", "imports_cut"}
+        assert reading.gaps_zero == {"calls_unnamed"}
+        for said in ("rules: no: not joined", "2 functions", "hashes 3", "cut at 512"):
+            assert said in head
 
     def test_the_kind_s_reader_reads_the_same_counts(self) -> None:
         document = {"image_base": "0x400000", "rows": [], "calls_unnamed": {"0x401000": 2}}
@@ -690,8 +779,8 @@ class TestGapsAreReadOnlyWhereTheKindCountsThem:
 
 
 class TestAFullPageUnderABoundingArgument:
-    @pytest.mark.parametrize("name", ["limit", "k", "n", "max_results", "count"])
-    def test_a_primary_list_as_long_as_a_numeric_argument_leaves_the_paging_unknown(
+    @pytest.mark.parametrize("name", ["limit", "k", "max_results", "packet_limit", "page_size"])
+    def test_a_primary_list_as_long_as_a_bounding_argument_leaves_the_paging_unknown(
         self, name: str
     ) -> None:
         for document in (_STRINGS, {"query": "q", "matches": _STRINGS}):
@@ -702,6 +791,14 @@ class TestAFullPageUnderABoundingArgument:
             assert full.members_not_kept is None
             assert full.member(str(len(_STRINGS))).state == MEMBER_NOT_KEPT  # type: ignore[union-attr]
             assert short.paging_unknown is False and short.members_not_kept == 0
+
+    @pytest.mark.parametrize("name", ["n", "count", "length", "buffer_size", "size"])
+    def test_a_numeric_argument_that_bounds_nothing_keeps_the_reading(self, name: str) -> None:
+        for document in (_STRINGS, {"query": "q", "matches": _STRINGS}):
+            reading = entry_reading(_entry(json.dumps(document), args={name: len(_STRINGS)}))
+
+            assert reading.states == (WHOLE,)
+            assert reading.paging_unknown is False and reading.members_not_kept == 0
 
     def test_a_marker_beside_the_full_page_decides_instead(self) -> None:
         document = {"matches": _STRINGS, "has_more": False}

@@ -110,6 +110,14 @@ TOOL = "find_directed_text"
 KIND = "directed_text"
 RENDERER = "directed_text"
 
+# What the pass says it did not read: the sources it could not scan and where
+# the time budget stopped it. Read by the pack's line
+# (``pipeline.triage_pack._directed_text``) and, as the one definition, by the
+# reading of an entry's state (``schemas.entry_reading``).
+NOT_SCANNED = "not_scanned"
+PARTIAL = "partial"
+COVERAGE_FIELDS = (NOT_SCANNED, PARTIAL)
+
 # The encodings bytes are read in, by the name each match carries.
 UTF8 = "utf-8"
 UTF16LE = "utf-16le"
@@ -1798,12 +1806,15 @@ def answer(
 
 
 __all__ = [
+    "COVERAGE_FIELDS",
     "ENCODINGS",
     "INSIDE_TEMPLATE",
     "NAME_HOLDER",
+    "NOT_SCANNED",
     "FAMILIES",
     "FILE_SOURCE",
     "KIND",
+    "PARTIAL",
     "RENDERER",
     "TEXT_FORM",
     "TOOL",

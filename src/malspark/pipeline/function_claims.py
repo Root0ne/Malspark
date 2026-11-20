@@ -110,12 +110,9 @@ from malspark.pipeline.validation import (
 from malspark.schemas.evidence import answer_not_shown, entry_ids_in
 
 __all__ = [
-    "CALLS_UNNAMED",
     "FUNCTION_CLAIM_UNHELD_CODE",
     "FunctionClaimCheck",
     "FunctionFacts",
-    "INDEX_COVERAGE_COUNTS",
-    "UNDECODED_FUNCTIONS",
     "check_function_claims",
     "facts_unread",
     "function_facts",
@@ -124,14 +121,6 @@ __all__ = [
 
 # A claim naming a call or a string for a function whose own facts hold none.
 FUNCTION_CLAIM_UNHELD_CODE = FUNCTION_CLAIM_UNHELD
-
-# The function index's own coverage counts: per function the calls it makes
-# that name nothing, and how many functions the decoder stopped in. Read here
-# and, as the one definition, by the reading of an entry's state
-# (``schemas.entry_reading``).
-CALLS_UNNAMED = "calls_unnamed"
-UNDECODED_FUNCTIONS = "undecoded_functions"
-INDEX_COVERAGE_COUNTS = (CALLS_UNNAMED, UNDECODED_FUNCTIONS)
 
 # Why a fact is absent, as the run record says it.
 NO_INDEX = "no: the run holds no function index"
@@ -653,7 +642,7 @@ def function_facts(
     and ``bases`` the image bases the run read.
     """
     from malspark.agents.function_map import function_artefacts, merged_artefacts
-    from malspark.tools.artefact_index import row_line
+    from malspark.tools.artefact_index import CALLS_UNNAMED, UNDECODED_FUNCTIONS, row_line
 
     found = merged_artefacts(artefacts, function_artefacts(entries))
     facts = FunctionFacts(emulators=attached_emulators())

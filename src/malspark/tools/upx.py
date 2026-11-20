@@ -70,6 +70,15 @@ from malspark.tools.errors import TOOL_FAILED, tool_error
 
 TOOL = "unpack_upx"
 
+# The kind its entry is declared under (``core.builtin_declarations``), and
+# what its answer says it did not count: the cut of the unpacked program's
+# import count. Read by the pack's line (``pipeline.triage_pack._unpacked``)
+# and, as the one definition, by the reading of an entry's state
+# (``schemas.entry_reading``).
+KIND = "unpack"
+IMPORT_COUNT_CUT = "import_count_cut"
+COVERAGE_FIELDS = (IMPORT_COUNT_CUT,)
+
 # The display label of the unpacked file, which names it on disk through the
 # carving writer's own rule (``binary.carved_file_name``).
 UNPACKED_LABEL = "upx-unpacked"

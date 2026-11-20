@@ -36,9 +36,12 @@ E9     :data:`ONE_PAGE`          the answer's own paging markers
                                  (``answer_completeness.read_answer``): a flag,
                                  a next field, a bound count, a page number, or
                                  a start field above 0 that the mapping holding
-                                 the rows holds itself (``AnswerReading.starts``),
-                                 whether or not a next field is given or the
-                                 page is the last
+                                 the rows holds itself (``AnswerReading.starts``)
+                                 or in its paging block, a list-free block that
+                                 also holds a paging word
+                                 (``AnswerReading.block_starts``), whether or
+                                 not a next field is given or the page is the
+                                 last
 E10    :data:`WHOLE_WITH_GAPS`   a coverage count of the entry's declared kind
                                  the answer reports something in
 E5c    :data:`STRUCTURE_DROPPED` the text kept, the structure beside it dropped
@@ -60,16 +63,17 @@ that keeps text (E2 with E9, E3 with E9, E9 with E10, ...).
 the reading says so instead of whole. Paging is unknown
 (:attr:`EntryReading.paging_unknown`) on E2 with a top-level ``truncated:
 true``, which may be the tool's own or the shortener's (it writes one only
-where the tool's is not true; the map's count of what it took stays); where a
-start field above 0 stands only in a list-free block beside the rows, or only
-the call's own ``offset`` argument places the answer after the first row and
-no start field of the answer's own does (either may be a place in a file, so
-it makes no page); and on a full page under a bounding argument: a
-numeric argument equal to the length of the answer's primary list, with no
-marker (``answer_completeness`` reads a full page so under a declared bounding
-argument; the entry carries no declaration, so any numeric argument is read,
-and the outcome is unknown, never a page). On these, as on E9, the members
-not kept are unknown (:attr:`EntryReading.members_not_kept` is ``None``).
+where the tool's is not true; the map's count of what it took stays); where
+only the call's own ``offset`` argument places the answer after the first row
+and no start field of the answer's own or of its paging block does (it may be
+a place in a file, so it makes no page); and on a full page under a bounding
+argument: an argument the one definition of a bounding argument names
+(``output_shortening.bounding_arguments``, read off the entry's own
+arguments) equal to the length of the answer's primary list, with no marker
+(the outcome is unknown, never a page). On these, as on E9, the members not
+kept are unknown (:attr:`EntryReading.members_not_kept` is ``None``). A start
+field in a list-free block that holds no paging word is a place of its own
+(a position in a file) and no signal at all.
 Gaps are unknown (:attr:`EntryReading.gaps_unknown`) for an entry whose
 declared kind states no coverage counts, and for a count its kind states that
 the answer leaves out: the counts of a kind are read from the one definition
@@ -126,7 +130,13 @@ entry's state a reader keeps of its own today, and the states it answers for:
 * ``reporting/ledger_entities`` ``index_whole``, ``agents/function_map``
   ``index_cut``, ``pipeline/function_claims`` ``INDEX_CUT`` and
   ``pipeline/run_state`` ``dropped``: ``truncated``, which is E2, E3, E4,
-  E5a and E5b; E10 is read apart by ``function_claims`` alone.
+  E5a and E5b.
+* E10, by each kind's own reader of its coverage fields:
+  ``tools/artefact_index.head_text`` and ``pipeline/function_claims``
+  ``function_facts`` (the function index), ``analysis/behaviour_code``
+  ``unread_words`` and the behaviour lines of ``reporting/ledger_report`` and
+  ``pipeline/triage_pack`` (the behaviour links), and the pack's directed-text
+  and unpacked-program lines.
 * ``pipeline/validation.EntryTexts`` ``partial`` and ``failed``,
   ``agents/judge_agent`` ``partial``: ``truncated`` (E2, E3, E4, E5a, E5b) and
   E6; a repeat as its holder.
@@ -392,13 +402,13 @@ def _pages(entry: Any, document: Any, shortened: bool) -> tuple[bool, bool]:
     """``(page, unknown)``: whether the answer's own fields make it one page of more
     (E9), and, where they do not, whether its paging is unknown.
 
-    A page by a flag, a next field, a bound count, a page number, or a paged
-    mapping's own start above 0. Unknown where a start above 0 stands only in
-    a list-free block beside the rows, or only the call's own ``offset``
-    argument places the answer after the first row, or a numeric argument
-    equals the length of the answer's primary list and no marker stands
-    beside it.
+    A page by a flag, a next field, a bound count, a page number, or a start
+    above 0 that a paged mapping holds itself or in its paging block. Unknown
+    where only the call's own ``offset`` argument places the answer after the
+    first row, or a bounding argument equals the length of the answer's
+    primary list and no marker stands beside it.
     """
+    from malspark.agents.output_shortening import bounding_arguments
     from malspark.schemas.answer_completeness import _OFFSET_ARGUMENT, _bounded, read_answer
 
     raw = _field(entry, "args")
@@ -418,15 +428,15 @@ def _pages(entry: Any, document: Any, shortened: bool) -> tuple[bool, bool]:
         page = bool(flags or reading.nexts or reading.pages or reading.page_unknown is not None)
     else:
         page = reading.partial or reading.page_unknown is not None
-    if page or reading.starts_after_first:
+    if page or reading.starts_after_first or any(start > 0 for start, _ in reading.block_starts):
         return True, False
-    if any(start > 0 for start, _ in reading.block_starts):
-        return False, True
     if not args:
         return False, False
     offset = args.get(_OFFSET_ARGUMENT)
     placed = isinstance(offset, int) and not isinstance(offset, bool) and offset > 0
-    full = _bounded(reading, args, [name for name in args if isinstance(name, str)])
+    full = _bounded(
+        reading, args, bounding_arguments([name for name in args if isinstance(name, str)])
+    )
     return False, (placed and not reading.starts and not reading.block_starts) or full is not None
 
 
@@ -437,10 +447,16 @@ def _coverage_counts(entry: Any) -> tuple[str, ...]:
     reads them by; a kind whose gaps no reader counts states none.
     """
     from malspark.agents.function_map import _INDEX_KIND
+    from malspark.analysis import behaviour_code, directed_text
     from malspark.core.declared_reading import kind_of
-    from malspark.pipeline.function_claims import INDEX_COVERAGE_COUNTS
+    from malspark.tools import artefact_index, upx
 
-    counted = {_INDEX_KIND: INDEX_COVERAGE_COUNTS}
+    counted = {
+        _INDEX_KIND: artefact_index.COVERAGE_FIELDS,
+        behaviour_code.KIND: behaviour_code.COVERAGE_FIELDS,
+        directed_text.KIND: directed_text.COVERAGE_FIELDS,
+        upx.KIND: upx.COVERAGE_FIELDS,
+    }
     return counted.get(kind_of(entry), ())
 
 

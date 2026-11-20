@@ -44,9 +44,11 @@ shape decides, never the name). A flag is read in any mapping at any depth.
   the rows) is kept as read (:attr:`AnswerReading.starts`), beside an explicit
   word too and on a last page: a start above 0 says the rows before it are not
   in the answer. One that only a list-free child holds is kept apart
-  (:attr:`AnswerReading.block_starts`): such a block may be the paging block
-  or a record of its own whose offset is a place in a file. Neither is ever
-  read into :attr:`AnswerReading.partial` or the line.
+  (:attr:`AnswerReading.block_starts`), and only where that child is a paging
+  block: it also holds a page number or count, a size, a total, a flag or a
+  next field. A start in any other child is a record of its own whose offset
+  is a place in a file, and is not kept. Neither is ever read into
+  :attr:`AnswerReading.partial` or the line.
 * *Pages.* A page number with a page count is partial only when it is before
   the last whichever way pages are counted (page 0 of 1 is complete). A page
   number with no count, no bound count and no explicit word is a known paged
@@ -139,6 +141,21 @@ def _names_next(name: str) -> bool:
     if lowered in _NEXT_WORDS:
         return True
     return lowered.startswith("next") and len(lowered) > 4 and lowered.endswith(_NEXT_ENDINGS)
+
+
+def _paging_block(block: Mapping[str, Any]) -> bool:
+    """Whether a list-free block is a paging block: it holds a paging word of these lists.
+
+    A page number or count, a page size, a total, a flag, or a next field. A
+    start word alone makes no paging block: it may be a place in a file.
+    """
+    words = (*_PAGE_WORDS, *_PAGES_WORDS, *_SIZE_WORDS, *_TOTAL_WORDS)
+    return any(
+        name in words
+        or (_norm(name) in _FLAG_WORDS and isinstance(value, bool))
+        or _names_next(name)
+        for name, value in block.items()
+    )
 
 
 @dataclass
@@ -277,9 +294,14 @@ class _Reader:
         if start is not None:
             reading.starts.append((start, top))
         else:
-            beside = self.first(scope, _OFFSET_WORDS, marks=False)
-            if beside is not None:
-                reading.block_starts.append((beside, top))
+            for block in blocks[1:]:
+                words = {str(key): value for key, value in block.items()}
+                if not _paging_block(words):
+                    continue
+                beside = self.first(words, _OFFSET_WORDS, marks=False)
+                if beside is not None:
+                    reading.block_starts.append((beside, top))
+                    break
         if explicit:
             reading.nexts.extend((name, top) for name in nexts)
             if top:
