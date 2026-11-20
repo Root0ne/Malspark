@@ -116,7 +116,7 @@ STORED_EXPORTS = {
 # by the block-start rule (T-735): characters Markdown reads gain a backslash
 # in the evidence appendix and the run summary, and the HTML, read from it,
 # did not change.
-# haiku4's Markdown re-pinned when a sentence quoting the mediator's words came
+# A stored run's Markdown re-pinned when a sentence quoting the mediator's words came
 # to keep the writing of model prose again (T-735): those lines of the run
 # summary are the only change, and the HTML did not change.
 HAIKU4_RENDERS = ("326e24c856379df9", "7e7c99ce92d9ede7", "ff5607de575fb489")

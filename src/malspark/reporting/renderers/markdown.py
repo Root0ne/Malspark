@@ -7214,9 +7214,9 @@ def _placed(
     twice and no two values pair. The mark is a fence no text of ``record``
     holds (:func:`_absent_mark`); where a line's writing does not keep every
     mark as built, the next fence is taken, at most :data:`_PLACING_TRIES`
-    times in all. After that each line is built with every value as recorded
-    and written whole by ``value``: no value is placed, every one is still
-    written by the inline rule.
+    times in all. After that each line is composed from its parts
+    (:func:`_composed`): every run of the platform's words between two values
+    written by ``line``, every value by ``value``, and no mark in the line.
     """
     start = 0
     held = _fence_numbers(record)
@@ -7226,11 +7226,61 @@ def _placed(
         if done is not None:
             return done
         start = int(mark.strip("\x00")) + 1
-    return [value(text) for text in build(str)]
+    return _composed(_absent_mark(record, start, held), build, line, value)
 
 
-# How many fences :func:`_placed` tries before it writes each line whole by the inline rule.
+# How many fences :func:`_placed` tries before it composes each line from its parts.
 _PLACING_TRIES = 4
+
+
+def _composed(
+    mark: str,
+    build: Callable[[Callable[[Any], str]], list[str]],
+    line: Callable[[str], str],
+    value: Callable[[str], str],
+) -> list[str]:
+    """The lines ``build`` writes, each composed from its parts with no writing over a mark.
+
+    The lines are built with each value marked by ``mark``, as
+    :func:`_placed_with` builds them, and each is cut at its marks: every run
+    of the platform's words between two values is written by ``line`` and
+    every value by ``value``, joined in the order built. No mark reaches the
+    line's writer, so none is left in the line, and each value is written by
+    the writer its caller gives it, whatever its kind.
+    """
+    placed, values, place = _marking(mark, value)
+    composed: list[str] = []
+    for text in build(place):
+        parts = placed.split(text)
+        composed.append(
+            "".join(
+                values[int(part)] if at % 2 else line(part) if part else ""
+                for at, part in enumerate(parts)
+            )
+        )
+    return composed
+
+
+def _marking(
+    mark: str, value: Callable[[str], str]
+) -> tuple[re.Pattern[str], list[str], Callable[[Any], str]]:
+    """The pattern of ``mark``'s places, the values written so far, and the writer of a place.
+
+    The writer hands out ``mark`` around the value's number, one number per
+    distinct value, and keeps the value as ``value`` writes it.
+    """
+    placed = re.compile(re.escape(mark) + r"v(\d+)" + re.escape(mark))
+    values: list[str] = []
+    index: dict[str, int] = {}
+
+    def place(held: Any) -> str:
+        text = str(held if held is not None else "")
+        if text not in index:
+            index[text] = len(values)
+            values.append(value(text))
+        return f"{mark}v{index[text]}{mark}"
+
+    return placed, values, place
 
 
 class _RowWords:
@@ -7317,17 +7367,7 @@ def _placed_with(
     value: Callable[[str], str],
 ) -> list[str] | None:
     """:func:`_placed` with one fence; ``None`` where a line's writing did not keep its marks."""
-    placed = re.compile(re.escape(mark) + r"v(\d+)" + re.escape(mark))
-    values: list[str] = []
-    index: dict[str, int] = {}
-
-    def place(held: Any) -> str:
-        text = str(held if held is not None else "")
-        if text not in index:
-            index[text] = len(values)
-            values.append(value(text))
-        return f"{mark}v{index[text]}{mark}"
-
+    placed, values, place = _marking(mark, value)
     built = build(place)
     written = [line(text) for text in built]
     if any(

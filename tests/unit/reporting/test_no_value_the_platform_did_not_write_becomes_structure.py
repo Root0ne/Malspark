@@ -554,26 +554,34 @@ def test_the_mark_is_found_in_one_pass_however_many_fences_the_record_holds(
     assert len(reads) == 1
 
 
-def test_a_writer_keeping_no_mark_ends_in_each_line_written_whole_by_the_value_writer() -> None:
-    # A writer that drops every mark it is given: the fences tried are bounded,
-    # and each line is then built with its values as recorded and written by
-    # the value writer, every backtick of them shown.
+def test_a_writer_keeping_no_mark_ends_in_each_line_composed_from_its_parts() -> None:
+    # A writer that drops every mark it is given, over a record holding the
+    # fence of every try: the fences tried are bounded, and each line is then
+    # composed from its parts, the platform's words by the line's writer and
+    # each value by the value's, with no mark and every backtick shown.
     tried: list[str] = []
 
     def line(text: str) -> str:
         tried.append(text)
-        return text.replace("\x00", "")
+        return markdown_module._inline_safe(text.replace("\x00", ""))
 
     def build(word: Any) -> list[str]:
-        return [f"Mutex {word('a`b')} held by {word('`c`')}"]
+        return [f"Mutex {word('a`b')} held by {word('`c`')}.", f"Again {word('a`b')}"]
 
-    value = markdown_module._inline_safe
-    written = markdown_module._placed(build, line, value, {"held": "x"})
-    assert written == [value("Mutex a`b held by `c`")]
-    assert len(tried) == markdown_module._PLACING_TRIES
+    def value(text: str) -> str:
+        return _code_span(text)
+
+    tries = markdown_module._PLACING_TRIES
+    record = {"held": "".join(f"\x00{n}\x00v{n}\x00{n}\x00" for n in range(tries + 1))}
+    written = markdown_module._placed(build, line, value, record)
+    assert written == [
+        f"Mutex {_code_span('a`b')} held by {_code_span('`c`')}.",
+        f"Again {_code_span('a`b')}",
+    ]
+    assert len(tried) == tries * 2 + 4
+    assert not any("\x00" in text for text in written)
     reading = HtmlRenderer._markdown_to_html(_item(written[0]))
-    assert "<code>" not in reading
-    assert "Mutex a`b held by `c`" in html.unescape(re.sub(r"<[^>]+>", "", reading))
+    assert re.findall(r"<code>(.*?)</code>", reading) == ["a`b", "`c`"]
 
 
 def test_a_context_naming_one_value_marks_it_where_the_table_builds_it() -> None:

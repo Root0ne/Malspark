@@ -110,7 +110,7 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # by the block-start rule (T-735): characters Markdown reads gain a backslash
 # in the evidence appendix and the run summary, and the HTML, read from it,
 # did not change.
-# run7's Markdown and HTML re-pinned when a tool's failure message came to be
+# A stored run's Markdown and HTML re-pinned when a tool's failure message came to be
 # written by the inline rule (T-735): each backtick it holds is printed as a
 # character in the tool failures list, the only change.
 STORED_RENDERS = {

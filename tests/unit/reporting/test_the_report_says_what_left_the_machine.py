@@ -275,10 +275,10 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # by the block-start rule (T-735): characters Markdown reads gain a backslash
 # in the evidence appendix and the run summary, and the HTML, read from it,
 # did not change.
-# haiku4's Markdown re-pinned when a sentence quoting the mediator's words came
+# A stored run's Markdown re-pinned when a sentence quoting the mediator's words came
 # to keep the writing of model prose again (T-735): those lines of the run
 # summary are the only change, and the HTML did not change.
-# run7's Markdown and HTML re-pinned when a tool's failure message came to be
+# A stored run's Markdown and HTML re-pinned when a tool's failure message came to be
 # written by the inline rule (T-735): each backtick it holds is printed as a
 # character in the tool failures list, the only change.
 STORED_RENDERS = {

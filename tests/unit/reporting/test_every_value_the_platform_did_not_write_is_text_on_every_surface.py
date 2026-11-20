@@ -2,8 +2,9 @@
 
 A scan, not a list of examples. The text places of ``MalwareReport`` are read
 from the model by reflection (:func:`_text_places`); each is of the provenance
-:data:`PROVENANCE` declares for it: platform text (``P``) and a model's text
-(``M``) are listed there by name, and every other place is the sample's, a
+:data:`PROVENANCE` declares for it: platform text (``P``), a model's text
+(``M``) and mixed text (``X``, exactly the places :data:`MIXED_TEXT` lists)
+are listed there by name, and every other place is the sample's, a
 tool's, a sandbox's or the operator's, so a new field is scanned without this
 file changing. The report is the recorded run of ``_report_shapes`` with every
 empty text place filled from its type (:func:`_filled`); every text of such a
@@ -16,9 +17,9 @@ mappings, which have no place in the schema — the tool and sandbox records
 ``run_summary`` keys (:func:`_run_summary`, the keys the renderers' verdict,
 run, method and limitation sections read, each with the provenance of its
 value: the mediator's and the analysts' quoted words, the negotiation keys
-listed in :data:`NEGOTIATION_QUOTES`, a negative claim and a validation
-finding's message, which quotes a model's claim, are a model's and carry a
-plain token of their own); the states a place is printed in only
+listed in :data:`NEGOTIATION_QUOTES` and a negative claim are a model's, and a
+validation finding's message is mixed text; each carries a plain token of its
+own); the states a place is printed in only
 under a condition (:func:`_states`); and the list of places no state prints
 (:data:`NOT_PRINTED`). A key or a record the hand lists miss is not scanned.
 
@@ -45,10 +46,14 @@ import typing
 from html.parser import HTMLParser
 from typing import Any
 
+import pytest
 from markdown_it import MarkdownIt
 from pydantic import BaseModel
 
+from malspark.analysis.disclosure import LEFT_THE_MACHINE_RECORD
+from malspark.analysis.isolation import REMOTE_SERVICE
 from malspark.reporting.models import EvidenceSection, ExternalReference, MalwareReport
+from malspark.reporting.renderers import markdown as markdown_module
 from malspark.reporting.renderers.bundle import render_products
 from malspark.reporting.renderers.html import HtmlRenderer
 from malspark.reporting.renderers.markdown import _escaped_references
@@ -86,6 +91,9 @@ PROVENANCE: list[tuple[str, str]] = [
     (r"^report\.references\[\]\.url$", "P"),
     # The operator's question: a value; the answer to it is a model's.
     (r"^report\.question_answers\[\]\.question$", "V"),
+    # Mixed text (:data:`MIXED_TEXT`): the platform's words, a model's quoted
+    # words and a value nobody wrote here, arriving as one string.
+    (r"^report\.question_answers\[\]\.checks\[\]$", "X"),
     # A model's text: the judge's, the analysts', the report model's.
     (r"^report\.capability_matrix\[\]\.statements\[\]$", "M"),
     (
@@ -122,8 +130,21 @@ _RULES = [(re.compile(pattern), kind) for pattern, kind in PROVENANCE]
 
 
 def provenance(path: str) -> str:
-    """``P``, ``M``, or ``V`` for a value of the sample, a tool, a sandbox or the operator."""
+    """``P``, ``M``, ``X``, or ``V`` for a value of the sample, a tool, a sandbox, the operator."""
     return next((kind for rule, kind in _RULES if rule.search(path)), "V")
+
+
+# The places of mixed text (``X``): one string holding the platform's words, a
+# model's quoted words and, for some kinds, a value nobody wrote here. Such a
+# string is written whole by the value writer in the change that writes a
+# model's quoted words as text; until then each is printed as it is and is
+# scanned as a model's text. The class holds these places and no other.
+MIXED_TEXT = frozenset(
+    {
+        "report.question_answers[].checks[]",
+        "report.run_summary.validation.unresolved[].message",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -214,8 +235,8 @@ class _Tokens:
     def value(self, path: str) -> str:
         return _payload(self._next(path, "V"))
 
-    def plain(self, path: str, text: str) -> str:
-        return f"{text} zM{self._next(path, 'M')}z"
+    def plain(self, path: str, text: str, kind: str = "M") -> str:
+        return f"{text} zM{self._next(path, kind)}z"
 
 
 def _instance(tp: Any, depth: int = 0) -> Any:
@@ -319,6 +340,9 @@ def _run_summary(tokens: _Tokens) -> dict[str, Any]:
     def m(path: str) -> str:
         return tokens.plain(f"report.run_summary.{path}", "said")
 
+    def x(path: str) -> str:
+        return tokens.plain(f"report.run_summary.{path}", "said", "X")
+
     return {
         "elapsed_seconds": 412.5,
         "final_decision": "Malware",
@@ -394,6 +418,36 @@ def _run_summary(tokens: _Tokens) -> dict[str, Any]:
                     "configured_for": [v("disclosure.models[].configured_for[]")],
                 }
             ],
+            # Where a source read the sample's bytes, and what it said of that.
+            "isolation": {
+                "rows": [
+                    {
+                        "where": REMOTE_SERVICE,
+                        "source": v("disclosure.isolation.rows[].source"),
+                        "host": v("disclosure.isolation.rows[].host"),
+                        "why_not_measured": v("disclosure.isolation.rows[].why_not_measured"),
+                    }
+                ]
+            },
+            # What a tool the run called is declared to do beyond answering.
+            "effects": {
+                "partial_reason": v("disclosure.effects.partial_reason"),
+                "tools": [
+                    {
+                        "tool": v("disclosure.effects.tools[].tool"),
+                        "server": v("disclosure.effects.tools[].server"),
+                        "calls": 1,
+                        "network": True,
+                    }
+                ],
+            },
+        },
+        # What the run spent its input on: why the count may be short, and the
+        # run's fingerprint.
+        "efficiency": {
+            "v": 1,
+            "partial_reason": v("efficiency.partial_reason"),
+            "fingerprint": {"sha256": v("efficiency.fingerprint.sha256")},
         },
         "models": {
             v("models.<key>"): {"fallbacks": [{"reason": v("models.key.fallbacks[].reason")}]}
@@ -454,8 +508,8 @@ def _run_summary(tokens: _Tokens) -> dict[str, Any]:
                 {
                     "agent": "judge",
                     "code": "stix.unpublishable_endpoint",
-                    # A check's sentence quoting a model's claim: a model's quoted words.
-                    "message": m("validation.unresolved[].message"),
+                    # A finding's message: mixed text (:data:`MIXED_TEXT`).
+                    "message": x("validation.unresolved[].message"),
                 }
             ],
         },
@@ -812,3 +866,75 @@ def test_the_operator_s_reference_is_one_link_on_every_markdown_surface() -> Non
             if name == "href"
         ]
         assert [t for t in targets if f"zL{n}z" in t and f"zQ{n}z" in t], surface
+
+
+def test_mixed_text_is_a_class_of_its_listed_places_and_of_no_other() -> None:
+    # A place classed as mixed text is one :data:`MIXED_TEXT` lists, and each
+    # listed place is one the scan classes so: a third place fails here.
+    _report_held, tokens = _report()
+    schema = {place for place in _text_places() if provenance(place) == "X"}
+    summary = {tokens.places[n] for n, kind in tokens.kinds.items() if kind == "X"}
+    assert schema | summary == MIXED_TEXT
+
+
+# Each place whose line is set in after its writing (:func:`_placed`), and a
+# sentence of the platform's its builder writes there.
+PLACING_CALLERS = {
+    "limitation inventory": "Tools the run could not offer: ",
+    "rested tool server": "Tool server ",
+    "generation": "Generation rate of ",
+    "disclosure": "Model prompts: ",
+    "isolation": "Not every source that read the sample's bytes was kept from the worker",
+    "effects": "Reached the network: ",
+    "efficiency": "Run fingerprint: ",
+    "coverage": ": coverage unknown: ",
+    "analyst report's line": LEFT_THE_MACHINE_RECORD,
+}
+
+
+def _fenced(held: Any, fences: str) -> Any:
+    """``held`` with ``fences`` after each value's text a payload of its own."""
+    if isinstance(held, str):
+        return f"{held} {fences}" if _TOKEN.search(held) else held
+    if isinstance(held, dict):
+        return {key: _fenced(item, fences) for key, item in held.items()}
+    if isinstance(held, list):
+        return [_fenced(item, fences) for item in held]
+    return held
+
+
+def test_a_line_composed_after_the_last_fence_is_the_line_a_fence_places(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Every place a line's values are set in after its writing, with the
+    # writers its caller passes: the line composed from its parts once no
+    # fence is left to try is the line the placed values give, with no mark,
+    # no character lost and no prefix left, a record holding the fence of
+    # every try included.
+    report, tokens = _report()
+    fences = "".join(
+        f"\x00{n}\x00v{n}\x00{n}\x00" for n in range(markdown_module._PLACING_TRIES + 1)
+    )
+    fenced = report.model_copy(deep=True)
+    fenced.run_summary = _fenced(fenced.run_summary, fences)
+    states = [*_states(report, tokens), fenced]
+
+    def products(state: MalwareReport) -> tuple[str, ...]:
+        made = render_products(state)
+        return made.report_markdown, made.bundle_markdown, made.report_html, made.bundle_html
+
+    placed = [products(state) for state in states]
+    composed_lines: list[str] = []
+    composed = markdown_module._composed
+
+    def composing(*args: Any) -> list[str]:
+        lines = composed(*args)
+        composed_lines.extend(lines)
+        return lines
+
+    monkeypatch.setattr(markdown_module, "_composed", composing)
+    monkeypatch.setattr(markdown_module, "_PLACING_TRIES", 0)
+    assert [products(state) for state in states] == placed
+    for caller, said in PLACING_CALLERS.items():
+        assert any(said in line for line in composed_lines), caller
+    assert any(fences in line for line in composed_lines)
