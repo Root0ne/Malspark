@@ -7139,15 +7139,32 @@ def _texts_of(record: Any) -> list[str]:
     return texts
 
 
-def _absent_mark(record: Any, start: int = 0) -> str:
+# A fence's number as a text can hold it: digits after a NUL with a NUL next.
+# Longer digit runs than a counter reaches are no fence this module builds.
+_FENCE_NUMBER = re.compile(r"\x00(\d{1,18})(?=\x00)")
+
+
+def _fence_numbers(record: Any) -> frozenset[int]:
+    """The numbers of every fence a text of ``record`` holds, read in one pass over each text."""
+    held: set[int] = set()
+    for text in _texts_of(record):
+        if "\x00" in text:
+            held.update(int(found.group(1)) for found in _FENCE_NUMBER.finditer(text))
+    return frozenset(held)
+
+
+def _absent_mark(record: Any, start: int = 0, held: frozenset[int] | None = None) -> str:
     """A short fence no text of ``record`` holds: a NUL, a number from ``start`` up, a NUL.
 
-    The number is raised until no text holds the fence, so there is always one,
-    and it stays a few characters long whatever the record holds.
+    The numbers the record's texts hold are read once (``held`` where the
+    caller already read them), and the first number from ``start`` that is
+    not among them is taken: there is always one, the fence stays a few
+    characters long whatever the record holds, and the work is one pass over
+    the record's text however many fences it holds.
     """
-    texts = _texts_of(record)
+    numbers = _fence_numbers(record) if held is None else held
     number = start
-    while any(f"\x00{number}\x00" in text for text in texts):
+    while number in numbers:
         number += 1
     return f"\x00{number}\x00"
 
@@ -7169,8 +7186,9 @@ def _placed(
     mark as built, the next fence is taken.
     """
     start = 0
+    held = _fence_numbers(record)
     while True:
-        mark = _absent_mark(record, start)
+        mark = _absent_mark(record, start, held)
         done = _placed_with(mark, build, line, value)
         if done is not None:
             return done

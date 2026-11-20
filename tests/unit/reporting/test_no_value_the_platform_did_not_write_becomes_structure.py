@@ -44,6 +44,7 @@ from malspark.reporting.models import (
     StaticAnalysis,
     VersionHistoryEntry,
 )
+from malspark.reporting.renderers import markdown as markdown_module
 from malspark.reporting.renderers.html import HtmlRenderer
 from malspark.reporting.renderers.markdown import (
     MarkdownRenderer,
@@ -543,3 +544,20 @@ def test_the_mark_of_a_quoted_claim_stays_short_whatever_the_record_holds() -> N
         (line,) = [held for held in lines if f"zc{n}z" in held]
         assert claim in line
         assert len(line) < 2 * len(claim) + 400
+
+
+def test_the_mark_is_found_in_one_pass_however_many_fences_the_record_holds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Fences that share their NULs, the densest a text can hold them.
+    fences = "\x00" + "".join(f"{n}\x00" for n in range(20_000))
+    record = {"tools": [{"tool": "probe", "kind": fences}], "long": "\x00" + "7" * 5_000 + "\x00"}
+    assert _absent_mark(record) == "\x0020000\x00"
+    assert _absent_mark(record, start=5) == "\x0020000\x00"
+    assert _absent_mark({"kind": "\x000\x00 \x002\x00"}) == "\x001\x00"
+
+    reads = []
+    whole = markdown_module._texts_of
+    monkeypatch.setattr(markdown_module, "_texts_of", lambda held: reads.append(1) or whole(held))
+    assert _absent_mark(record) == "\x0020000\x00"
+    assert len(reads) == 1
