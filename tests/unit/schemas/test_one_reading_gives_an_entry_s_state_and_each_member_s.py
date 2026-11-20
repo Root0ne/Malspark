@@ -832,7 +832,7 @@ class TestTheStatesAreCounted:
         assert "most restrictive cell over ALL" in " ".join((reading_module.__doc__ or "").split())
 
 
-class TestReviewedEdges:
+class TestEdgesOfTheReading:
     def test_an_entry_cut_as_text_that_is_still_a_document_has_its_pages_and_gaps_read(
         self,
     ) -> None:

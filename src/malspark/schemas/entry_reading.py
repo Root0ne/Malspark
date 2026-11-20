@@ -300,12 +300,20 @@ class EntryReading:
         return MemberReading(said, "", MEMBER_NOT_KEPT)
 
     def gap_unknown(self, name: str) -> bool:
-        """Whether the answer leaves the gap ``name`` unstated; any name its kind counts not."""
+        """Whether the answer leaves the coverage field ``name`` unstated (left out or null).
+
+        A name its kind does not count is always unknown. Ask this for each field a
+        sentence rests on.
+        """
         return name not in self.gaps and name not in self.gaps_zero
 
     @property
     def gaps_unknown(self) -> bool:
-        """Whether what the answer left unread is unknown: its kind counts none, or it omits one."""
+        """Whether any coverage field of the entry's kind is unstated, or the kind counts none.
+
+        Writers leave optional fields out, so this is true on most entries: never rest a
+        sentence on it alone; ask :meth:`gap_unknown` for the fields the sentence rests on.
+        """
         return not self.gap_fields or any(self.gap_unknown(name) for name in self.gap_fields)
 
 
