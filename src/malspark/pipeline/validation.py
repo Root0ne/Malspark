@@ -68,9 +68,12 @@ from malspark.core.declared_reading import (
 from malspark.core.logger import logger
 from malspark.core.spend import validation_retry
 from malspark.core.undeclared_tools import (
+    code_kind,
     declared_auto_name_pattern,
+    declares_a_kind,
     entry_address_arguments,
     entry_decompiles,
+    entry_facts,
     entry_lists_any_code,
     holds_code,
 )
@@ -99,7 +102,7 @@ from malspark.schemas.evidence import (
 from malspark.schemas.judgement import BENIGN_VERDICT, SEVERITY_RATINGS, VERDICT_VALUES
 from malspark.schemas.stix_pattern import read_comparisons
 from malspark.utils.marked_cut import marked_cut
-from malspark.utils.written_forms import written_forms
+from malspark.utils.written_forms import code_literal_forms, written_forms
 
 # How many alternatives a suggestion list carries. Three is what fits in one
 # line of feedback; a longer list reads as a menu and the model picks from the
@@ -246,6 +249,13 @@ class Violation:
     # asked only beside a finding that opens a turn, never alone (``_askable``),
     # and never counted, published or recorded. Never stored on the channel.
     question_only: bool = False
+    # A finding whose message is the platform's words around values each made
+    # fit to print where they were written (``safe_finding_value``), and says
+    # what to do: a consumer that bounds a message to fit a finding row passes
+    # this one whole, so the ids it names and what it says to do are never cut
+    # off; the bound on each value it quotes still holds. Never stored on the
+    # channel.
+    instructs: bool = False
     # Where in the checked answer the statements this finding is about stand,
     # as :func:`locate_statements` writes them: the walk ``path`` uses
     # (``key_findings.1``, ``channels.0.note``) with the sentence's number
@@ -6706,7 +6716,10 @@ def citation_violations(
                 found_at[item.lower()] = len(violations)
                 violations.append(
                     Violation(
-                        code=CITATION_NOT_EVIDENCE_CODE, message=f"{why} {remedy}", path="citation"
+                        code=CITATION_NOT_EVIDENCE_CODE,
+                        message=f"{why} {remedy}",
+                        path="citation",
+                        instructs=True,
                     )
                 )
     if not records or not known:
@@ -6741,6 +6754,7 @@ def citation_violations(
                         f"{in_its_place}"
                     ),
                     path="citation",
+                    instructs=True,
                 )
             )
     return _written_at(violations, found_at, written_at)
@@ -9892,6 +9906,13 @@ class EntryTexts:
     # the model read of it), lower-cased; ``texts`` joins them. A reader that
     # reads a text's notation reads it part by part, never on the join.
     parts: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    # The entries whose answer is a code listing stored as JSON: their tool
+    # declares a code-listing kind (a repeat's, the entry that holds its
+    # answer) and every text they were read in is a JSON document. Only these
+    # are also asked a value as a C string literal writes it
+    # (:func:`code_literal_forms`); an entry of a tool that declares no kind is
+    # asked the value's other spellings.
+    code_listings: frozenset[str] = frozenset()
     # The run's sandbox items (``analysis.sandbox_sections.ItemCitations``): a
     # cited item is read through its own text, as an entry is through its
     # answer. Never in :meth:`holding` or :meth:`may_hold`, which offer entries.
@@ -9980,6 +10001,13 @@ class EntryTexts:
                 partial.add(repeat)
             if holder in failed:
                 failed.add(repeat)
+        code_listings = frozenset(
+            entry_id
+            for entry_id, text in texts.items()
+            if entry_id not in failed
+            and _declares_a_code_listing(entries.get(holders.get(entry_id, entry_id)))
+            and all(_a_json_document(part) for part in (text, *parts[entry_id]))
+        )
         return cls(
             texts=texts,
             tools=tools,
@@ -9988,6 +10016,7 @@ class EntryTexts:
             partial=frozenset(partial),
             failed=frozenset(failed),
             parts=parts,
+            code_listings=code_listings,
         )
 
     def words_of(self, entry_id: str) -> frozenset[str]:
@@ -10002,7 +10031,10 @@ class EntryTexts:
         answer whose only ``443`` is inside a timestamp. See :func:`decidable`
         for the values no text can answer for at all. With ``fields`` (a
         table's stated value, a citation), a field name written with its value
-        is also held by the entry's pair of the two (:func:`field_pair_in`).
+        is also held by the entry's pair of the two (:func:`field_pair_in`). An
+        entry of :attr:`code_listings` also holds the value as a C string literal
+        inside its JSON writes it (:func:`code_literal_forms`), on the whole-value
+        path only.
         """
         from malspark.agents._indicator_denylists import whole_value_in
 
@@ -10013,6 +10045,12 @@ class EntryTexts:
             whole_value_in(form, text)
             for spelling in library_spellings(value)
             for form in written_forms(spelling)
+        ):
+            return True
+        if str(entry_id).strip().lower() in self.code_listings and any(
+            whole_value_in(form, text)
+            for spelling in library_spellings(value)
+            for form in code_literal_forms(spelling)
         ):
             return True
         return fields and any(
@@ -10041,6 +10079,14 @@ class EntryTexts:
     def has_text(self, cited: str) -> bool:
         """Whether a citation names an entry or an item whose text this run holds."""
         return bool(self.text_of(cited))
+
+    def of_the_run(self, cited: str) -> bool:
+        """Whether a citation names an entry of this run's ledger or an item of its sandbox."""
+        key = str(cited).strip().lower()
+        if key in self.entries:
+            return True
+        known = getattr(self.items, "known", None)
+        return bool(known is not None and is_item_id(key) and known(key))
 
     def may_hold(self, value: str, *, fields: bool = False) -> set[str]:
         """The entries that may hold ``value`` for :meth:`holds`: never fewer, often far fewer.
@@ -10186,6 +10232,42 @@ class EntryTexts:
         """``ev_0012 (floss)``: an id with the tool that answered it."""
         tool = self.tools.get(entry_id, "") or ("sandbox report" if is_item_id(entry_id) else "")
         return f"{entry_id} ({tool})" if tool else entry_id
+
+    def named_whole(self, entry_id: str) -> str:
+        """:meth:`named` with the id and the tool each through :func:`safe_finding_value`.
+
+        Each part is bounded on its own, so a long tool name never cuts the id it follows.
+        """
+        tool = self.tools.get(entry_id, "") or ("sandbox report" if is_item_id(entry_id) else "")
+        shown = safe_finding_value(entry_id)
+        return f"{shown} ({safe_finding_value(tool)})" if tool else shown
+
+
+def _named_entries(entries: EntryTexts, ids: Iterable[str]) -> str:
+    """Entries a finding names, each with its tool, bounded by count and never cut by length.
+
+    At most :data:`_MAX_NAMED_IDS`, then ``and N more``, as :func:`_named_ids`;
+    each id and tool name is written through :func:`safe_finding_value` on its own
+    (:meth:`EntryTexts.named_whole`), and the caller writes the joined list with
+    ``whole=True``, which masks and does not cut.
+    """
+    listed = list(ids)
+    shown = ", ".join(entries.named_whole(entry_id) for entry_id in listed[:_MAX_NAMED_IDS])
+    if len(listed) > _MAX_NAMED_IDS:
+        shown += f" and {len(listed) - _MAX_NAMED_IDS} more"
+    return shown
+
+
+def _declares_a_code_listing(entry: Any) -> bool:
+    """Whether an entry's tool declares a code-listing kind, decompiled or as instructions.
+
+    Read off the declaration alone (``core.undeclared_tools.code_kind``): a tool
+    that declares no kind is never one here, whatever its name or its answer.
+    """
+    if entry is None:
+        return False
+    facts = entry_facts(entry)
+    return declares_a_kind(facts) and bool(code_kind(facts, None))
 
 
 # A value that is only a number — decimal, hex, dotted — is one no text can be
@@ -10569,7 +10651,15 @@ def wrong_entry_citations(
     texts do not spell as the sentence does is a paraphrase or a composition
     this check cannot judge. The id is never rewritten: a citation kept after
     the question is marked where it stands, each place it is written with its
-    own label (``quoted``, ``labels``; :func:`_wrong_entry_label`).
+    own label (``quoted``, ``labels``; :func:`_not_found_whole_label`).
+
+    The question says what was searched and nothing more
+    (:func:`_wrong_entry_message`): the entries read, whether the sentence or
+    its record cites them, the spellings asked, and the entries the value was
+    found whole in; a cited entry with no text is named as one this check does
+    not read; a value a cited entry holds only inside a longer run is asked
+    with that run and the two ends that pass (:data:`INSIDE_A_TOKEN_ENDS`). A
+    cited entry known not to be the whole answer silences the question.
 
     ``prose`` names the fields that are running text, read sentence by
     sentence under the brackets each sentence carries. Every other string is
@@ -10580,15 +10670,20 @@ def wrong_entry_citations(
     if payload is None or entries is None or not (entries.texts or entries.items is not None):
         return []
     data = payload if isinstance(payload, dict) else getattr(payload, "__dict__", {}) or {}
-    wrong: dict[tuple[tuple[str, ...], tuple[str, ...]], list[str]] = {}
+    wrong: dict[_WrongGroup, list[str]] = {}
     # Where each group's values are written, in order: the sentence, or the
     # row's own text under its citations (:func:`cited_row_text`), each with
     # the values found there.
-    written: dict[tuple[tuple[str, ...], tuple[str, ...]], dict[str, list[str]]] = {}
+    written: dict[_WrongGroup, dict[str, list[str]]] = {}
     # Where in the answer each group is written: the sentence, or the row's own string.
-    spans: dict[tuple[tuple[str, ...], tuple[str, ...]], list[Span]] = {}
+    spans: dict[_WrongGroup, list[Span]] = {}
+    # Each value a cited entry holds only inside a longer run, by the entries
+    # searched: that entry, and the run shown.
+    runs: dict[tuple[str, tuple[str, ...]], tuple[str, tuple[str, bool] | None]] = {}
 
-    def _ask(value: str, cited: Sequence[str], where: str, span: Span) -> None:
+    def _ask(
+        value: str, cited: Sequence[str], where: str, span: Span, by_record: bool = False
+    ) -> None:
         value = str(value or "").strip()
         known = [entry_id for entry_id in cited if entries.has_text(entry_id)]
         if not decidable(value) or not known:
@@ -10597,12 +10692,26 @@ def wrong_entry_citations(
             return
         if any(entry_id in entries.partial for entry_id in known):
             # A cited entry that is not the whole answer may hold it in the
-            # part that is missing; no "is not in" is said of it.
+            # part that is missing; nothing is said of what it lacks.
             return
         holders = entries.holding(value, fields=True)
         if not holders:
             return
-        group = (tuple(known), tuple(holders))
+        # An id the run never issued is left to :func:`citation_violations`.
+        blank = tuple(
+            dict.fromkeys(
+                entry_id
+                for entry_id in cited
+                if entry_id not in known and entries.of_the_run(entry_id)
+            )
+        )
+        placed = (value, tuple(known))
+        if placed not in runs:
+            for entry_id in known:
+                if _placed_inside(entries, entry_id, value) is not None:
+                    runs[placed] = (entry_id, _run_shown(entries, entry_id, value))
+                    break
+        group = (tuple(known), tuple(holders), blank, by_record, placed in runs)
         values = wrong.setdefault(group, [])
         if value not in values:
             values.append(value)
@@ -10639,13 +10748,19 @@ def wrong_entry_citations(
                     where = cited_row_text(value, node)
                     whole = (value, 0, len(value))
                     if key in _VERBATIM_FIELDS:
-                        _ask(value, refs, where, whole)
+                        _ask(value, refs, where, whole, by_record=True)
                     for stated in [*quoted_values(value), *literal_values(value)]:
-                        _ask(stated, refs, where, whole)
+                        _ask(stated, refs, where, whole, by_record=True)
             elif key in _VERBATIM_FIELDS and isinstance(value, list | tuple) and refs:
                 for item in value:
                     if isinstance(item, str):
-                        _ask(item, refs, cited_row_text(item, node), (item, 0, len(item)))
+                        _ask(
+                            item,
+                            refs,
+                            cited_row_text(item, node),
+                            (item, 0, len(item)),
+                            by_record=True,
+                        )
             else:
                 _walk(value, depth + 1)
 
@@ -10658,43 +10773,110 @@ def wrong_entry_citations(
             _walk(data.get(key))
 
     violations: list[Violation] = []
-    for (cited, holders), values in wrong.items():
-        quoted = safe_finding_value(", ".join(repr(value) for value in values[:_MAX_NAMED_IDS]))
-        more = len(values) - _MAX_NAMED_IDS
-        named = safe_finding_value(", ".join(entries.named(i) for i in cited))
-        holding = safe_finding_value(
-            ", ".join(entries.named(i) for i in holders[:_MAX_NAMED_IDS])
-            + (
-                f" and {len(holders) - _MAX_NAMED_IDS} more"
-                if len(holders) > _MAX_NAMED_IDS
-                else ""
-            )
-        )
-        message = (
-            f"{quoted} is not in {named}, which the text cites for it; this run's evidence "
-            f"holds it in {holding}. Cite the entry that holds the value the text states."
-            if len(values) == 1
-            else f"{quoted} are not in {named}, which the text cites for them; this run's "
-            f"evidence holds them in {holding}"
-            f"{' (with ' + safe_finding_value(more) + ' more)' if more > 0 else ''}. "
-            "Cite the entry that holds the value the text states."
-        )
-        places = written.get((cited, holders), {})
+    for group, values in wrong.items():
+        cited, holders = group[0], group[1]
+        places = written.get(group, {})
         violations.append(
             Violation(
                 code=CITATION_WRONG_ENTRY_CODE,
-                message=message,
+                message=_wrong_entry_message(group, values, runs, entries),
                 path="citation",
                 quoted=tuple(places),
                 labels=tuple(
-                    _wrong_entry_label(stated, cited, holders, entries)
+                    _not_found_whole_label(stated, cited, holders, entries)
                     for stated in places.values()
                 ),
                 values=tuple(values),
-                about=_distinct_spans(spans.get((cited, holders), [])),
+                about=_distinct_spans(spans.get(group, [])),
+                instructs=True,
             )
         )
     return violations
+
+
+# One question of :func:`wrong_entry_citations`: the cited entries searched,
+# the entries the value was found whole in, the cited entries with no text,
+# whether its record (not the sentence) cites them, and whether a cited entry
+# holds the value only inside a longer run.
+_WrongGroup = tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], bool, bool]
+
+# The spellings :meth:`EntryTexts.holds` asks of every entry, and the one it
+# also asks of a code listing stored as JSON (:attr:`EntryTexts.code_listings`).
+SEARCHED_SPELLINGS = "as written, as JSON writes {it} or as the triage pack quotes {it}"
+CODE_LITERAL_SPELLING = "as a C string literal inside JSON writes {it}"
+# The two ends a value cited to an entry it was not found whole in allows.
+WRONG_ENTRY_ENDS = (
+    "Cite an entry that holds the value as the text states it, or, where the cited entry "
+    "writes it in another spelling, keep the citation and say so in the text."
+)
+
+
+def _wrong_entry_message(
+    group: _WrongGroup,
+    values: Sequence[str],
+    runs: Mapping[tuple[str, tuple[str, ...]], tuple[str, tuple[str, bool] | None]],
+    entries: EntryTexts,
+) -> str:
+    """What a question of :func:`wrong_entry_citations` says: the search, and what it found.
+
+    Never that an entry lacks a value: that the value was not found whole in
+    the cited entries read, in the spellings named, and was found whole in
+    others. A cited entry with no text is said to be one this check does not
+    read. A value a cited entry holds only inside a longer run is said to
+    stand there, with the run as :func:`_run_shown` shows it, and the two ends
+    that pass (:data:`INSIDE_A_TOKEN_ENDS`), preferring neither.
+    """
+    cited, holders, blank, by_record, inside = group
+    one = len(values) == 1
+    it = "it" if one else "them"
+    was = "it was" if one else "they were"
+    citing = "its record cites" if by_record else "the sentence cites"
+    shown = values[:_MAX_NAMED_IDS]
+    more = len(values) - _MAX_NAMED_IDS
+    extra = f" (with {safe_finding_value(more)} more)" if more > 0 else ""
+    holding = safe_finding_value(_named_entries(entries, holders), whole=True)
+    found = f"{was} found whole in {holding}."
+    unread = ""
+    if blank:
+        holds = "holds" if len(blank) == 1 else "hold"
+        unread = (
+            f" {safe_finding_value(_named_ids(blank), whole=True)}, also cited, {holds} no text "
+            "this check reads."
+        )
+    if inside:
+        listed = ""
+        for value in shown:
+            ref, run = runs[(value, cited)]
+            where = (
+                f"{listed}{'; ' if listed else ''}{safe_finding_value(repr(value))} stands in "
+                f"the answer of {safe_finding_value(entries.named_whole(ref), whole=True)}, "
+                f"which {citing}, only "
+                "inside a longer run of text"
+            )
+            if run is None:
+                listed = f"{where}, {RUN_NOT_SHOWN}"
+                continue
+            text, lowered = run
+            case = f", {RUN_IN_LOWER_CASE}" if lowered else ""
+            listed = f"{where}{case}: {safe_finding_value(text)!r}"
+        return f"{listed}{extra}; {found}{unread} {INSIDE_A_TOKEN_ENDS}"
+    quoted = safe_finding_value(", ".join(repr(value) for value in shown))
+    answers = "the answer of" if len(cited) == 1 else "the answers of"
+    named = safe_finding_value(_named_entries(entries, cited), whole=True)
+    spellings = SEARCHED_SPELLINGS.format(it=it)
+    listings = [i for i in cited if str(i).strip().lower() in entries.code_listings]
+    if listings and len(listings) == len(cited):
+        spellings += f", or {CODE_LITERAL_SPELLING.format(it=it)}"
+    elif listings:
+        spellings += (
+            f", or, in {safe_finding_value(_named_entries(entries, listings), whole=True)}, "
+            f"{CODE_LITERAL_SPELLING.format(it=it)}"
+        )
+    searched = "was not found as a whole value" if one else "were not found as whole values"
+    return (
+        f"{quoted}{extra} {searched} in {answers} {named}, which {citing}, read {spellings}; "
+        f"{found}{unread} {WRONG_ENTRY_ENDS}"
+    )
 
 
 @_locating(lambda payload, entries, *, prose=(): _Names(top=frozenset(prose)))
@@ -10865,7 +11047,10 @@ def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tupl
     for entry_id in holding:
         echoes = _call_echoes(entries, entry_id)
         rest = _without_call_echoes(entries.text_of(entry_id), _call_arguments(entries, entry_id))
-        if EntryTexts(texts={entry_id: rest}).holds(entry_id, value, fields=True):
+        # Read as the entry is read: a listing's literal is one without the echo too.
+        if EntryTexts(texts={entry_id: rest}, code_listings=entries.code_listings).holds(
+            entry_id, value, fields=True
+        ):
             return ()
         if value.lower() in rest.lower():
             # Held inside a longer text outside the echo: the answer holds it.
@@ -10873,7 +11058,9 @@ def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tupl
         longer = longer or any(
             len(echo) > len(value)
             for echo in echoes
-            if EntryTexts(texts={entry_id: echo}).holds(entry_id, value, fields=True)
+            if EntryTexts(texts={entry_id: echo}, code_listings=entries.code_listings).holds(
+                entry_id, value, fields=True
+            )
         )
     return tuple(holding) if longer else ()
 
@@ -11147,6 +11334,27 @@ def cited_row_text(text: str, row: Mapping[str, Any]) -> str:
     for key in _CITING_FIELDS:
         refs.extend(ref for ref in _ids_in(row.get(key)) if ref not in refs)
     return f"{str(text or '').strip()} [{', '.join(refs)}]"
+
+
+def _not_found_whole_label(
+    values: Sequence[str], cited: Sequence[str], holders: Sequence[str], entries: EntryTexts
+) -> str:
+    """What a renderer prints beside a citation its value was not found whole in.
+
+    The values, the ids cited and the holder, as :func:`_wrong_entry_label`
+    names them, said as the search: not found whole in the ids cited, found
+    whole in the holder, or in how many entries where several hold it.
+    """
+    # Written as stated, as :func:`_wrong_entry_label` writes them.
+    said = ", ".join(f'"{value}"' for value in values[:_MAX_NAMED_IDS])
+    if len(values) > _MAX_NAMED_IDS:
+        said += f" and {len(values) - _MAX_NAMED_IDS} more"
+    one = len(values) == 1
+    where = entries.named(holders[0]) if len(holders) == 1 else f"{len(holders)} other entries"
+    return (
+        f"{said} {'was' if one else 'were'} not found whole in {', '.join(cited)}; "
+        f"{'it was' if one else 'they were'} found whole in {where}"
+    )
 
 
 def _wrong_entry_label(
@@ -11865,7 +12073,6 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
         return []
     from malspark.agents._indicator_denylists import (
         inside_a_longer_token_at,
-        run_around,
         whole_value_starts,
     )
     from malspark.reporting.absence_answers import QUOTE_FLOOR
@@ -11923,59 +12130,12 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                 for form in written_forms(spelling.lower()):
                     start = inside_a_longer_token_at(form, text)
                     if start is not None:
-                        found.append((ref, _run_shown(ref, literal)))
+                        found.append((ref, _run_shown(entries, ref, literal)))
                         break
                 else:
                     continue
                 break
         return found
-
-    def _run_shown(ref: str, literal: str) -> tuple[str, bool] | None:
-        # The run around the value in the part of the entry it stands in (the
-        # answer, a page), read as a JSON document only where that part is one,
-        # in the entry's own case where its stored text is the part read, and
-        # bounded around the value by the bound of a value a finding quotes;
-        # None where no part shows it, where the run does not hold the value
-        # as the row states it, or where the printer would print other text.
-        for part in entries.parts_of(ref):
-            for spelling in _stated_spellings(literal):
-                for form in written_forms(spelling.lower()):
-                    start = inside_a_longer_token_at(form, part)
-                    if start is not None:
-                        return _run_of(ref, literal, part, start, start + len(form))
-        return None
-
-    def _run_of(ref: str, literal: str, text: str, start: int, end: int) -> tuple[str, bool] | None:
-        # The run, and whether it is shown in lower case: the corpus keeps the
-        # texts it was read in lower-cased, and the case is taken back from the
-        # entry's stored output where that holds the same text.
-        json_notation = _a_json_document(text)
-        first, last = run_around(text, start, end, json_notation=json_notation)
-        stored = str(getattr(entries.entries.get(ref), "output", "") or "")
-        begin, finish = first, last
-        if finish - begin > FINDING_VALUE_LIMIT:
-            # Room on each side for the run and the mark of its cut.
-            room = max(FINDING_VALUE_LIMIT - (end - start) - 2, 0) // 2
-            begin, finish = max(begin, start - room), min(finish, end + room)
-        if len(stored) == len(text) and stored.lower() == text:
-            run, lowered = stored[begin:finish], False
-        else:
-            run, lowered = text[begin:finish], True
-            folded = stored.lower()
-            at = folded.find(run) if len(folded) == len(stored) else -1
-            if at != -1:
-                run, lowered = stored[at : at + len(run)], False
-        lowered = lowered and run != run.upper()
-        if json_notation:
-            try:
-                # A run inside a JSON string reads as the string holds it.
-                run = str(json.loads(f'"{run}"'))
-            except ValueError:
-                pass
-        if not any(spelling.lower() in run.lower() for spelling in _stated_spellings(literal)):
-            return None
-        run = f"{'…' if begin > first else ''}{run}{'…' if finish < last else ''}"
-        return (run, lowered) if safe_finding_value(run) == run else None
 
     def _what_is_held(literal: str, among: set[str]) -> str:
         # For a path no cited entry holds: the longest whole leading run of at
@@ -12199,6 +12359,75 @@ INSIDE_A_TOKEN_ENDS = (
 RUN_NOT_SHOWN = "which is not shown here"
 # What it says of a run shown from a text whose case the record does not keep.
 RUN_IN_LOWER_CASE = "shown in lower case"
+
+
+def _placed_inside(entries: EntryTexts, ref: str, literal: str) -> tuple[str, int, int] | None:
+    """The part of a cited entry holding ``literal``'s text only inside a longer run, and where.
+
+    The parts are the texts the entry was read in (the answer, a page); the
+    spellings a stated value's (:func:`_stated_spellings`). ``None`` where no
+    part holds it so.
+    """
+    from malspark.agents._indicator_denylists import inside_a_longer_token_at
+
+    for part in entries.parts_of(ref):
+        for spelling in _stated_spellings(literal):
+            for form in written_forms(spelling.lower()):
+                start = inside_a_longer_token_at(form, part)
+                if start is not None:
+                    return part, start, start + len(form)
+    return None
+
+
+def _run_shown(entries: EntryTexts, ref: str, literal: str) -> tuple[str, bool] | None:
+    """The run around a value a cited entry holds only inside a longer run, as a question shows it.
+
+    Read in the part of the entry it stands in (:func:`_placed_inside`), as a
+    JSON document only where that part is one, in the entry's own case where
+    its stored text is the part read, and bounded around the value by the
+    bound of a value a finding quotes; with whether it is shown in lower case.
+    ``None`` where no part shows it, where the run does not hold the value as
+    stated, or where the printer would print other text.
+    """
+    placed = _placed_inside(entries, ref, literal)
+    return _run_of(entries, ref, literal, *placed) if placed is not None else None
+
+
+def _run_of(
+    entries: EntryTexts, ref: str, literal: str, text: str, start: int, end: int
+) -> tuple[str, bool] | None:
+    """The run, and whether it is shown in lower case: the corpus keeps the texts it was read
+    in lower-cased, and the case is taken back from the entry's stored output where that holds
+    the same text."""
+    from malspark.agents._indicator_denylists import run_around
+
+    json_notation = _a_json_document(text)
+    first, last = run_around(text, start, end, json_notation=json_notation)
+    stored = str(getattr(entries.entries.get(ref), "output", "") or "")
+    begin, finish = first, last
+    if finish - begin > FINDING_VALUE_LIMIT:
+        # Room on each side for the run and the mark of its cut.
+        room = max(FINDING_VALUE_LIMIT - (end - start) - 2, 0) // 2
+        begin, finish = max(begin, start - room), min(finish, end + room)
+    if len(stored) == len(text) and stored.lower() == text:
+        run, lowered = stored[begin:finish], False
+    else:
+        run, lowered = text[begin:finish], True
+        folded = stored.lower()
+        at = folded.find(run) if len(folded) == len(stored) else -1
+        if at != -1:
+            run, lowered = stored[at : at + len(run)], False
+    lowered = lowered and run != run.upper()
+    if json_notation:
+        try:
+            # A run inside a JSON string reads as the string holds it.
+            run = str(json.loads(f'"{run}"'))
+        except ValueError:
+            pass
+    if not any(spelling.lower() in run.lower() for spelling in _stated_spellings(literal)):
+        return None
+    run = f"{'…' if begin > first else ''}{run}{'…' if finish < last else ''}"
+    return (run, lowered) if safe_finding_value(run) == run else None
 
 
 def _named_literals(literals: Sequence[str]) -> str:
@@ -12447,7 +12676,7 @@ def misstated_entry_contents(
         if entry_id in seen:
             continue
         seen.add(entry_id)
-        named = safe_finding_value(entries.named(entry_id))
+        named = safe_finding_value(entries.named_whole(entry_id), whole=True)
         violations.append(
             Violation(
                 code=ENTRY_CONTENTS_MISSTATED_CODE,
@@ -12460,6 +12689,7 @@ def misstated_entry_contents(
                 ),
                 path="citation",
                 about=_distinct_spans(stated_at[entry_id]),
+                instructs=True,
             )
         )
     return violations
@@ -13217,12 +13447,13 @@ def ledger_absence_contradictions(payload: Any, entries: EntryTexts | None) -> l
                     f"The text says {safe_finding_value(_named_ids(whats))} "
                     f"{safe_finding_value(said[found.kind][len(whats) > 1])} "
                     f"({safe_finding_value(marked_cut(found.sentence, 200))!r}); "
-                    f"{safe_finding_value(_named_ids(entries.named(i) for i in holders))} "
+                    f"{safe_finding_value(_named_entries(entries, holders), whole=True)} "
                     f"{safe_finding_value('holds' if len(holders) == 1 else 'hold')} "
                     f"{safe_finding_value('it' if len(whats) == 1 else 'them')} in this run. "
                     "State what that entry shows, or say exactly what is absent."
                 ),
                 path="prose",
+                instructs=True,
                 shown=" ".join(f"{text}." for text in _held_texts(found, entries)),
                 about=found.about,
             )
@@ -17427,7 +17658,9 @@ def technique_absence_sources(
                 continue
             ref = str(getattr(claim, "evidence_ref", "") or "")
             said = f"{getattr(claim, 'claim', '') or ''} {ref}"
-            read(tid, said, [*entry_ids_in(said), *item_ids_in(ref)])
+            # Cited entries sorted as in ``technique_roots``; no output reads
+            # this order, since the sources are sorted below.
+            read(tid, said, [*sorted(entry_ids_in(said)), *item_ids_in(ref)])
         for finding in getattr(isr, "findings", None) or []:
             said = f"{getattr(finding, 'title', '') or ''} {getattr(finding, 'detail', '') or ''}"
             cited = [str(i) for i in getattr(finding, "evidence_ids", None) or [] if i]
@@ -17547,7 +17780,9 @@ def technique_sources(
                 continue
             ref = str(getattr(claim, "evidence_ref", "") or "")
             said = f"{getattr(claim, 'claim', '') or ''} {ref}"
-            cited = [*entry_ids_in(said), *item_ids_in(ref)]
+            # The entries one statement cites, sorted as in ``technique_roots``
+            # (fixed-width ids sort in issue order; another width as a string).
+            cited = [*sorted(entry_ids_in(said)), *item_ids_in(ref)]
             add(tid, cited_sources(said, cited, tid, str(getattr(claim, "claim", "") or "")))
         for finding in getattr(isr, "findings", None) or []:
             said = f"{getattr(finding, 'title', '') or ''} {getattr(finding, 'detail', '') or ''}"
@@ -17599,7 +17834,11 @@ def technique_roots(
                 continue
             ref = str(getattr(claim, "evidence_ref", "") or "")
             said = f"{getattr(claim, 'claim', '') or ''} {ref}"
-            cited = [*entry_ids_in(said), *item_ids_in(ref)]
+            # The entries one statement cites, sorted, as the capability
+            # matrix lists them: an order of the data, never of a set. Issued
+            # ids are fixed-width, so the sort is their issue order; an id a
+            # model wrote at another width sorts as a string.
+            cited = [*sorted(entry_ids_in(said)), *item_ids_in(ref)]
             out.setdefault(tid, RootCount()).add(*found.of_statement(said, cited))
         for finding in getattr(isr, "findings", None) or []:
             said = f"{getattr(finding, 'title', '') or ''} {getattr(finding, 'detail', '') or ''}"

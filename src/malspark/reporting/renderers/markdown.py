@@ -3783,7 +3783,7 @@ _FLAG_WORDS = {
     "narrative.ungrounded_capability": "not established by this run",
     "report.rule_match_as_action": "a rule match only, stated as an action",
     "report.unpublished_value": "not published by this run",
-    "report.citation_wrong_entry": "cited to an entry that does not hold it",
+    "report.citation_wrong_entry": "cited to an entry it was not found whole in",
     "report.value_only_in_call_arguments": "held only in what the call was asked for",
     "report.id_not_in_cited_entry": "an id none of its cited entries holds",
     "report.numeric_confidence": "a confidence written as a number",

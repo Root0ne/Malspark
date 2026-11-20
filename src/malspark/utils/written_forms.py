@@ -13,7 +13,9 @@ evidence.
 This module answers one question, for every search that compares a value a
 model wrote with a text a tool wrote: which spellings mean this value. It does
 not decide anything, and it never rewrites the value; a caller asks each
-spelling the question it was already asking of one.
+spelling the question it was already asking of one. :func:`code_literal_forms`
+gives the spellings one more escape level down, which a caller asks only of a
+code listing stored as JSON.
 """
 
 from __future__ import annotations
@@ -332,4 +334,37 @@ def written_forms(value: str) -> tuple[str, ...]:
         ):
             if form and form not in forms:
                 forms.append(form)
+    return tuple(forms)
+
+
+def code_literal(value: str) -> str:
+    """``value`` as a C-family string literal writes it between its quotes.
+
+    Each backslash doubled and each double quote escaped, nothing else: no
+    control character, no ``\\x`` escape, no other language's convention.
+    """
+    return str(value or "").replace("\\", "\\\\").replace('"', '\\"')
+
+
+def code_literal_forms(value: str) -> tuple[str, ...]:
+    """``value`` as a code listing stored as JSON writes it in a string literal, or ``()``.
+
+    Two escape levels: the C literal (:func:`code_literal`), then the JSON
+    string that carries the listing, with and without non-ASCII characters
+    escaped. Only the forms :func:`written_forms` does not already give; none
+    for a value without a backslash or a double quote. A caller asks these only
+    of a text it knows is a code listing stored as JSON: in a listing printed as
+    plain text the one-level literal is already a JSON spelling, and the
+    two-level one would read a literal whose run-time string doubles its
+    backslashes as the value.
+    """
+    text = str(value or "")
+    literal = code_literal(text)
+    if literal == text:
+        return ()
+    known = set(written_forms(text))
+    forms: list[str] = []
+    for form in (_json_body(literal, ascii_only=False), _json_body(literal, ascii_only=True)):
+        if form not in known and form not in forms:
+            forms.append(form)
     return tuple(forms)

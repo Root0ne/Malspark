@@ -6,163 +6,202 @@
     "enterprise": {
       "collection": {
         "id": "TA0009",
-        "name": "Collection"
+        "name": "Collection",
+        "position": 11
       },
       "command-and-control": {
         "id": "TA0011",
-        "name": "Command and Control"
+        "name": "Command and Control",
+        "position": 12
       },
       "credential-access": {
         "id": "TA0006",
-        "name": "Credential Access"
+        "name": "Credential Access",
+        "position": 8
       },
       "defense-impairment": {
         "id": "TA0112",
-        "name": "Defense Impairment"
+        "name": "Defense Impairment",
+        "position": 7
       },
       "discovery": {
         "id": "TA0007",
-        "name": "Discovery"
+        "name": "Discovery",
+        "position": 9
       },
       "execution": {
         "id": "TA0002",
-        "name": "Execution"
+        "name": "Execution",
+        "position": 3
       },
       "exfiltration": {
         "id": "TA0010",
-        "name": "Exfiltration"
+        "name": "Exfiltration",
+        "position": 13
       },
       "impact": {
         "id": "TA0040",
-        "name": "Impact"
+        "name": "Impact",
+        "position": 14
       },
       "initial-access": {
         "id": "TA0001",
-        "name": "Initial Access"
+        "name": "Initial Access",
+        "position": 2
       },
       "lateral-movement": {
         "id": "TA0008",
-        "name": "Lateral Movement"
+        "name": "Lateral Movement",
+        "position": 10
       },
       "persistence": {
         "id": "TA0003",
-        "name": "Persistence"
+        "name": "Persistence",
+        "position": 4
       },
       "privilege-escalation": {
         "id": "TA0004",
-        "name": "Privilege Escalation"
+        "name": "Privilege Escalation",
+        "position": 5
       },
       "reconnaissance": {
         "id": "TA0043",
-        "name": "Reconnaissance"
+        "name": "Reconnaissance",
+        "position": 0
       },
       "resource-development": {
         "id": "TA0042",
-        "name": "Resource Development"
+        "name": "Resource Development",
+        "position": 1
       },
       "stealth": {
         "id": "TA0005",
-        "name": "Stealth"
+        "name": "Stealth",
+        "position": 6
       }
     },
     "mobile": {
       "collection": {
         "id": "TA0035",
-        "name": "Collection"
+        "name": "Collection",
+        "position": 8
       },
       "command-and-control": {
         "id": "TA0037",
-        "name": "Command and Control"
+        "name": "Command and Control",
+        "position": 9
       },
       "credential-access": {
         "id": "TA0031",
-        "name": "Credential Access"
+        "name": "Credential Access",
+        "position": 5
       },
       "defense-evasion": {
         "id": "TA0030",
-        "name": "Defense Evasion"
+        "name": "Defense Evasion",
+        "position": 4
       },
       "discovery": {
         "id": "TA0032",
-        "name": "Discovery"
+        "name": "Discovery",
+        "position": 6
       },
       "execution": {
         "id": "TA0041",
-        "name": "Execution"
+        "name": "Execution",
+        "position": 1
       },
       "exfiltration": {
         "id": "TA0036",
-        "name": "Exfiltration"
+        "name": "Exfiltration",
+        "position": 10
       },
       "impact": {
         "id": "TA0034",
-        "name": "Impact"
+        "name": "Impact",
+        "position": 11
       },
       "initial-access": {
         "id": "TA0027",
-        "name": "Initial Access"
+        "name": "Initial Access",
+        "position": 0
       },
       "lateral-movement": {
         "id": "TA0033",
-        "name": "Lateral Movement"
+        "name": "Lateral Movement",
+        "position": 7
       },
       "persistence": {
         "id": "TA0028",
-        "name": "Persistence"
+        "name": "Persistence",
+        "position": 2
       },
       "privilege-escalation": {
         "id": "TA0029",
-        "name": "Privilege Escalation"
+        "name": "Privilege Escalation",
+        "position": 3
       }
     },
     "ics": {
       "collection": {
         "id": "TA0100",
-        "name": "Collection"
+        "name": "Collection",
+        "position": 7
       },
       "command-and-control": {
         "id": "TA0101",
-        "name": "Command and Control"
+        "name": "Command and Control",
+        "position": 8
       },
       "discovery": {
         "id": "TA0102",
-        "name": "Discovery"
+        "name": "Discovery",
+        "position": 5
       },
       "evasion": {
         "id": "TA0103",
-        "name": "Evasion"
+        "name": "Evasion",
+        "position": 4
       },
       "execution": {
         "id": "TA0104",
-        "name": "Execution"
+        "name": "Execution",
+        "position": 1
       },
       "impact": {
         "id": "TA0105",
-        "name": "Impact"
+        "name": "Impact",
+        "position": 11
       },
       "impair-process-control": {
         "id": "TA0106",
-        "name": "Impair Process Control"
+        "name": "Impair Process Control",
+        "position": 10
       },
       "inhibit-response-function": {
         "id": "TA0107",
-        "name": "Inhibit Response Function"
+        "name": "Inhibit Response Function",
+        "position": 9
       },
       "initial-access": {
         "id": "TA0108",
-        "name": "Initial Access"
+        "name": "Initial Access",
+        "position": 0
       },
       "lateral-movement": {
         "id": "TA0109",
-        "name": "Lateral Movement"
+        "name": "Lateral Movement",
+        "position": 6
       },
       "persistence": {
         "id": "TA0110",
-        "name": "Persistence"
+        "name": "Persistence",
+        "position": 2
       },
       "privilege-escalation": {
         "id": "TA0111",
-        "name": "Privilege Escalation"
+        "name": "Privilege Escalation",
+        "position": 3
       }
     }
   },

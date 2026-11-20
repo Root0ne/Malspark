@@ -4,7 +4,8 @@ Each ref is replayed with its own harness over its own rules. Its tree is
 written out of the repository's object store into a directory of the replay's
 own (``git archive``, :func:`materialise`): ``pyproject.toml`` (the project
 root the rules' data readers look for), the ``src`` tree, the ``data`` tables
-without ``data/samples``, and ``scripts/replay``. That tree's own
+without ``data/samples``, ``scripts/replay``, and the API and the surface audit
+(``apps/api``, ``scripts/audit``) where the ref holds them. That tree's own
 ``scripts/replay/run.py`` then replays the runs in a process of its own, with
 that tree first on the import path and the same read-only and cache guards
 (:func:`replay_under`), and the record says which tree it imported its rules
@@ -67,6 +68,10 @@ ARCHIVED_PATHS: tuple[str, ...] = (
     "data",
     ":(exclude)data/samples",
     "scripts/replay",
+    # The API writes /mitre, /iocs and the unpublished bundle's notice, which the
+    # surface render (``render_surfaces.py``) reads; the audit sits beside it.
+    "apps/api",
+    "scripts/audit",
 )
 # The harness a ref replays with; a ref without it predates the replay tool.
 HARNESS = "scripts/replay/run.py"
@@ -105,24 +110,38 @@ def resolve(repo: Path, ref: str) -> str:
     return _git(repo, "rev-parse", "--verify", f"{ref}^{{commit}}").decode().strip()
 
 
-def has_harness(repo: Path, commit: str) -> bool:
-    """Whether ``commit`` carries the replay harness."""
+def _held(repo: Path, commit: str, path: str) -> bool:
     done = subprocess.run(  # nosec B603 B607 — a fixed git argument list
-        ["git", "-C", str(repo), "cat-file", "-e", f"{commit}:{HARNESS}"],
+        ["git", "-C", str(repo), "cat-file", "-e", f"{commit}:{path}"],
         capture_output=True,
         check=False,
     )
     return done.returncode == 0
 
 
-def materialise(repo: Path, ref: str, into: Path) -> Path:
-    """Write ``ref``'s replay into ``into`` from the object store; return the tree's root."""
+def has_harness(repo: Path, commit: str) -> bool:
+    """Whether ``commit`` carries the replay harness."""
+    return _held(repo, commit, HARNESS)
+
+
+def materialise(repo: Path, ref: str, into: Path, *, harness: str | None = HARNESS) -> Path:
+    """Write ``ref``'s replay into ``into`` from the object store; return the tree's root.
+
+    A path of :data:`ARCHIVED_PATHS` the commit does not hold is left out. A
+    caller that brings its own driver (``harness=None``) takes a ref from before
+    the replay tool too.
+    """
     commit = resolve(repo, ref)
-    if not has_harness(repo, commit):
+    if harness is not None and not _held(repo, commit, harness):
         raise PredatesTheReplay(
-            f"{ref} predates the replay tool (it has no {HARNESS}): it cannot be compared"
+            f"{ref} predates the replay tool (it has no {harness}): it cannot be compared"
         )
-    archive = _git(repo, "archive", "--format=tar", commit, "--", *ARCHIVED_PATHS)
+    # An exclusion stands only where what it excludes is there: alone, it
+    # would archive everything else.
+    paths = [
+        path for path in ARCHIVED_PATHS if _held(repo, commit, path.removeprefix(":(exclude)"))
+    ]
+    archive = _git(repo, "archive", "--format=tar", commit, "--", *paths)
     if into.exists():
         # A tree an earlier comparison left: a module this ref does not have
         # must not stay importable beside the ones it does.

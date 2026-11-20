@@ -1045,6 +1045,10 @@ def held_in_cited(entries: Any, item: Any) -> list[str]:
     file path and a registry key or value are found whole as any value is
     (``whole_value_in``). Only the cited entries the text index says may hold
     the value are read (``EntryTexts.may_hold``), at most :data:`MAX_CITED`.
+    A cited entry the index reads as a code listing stored as JSON
+    (``EntryTexts.code_listings``) is also read in the spellings a C string
+    literal inside it writes (``written_forms.code_literal_forms``), under the
+    same delimiting.
     """
     from malspark.agents._indicator_denylists import whole_value_in
 
@@ -1053,24 +1057,22 @@ def held_in_cited(entries: Any, item: Any) -> list[str]:
         return []
     kind = typed_kind(getattr(item, "kind", ""))
     lowered = value.lower()
-    forms = encodings(lowered)
     stream = ""
-    names: list[str] = []
+    bare = ""
     if kind is not None and kind.table_kind == "ads":
         stream = lowered.lstrip(":")
     elif kind is not None and kind.shape in ("folder", "file_name"):
         bare = lowered.strip("\\/")
-        if bare and bare != lowered:
-            names = encodings(bare)
-    # The kind's own namespaces, in every spelling a text writes them in.
-    prefixes = [
-        form
-        for prefix in (kind.namespaces if kind is not None else ())
-        for form in encodings(prefix)
-    ]
+        if bare == lowered:
+            bare = ""
+    # Each text read in the spellings of :func:`encodings`, a code listing
+    # stored as JSON in its literal's too.
+    spelt = {listing: _Spellings(lowered, bare, stream, kind, listing) for listing in (False, True)}
+    listings: frozenset[str] = getattr(entries, "code_listings", frozenset())
     cited = _cited(getattr(item, "evidence_refs", None) or [])
     candidates: set[str] = set()
-    for form in [*forms, *names, *([stream] if stream else [])]:
+    plain = spelt[False]
+    for form in [*plain.forms, *plain.names, *([stream] if stream else [])]:
         candidates |= set(entries.may_hold(form))
     out: list[str] = []
     for ref in cited:
@@ -1079,22 +1081,53 @@ def held_in_cited(entries: Any, item: Any) -> list[str]:
         text = entries.text_of(ref)
         if not text:
             continue
+        read = spelt[ref.lower() in listings]
         paths = kind is not None and kind.shape in ("folder", "file_name")
         if stream:
-            held = any(delimited_in(form, text, separators=False) for form in forms) or any(
-                delimited_in(form, text, after_colon=True, separators=False)
-                for form in encodings(stream)
+            held = any(delimited_in(form, text, separators=False) for form in read.forms) or any(
+                delimited_in(form, text, after_colon=True, separators=False) for form in read.stream
             )
         elif _delimited_shape(kind):
             held = any(
-                delimited_in(form, text, separators=paths, prefixes=prefixes)
-                for form in [*forms, *names]
+                delimited_in(form, text, separators=paths, prefixes=read.prefixes)
+                for form in [*read.forms, *read.names]
             )
         else:
-            held = any(whole_value_in(form, text) for form in forms)
+            held = any(whole_value_in(form, text) for form in read.forms)
         if held:
             out.append(ref)
     return out
+
+
+class _Spellings:
+    """The spellings :func:`held_in_cited` reads one row in, for one kind of text.
+
+    The value, its bare name, its stream and its kind's namespaces, each in
+    every spelling of :func:`encodings`; with ``listing``, each also as a C
+    string literal inside a JSON code listing writes it
+    (``written_forms.code_literal_forms``).
+    """
+
+    def __init__(self, value: str, bare: str, stream: str, kind: Any, listing: bool) -> None:
+        self.forms = _spelt(value, listing)
+        self.names = _spelt(bare, listing) if bare else []
+        self.stream = _spelt(stream, listing) if stream else []
+        # The kind's own namespaces, in every spelling a text writes them in.
+        self.prefixes = [
+            form
+            for prefix in (kind.namespaces if kind is not None else ())
+            for form in _spelt(prefix, listing)
+        ]
+
+
+def _spelt(value: str, listing: bool) -> list[str]:
+    """:func:`encodings` of ``value``, and with ``listing`` its code literal's spellings."""
+    from malspark.utils.written_forms import code_literal_forms
+
+    forms = encodings(value)
+    if listing:
+        forms.extend(form for form in code_literal_forms(value) if form not in forms)
+    return forms
 
 
 def encodings(value: str) -> list[str]:

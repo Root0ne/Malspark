@@ -172,7 +172,9 @@ def _claims_named(line: str, agent_names: Iterable[str]) -> list[tuple[str, list
 
 def _claim_numbers_named(line: str, agent_names: Iterable[str]) -> list[tuple[str, re.Match[str]]]:
     """``(agent, the claim numbers' match)`` for each analyst the line names with claim numbers."""
-    names = sorted({str(n) for n in agent_names if str(n).strip()}, key=len, reverse=True)
+    # Longest first, names of one length by the name itself: the order the
+    # facts list a line's entries and places in, read from the names alone.
+    names = sorted({str(n) for n in agent_names if str(n).strip()}, key=lambda n: (-len(n), n))
     # The characters a name already read covers: a match over any of them is
     # inside a longer name. One name's matches never overlap each other, so
     # each name looks at each character at most once.
@@ -1269,6 +1271,10 @@ def place_facts(
                         )
             parts: list[str] = []
             seen: set[int] = set()
+            # One function written in two spellings (offset and virtual
+            # address) is named once, in the first spelling read: the line's
+            # own, then the claims' in the order ``_claims_named`` gives the
+            # names (longest first, then by the name).
             for address in (a for part in said for a in _addresses_written(part)):
                 keys = spellings(address)
                 if seen.intersection(keys):

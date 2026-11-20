@@ -119,7 +119,7 @@ class TestTheCheck:
         (found,) = wrong_entry_citations({"body": body}, _texts(), prose=("body",))
 
         assert MARKER in found.message and "Settings" in found.message
-        assert " are not in " in found.message
+        assert " were not found as whole values in " in found.message
 
     def test_a_record_value_is_read_under_the_records_citations(self) -> None:
         payload = {"items": [{"key": "Marker", "value": MARKER, "evidence_refs": ["ev_0011"]}]}
@@ -235,8 +235,8 @@ class TestUnquotedValues:
 
         for value in ("cache.example-cdn.net", "state.bin", "payload.example.dat"):
             assert value in found.message
-        assert "Cite the entry that holds the value the text states." in found.message
-        assert "quotes" not in found.message
+        assert "Cite an entry that holds the value as the text states it" in found.message
+        assert "text quotes" not in found.message
 
     def test_a_record_description_is_read_for_them_too(self) -> None:
         payload = {
