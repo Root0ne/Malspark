@@ -455,7 +455,10 @@ class MarkdownRenderer:
         # so "https&#58;//evil&#46;example" would become a live link there.
         # A link into the evidence bundle or to a note's anchor the renderer did not set
         # aside prints as its characters: only the platform cites (T-814).
-        defanged = [_hand_links_unlinked(_defanged_text(text, ctx.run_values)) for text in sections]
+        defanged = [
+            _hand_links_unlinked(_defanged_text(text, ctx.run_values), ctx.keep)
+            for text in sections
+        ]
         # Code is read only where no line may open an HTML block, anywhere in
         # the render; the fences are followed across the sections in order.
         looked = _ReferenceScan()
@@ -3334,10 +3337,34 @@ class _Context:
         return token
 
     def restore(self, text: str) -> str:
-        """``text`` with every token :meth:`keep` handed out replaced by what it stands for."""
+        """``text`` with every token :meth:`keep` handed out replaced by what it stands for.
+
+        A link set aside stays the platform's link whatever stands before it: a ``!``
+        there, which would make it an image, or a backslash that would escape its
+        opening bracket, is escaped and prints as itself.
+        """
         if not self._kept or "\x00" not in text:
             return text
-        return _KEPT_TOKEN_RE.sub(lambda m: self._kept.get(m.group(0), m.group(0)), text)
+        out: list[str] = []
+        at = 0
+        for found in _KEPT_TOKEN_RE.finditer(text):
+            held = self._kept.get(found.group(0))
+            if held is None:
+                continue
+            start = found.start()
+            if (
+                held.startswith("[")
+                and start > at
+                and text[start - 1] in "!\\"
+                and not _escaped_at(text, start - 1)
+            ):
+                out += [text[at : start - 1], "\\", text[start - 1]]
+            else:
+                out.append(text[at:start])
+            out.append(held)
+            at = found.end()
+        out.append(text[at:])
+        return "".join(out)
 
     def endpoint_kept(self, model: str) -> str:
         """A model's recorded name, its endpoint set aside where it is a configured one.
@@ -4131,18 +4158,25 @@ def _write_block(block: list[str], out: list[str]) -> None:
 # where its target starts: "(" or ":", white space with at most one line ending (and the
 # block quote marks the next line opens with), an optional "<".
 _AFTER_LINK_TEXT = re.compile(r"\]([(:])[ \t]*+(?:\r?\n[ \t>]*+)?(<?)")
-# A tag's opening and what stands in it before the next "<" or ">"; each attribute value
-# in it; a closing tag.
-_TAG_OPENING = re.compile(r"<([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])([^<>]*)")
+# A tag as a browser reads it (:func:`_tag_read`): where one opens, a "<" and a letter;
+# its name; the white space and slashes between its attributes; white space; an
+# attribute's name after its first character, which may be "="; a value written without
+# quotes. How far a tag is read: one that does not end within it is not read safely.
+_TAG_REACH = 4096
+_TAG_START = re.compile(r"<[A-Za-z]")
+_TAG_NAME = re.compile(rf"[^\t\n\f\r />]{{0,{_TAG_REACH}}}")
+_TAG_GAP = re.compile(rf"[\t\n\f\r /]{{0,{_TAG_REACH}}}")
+_TAG_SPACE = re.compile(rf"[\t\n\f\r ]{{0,{_TAG_REACH}}}")
+_ATTRIBUTE_NAME = re.compile(rf"[^\t\n\f\r />=]{{0,{_TAG_REACH}}}")
+_UNQUOTED_VALUE = re.compile(rf"[^\t\n\f\r >]{{0,{_TAG_REACH}}}")
+# A closing tag.
 _TAG_CLOSING = re.compile(r"</([A-Za-z][A-Za-z0-9-]*)\s*>")
-# How far a link's target is read: one longer is taken to reach the bundle, which escapes
-# a bracket outside code and so changes nothing a reader is shown.
+# How far a link's target is read: one longer is taken to reach the bundle, so its
+# bracket is escaped outside code and it prints as its characters, a long link to
+# anywhere else included (a model's links are defanged in any case).
 _TARGET_REACH = 512
 _TARGET_RUN = re.compile(rf"\S{{0,{_TARGET_REACH + 1}}}")
 _BRACKETED_TARGET_RUN = re.compile(rf"[^<>\n]{{0,{_TARGET_REACH + 1}}}")
-_ATTRIBUTE_VALUE = re.compile(
-    r'=\s*(?:"([^"]*)"' + _PIPE + r"'([^']*)'" + _PIPE + r'([^\s"' + "'" + r"=<>`]+))"
-)
 # A backslash escape as Markdown reads one inside a link's target.
 _MARKDOWN_ESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")
 # What starts a link target's fragment.
@@ -4214,6 +4248,58 @@ def _link_target_at(text: str, start: int, bracketed: bool) -> str | None:
     return held[:at]
 
 
+def _run_end(run: re.Pattern[str], text: str, at: int) -> int:
+    """Where ``run``, a pattern that matches the empty text too, ends from ``at``."""
+    found = run.match(text, at)
+    return found.end() if found is not None else at
+
+
+def _tag_read(text: str, start: int) -> tuple[str, int, list[str], bool]:
+    """The tag that opens at ``start`` (a ``<`` and a letter) as a browser reads it: its
+    name in lower case, where it ends, its attributes' values, and whether it is read safely.
+
+    A ``<`` or a ``>`` inside a quoted value is the value's; a quote opens a value only
+    after ``=``; the tag ends at the first ``>`` outside a quoted value. A tag the text
+    ends in outside a quoted value is read safely, as the line ending the render puts after
+    the text ends a value written without quotes. One left inside a quoted value, or not
+    ended within :data:`_TAG_REACH` characters, is not: what ends it lies past what is read.
+    """
+    size = len(text)
+    limit = start + _TAG_REACH
+    at = _run_end(_TAG_NAME, text, start + 1)
+    name = text[start + 1 : at].lower()
+    values: list[str] = []
+    close = text.find(">", at)
+    equals = text.find("=", at)
+    if equals == -1 or -1 < close < equals:
+        # No value stands before the tag's end, so no quote can.
+        return name, size if close == -1 else close + 1, values, True
+    while at <= limit:
+        at = _run_end(_TAG_GAP, text, at)
+        if at >= size:
+            return name, size, values, True
+        if text[at] == ">":
+            return name, at + 1, values, True
+        at = _run_end(_ATTRIBUTE_NAME, text, at + 1)
+        after = _run_end(_TAG_SPACE, text, at)
+        if after >= size or text[after] != "=":
+            at = after
+            continue
+        at = _run_end(_TAG_SPACE, text, after + 1)
+        if at < size and text[at] in "\"'":
+            closing = text.find(text[at], at + 1, limit)
+            if closing == -1:
+                values.append(text[at + 1 : limit])
+                return name, size, values, False
+            values.append(text[at + 1 : closing])
+            at = closing + 1
+        else:
+            end = _run_end(_UNQUOTED_VALUE, text, at)
+            values.append(text[at:end])
+            at = end
+    return name, size, values, False
+
+
 def _escaped_at(text: str, index: int) -> bool:
     """Whether the character at ``index`` stands after an odd run of backslashes."""
     before = index
@@ -4224,8 +4310,10 @@ def _escaped_at(text: str, index: int) -> bool:
 
 def _hand_links(text: str) -> list[int]:
     """Where ``text`` opens a link into the bundle or to a note's anchor: the ``]`` before
-    such a target, and the ``<`` of a tag one of whose attributes holds one and of the
-    first closing tag of its name after it, which a reader of raw HTML would take too."""
+    such a target, and the ``<`` of a tag one of whose attributes holds one or that is not
+    read safely (:func:`_tag_read`), escaped by a backslash only inside an HTML block (where
+    a backslash escapes nothing), and of the first closing tag of its name after it, which a
+    reader of raw HTML would take too."""
     places: list[int] = []
     at = text.find("]")
     while at != -1:
@@ -4236,38 +4324,68 @@ def _hand_links(text: str) -> list[int]:
                 places.append(at)
         at = text.find("]", at + 1)
     closings: dict[str, list[int]] | None = None
-    for tag in _TAG_OPENING.finditer(text):
-        if _escaped_at(text, tag.start()) or not any(
-            _into_the_bundle(next(value for value in found.groups() if value is not None))
-            for found in _ATTRIBUTE_VALUE.finditer(tag.group(2))
-        ):
+    in_block: Callable[[int], bool] | None = None
+    for opening in _TAG_START.finditer(text):
+        # Each opening is read on its own: a Markdown reader takes a tag inside another's
+        # attributes where it does not take the outer one.
+        name, end, values, safe = _tag_read(text, opening.start())
+        if safe and not any(_into_the_bundle(value) for value in values):
             continue
-        places.append(tag.start())
+        if _escaped_at(text, opening.start()):
+            # Escaped, it is text wherever a backslash escapes: outside an HTML block.
+            in_block = in_block or _html_block_reader(text)
+            if not in_block(opening.start()):
+                continue
+        places.append(opening.start())
         if closings is None:
             closings = {}
             for closing in _TAG_CLOSING.finditer(text):
                 if not _escaped_at(text, closing.start()):
                     closings.setdefault(closing.group(1).lower(), []).append(closing.start())
-        ends = closings.get(tag.group(1).lower(), [])
-        after = bisect.bisect_left(ends, tag.end())
+        ends = closings.get(name, [])
+        after = bisect.bisect_left(ends, end)
         if after < len(ends):
             places.append(ends[after])
     return sorted(set(places))
+
+
+def _link_readers() -> list[Any]:
+    """markdown-it's readers: the HTML report's, then one that reads raw HTML."""
+    from markdown_it import MarkdownIt
+
+    if not _LINK_READERS:
+        _LINK_READERS.extend(
+            MarkdownIt("commonmark", {"html": raw}).enable("table").enable("strikethrough")
+            for raw in (False, True)
+        )
+    return _LINK_READERS
+
+
+def _html_block_reader(text: str) -> Callable[[int], bool]:
+    """Whether a place of ``text`` lies inside an HTML block, as a reader of raw HTML
+    reads the whole text: one it passes through as written."""
+    lines: list[tuple[int, int]] = []
+    tokens = list(_link_readers()[1].parse(text))
+    while tokens:
+        token = tokens.pop()
+        tokens.extend(token.children or ())
+        if token.type == "html_block" and token.map:
+            lines.append((token.map[0], token.map[1]))
+    starts = [0, *(found.end() for found in re.finditer(r"\n", text))]
+
+    def inside(place: int) -> bool:
+        line = bisect.bisect_right(starts, place) - 1
+        return any(first <= line < last for first, last in lines)
+
+    return inside
 
 
 def _in_code(text: str, places: list[int]) -> set[int]:
     """Those of ``places`` every reader takes as code: the HTML report's reader and one
     that reads raw HTML, both markdown-it's, each over the whole text with a word of its
     own at each place."""
-    from markdown_it import MarkdownIt
-
     if "`" not in text and "~~~" not in text and _INDENTED_LINE.search(text) is None:
         return set()
-    if not _LINK_READERS:
-        _LINK_READERS.extend(
-            MarkdownIt("commonmark", {"html": raw}).enable("table").enable("strikethrough")
-            for raw in (False, True)
-        )
     mark = secrets.token_hex(8)
     probe = list(text)
     for index, place in enumerate(places):
@@ -4275,7 +4393,7 @@ def _in_code(text: str, places: list[int]) -> set[int]:
     joined = "".join(probe)
     word = re.compile(rf"z{mark}(\d+)z")
     coded: set[int] | None = None
-    for reader in _LINK_READERS:
+    for reader in _link_readers():
         found: set[int] = set()
         tokens = list(reader.parse(joined))
         while tokens:
@@ -4287,15 +4405,21 @@ def _in_code(text: str, places: list[int]) -> set[int]:
     return {places[index] for index in coded or ()}
 
 
-def _hand_links_unlinked(text: str) -> str:
+def _hand_links_unlinked(text: str, keep: Callable[[str], str] = str) -> str:
     """``text`` with every link into the evidence bundle or to a note's anchor printed as
     its characters (T-814).
 
     The platform's own note markers and links into the bundle are set aside from the
     closing pass (``_Context.keep``), so a link of that kind still in the text was
     written by a model, a sample, a tool or the operator: the ``]`` that closes its text
-    or a reference definition's label is escaped, and so is the ``<`` of a tag that holds
-    one. What a reader takes as code is left byte for byte, and nothing else of the text
+    or a reference definition's label is escaped. The ``<`` of a tag that holds one is
+    written as ``&lt;``, set aside by ``keep`` from the reference escape: text in a
+    paragraph, a table cell and an HTML block alike, where a viewer that passes raw HTML
+    through would read a backslash before it as a character and the tag as a tag; inside
+    an HTML block a backslash before the ``<``, which escapes nothing there, gives way to
+    it. A target longer than :data:`_TARGET_REACH` is taken to reach the bundle and prints
+    as its characters too.
+    What a reader takes as code is left byte for byte, and nothing else of the text
     changes.
     """
     if "]" not in text and "<" not in text:
@@ -4309,8 +4433,13 @@ def _hand_links_unlinked(text: str) -> str:
     for place in places:
         if place in coded:
             continue
-        out += [text[at:place], "\\"]
-        at = place
+        if text[place] == "]":
+            out += [text[at:place], "\\"]
+            at = place
+            continue
+        cut = place - 1 if _escaped_at(text, place) else place
+        out += [text[at:cut], keep("&lt;")]
+        at = place + 1
     out.append(text[at:])
     return "".join(out)
 
