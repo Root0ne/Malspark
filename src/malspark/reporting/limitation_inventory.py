@@ -672,7 +672,9 @@ def reason_label(reason: str) -> str:
     return OPEN_QUESTION_REASON_LABELS.get(reason, OPEN_QUESTION_REASON_LABELS["other"])
 
 
-def _question_rows(inv: LimitationInventory, reason_as: Callable[[str], str]) -> list[InventoryRow]:
+def _question_rows(
+    inv: LimitationInventory, reason_as: Callable[[str], str], entry: Callable[[str], str] = str
+) -> list[InventoryRow]:
     questions = inv.questions
     if not questions:
         return []
@@ -719,7 +721,7 @@ def _question_rows(inv: LimitationInventory, reason_as: Callable[[str], str]) ->
                 f"Open questions naming only routines that have listed code: {len(marked)}; "
                 "the routines: "
                 + "; ".join(
-                    f"{_hexes([address], inv.image_bases)} in {', '.join(ids)}"
+                    f"{_hexes([address], inv.image_bases)} in {', '.join(map(entry, ids))}"
                     + (" (after it was filed)" if was else "")
                     for address, (ids, was) in named
                 )
@@ -756,7 +758,7 @@ def inventory_rows(
         *_recorded_rows(inv, quote, name),
         *_sandbox_rows(inv, name, entry),
         *_capture_row(inv, entry),
-        *_question_rows(inv, reason_as),
+        *_question_rows(inv, reason_as, entry),
     ]
     if claims_not_discussed:
         n = claims_not_discussed

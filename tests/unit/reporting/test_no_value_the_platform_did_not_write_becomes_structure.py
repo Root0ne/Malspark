@@ -275,20 +275,11 @@ def test_a_model_s_line_keeps_the_writing_of_model_prose() -> None:
 
 
 def _report(text: str, n: int) -> MalwareReport:
-    """A report whose sample, tool, sandbox and operator texts are ``text`` before a marker each.
-
-    A platform sentence that carries such a text (``x()``) keeps a balanced
-    backtick pair as a span by its rule, so it holds the text only when the
-    text holds none.
-    """
+    """A report whose sample, tool, sandbox and operator texts are ``text`` before a marker each."""
     marks = iter(range(n * 100, n * 100 + 99))
-    sentence = "plain" if re.search(r"`[^`]+`", text) else text
 
     def v() -> str:
         return f"{text} zq{next(marks)}z"
-
-    def x() -> str:
-        return f"{sentence} zq{next(marks)}z"
 
     return MalwareReport(
         identity=SampleIdentity(
@@ -302,9 +293,9 @@ def _report(text: str, n: int) -> MalwareReport:
             publisher=v(), product_type=v(), version=v(), report_date=v(), report_number=v()
         ),
         version_history=[VersionHistoryEntry(version=v(), date=v(), authors=v(), description=v())],
-        references=[ExternalReference(source=x(), url="https://attack.mitre.org/", note=x())],
-        degradation_reasons=[x()],
-        operator_choices=[x()],
+        references=[ExternalReference(source=v(), url="https://attack.mitre.org/", note=v())],
+        degradation_reasons=[v()],
+        operator_choices=[v()],
         evidence_index=[EvidenceIndexRow(id="ev_0001", agent=v(), server=v(), tool=v())],
         sections=[
             EvidenceSection(
@@ -335,10 +326,10 @@ def _report(text: str, n: int) -> MalwareReport:
         ),
         run_summary={
             "profile": {"name": v(), "analysts": [v()]},
-            "stages": [{"key": "static", "ran": False, "reason": x()}],
+            "stages": [{"key": "static", "ran": False, "reason": v()}],
             "evidence": {
                 "entries": 1,
-                "failures": [{"tool": "probe", "server": v(), "error": x(), "remediation": x()}],
+                "failures": [{"tool": "probe", "server": v(), "error": v(), "remediation": v()}],
             },
         },
     )
@@ -561,3 +552,55 @@ def test_the_mark_is_found_in_one_pass_however_many_fences_the_record_holds(
     monkeypatch.setattr(markdown_module, "_texts_of", lambda held: reads.append(1) or whole(held))
     assert _absent_mark(record) == "\x0020000\x00"
     assert len(reads) == 1
+
+
+def test_a_writer_keeping_no_mark_ends_in_each_line_written_whole_by_the_value_writer() -> None:
+    # A writer that drops every mark it is given: the fences tried are bounded,
+    # and each line is then built with its values as recorded and written by
+    # the value writer, every backtick of them shown.
+    tried: list[str] = []
+
+    def line(text: str) -> str:
+        tried.append(text)
+        return text.replace("\x00", "")
+
+    def build(word: Any) -> list[str]:
+        return [f"Mutex {word('a`b')} held by {word('`c`')}"]
+
+    value = markdown_module._inline_safe
+    written = markdown_module._placed(build, line, value, {"held": "x"})
+    assert written == [value("Mutex a`b held by `c`")]
+    assert len(tried) == markdown_module._PLACING_TRIES
+    reading = HtmlRenderer._markdown_to_html(_item(written[0]))
+    assert "<code>" not in reading
+    assert "Mutex a`b held by `c`" in html.unescape(re.sub(r"<[^>]+>", "", reading))
+
+
+def test_a_context_naming_one_value_marks_it_where_the_table_builds_it() -> None:
+    # A context naming one value only is written whole by the value writer
+    # where it holds no mark, so no surface tells the two apart: the table
+    # hands each such value to its writer of a value's place.
+    from malspark.reporting.builder import ioc_table
+    from malspark.reporting.models import StringIOC
+    from tests.unit.reporting._report_shapes import rich_report
+
+    report = rich_report()
+    assert report.static is not None
+    report.static.interesting_strings = [
+        *report.static.interesting_strings,
+        StringIOC(value="C:\\Users\\a.txt", kind="path", notes="no`te"),
+    ]
+    report.sections = [
+        *report.sections,
+        EvidenceSection(
+            key="artifact_iocs",
+            title="Indicators",
+            kind="table",
+            source="artifact:static",
+            columns=["Listed by", "Evidence", "Type", "Value"],
+            rows=[["an`alyst", "ev_0001", "mutex", "Global\\named"]],
+        ),
+    ]
+    contexts = {row.value: row.context for row in ioc_table(report, word=lambda t: f"<{t}>")}
+    assert contexts["C:\\Users\\a.txt"] == "<no`te>"
+    assert contexts["Global\\named"] == "listed by the <an`alyst> analyst"

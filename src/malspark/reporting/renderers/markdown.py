@@ -583,7 +583,7 @@ class MarkdownRenderer:
         for number, answer in enumerate(answers, 1):
             # The analyst's words: escaped as inline text; the heading escapes
             # each "#", so a trailing run of them cannot close it early.
-            asked = ctx.inline(answer.question)
+            asked = ctx.value(answer.question, pipes=True)
             lines.extend(["", _plain_heading(f"Q{number}. {asked}"), ""])
             outcome = f"**Outcome:** {outcome_words(answer.outcome)}"
             if answer.answered:
@@ -646,11 +646,12 @@ class MarkdownRenderer:
             "",
         )
         reason = why.split(":", 1)[1].strip() if ":" in why else "the report model wrote none"
+        written_reason = ctx.value(_one_line(reason), pipes=True)
         left = ctx.left_out_clause(*BUNDLE_SUMMARY_SUBJECTS)
         lines.append(
             f"No summary is printed: {left}. _({MEASURED})_"
             if left
-            else f"No summary was written: {ctx.inline(_one_line(reason))}. _({MEASURED})_"
+            else f"No summary was written: {written_reason}. _({MEASURED})_"
         )
         if any(r in _INCONCLUSIVE for r in report.degradation_reasons):
             lines.extend(
@@ -1655,13 +1656,13 @@ class MarkdownRenderer:
             lines.append(_row("Value", "Kind", "Notes", "Published"))
             lines.append(_divider(4))
             for ioc in static.interesting_strings[:60]:
-                published = ctx.inline(answers.get((ioc.kind, ioc.value.strip().lower())) or "-")
+                published = ctx.value(answers.get((ioc.kind, ioc.value.strip().lower())) or "-")
                 value = _whole(_defanged_text(ctx.plain(ioc.value)))
                 lines.append(
                     _row(
                         _code_span(value),
                         ctx.value(ioc.kind),
-                        ctx.inline(ioc.notes) if ioc.notes else "-",
+                        ctx.value(ioc.notes) if ioc.notes else "-",
                         published,
                     )
                 )
@@ -1837,7 +1838,7 @@ class MarkdownRenderer:
                         )
                         or "-",
                         ctx.value(row.source) or "-",
-                        ctx.inline(row.published or "-"),
+                        ctx.value(row.published or "-"),
                     )
                 )
             if any(not row.published for row in host):
@@ -1876,7 +1877,7 @@ class MarkdownRenderer:
                     )
                     or "-",
                     ctx.value(row.source) or "-",
-                    ctx.inline(row.published or "-"),
+                    ctx.value(row.published or "-"),
                 ]
                 if reputation:
                     cells.append(reputation.get(row.value.strip().lower().rstrip("."), "-"))
@@ -2202,13 +2203,13 @@ class MarkdownRenderer:
             for row in ran:
                 state = "ran" if row.get("ran") else "did not run"
                 why = (
-                    f": {ctx.inline(str(row['reason']))}"
+                    f": {ctx.value(str(row['reason']), pipes=True)}"
                     if row.get("reason") and not row.get("ran")
                     else ""
                 )
                 agents = row.get("agent_reasons") or {}
                 said = "; ".join(
-                    f"{ctx.value(agent, pipes=True)}: {ctx.inline(str(reason))}"
+                    f"{ctx.value(agent, pipes=True)}: {ctx.value(str(reason), pipes=True)}"
                     for agent, reason in agents.items()
                     if reason
                 )
@@ -2254,14 +2255,16 @@ class MarkdownRenderer:
             # where the reason carries one: the header says only what they mean
             # for the verdict.
             lines.extend(["**What limited this run:**", ""])
-            lines.extend(_item(ctx.inline(reason)) for reason in report.degradation_reasons)
+            lines.extend(
+                _item(ctx.value(reason, pipes=True)) for reason in report.degradation_reasons
+            )
             lines.append("")
         if report.operator_choices:
             # What the operator's configuration left out: listed whole, apart
             # from what limited the run, since it cost no evidence the run's
             # configuration would have given.
             lines.extend([f"**{OPERATOR_CHOICES_HEADING}:**", ""])
-            lines.extend(_item(ctx.inline(reason)) for reason in report.operator_choices)
+            lines.extend(_item(ctx.value(reason, pipes=True)) for reason in report.operator_choices)
             lines.append("")
 
         evidence = summary.get("evidence") or {}
@@ -2288,8 +2291,8 @@ class MarkdownRenderer:
                 server = f" ({ctx.value(row['server'], pipes=True)})" if row.get("server") else ""
                 count = int(row.get("count") or 1)
                 times = f" ×{count}" if count > 1 else ""
-                message = ctx.inline(str(row.get("error") or "").strip()) or "failed"
-                remedy = ctx.inline(str(row.get("remediation") or "").strip())
+                message = ctx.value(str(row.get("error") or "").strip(), pipes=True) or "failed"
+                remedy = ctx.value(str(row.get("remediation") or "").strip(), pipes=True)
                 lines.append(
                     _item(
                         f"{_code_span(tool)}{server}{times}: {message}"
@@ -2346,7 +2349,7 @@ class MarkdownRenderer:
                 lines.append(
                     _item(
                         f"{_code_span(str(row.get('code', '')))} "
-                        f"({ctx.inline(str(row.get('agent', '')))}){advisory}"
+                        f"({ctx.value(str(row.get('agent', '')), pipes=True)}){advisory}"
                         f"{_times(row)}: {_finding_text(row, ctx.plain)}"
                     )
                 )
@@ -2354,7 +2357,7 @@ class MarkdownRenderer:
                 lines.append(
                     _item(
                         f"{_code_span(str(row.get('code', '')))} "
-                        f"({ctx.inline(str(row.get('agent', '')))})"
+                        f"({ctx.value(str(row.get('agent', '')), pipes=True)})"
                         " (answered)"
                         f"{_times(row)}: {_finding_text(row, ctx.plain)}"
                     )
@@ -2454,9 +2457,11 @@ class MarkdownRenderer:
 
     def _appendix_run(self, report: MalwareReport, ctx: _Context | None = None) -> str:
         run_summary = report.run_summary or {}
-        # A platform sentence that carries a tool's or the operator's text: its
-        # spans kept, every other character Markdown reads escaped.
+        # The platform's own words around values each set in by itself
+        # (:func:`_placed`): its spans kept, every other character Markdown
+        # reads escaped.
         inline = ctx.inline if ctx is not None else _escaped_spelling
+        plain = ctx.plain if ctx is not None else _defanged_text
 
         def value(text: Any) -> str:
             """A tool's or the operator's name, by the inline rule; the row keeps its separator."""
@@ -2465,6 +2470,20 @@ class MarkdownRenderer:
         def named(text: Any) -> str:
             """A tool's or the operator's name inside an item, by the inline rule."""
             return ctx.value(text, pipes=True) if ctx is not None else _inline_safe(text)
+
+        def spoken(
+            build: Callable[[Callable[[Any], str]], list[str]],
+            code: Callable[[str], str],
+            record: Any,
+        ) -> list[str]:
+            """A builder's lines, every value it writes as code a span set in after the line.
+
+            ``build`` is handed the writer of a value's code span; every other
+            character of each line, a value the builder writes into its words
+            included, is written by the inline rule, so no backtick of it opens a
+            span, and each span is the one ``code`` writes, read by the defanger.
+            """
+            return _placed(build, named, lambda text: _emphasis_escaped(plain(code(text))), record)
 
         lines = [_appendix_heading("B", "Run summary", MEASURED), ""]
         if not run_summary:
@@ -2522,7 +2541,7 @@ class MarkdownRenderer:
                 if isinstance(row, dict):
                     lines.append(
                         _item(
-                            f"{inline(str(row.get('agent')))}, round {row.get('round')}: "
+                            f"{named(str(row.get('agent')))}, round {row.get('round')}: "
                             f"{row.get('values')} value{'' if row.get('values') == 1 else 's'} "
                             f"from {row.get('claims')} earlier "
                             f"claim{'' if row.get('claims') == 1 else 's'} "
@@ -2545,8 +2564,15 @@ class MarkdownRenderer:
         # A model's configured endpoint prints as configured, set aside where
         # this line writes it and nowhere else.
         model_name = ctx.endpoint_kept if ctx is not None else None
-        for line in generation_lines(run_summary.get("generation"), model_name):
-            lines.append(_item(inline(line)))
+        generation = run_summary.get("generation")
+        lines.extend(
+            _item(line)
+            for line in spoken(
+                lambda word: generation_lines(generation, model_name, word),
+                _code_span,
+                generation,
+            )
+        )
         ungrounded = run_summary.get("sections_without_evidence")
         if ungrounded:
             lines.append(_item(f"Report sections with no evidence: {ungrounded}"))
@@ -2560,7 +2586,7 @@ class MarkdownRenderer:
                 if isinstance(row, dict):
                     lines.append(
                         _item(
-                            f"Model fallback ({named(agent)}): {inline(str(row.get('reason', '')))}"
+                            f"Model fallback ({named(agent)}): {named(str(row.get('reason', '')))}"
                         )
                     )
         for row in run_summary.get("server_rests") or []:
@@ -2625,35 +2651,38 @@ class MarkdownRenderer:
         # here and nowhere else; any other prints defanged.
         code = ctx.host_kept if ctx is not None else _code_span
         held = run_summary.get("disclosure")
-        disclosed = disclosure_lines(held, code)
+        disclosed = spoken(lambda word: disclosure_lines(held, word), code, held)
         if disclosed:
             lines.extend(["", DISCLOSURE_INTRO, ""])
-            lines.extend(_item(inline(line)) for line in disclosed)
+            lines.extend(_item(line) for line in disclosed)
             # Where the sample's bytes were read and what kept each reader
             # from the worker (``analysis.isolation``); a record stored before
             # the part existed shows none.
             part = held.get("isolation") if isinstance(held, dict) else None
-            isolated = isolation_lines(part, code)
+            isolated = spoken(lambda word: isolation_lines(part, word), code, part)
             if isolated:
                 lines.extend(["", ISOLATION_INTRO, ""])
-                lines.extend(_item(inline(line)) for line in isolated)
+                lines.extend(_item(line) for line in isolated)
             # What each tool the run called is declared to do beyond answering
             # (``analysis.tool_effects``); a record stored before the part
             # existed shows none.
             effects = held.get("effects") if isinstance(held, dict) else None
-            effected = effects_lines(effects, code)
+            effected = spoken(lambda word: effects_lines(effects, word), code, effects)
             if effected:
                 lines.extend(["", EFFECTS_INTRO, ""])
-                lines.extend(_item(inline(line)) for line in effected)
+                lines.extend(_item(line) for line in effected)
             lines.extend(["", DISCLOSURE_FOOTNOTE])
         # What the run spent its input on, where its summary records it
         # (``analysis.efficiency``); a summary stored without it shows none.
-        counted = efficiency_lines(
-            run_summary.get("efficiency"), lambda text: _code_span(_one_line(text))
+        spent_on = run_summary.get("efficiency")
+        counted = spoken(
+            lambda word: efficiency_lines(spent_on, word),
+            lambda text: _code_span(_one_line(text)),
+            spent_on,
         )
         if counted:
             lines.extend(["", EFFICIENCY_INTRO, ""])
-            lines.extend(_item(inline(line)) for line in counted)
+            lines.extend(_item(line) for line in counted)
         elif unbuilt := not_built_line("efficiency", run_summary.get("efficiency")):
             lines.extend(["", unbuilt])
         # What the run could not establish, what each tool looked for and over
@@ -2664,27 +2693,27 @@ class MarkdownRenderer:
         # (``_AnalystStates``), so the block and the rest of the report agree.
         recorded = run_summary.get("coverage")
         states = _AnalystStates(report) if isinstance(recorded, dict) else None
-        plain = ctx.plain if ctx is not None else _defanged_text
-        # A model's claim is quoted by the inline rule and set into its line
-        # after the line's own writing (:func:`_placed`): a value prints its own
-        # characters, never another claim's.
+        # A model's claim is quoted by the inline rule and a value the run
+        # supplied is a code span, each set into its line after the line's own
+        # writing (:func:`spoken`): a value prints its own characters, never
+        # another claim's. The first character of what a mark stands for says
+        # which of the two it is.
         held = (states.failed, states.skipped, states.silent) if states is not None else None
         blocks: list[list[str]] = [[], [], []]
 
-        def built(quote: Callable[[Any], str]) -> list[str]:
+        def built(word: Callable[[Any], str]) -> list[str]:
             blocks[:] = coverage_lines(
-                recorded, lambda text: _code_span(_one_line(text)), quote, held
+                recorded, lambda text: word(f"c{text}"), lambda text: word(f"q{text}"), held
             )
             return [line for block in blocks for line in block]
 
-        written = iter(
-            _placed(
-                built,
-                inline,
-                lambda text: _inline_safe(_one_line(text), plain=plain),
-                (recorded, held),
-            )
-        )
+        def set_in(text: str) -> str:
+            kind, said = text[:1], _one_line(text[1:])
+            if kind == "c":
+                return _emphasis_escaped(plain(_code_span(said)))
+            return _inline_safe(said, plain=plain)
+
+        written = iter(_placed(built, named, set_in, (recorded, held)))
         if unbuilt := not_built_line("coverage", recorded):
             lines.extend(["", unbuilt])
         for intro, block in zip(
@@ -2705,8 +2734,9 @@ class MarkdownRenderer:
         # The source and the note are a tool's or the operator's words; the link
         # is the platform's, to the target the reference holds.
         for ref in report.references:
-            note = f" — {ctx.inline(ref.note)}" if ref.note else ""
-            lines.append(_item(f"[{ctx.inline(ref.source)}]({_link_target(ref.url)}){note}"))
+            note = f" — {ctx.value(ref.note, pipes=True)}" if ref.note else ""
+            source = ctx.value(ref.source, pipes=True)
+            lines.append(_item(f"[{source}]({_link_target(ref.url)}){note}"))
         return "\n".join(lines)
 
     def _appendix_method(self, report: MalwareReport, ctx: _Context) -> str:
@@ -3691,7 +3721,7 @@ def lost_tools_sentence(report: MalwareReport, ctx: _Context) -> str:
     degraded run, as the header's banner is: a rule engine that loaded no
     rule did not run, and the scope says so beside what was examined rather
     than leaving its silence to read as no match. Each name and reason is a
-    tool's own text, escaped and defanged (``_Context.inline``). Its host
+    tool's own text, by the inline rule (``_Context.value``). Its host
     paths were masked when the row was written (``lost_tool_rows``), and
     nothing here reads the rendering host, so a stored run renders the same
     wherever it is rendered.
@@ -3703,8 +3733,8 @@ def lost_tools_sentence(report: MalwareReport, ctx: _Context) -> str:
     for row in rows:
         if not isinstance(row, dict) or not str(row.get("tool") or "").strip():
             continue
-        name = ctx.inline(_one_line(row["tool"]))
-        why = ctx.inline(_one_line(str(row.get("reason") or "")))
+        name = ctx.value(_one_line(row["tool"]), pipes=True)
+        why = ctx.value(_one_line(str(row.get("reason") or "")), pipes=True)
         said.append(f"{name} ({why})" if why else name)
     return f"The run went without {'; '.join(said)}." if said else ""
 
@@ -4805,7 +4835,7 @@ def _sample_check_line(rule: DetectionRule, ctx: _Context) -> str | None:
     Suricata draft, and a rule stored before the check, which renders as it did.
     """
     if rule.sample_not_checked:
-        why = ctx.inline(_one_line(rule.sample_not_checked)).rstrip(".")
+        why = ctx.value(_one_line(rule.sample_not_checked), pipes=True).rstrip(".")
         return f"Not run against the sample it was drafted from: {why}."
     if rule.matches_sample is None:
         return None
@@ -7183,16 +7213,24 @@ def _placed(
     rule) and set into its marks in one pass, so no character of it is escaped
     twice and no two values pair. The mark is a fence no text of ``record``
     holds (:func:`_absent_mark`); where a line's writing does not keep every
-    mark as built, the next fence is taken.
+    mark as built, the next fence is taken, at most :data:`_PLACING_TRIES`
+    times in all. After that each line is built with every value as recorded
+    and written whole by ``value``: no value is placed, every one is still
+    written by the inline rule.
     """
     start = 0
     held = _fence_numbers(record)
-    while True:
+    for _ in range(_PLACING_TRIES):
         mark = _absent_mark(record, start, held)
         done = _placed_with(mark, build, line, value)
         if done is not None:
             return done
         start = int(mark.strip("\x00")) + 1
+    return [value(text) for text in build(str)]
+
+
+# How many fences :func:`_placed` tries before it writes each line whole by the inline rule.
+_PLACING_TRIES = 4
 
 
 class _RowWords:
@@ -7306,6 +7344,8 @@ _LINK_TARGET_ENDS = re.compile(r'[()<>\s\\"]')
 
 def _link_target(url: Any) -> str:
     """A target the platform writes into a link, no character of which can end the link.
+
+    Encoded, as their UTF-8 bytes' percent-escapes: ``()<>\\"`` and white space (``\\`` is ``%5C``).
 
     A parenthesis, an angle bracket, white space, a backslash and a double
     quote are percent-encoded, so a target the operator configured is one link

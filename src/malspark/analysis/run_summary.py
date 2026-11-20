@@ -961,7 +961,11 @@ def stage_durations(stages: Any) -> list[tuple[str, str]]:
     return [(key, f"{ms / 1000.0:.1f}s") for key, ms in rows if key]
 
 
-def generation_lines(generation: Any, model_name: Callable[[str], str] | None = None) -> list[str]:
+def generation_lines(
+    generation: Any,
+    model_name: Callable[[str], str] | None = None,
+    code: Callable[[str], str] | None = None,
+) -> list[str]:
     """Each model's measured generation rate and each call timeout it produced.
 
     One line per model and one per sized call, so a reader can check the
@@ -969,8 +973,11 @@ def generation_lines(generation: Any, model_name: Callable[[str], str] | None = 
     call was finally given. Nothing measured contributes nothing.
     ``model_name`` writes a model's name into its line (the report sets its
     configured endpoint aside there); by default the name prints as recorded.
+    ``code`` writes a model's name or a call's as code; by default between
+    single backticks.
     """
     name = model_name or str
+    span = code or (lambda text: f"`{text}`")
     if not isinstance(generation, dict):
         return []
     lines: list[str] = []
@@ -980,7 +987,7 @@ def generation_lines(generation: Any, model_name: Callable[[str], str] | None = 
         if row.get("tokens_per_second") is not None:
             sources = "; ".join(str(x) for x in row.get("sources") or []) or "unknown"
             lines.append(
-                f"Generation rate of `{name(model)}`: "
+                f"Generation rate of {span(name(model))}: "
                 f"{float(row['tokens_per_second']):.2f} tokens/s "
                 f"({int(row.get('tokens') or 0)} tokens over "
                 f"{float(row.get('seconds') or 0.0):.1f}s "
@@ -989,7 +996,7 @@ def generation_lines(generation: Any, model_name: Callable[[str], str] | None = 
         if row.get("prompt_tokens_per_second") is not None:
             read_from = "; ".join(str(x) for x in row.get("prompt_sources") or []) or "unknown"
             lines.append(
-                f"Prompt reading rate of `{name(model)}`: "
+                f"Prompt reading rate of {span(name(model))}: "
                 f"{float(row['prompt_tokens_per_second']):.2f} tokens/s "
                 f"({int(row.get('prompt_tokens') or 0)} tokens over "
                 f"{float(row.get('prompt_seconds') or 0.0):.1f}s; from {read_from})"
@@ -999,17 +1006,17 @@ def generation_lines(generation: Any, model_name: Callable[[str], str] | None = 
         if not isinstance(row, dict):
             continue
         if row.get("budget"):
-            lines.append(f"Output budget of `{call}`: {row['budget']}")
+            lines.append(f"Output budget of {span(call)}: {row['budget']}")
         unlimited = row.get("configured_s") is None
         configured = float(row.get("configured_s") or 0.0)
         applied = float(row.get("applied_s") or 0.0)
         if row.get("derived_s") is None:
             lines.append(
-                f"Timeout of `{call}`: none of its own — no time limit is configured and no "
+                f"Timeout of {span(call)}: none of its own — no time limit is configured and no "
                 "rate is measured for its model yet (or there is no output budget), so the "
                 "request's own timeout bounds it"
                 if unlimited
-                else f"Timeout of `{call}`: {applied:.0f}s, the configured value "
+                else f"Timeout of {span(call)}: {applied:.0f}s, the configured value "
                 "(no rate measured for its model yet, or no output budget)"
             )
             continue
@@ -1017,7 +1024,7 @@ def generation_lines(generation: Any, model_name: Callable[[str], str] | None = 
         larger_of = "" if unlimited else f"the larger of {configured:.0f}s configured and "
         if row.get("prompt_tokens_per_second") is not None:
             lines.append(
-                f"Timeout of `{call}`: {applied:.0f}s — {larger_of}"
+                f"Timeout of {span(call)}: {applied:.0f}s — {larger_of}"
                 f"({int(row.get('prompt_tokens') or 0)} prompt tokens read at "
                 f"{float(row['prompt_tokens_per_second']):.2f} tokens/s + "
                 f"{int(row.get('max_tokens') or 0)} tokens written at "
@@ -1026,7 +1033,7 @@ def generation_lines(generation: Any, model_name: Callable[[str], str] | None = 
             )
             continue
         lines.append(
-            f"Timeout of `{call}`: {applied:.0f}s — {larger_of}"
+            f"Timeout of {span(call)}: {applied:.0f}s — {larger_of}"
             f"{int(row.get('max_tokens') or 0)} tokens at "
             f"{float(row.get('tokens_per_second') or 0.0):.2f} tokens/s (prompt read included) "
             f"× {margin} = {float(row['derived_s']):.0f}s"

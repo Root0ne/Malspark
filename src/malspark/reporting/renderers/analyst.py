@@ -67,6 +67,7 @@ from malspark.reporting.renderers.markdown import (
     _code_span,
     _degraded_sentence,
     _divider,
+    _emphasis_escaped,
     _encryption_table,
     _encrypts_files,
     _endpoint,
@@ -81,6 +82,7 @@ from malspark.reporting.renderers.markdown import (
     _observed_cell,
     _one_line,
     _paragraph_line,
+    _placed,
     _prose_item,
     _prose_step,
     _ransomware_block,
@@ -1549,7 +1551,7 @@ class _Analyst:
         if answers:
             lines.extend(["", "### Questions asked of this run", ""])
             for number, answer in enumerate(answers, 1):
-                asked = re.sub(r"(?=#)", "\\\\", self.ctx.inline(answer.question))
+                asked = re.sub(r"(?=#)", "\\\\", self.ctx.value(answer.question, pipes=True))
                 said = f"**Q{number}. {asked}** — {outcome_words(answer.outcome)}"
                 if answer.answer.strip():
                     said += ": " + self._line(answer.answer, answer.evidence_ids)
@@ -2728,7 +2730,16 @@ class _Analyst:
         from malspark.analysis.disclosure import left_the_machine
 
         record = (self.report.run_summary or {}).get("disclosure")
-        return self.ctx.inline(_one_line(left_the_machine(record, self.ctx.host_kept)))
+        ctx = self.ctx
+        # Each host the sentence names is a code span set in after the rest of
+        # it is written by the inline rule (:func:`_placed`).
+        (said,) = _placed(
+            lambda word: [left_the_machine(record, word)],
+            lambda text: ctx.value(_one_line(text), pipes=True),
+            lambda host: _emphasis_escaped(ctx.plain(ctx.host_kept(host))),
+            record,
+        )
+        return said
 
     def _measured_limitations(self, inventory: LimitationInventory, said: list[str]) -> str:
         """Section 11 of a report that holds the limitations inventory: each row of it that
@@ -3006,9 +3017,9 @@ class _Analyst:
         if report.references:
             lines.extend(["### References", ""])
             for ref in report.references:
-                note = f" — {self.ctx.inline(ref.note)}" if ref.note else ""
+                note = f" — {self.ctx.value(ref.note, pipes=True)}" if ref.note else ""
                 target = _link_target(ref.url)
-                lines.append(_item(f"[{self.ctx.inline(ref.source)}]({target}){note}"))
+                lines.append(_item(f"[{self.ctx.value(ref.source, pipes=True)}]({target}){note}"))
             lines.append("")
         bundle = self.ctx.keep(f"[{BUNDLE_HTML}]({BUNDLE_HTML}) and [{BUNDLE_JSON}]({BUNDLE_JSON})")
         lines.extend(

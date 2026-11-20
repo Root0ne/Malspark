@@ -278,8 +278,11 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # haiku4's Markdown re-pinned when a sentence quoting the mediator's words came
 # to keep the writing of model prose again (T-735): those lines of the run
 # summary are the only change, and the HTML did not change.
+# run7's Markdown and HTML re-pinned when a tool's failure message came to be
+# written by the inline rule (T-735): each backtick it holds is printed as a
+# character in the tool failures list, the only change.
 STORED_RENDERS = {
-    "run7": ("37b6c8f69b2cb19e", "5d209181f98213e8"),
+    "run7": ("0da0666bd97caecb", "8a6ba9c0670cf1b5"),
     "run5": ("87bb84a09091c0de", "156a645b3d568bd2"),
     "run4": ("de3f3fc895e0ef55", "60cfad50c120e58b"),
     "local8": ("08d6d34474336223", "b78721cb9ba4f766"),

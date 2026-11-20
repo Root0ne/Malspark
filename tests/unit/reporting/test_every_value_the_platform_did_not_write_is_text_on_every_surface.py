@@ -16,11 +16,11 @@ mappings, which have no place in the schema — the tool and sandbox records
 ``run_summary`` keys (:func:`_run_summary`, the keys the renderers' verdict,
 run, method and limitation sections read, each with the provenance of its
 value: the mediator's and the analysts' quoted words, the negotiation keys
-listed in :data:`NEGOTIATION_QUOTES` and a negative claim are a model's and
-carry a plain token of their own); and the lists the scan checks against —
-the places carrying a balanced backtick pair (:data:`PAIRED`) and the
-places no surface prints (:data:`NOT_PRINTED`). A key or a record the hand lists
-miss is not scanned.
+listed in :data:`NEGOTIATION_QUOTES`, a negative claim and a validation
+finding's message, which quotes a model's claim, are a model's and carry a
+plain token of their own); the states a place is printed in only
+under a condition (:func:`_states`); and the list of places no state prints
+(:data:`NOT_PRINTED`). A key or a record the hand lists miss is not scanned.
 
 report.md, the evidence bundle's Markdown and the HTML of both are rendered by
 the product's own path (``render_products``); the Markdown is read by the HTML
@@ -29,9 +29,10 @@ parsed. A token occurs only inside text or code: never in an attribute but the
 operator's reference target in its link, never as the start of a link, an
 emphasis, a struck or underlined run, a heading, a list item or a table cell
 the payload made, and the words between a value's first and last token are its
-own, never another value's; a backtick run, a backslash and a character
-reference are shown as written; every place written is printed somewhere
-unless listed, and the operator's reference is one link.
+own, never another value's; each value's backtick pair, a backslash and a
+character reference are shown as written and the pair forms no code span;
+every place written is printed in some state unless listed, and the
+operator's reference is one link.
 """
 
 from __future__ import annotations
@@ -47,7 +48,7 @@ from typing import Any
 from markdown_it import MarkdownIt
 from pydantic import BaseModel
 
-from malspark.reporting.models import ExternalReference, MalwareReport
+from malspark.reporting.models import EvidenceSection, ExternalReference, MalwareReport
 from malspark.reporting.renderers.bundle import render_products
 from malspark.reporting.renderers.html import HtmlRenderer
 from malspark.reporting.renderers.markdown import _escaped_references
@@ -83,6 +84,8 @@ PROVENANCE: list[tuple[str, str]] = [
     (r"^report\.identity\.hashes\.", "P"),
     # The operator's reference target, held by the platform's link (written apart).
     (r"^report\.references\[\]\.url$", "P"),
+    # The operator's question: a value; the answer to it is a model's.
+    (r"^report\.question_answers\[\]\.question$", "V"),
     # A model's text: the judge's, the analysts', the report model's.
     (r"^report\.capability_matrix\[\]\.statements\[\]$", "M"),
     (
@@ -172,36 +175,28 @@ def test_every_listed_place_of_the_platform_or_a_model_is_a_place_of_the_schema(
 # ---------------------------------------------------------------------------
 
 
-def _payload(n: int, *, paired: bool = False) -> str:
+def _payload(n: int) -> str:
     """A value that would open every structure, with its token ``n`` at each part.
 
     ``1. # `` opens a list and a heading at a line's start; the brackets a link,
     the stars and tildes emphasis and struck text, the tags raw HTML, the
     pipes a cell; ``\\x00claim0\\x00`` and ``\\x000\\x00v0\\x000\\x00`` are the
-    shapes of a placeholder; one backtick, a backslash before a star and
-    ``&lt;`` are what a writer's code span, an escape and a character reference
-    would take instead of showing (:data:`_SHOWN_BEFORE`) — one backtick in
-    each of two values a sentence carries would pair into a span; the line
-    after the break opens a heading of its own. ``paired`` closes the backtick
-    within the value, a code span for any writer that keeps one (:data:`PAIRED`).
+    shapes of a placeholder; a closed backtick pair, a backslash before a star
+    and ``&lt;`` are what a writer's code span, an escape and a character
+    reference would take instead of showing (:data:`_SHOWN_BEFORE`,
+    :data:`_SHOWN_AFTER`); the line after the break opens a heading of its own.
     """
-    close = "`" if paired else ""
     return (
         f"1. # zH{n}z [zL{n}z](#zT{n}z) **zB{n}z** ~~zS{n}z~~ <u>zU{n}z</u> "
-        f"<img src=zI{n}z> |zP{n}z| \x00claim0\x00 \x000\x00v0\x000\x00 `zC{n}z{close} "
+        f"<img src=zI{n}z> |zP{n}z| \x00claim0\x00 \x000\x00v0\x000\x00 `zC{n}z` "
         f"\\*zK{n}z &lt;zE{n}z zZ{n}z\n# zN{n}z"
     )
 
 
-# What a reader shows before a part's token where the value is printed with
-# all its characters: the backtick run, the backslash and the reference as written.
+# What a reader shows around a part's token where the value is printed with
+# all its characters: the backtick pair, the backslash and the reference as written.
 _SHOWN_BEFORE = {"C": "`", "K": "\\*", "E": "&lt;"}
-
-# The places whose value carries a balanced backtick pair: a section's text is
-# written with every backtick escaped. A platform sentence elsewhere keeps a
-# balanced pair within one value as a span by its rule (``ctx.inline``), so its
-# value carries one backtick only.
-PAIRED = re.compile(r"^report\.sections\[\]\.text$")
+_SHOWN_AFTER = {"C": "`"}
 
 
 class _Tokens:
@@ -217,7 +212,7 @@ class _Tokens:
         return n
 
     def value(self, path: str) -> str:
-        return _payload(self._next(path, "V"), paired=bool(PAIRED.match(path)))
+        return _payload(self._next(path, "V"))
 
     def plain(self, path: str, text: str) -> str:
         return f"{text} zM{self._next(path, 'M')}z"
@@ -349,7 +344,57 @@ def _run_summary(tokens: _Tokens) -> dict[str, Any]:
         "stages": [
             {"key": v("stages[].key"), "kind": "pipeline", "ran": True, "duration_ms": 4200},
             {"key": "judge", "kind": "judge", "ran": True, "duration_ms": 61000},
+            # A stage that did not run, with the reason it and an agent gave.
+            {
+                "key": "sandbox",
+                "kind": "pipeline",
+                "ran": False,
+                "reason": v("stages[].reason"),
+                "agent_reasons": {"dynamic": v("stages[].agent_reasons.key")},
+            },
         ],
+        # A tool server the run rested: its names and the reason it gave.
+        "server_rests": [
+            {
+                "server": v("server_rests[].server"),
+                "label": v("server_rests[].label"),
+                "reason": v("server_rests[].reason"),
+                "failures": 3,
+                "cooldown_s": 60,
+            }
+        ],
+        # A tool a degraded run went without, and why.
+        "lost_tools": [{"tool": v("lost_tools[].tool"), "reason": v("lost_tools[].reason")}],
+        # The operator's model and call names and the sources of a measured rate.
+        "generation": {
+            "models": {
+                v("generation.models.<key>"): {
+                    "tokens_per_second": 10.0,
+                    "tokens": 100,
+                    "seconds": 10.0,
+                    "calls": 1,
+                    "sources": [v("generation.models.key.sources[]")],
+                }
+            },
+            "timeouts": {
+                v("generation.timeouts.<key>"): {
+                    "budget": v("generation.timeouts.key.budget"),
+                    "configured_s": 60.0,
+                    "applied_s": 60.0,
+                }
+            },
+        },
+        # What left the machine: a model service and the agents that list it.
+        "disclosure": {
+            "partial_reason": v("disclosure.partial_reason"),
+            "models": [
+                {
+                    "service": v("disclosure.models[].service"),
+                    "calls": 0,
+                    "configured_for": [v("disclosure.models[].configured_for[]")],
+                }
+            ],
+        },
         "models": {
             v("models.<key>"): {"fallbacks": [{"reason": v("models.key.fallbacks[].reason")}]}
         },
@@ -386,6 +431,7 @@ def _run_summary(tokens: _Tokens) -> dict[str, Any]:
         },
         "coverage": {
             "v": 1,
+            "partial_reason": v("coverage.partial_reason"),
             "tools": [
                 {
                     "tool": v("coverage.tools[].tool"),
@@ -408,7 +454,8 @@ def _run_summary(tokens: _Tokens) -> dict[str, Any]:
                 {
                     "agent": "judge",
                     "code": "stix.unpublishable_endpoint",
-                    "message": v("validation.unresolved[].message"),
+                    # A check's sentence quoting a model's claim: a model's quoted words.
+                    "message": m("validation.unresolved[].message"),
                 }
             ],
         },
@@ -433,6 +480,66 @@ def _report() -> tuple[MalwareReport, _Tokens]:
     ]
     report.run_summary = _run_summary(tokens)
     return report, tokens
+
+
+def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
+    """The report, and copies of it that meet the conditions a place is printed under.
+
+    The second: no packer signature matched (the packer hint is printed), the
+    domain is a punycode name (the name it resembles), the address was made by
+    processes outside the sample's tree, and the binding passes a domain the
+    export publishes (where the code decoded and loaded it, the call made
+    through the import), a mutex string of note was cut from a longer string
+    (the publish answer quoting it, in the host table and among the strings),
+    a path string carries a note (the path row's context), and an analyst's
+    artifact table lists a mutex (the analyst named in its row and its
+    publish answer). The third: whether the processes are the sample's is not
+    known (the processes only a mark or only a file names, and the mark's
+    sandbox), the binding's call is made through a slot, and the run is
+    degraded (the tools it went without; the banner's reason for a skipped
+    analyst is left out of this state, so the stage's reason is scanned where
+    the first state prints it). Every value keeps its token.
+    """
+    second = report.model_copy(deep=True)
+    assert second.static is not None and second.network is not None
+    second.static.packer_matches = []
+    second.network.domains[0].is_punycode = True
+    second.network.ips[0].sample_process_tree = False
+    second.bound_values[0].kind = "domain"
+    second.bound_values[0].value = "bound.example"
+    held = second.static.interesting_strings[0]
+    # The longer string a value was cut from, short enough that the publish
+    # answer quoting it holds its backtick pair whole.
+    n = tokens._next("report.static.interesting_strings[].cut_from", "V")
+    cut = f"zH{n}z `zC{n}z` zZ{n}z"
+    second.static.interesting_strings = [
+        *second.static.interesting_strings,
+        held.model_copy(update={"kind": "mutex", "value": "Global\\listed", "cut_from": cut}),
+        held.model_copy(update={"kind": "path", "value": "C:\\Users\\listed.txt"}),
+    ]
+    second.sections = [
+        *second.sections,
+        EvidenceSection(
+            key="artifact_iocs",
+            title="Indicators",
+            kind="table",
+            source="artifact:static",
+            columns=["Listed by", "Evidence", "Type", "Value"],
+            rows=[
+                [tokens.value("report.sections[].rows[][]"), "ev_0001", "mutex", "Global\\named"]
+            ],
+        ),
+    ]
+    third = report.model_copy(deep=True)
+    assert third.network is not None
+    third.network.ips[0].sample_process_tree = None
+    third.bound_values[0].kind = "domain"
+    third.bound_values[0].value = "bound.example"
+    third.bound_values[0].imported_as = None
+    third.degraded_mode = True
+    for stage in third.run_summary["stages"]:
+        stage.pop("agent_reasons", None)
+    return [report, second, third]
 
 
 # ---------------------------------------------------------------------------
@@ -500,9 +607,9 @@ def _faults(surface: str, rendered: str, tokens: _Tokens) -> list[str]:
         if tag == "code":
             # Two values' backticks never pair into a span: a span holding two
             # values' words is the platform's span of a compound value (a DLL
-            # and its function), which shows each value's own backtick.
+            # and its function), which shows each value's own backtick pair.
             held = sorted({found.group(2) for found in _TOKEN.finditer(text)})
-            if len(held) > 1 and not all(f"`zC{n}z" in text for n in held):
+            if len(held) > 1 and not all(f"`zC{n}z`" in text for n in held):
                 names = sorted({tokens.places.get(int(n), "?") for n in held})
                 faults.append(f"{surface}: <code> holds the words of {', '.join(names)}")
         head = _TOKEN.match(text.lstrip("#").lstrip())
@@ -520,6 +627,10 @@ def _faults(surface: str, rendered: str, tokens: _Tokens) -> list[str]:
             continue
         place = tokens.places.get(int(found.group(2)), "?")
         faults.append(f"{surface}: {place} lost {before!r} before its token")
+    for found in re.finditer(r"zC(\d+)z", shown):
+        if not shown[found.end() :].startswith(_SHOWN_AFTER["C"]):
+            place = tokens.places.get(int(found.group(1)), "?")
+            faults.append(f"{surface}: {place} lost '`' after its token")
     for first in re.finditer(r"zH(\d+)z", shown):
         n = first.group(1)
         last = shown.find(f"zZ{n}z", first.end())
@@ -546,28 +657,17 @@ def _surfaces(report: MalwareReport) -> dict[str, str]:
     return surfaces
 
 
-# The places whose value no surface prints for this report: a field the
-# renderers do not print, or print only for a value of its kind's shape, which
-# a payload is not. A hand-written list, taken from the scan's own run: each
-# listed place is asserted not printed on any surface (report.md, the bundle's
-# Markdown and the HTML of both), so a place that starts being printed fails
-# until it is classed, and an unlisted place that is not printed fails too.
+# The places whose value no surface prints in any state of this report: a
+# field the renderers do not print, or print only for a value of its kind's
+# shape, which a payload is not. A hand-written list, taken from the scan's own
+# run: each listed place is asserted not printed on any surface (report.md, the
+# bundle's Markdown and the HTML of both) in any state (:func:`_states`), so a
+# place that starts being printed fails until it is classed, and an unlisted
+# place that is not printed fails too.
 NOT_PRINTED = frozenset(
     f"report.{place}"
     for place in (
-        "bound_values[].decoder_call",
-        "bound_values[].entry",
-        "bound_values[].function",
-        "bound_values[].imported_as",
-        "bound_values[].inside",
-        "bound_values[].named_by",
-        "bound_values[].offset",
-        "bound_values[].reaches",
         "bound_values[].role",
-        "bound_values[].role_words",
-        "bound_values[].site",
-        "bound_values[].slot",
-        "bound_values[].tool",
         "capability_matrix[].domain",
         "capability_matrix[].evidence_ids[]",
         "capability_matrix[].independent_layers[]",
@@ -624,7 +724,6 @@ NOT_PRINTED = frozenset(
         "limitation_inventory.questions[].cites[]",
         "limitation_inventory.questions[].question",
         "limitation_inventory.questions[].reason",
-        "network.domains[].homograph_target",
         "network.domains[].kept_by[]",
         "network.domains[].made_by.disputed[]",
         "network.domains[].made_by.launcher[]",
@@ -633,15 +732,11 @@ NOT_PRINTED = frozenset(
         "network.domains[].mentioned_by[]",
         "network.domains[].observed_in[].detonation",
         "network.domains[].observed_in[].launched_with",
-        "network.ips[].file_only_processes[]",
         "network.ips[].kept_by[]",
         "network.ips[].launcher_unsettled_processes[]",
-        "network.ips[].marked_by",
-        "network.ips[].marked_only_processes[]",
         "network.ips[].mentioned_by[]",
         "network.ips[].observed_in[].detonation",
         "network.ips[].observed_in[].launched_with",
-        "network.ips[].outside_processes[]",
         "network.ips[].unlisted_processes[]",
         "network.urls[].made_by.disputed[]",
         "network.urls[].made_by.launcher[]",
@@ -670,8 +765,6 @@ NOT_PRINTED = frozenset(
         "static.delay_imports[].function",
         "static.exports[]",
         "static.imports_partial[]",
-        "static.interesting_strings[].cut_from",
-        "static.packer_hint",
         "static.sections_partial[]",
         "ttp_mappings[].absence_sources[]",
         "ttp_mappings[].evidence_ids[]",
@@ -689,9 +782,10 @@ def test_no_value_the_platform_did_not_write_makes_structure_on_any_surface() ->
     report, tokens = _report()
     faults: list[str] = []
     printed: set[int] = set()
-    for surface, rendered in _surfaces(report).items():
-        faults += _faults(surface, rendered, tokens)
-        printed |= {int(m.group(2)) for m in _TOKEN.finditer(rendered)}
+    for state in _states(report, tokens):
+        for surface, rendered in _surfaces(state).items():
+            faults += _faults(surface, rendered, tokens)
+            printed |= {int(m.group(2)) for m in _TOKEN.finditer(rendered)}
     assert not sorted(set(faults)), "\n".join(sorted(set(faults)))
     # Each place written is printed somewhere, or listed as one no surface prints.
     places = {tokens.places[n] for n, kind in tokens.kinds.items() if kind == "V"}
