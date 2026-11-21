@@ -193,6 +193,22 @@ JUDGE_UNCONFIRMED_TECHNIQUE_MARKER = "not confirmed by the judge"
 CAPABILITY_NOTE_JOINER = "; "
 
 
+def is_judge_unconfirmed(note: str) -> bool:
+    """Whether a capability-matrix row's ``note`` says the judge did not confirm its technique.
+
+    The matrix appends :data:`JUDGE_UNCONFIRMED_TECHNIQUE_MARKER` after every
+    other note of the row, and never on a row that carries
+    :func:`judge_kept_note`, so the status is read as the row's last note,
+    whole: the note is the marker, or ends with the joiner followed by it. The
+    marker's words inside an earlier note, a reason the judge gave among them,
+    are never the status.
+    """
+    said = str(note or "")
+    return said == JUDGE_UNCONFIRMED_TECHNIQUE_MARKER or said.endswith(
+        CAPABILITY_NOTE_JOINER + JUDGE_UNCONFIRMED_TECHNIQUE_MARKER
+    )
+
+
 # How the capability matrix's row of a technique the judge dropped when asked opens.
 JUDGE_DROPPED_MARKER = "the judge dropped it"
 

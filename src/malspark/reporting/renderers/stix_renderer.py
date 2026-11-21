@@ -94,8 +94,8 @@ from malspark.reporting.technique_evidence import (
     technique_sandbox_items,
 )
 from malspark.schemas.isr_models import (
-    CAPABILITY_NOTE_JOINER,
     JUDGE_UNCONFIRMED_TECHNIQUE_MARKER,
+    is_judge_unconfirmed,
 )
 from malspark.schemas.judgement import indicator_type_for, publication_for
 from malspark.schemas.sandbox_report import (
@@ -2185,14 +2185,13 @@ def _attack_patterns_for(
     carries none.
     """
     already = linked or set()
-    # The matrix adds the marker to a row's notes where the judge gave no
-    # answer (``capability_matrix``): read wherever it stands among the notes,
-    # split as the matrix joins them, under any tactic.
+    # The matrix adds the marker as a row's last note where the judge gave no
+    # answer (``capability_matrix``): read as that last note, whole, under any
+    # tactic, so a reason the judge kept a technique with is never the status.
     unconfirmed = {
         str(cell.technique_id or "").strip().upper()
         for cell in getattr(report, "capability_matrix", None) or []
-        if not cell.not_published
-        and JUDGE_UNCONFIRMED_TECHNIQUE_MARKER in cell.note.split(CAPABILITY_NOTE_JOINER)
+        if not cell.not_published and is_judge_unconfirmed(cell.note)
     }
     out: list[tuple[AttackPattern, Relationship | None]] = []
     seen: set[str] = set()

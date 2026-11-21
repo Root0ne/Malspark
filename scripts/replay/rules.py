@@ -1301,7 +1301,7 @@ def _stored_review(run: _Run) -> Any:
     techniques it dropped, kept or left unconfirmed, and its reasons.
     """
     from malspark.schemas.isr_models import (
-        JUDGE_UNCONFIRMED_TECHNIQUE_MARKER,
+        is_judge_unconfirmed,
         judge_dropped_reason,
         judge_kept_note,
     )
@@ -1336,7 +1336,7 @@ def _stored_review(run: _Run) -> Any:
                     technique_id=tid, decision="keep", reason=_reason_after(kept_note, kept)
                 )
             )
-        elif JUDGE_UNCONFIRMED_TECHNIQUE_MARKER in notes:
+        elif is_judge_unconfirmed(str(cell.get("note") or "")):
             asked.append(tid)
     if not asked:
         return None
