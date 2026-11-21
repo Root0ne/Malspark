@@ -93,6 +93,7 @@ from malspark.reporting.technique_evidence import (
     technique_evidence_ids,
     technique_sandbox_items,
 )
+from malspark.schemas.isr_models import JUDGE_UNCONFIRMED_TECHNIQUE_MARKER
 from malspark.schemas.judgement import indicator_type_for, publication_for
 from malspark.schemas.sandbox_report import (
     LINEAGE_FILE,
@@ -2174,21 +2175,24 @@ def _attack_patterns_for(
     related to the sample gets no second relationship — the judge's own carries
     its confidence and this one would carry none — and neither does one in a
     bundle with no malware object, which a Benign verdict publishes. The
-    relationship this export adds carries, as its description, the note the
-    technique's row of the capability matrix holds (``CapabilityCell.note``:
-    "not confirmed by the judge", a claim carried forward, ...), the status the
-    ATT&CK table prints beside it; none where the row holds no note.
+    relationship this export adds for a technique the judge was asked about and
+    did not confirm carries that status as its description, the words its
+    ATT&CK row prints (``isr_models.JUDGE_UNCONFIRMED_TECHNIQUE_MARKER``), so
+    it is not exported as an unqualified ``uses``; every other edge it adds
+    carries none.
     """
     already = linked or set()
-    # A technique the matrix holds under two tactics is one edge: each distinct
-    # note of its rows, once.
-    notes: dict[str, list[str]] = {}
-    for cell in getattr(report, "capability_matrix", None) or []:
-        if cell.note and not cell.not_published:
-            held = notes.setdefault(str(cell.technique_id or "").strip().upper(), [])
-            if cell.note not in held:
-                held.append(cell.note)
-    noted = {tid: "; ".join(held) for tid, held in notes.items()}
+    # The matrix closes a row's note with the marker where the judge gave no
+    # answer (``capability_matrix``): read from the row, under any tactic.
+    unconfirmed = {
+        str(cell.technique_id or "").strip().upper()
+        for cell in getattr(report, "capability_matrix", None) or []
+        if not cell.not_published
+        and (
+            cell.note == JUDGE_UNCONFIRMED_TECHNIQUE_MARKER
+            or cell.note.endswith(f"; {JUDGE_UNCONFIRMED_TECHNIQUE_MARKER}")
+        )
+    }
     out: list[tuple[AttackPattern, Relationship | None]] = []
     seen: set[str] = set()
     for mapping in report.ttp_mappings:
@@ -2217,7 +2221,9 @@ def _attack_patterns_for(
                     relationship_type="uses",
                     source_ref=malware_id,
                     target_ref=pattern.id,
-                    description=noted.get(tid),
+                    description=(
+                        JUDGE_UNCONFIRMED_TECHNIQUE_MARKER if tid in unconfirmed else None
+                    ),
                 ),
             )
         )

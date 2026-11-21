@@ -1,11 +1,11 @@
-"""The ``uses`` edge the export adds for a technique carries the status its ATT&CK row prints.
+"""The ``uses`` edge the export adds for a technique the judge did not confirm says so.
 
 The judge's own edge carries the judge's confidence; an edge the export adds,
 for a technique the judge related to nothing, carries none. Where the
-technique's row of the capability matrix holds a note ("not confirmed by the
-judge", a claim carried forward), the edge carries that note as its
-description, so a technique the judge did not confirm is not exported as an
-unqualified "uses"; a row with no note leaves the edge without one (T-785).
+technique's row of the capability matrix says the judge was asked about it and
+did not confirm it, the edge carries those words as its description, so the
+technique is not exported as an unqualified "uses"; any other row leaves the
+edge as it was (T-785).
 """
 
 from __future__ import annotations
@@ -86,16 +86,22 @@ def test_a_technique_the_judge_did_not_confirm_is_not_an_unqualified_uses() -> N
     assert edges["T1134"]["description"] == JUDGE_UNCONFIRMED_TECHNIQUE_MARKER
 
 
-def test_the_edge_carries_the_row_s_whole_note() -> None:
-    note = f"{CARRIED}; {JUDGE_UNCONFIRMED_TECHNIQUE_MARKER}"
+def test_the_status_is_read_beside_another_note_of_the_row() -> None:
+    edges = _edges([_cell("T1489", f"{CARRIED}; {JUDGE_UNCONFIRMED_TECHNIQUE_MARKER}")])
 
-    edges = _edges([_cell("T1489", note)])
-
-    assert edges["T1489"]["description"] == note
+    assert edges["T1489"]["description"] == JUDGE_UNCONFIRMED_TECHNIQUE_MARKER
 
 
-def test_a_row_with_no_note_leaves_the_edge_without_a_description() -> None:
-    edges = _edges([_cell("T1055"), _cell("T1134", JUDGE_UNCONFIRMED_TECHNIQUE_MARKER)])
+def test_a_row_the_judge_did_not_leave_unconfirmed_leaves_the_edge_without_one() -> None:
+    edges = _edges(
+        [
+            _cell("T1055"),
+            _cell("T1057", CARRIED),
+            # A reason that quotes the words is the judge's keeping, not the status.
+            _cell("T1082", f"kept by the judge when asked ({JUDGE_UNCONFIRMED_TECHNIQUE_MARKER})"),
+            _cell("T1134", JUDGE_UNCONFIRMED_TECHNIQUE_MARKER),
+        ]
+    )
 
-    assert "description" not in edges["T1055"]
+    assert all("description" not in edges[tid] for tid in ("T1055", "T1057", "T1082"))
     assert edges["T1134"]["description"] == JUDGE_UNCONFIRMED_TECHNIQUE_MARKER
