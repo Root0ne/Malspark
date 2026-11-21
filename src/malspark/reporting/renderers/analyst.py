@@ -3119,6 +3119,15 @@ class _Analyst:
                 lines.append(_item(f"[{self.ctx.value(ref.source, pipes=True)}]({target}){note}"))
             lines.append("")
         bundle = self.ctx.keep(f"[{BUNDLE_HTML}]({BUNDLE_HTML}) and [{BUNDLE_JSON}]({BUNDLE_JSON})")
+        # The bundle's index lists the calls, not their answers; whether each
+        # answer is held whole is what its row records (``Trimmed``).
+        trimmed = sum(1 for row in report.evidence_index if row.truncated)
+        served = (
+            "The evidence endpoint serves each answer as the ledger holds it; the index marks "
+            f"{trimmed:,} of them trimmed."
+            if trimmed
+            else "The evidence endpoint serves each answer whole."
+        )
         lines.extend(
             [
                 "### Evidence bundle",
@@ -3127,9 +3136,10 @@ class _Analyst:
                     "What this report does not print is in the evidence bundle beside it ("
                     + bundle
                     + "): the observed behaviour and the static properties, the full ATT&CK and "
-                    "indicator tables, the analysts' statements, every tool call with its output, "
-                    "the run's limitations and its summary. Each numbered note above links to the "
-                    "evidence entries it rests on there."
+                    "indicator tables, the analysts' statements, every tool call in its index with "
+                    "the parts of the answers the report reads, the run's limitations and its "
+                    f"summary. {served} Each numbered note above links to the evidence entries it "
+                    "rests on there."
                 ),
             ]
         )

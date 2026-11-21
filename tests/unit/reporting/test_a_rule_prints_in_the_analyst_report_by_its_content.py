@@ -68,7 +68,9 @@ needs_engine = pytest.mark.skipif(not drafts._YARA_AVAILABLE, reason="yara-pytho
 ROOT = Path(__file__).resolve().parents[3]
 # Re-pinned when a platform sentence about every row came to be a count of the rows it speaks
 # of where they hold an exception (T-780): the sandbox sentences, the judge's bundle clause, the
-# section 8.1 closing and recorded-values sentences are the only change.
+# section 8.1 closing and recorded-values sentences are the only change. Re-pinned when the
+# evidence bundle's sentence came to name the index of every call and say from its rows whether
+# each answer is served whole (T-780): that sentence of each analyst report is the only change.
 GOLDEN = ROOT / "tests" / "fixtures" / "golden" / "reporting" / "no_rules.json"
 HOST = "gate9.example.org"
 URL = f"https://{HOST}/live/"

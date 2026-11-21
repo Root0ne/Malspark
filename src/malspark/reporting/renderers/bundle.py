@@ -5,9 +5,10 @@ the rest here, so nothing the single-file report prints is lost: the bundle
 prints every section of the single-file report as that report prints it — the
 observed behaviour, the static properties, the full ATT&CK, indicator and
 detection sections with their published states, the limitations, every claim
-whose code the body does not name, the evidence index with every tool's output
-and the run summary — and adds the notes the analyst report cites, each
-listing its evidence ids, each id linked to its row in the evidence index.
+whose code the body does not name, the evidence index of every tool call with
+the sections built from their answers, and the run summary — and adds the notes
+the analyst report cites, each listing its evidence ids, each id linked to its
+row in the evidence index.
 
 In HTML every evidence id the index lists has an anchor (``#ev_0064``), every
 note has one (``#cite-3``) and every section and subsection has one

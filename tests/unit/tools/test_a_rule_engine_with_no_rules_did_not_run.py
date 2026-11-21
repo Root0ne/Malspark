@@ -52,6 +52,9 @@ from tests.unit.pipeline.test_triage_pack import SANDBOX_REPORT, _inputs, _write
 from tests.unit.tools.test_binary import _pe
 from tests.unit.tools.test_rules import SIGMA_RULE
 
+# The rendered copy was re-pinned when the evidence bundle's sentence came to name the index of
+# every call and say from its rows whether each answer is served whole (T-780): that sentence of
+# the analyst report is the only change.
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "reporting"
 SIGMA_REASON = (
     "no rule was loaded from data/sigma_rules, which is missing or holds none, so no rule was run"
