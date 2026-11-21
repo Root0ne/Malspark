@@ -42,6 +42,8 @@ from malspark.reporting.models import (
     ExternalReference,
     FileHashes,
     MalwareReport,
+    NetworkDomain,
+    NetworkIOCs,
     PESection,
     QuestionAnswer,
     ReportFrontMatter,
@@ -360,6 +362,18 @@ def _report(text: str, n: int) -> MalwareReport:
         dynamic=DynamicBehavior(
             sandbox_signatures=[SandboxSignature(name=v(), description=v(), technique_ids=[v()])]
         ),
+        # The enrichment's record of a domain: the indicator table's reputation
+        # cell prints its service's name beside the counts it holds.
+        network=NetworkIOCs(
+            domains=[
+                NetworkDomain(
+                    fqdn="one.example.org",
+                    source="sandbox",
+                    reputation={"source": v(), "malicious": 1, "harmless": 9},
+                )
+            ]
+        ),
+        reputation=[],
         # The platform's sentences quoting a model's words, alone or with a
         # value, each one string.
         question_answers=[QuestionAnswer(question=v(), outcome="not_determinable", checks=[v()])],

@@ -639,7 +639,8 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     (the publish answer quoting it, in the host table and among the strings),
     a path string carries a note (the path row's context), the sample's
     reputation lookup is in the index (the header cell prints its record's
-    service and the names of its counts), and an analyst's
+    service and the names of its counts), the domain carries its enrichment
+    record (the indicator table's reputation cell prints its service), and an analyst's
     artifact table lists a mutex (the analyst named in its row and its
     publish answer), and a technique is published, so its row prints its
     note, a sentence a check left standing stands in the prose (the label
@@ -683,6 +684,13 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
         second.reputation[0].model_copy(update={"entry_id": "ev_0901", "stats": {_payload(n): 3}}),
         *second.reputation[1:],
     ]
+    # The enrichment's record of the domain, whose counts the indicator
+    # table's reputation cell prints under the service's name.
+    second.network.domains[0].reputation = {
+        "source": tokens.value("report.network.domains[].reputation.source"),
+        "malicious": 1,
+        "harmless": 9,
+    }
     second.capability_matrix[0].not_published = ""
     # A claim no revision carried forward: listed whole, with the names it lacks.
     second.claims_not_discussed[0].carried_since_round = None

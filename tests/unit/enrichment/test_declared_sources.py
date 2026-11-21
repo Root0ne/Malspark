@@ -447,14 +447,20 @@ async def test_an_invented_source_is_asked_and_its_record_reaches_the_report_and
     assert rep["age_days"] >= 0 and "stale" not in rep
     assert domain["is_suspicious"] is True
 
-    # The Markdown renderer reads the record as it reads VirusTotal's.
+    # The Markdown renderer reads the record as it reads VirusTotal's: each
+    # count under the record's own name.
     from malspark.reporting.models import NetworkDomain
     from malspark.reporting.renderers.markdown import _reputations
 
     rendered = _reputations(
-        SimpleNamespace(network=SimpleNamespace(domains=[NetworkDomain(**domain)], ips=[]))  # type: ignore[arg-type]
+        SimpleNamespace(  # type: ignore[arg-type]
+            network=SimpleNamespace(domains=[NetworkDomain(**domain)], ips=[]), reputation=[]
+        )
     )
-    assert rendered["evil.com"].startswith("domainrep: 4 of 20 engines flag it as malicious")
+    assert rendered["evil.com"].startswith(
+        "domainrep, counts in the lookup's record: "
+        "malicious 4, suspicious 1, harmless 9, undetected 6"
+    )
 
 
 @pytest.mark.asyncio
