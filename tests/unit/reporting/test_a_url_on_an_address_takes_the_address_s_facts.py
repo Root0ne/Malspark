@@ -83,7 +83,7 @@ class TestAnUnattributedAddress:
         said = _surfaces(_report(CONTACT, self.URL, False), self.URL)
 
         assert said["table"].startswith(
-            "no: the publish rule found a flow to it made by a process outside"
+            "no: the publish rule counted its flows as made by a process outside"
         )
         assert said["feed"] is None
         assert not (said["stix"] or said["yara"] or said["suricata"])

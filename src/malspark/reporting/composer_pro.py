@@ -1977,4 +1977,11 @@ def held_text(report: MalwareReport) -> str:
         },
     )
     dumped["run_summary"] = without_stored_answers(dumped.get("run_summary"))
+    # What the publish rule read in an address's flow rows (``flow_reading``)
+    # gives the words of a sentence, not values: the held text is the one a
+    # report built before it was recorded holds.
+    network = dumped.get("network")
+    for row in (network.get("ips") if isinstance(network, dict) else None) or []:
+        if isinstance(row, dict):
+            row.pop("flow_reading", None)
     return json.dumps(dumped, ensure_ascii=False)

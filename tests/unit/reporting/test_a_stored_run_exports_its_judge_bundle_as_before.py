@@ -144,7 +144,11 @@ STORED_EXPORTS = {
 # flow to it inside the sample's process tree" and each disputed one "the publish rule found a
 # flow to it made by …", wherever the row's answer or its context cell prints. Those are the
 # only changes; the STIX did not change.
-HAIKU4_RENDERS = ("f88ced7497602dba", "67103871f33ceba0", "ff5607de575fb489")
+# haiku4's Markdown and HTML re-pinned when a disputed address row read from its
+# stored file, with no reading of its flow rows, came to say the publish rule "counted its flows
+# as made by" its processes, with no count of flows (T-811): that row's answer and context cell
+# are the only change; the STIX did not change.
+HAIKU4_RENDERS = ("5581a0e5bbd381eb", "48ee3a0b6d3d36d3", "ff5607de575fb489")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

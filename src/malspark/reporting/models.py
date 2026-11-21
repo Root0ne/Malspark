@@ -603,7 +603,10 @@ class FlowProcess(BaseModel):
     job's own, ``d2``… for a further one), else ``""``. ``kind`` is the
     ``TrafficMakers`` kind the rule placed it under, ``""`` where it placed it
     under none; ``flows`` how many flow rows name it within one view (the most
-    any one view holds, never a sum over views).
+    any one view holds, never a sum over views). ``counted`` is ``False``
+    where its rows were read in more than one part view of its detonation and
+    in no whole one, so ``flows`` is no count of its flows; left out of a dump
+    where it is ``True``.
     """
 
     model_config = _STRICT_CONFIG
@@ -614,6 +617,7 @@ class FlowProcess(BaseModel):
     detonation: str = ""
     kind: str = ""
     flows: int = 1
+    counted: bool = Field(default=True, exclude_if=lambda value: value)
 
 
 class FlowPartView(BaseModel):
@@ -637,15 +641,19 @@ class FlowReading(BaseModel):
     ``processes`` each process the rows name by a number or that the rule
     placed under a kind, once each (one flow read again in another view or a
     page is one process); ``unnamed`` how many rows name no process id and are
-    placed under no kind, counted within one view of each detonation;
-    ``part_views`` the views of the run the rule read as a part. No process
-    and no unnamed row: no flow row to the address was read.
+    placed under no kind, counted within one view of each detonation, and
+    ``unnamed_counted`` ``False`` where such rows of one detonation were read
+    in more than one part view and in no whole one, so ``unnamed`` is no count
+    of their flows (left out of a dump where it is ``True``); ``part_views``
+    the views of the run the rule read as a part. No process and no unnamed
+    row: no flow row to the address was read.
     """
 
     model_config = _STRICT_CONFIG
 
     processes: list[FlowProcess] = Field(default_factory=list)
     unnamed: int = 0
+    unnamed_counted: bool = Field(default=True, exclude_if=lambda value: value)
     part_views: list[FlowPartView] = Field(default_factory=list)
 
 

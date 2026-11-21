@@ -323,12 +323,16 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # flow to it inside the sample's process tree" and each disputed one "the publish rule found a
 # flow to it made by …", wherever the row's answer or its context cell prints. Those are the
 # only changes.
+# haiku4's and local8's Markdown and HTML re-pinned when a disputed address row read from its
+# stored file, with no reading of its flow rows, came to say the publish rule "counted its flows
+# as made by" its processes, with no count of flows (T-811): that row's answer and context cell
+# are the only change.
 STORED_RENDERS = {
     "run7": ("c4ae175f45f8c7a8", "e62618ce13a05d2e"),
     "run5": ("94143f0e9b75f230", "a50eee57a3b2250f"),
     "run4": ("63ed48679c51edcf", "2497a07295eb3770"),
-    "local8": ("e717bf445cf99451", "c8d40b000da0aa2c"),
-    "haiku4": ("f88ced7497602dba", "67103871f33ceba0"),
+    "local8": ("0aa30424c0da5f8b", "3c18f107419abc54"),
+    "haiku4": ("5581a0e5bbd381eb", "48ee3a0b6d3d36d3"),
 }
 
 
