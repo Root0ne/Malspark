@@ -34,6 +34,7 @@ from malspark.reporting.models import (
     SampleIdentity,
 )
 from malspark.reporting.renderers.stix_renderer import (
+    FLOW_NOT_PLACED,
     JUDGE_KEPT_WHEN_TOLD,
     JUDGE_NOT_ASKED_IN_TIME,
     JUDGE_QUESTION_NOT_RECORDED,
@@ -92,7 +93,10 @@ class TestTheQuestion:
 
         assert found.code == UNATTRIBUTED_INDICATOR_CODE
         assert GUEST in found.message
-        assert "does not say which process made the flows to it" in found.message
+        assert FLOW_NOT_PLACED in found.message
+        assert "The publish rule does not count it as the sample's own observation." in (
+            found.message
+        )
         assert found.subject == f"ip:{GUEST}"
 
     def test_an_address_the_sample_reached_is_not_asked_about(self) -> None:
@@ -390,7 +394,7 @@ class TestThePipelineReadsTheFacts:
         facts = judge_sandbox_facts([entry], None, None)
 
         assert facts is not None
-        assert "does not say which process made the flows to it" in facts("ip", GUEST)
+        assert facts("ip", GUEST) == "the publish rule read no process id from the flow to it"
         assert facts("domain", NAME) == ""
 
     def test_no_network_record_asks_nothing(self) -> None:
@@ -594,8 +598,9 @@ class TestAHostRowIsAskedAsAFlowIs:
 
         assert found.code == UNATTRIBUTED_INDICATOR_CODE
         assert found.subject == f"mutex:{self.MUTEX.lower()}"
-        assert "does not say which process created it" in found.message
-        assert "the sandbox's record of it names no process of the sample's tree" in found.message
+        assert "and the publish rule found no process that created it. Keep" in found.message
+        # The finding is said once.
+        assert found.message.count("found no process") == 1
         assert "an entry of this run shows a process of the sample's tree made it" in found.message
         # The question states what the record says, not what the row is.
         assert "own activity" not in found.message
@@ -604,7 +609,7 @@ class TestAHostRowIsAskedAsAFlowIs:
         (found,) = self._asked(f"[file:name = '{self.DROPPED}']")
 
         assert found.subject == f"path:{self.DROPPED.lower()}"
-        assert "a process outside the sample's process tree" in found.message
+        assert "to a listed process outside the sample's process tree" in found.message
 
     def test_a_file_the_sample_s_tree_wrote_is_not_asked_about(self) -> None:
         assert self._asked(f"[file:name = '{self.OWN_FILE}']") == []
@@ -650,7 +655,7 @@ class TestAHostRowIsAskedAsAFlowIs:
         facts = judge_sandbox_facts([entry], None, None)
 
         assert facts is not None
-        assert "does not say which process created it" in facts("mutex", self.MUTEX)
+        assert facts("mutex", self.MUTEX) == "the publish rule found no process that created it"
         assert facts("ip", GUEST) == ""
 
 
@@ -762,9 +767,9 @@ class TestAPidTheSandboxKeptDecidesTheQuestion:
             f"registry:{self.LOST_KEY.lower()}",
             f"path:{self.LOST_FILE.lower()}",
         ]
-        assert "does not say which process created it" in found[0].message
-        assert "does not say which process wrote it" in found[1].message
-        assert all("names no process of the sample's tree" in v.message for v in found)
+        assert "the publish rule found no process that created it" in found[0].message
+        assert "the publish rule found no process that wrote it" in found[1].message
+        assert all("of the sample's tree made it" in v.message for v in found)
 
     def test_a_run_key_a_persistence_mechanism_names_is_not_asked_about(self) -> None:
         from malspark.pipeline.nodes import judge_sandbox_facts
@@ -907,9 +912,8 @@ class TestTheSampleSTreeIsItsLineage:
 
         said = self._facts(processes, ["40"])("registry", self.KEY)
 
-        assert (
-            said
-            == "the sandbox report attributes it to a process outside the sample's process tree"
+        assert said == (
+            "the publish rule matched pid 40 to a listed process outside the sample's process tree"
         )
 
     def test_an_injected_process_listed_as_a_root_is_asked_about(self) -> None:
@@ -1013,7 +1017,10 @@ class TestTheSampleSTreeIsItsLineage:
 
         said = self._facts(processes, ["10"])("registry", self.KEY)
 
-        assert said == "the sandbox report does not say which process wrote it"
+        assert said == (
+            "the publish rule could not place the process that wrote it (it could not place "
+            "pid 10 in or outside the sample's process tree)"
+        )
 
 
 class TestFromTheSandboxToTheExport:
@@ -1140,7 +1147,7 @@ class TestFromTheSandboxToTheExport:
         (found,) = unattributed_indicator_violations(bundle, facts)
 
         assert found.subject == f"mutex:{self.LOST_MUTEX.lower()}"
-        assert "names no process of the sample's tree" in found.message
+        assert "the publish rule found no process that created it" in found.message
         # Untold, the keep publishes nothing; answered, it publishes.
         assert not publishes(self._rows(report)[self.LOST_MUTEX])
         assert self.LOST_MUTEX.replace("\\", "\\\\") not in self._stix(report)

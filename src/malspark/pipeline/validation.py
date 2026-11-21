@@ -26,6 +26,7 @@ import ipaddress
 import json
 import re
 import types
+from collections import Counter
 from collections.abc import Awaitable, Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -8809,7 +8810,8 @@ def recommendation_indicator_violations(
     ``""`` when no row holds it (``narrative_agent.published_answers``). Every
     field of a recommendation is read — the action, the rationale and the
     detection the hunting notes print — and each value the table does not
-    answer ``yes`` for is named with the table's reason, one question per
+    answer ``yes`` for is named with the table's whole answer (every test that
+    refused it, then the facts that fit, ``publish_parts.told_whole``), one question per
     recommendation. The finding states the fact and names the row by its
     priority and category, as the report's table prints it; its path keeps
     the row's place in the answer. The question sent (``shown``) names the
@@ -8817,6 +8819,7 @@ def recommendation_indicator_violations(
     publishes none. Nothing is removed: what the model answers stands.
     """
     from malspark.extractors.network_extractor import is_well_known_benign_host
+    from malspark.reporting.publish_parts import told_whole
     from malspark.reporting.renderers.stix_renderer import publishes
 
     shown = _recommendation_list_question(getattr(answers, "network", None))
@@ -8828,7 +8831,7 @@ def recommendation_indicator_violations(
         values: list[str] = []
         named, gated = _values_and_gated(text)
         for kind, value in named:
-            answer = str(answers(kind, value) or "")
+            answer = answers(kind, value) or ""
             if publishes(answer):
                 continue
             # A package name, or a two-letter name only the evidence reading
@@ -8840,7 +8843,7 @@ def recommendation_indicator_violations(
                 # read, not an indicator to act on.
                 continue
             why = answer or f"no: {NO_TABLE_ROW}"
-            said = f"{safe_finding_value(value)} ({safe_finding_value(why)})"
+            said = f"{safe_finding_value(value)} ({told_whole(why)})"
             if said not in refused:
                 refused.append(said)
                 values.append(value)
@@ -8970,12 +8973,45 @@ def recommendation_technique_violations(
 # prints it.
 _PUBLISH_STATE_RE = re.compile(r"(?<![\w-])no:\s*\S", re.IGNORECASE)
 # A publish state written under its own name: ``publish state: <what>``,
-# ``publication state is <what>``. What it says is read against the table.
+# ``publication state is <what>``. What it says is read against the table, to
+# the end of its own bracket (:func:`_named_states`).
 _NAMED_PUBLISH_STATE_RE = re.compile(
-    r"(?<![\w-])(?:publish(?:ed|ing)?|publication)\s+state\s*(?::|=|-|–|—|\bis\b)"
-    r"\s*(?P<said>[^)\]\n]*)",
+    r"(?<![\w-])(?:publish(?:ed|ing)?|publication)\s+state\s*(?::|=|-|–|—|\bis\b)\s*",
     re.IGNORECASE,
 )
+
+
+def _named_states(text: str) -> list[str]:
+    """What each publish state written under its own name in ``text`` says.
+
+    Each is read from its name to the end of its own bracket: the round or
+    square bracket that closes at the depth the name stands at, or the end of
+    the line. A bracket inside it, at any depth (a process's ``(procid 36)``
+    inside a lineage's bracket), is part of what it says; a bracket that never
+    closes reads to the end of the line. One pass: each character is read once,
+    and the next name is looked for after the end of the last state.
+    """
+    out: list[str] = []
+    start = 0
+    while (found := _NAMED_PUBLISH_STATE_RE.search(text, start)) is not None:
+        begin = index = found.end()
+        depth = 0
+        while index < len(text):
+            char = text[index]
+            if char == "\n":
+                break
+            if char in "([":
+                depth += 1
+            elif char in ")]":
+                if depth == 0:
+                    break
+                depth -= 1
+            index += 1
+        out.append(text[begin:index])
+        start = max(index, found.end() + 1)
+    return out
+
+
 # A named state that reads as "not published": a negation that is not of
 # "unpublished", or a word that withholds the value. Anything else (unknown,
 # pending, likely published, kept as an indicator) says no such thing.
@@ -9115,7 +9151,7 @@ def _claims_published(text: str) -> bool:
 
     A state under its own name that opens with "yes" or "published" says so too.
     """
-    if any(_STATE_AFFIRMS_RE.search(said) for said in _NAMED_PUBLISH_STATE_RE.findall(text)):
+    if any(_STATE_AFFIRMS_RE.search(said) for said in _named_states(text)):
         return True
     return _unnegated(_PUBLISHED_CLAIM_RE, text)
 
@@ -9194,43 +9230,74 @@ def _negation_states_a_state(after: str) -> bool:
     return bool(_STATE_PUBLISH_WORDS & set(words[:2]))
 
 
-def _restates_reason(after: str, answer: str, *, slack: float = 0.0) -> bool:
-    """Whether ``after`` restates the table's reason: its words in order, a few apart.
+def _restates_reason(
+    after: str, answer: str, *, slack: float = 0.0, begins_before: int | None = None
+) -> bool:
+    """Whether ``after`` restates the table's reason: each refusing part's words in order.
 
-    The reason is the answer's first clause. Each of its words that carries
-    meaning is looked for after the last one found, at most ``_REASON_GAP``
-    words further on; ``slack`` is the share of them that may be missing, a
-    negation of the reason never among them. A negation in the restatement
-    that the reason does not carry turns it around and is no restatement.
+    The reason is every refusing part of the answer (``publish_parts``), each
+    read whole and restated on its own (:func:`_restates_words`), so a gap
+    between two words is never read across two parts. An answer read without
+    its parts (a stored row) is read as before: its first clause. With
+    ``begins_before``, at least one part's restatement begins among the first
+    ``begins_before`` words of ``after``.
     """
-    reason = str(answer or "")
-    if reason.lower().startswith("no:"):
-        reason = reason[3:]
-    wanted = [
-        word
-        for word in re.findall(r"\w+", reason.split(";", 1)[0].lower())
-        if word not in _REASON_FILLER
-    ]
+    from malspark.reporting.publish_parts import refusing_parts
+
+    parts = refusing_parts(answer)
+    if parts is None:
+        reason = str(answer or "")
+        if reason.lower().startswith("no:"):
+            reason = reason[3:]
+        parts = (reason.split(";", 1)[0],)
+    if not all(_restates_words(after, part, slack=slack) for part in parts):
+        return False
+    return (
+        begins_before is None
+        or not parts
+        or any(
+            _restates_words(after, part, slack=slack, begins_before=begins_before) for part in parts
+        )
+    )
+
+
+def _restates_words(
+    after: str, reason: str, *, slack: float = 0.0, begins_before: int | None = None
+) -> bool:
+    """Whether ``after`` restates ``reason``: its words in order, a few apart.
+
+    Each of its words that carries meaning is looked for after the last one
+    found, at most ``_REASON_GAP`` words further on; ``slack`` is the share of
+    them that may be missing, a negation of the reason never among them: each
+    negation is found as often as the reason carries it. A negation in the
+    restatement that the reason does not carry turns it around and is no
+    restatement. With ``begins_before``, the first word found is among the
+    first ``begins_before`` words of ``after``.
+    """
+    wanted = [word for word in re.findall(r"\w+", reason.lower()) if word not in _REASON_FILLER]
     if len(wanted) < _REASON_MIN_WORDS:
         return False
     written = re.findall(r"\w+", after.lower())
     allowed = int(len(wanted) * slack)
-    negations = set(wanted) & _NEGATIONS
-    for start in range(len(written)):
+    negations = Counter(word for word in wanted if word in _NEGATIONS)
+    starts = len(written) if begins_before is None else min(begins_before, len(written))
+    for start in range(starts):
         at: int | None = None
-        found: set[str] = set()
+        found: Counter[str] = Counter()
         count = 0
         for want in wanted:
             if at is None:
                 if written[start] == want:
                     at, count = start, 1
-                    found.add(want)
+                    found[want] += 1
                 continue
             ahead = written[at + 1 : at + 2 + _REASON_GAP]
             if want in ahead:
                 at, count = at + 1 + ahead.index(want), count + 1
-                found.add(want)
-        if at is None or len(wanted) - count > allowed or not negations <= found:
+                found[want] += 1
+        if at is None or len(wanted) - count > allowed:
+            continue
+        if any(found[word] < times for word, times in negations.items()):
             continue
         span = set(written[max(start - 2, 0) : at + 1])
         if not (span & _NEGATIONS) - set(wanted):
@@ -9249,7 +9316,10 @@ def _states_publish_state(after: str, answer: str) -> bool:
     clause right after the value
     (:func:`_clause_after`), a state under its own name that reads as not
     published or restates most of the table's reason, the platform's own "not
-    published by this run", or the table's whole reason restated in order. A
+    published by this run", or the table's whole reason restated in order:
+    the restatement begins in that clause and is read to the end of its clause
+    group (up to a ``;`` outside brackets), whatever commas the reason holds; a
+    reason that begins in a later clause states no publish state. A
     named state that says anything else (unknown, pending, published) is no
     state the table agrees with.
     """
@@ -9260,13 +9330,17 @@ def _states_publish_state(after: str, answer: str) -> bool:
     if _claims_kept(after):
         return False
     clause = _clause_after(after)
-    named = [said for said in _NAMED_PUBLISH_STATE_RE.findall(clause) if said.strip()]
+    named = [said for said in _named_states(clause) if said.strip()]
     if named:
         return all(
             _reads_withheld(said) or _restates_reason(said, answer, slack=_NAMED_REASON_SLACK)
             for said in named
         )
-    return bool(_NOT_PUBLISHED_RE.search(clause)) or _restates_reason(clause, answer)
+    # A restatement begins in the clause right after the value and is read to
+    # the end of its clause group, whatever commas the reason holds.
+    return bool(_NOT_PUBLISHED_RE.search(clause)) or _restates_reason(
+        _clause_after(after, ";"), answer, begins_before=len(re.findall(r"\w+", clause))
+    )
 
 
 def _prose_of_a_section(payload: Any) -> list[str]:
@@ -9298,14 +9372,20 @@ def _unstated_values(
     sentence: str, answers: Callable[[str, str], str]
 ) -> list[tuple[str, str, str]]:
     """``(kind, value, state)`` for each value of ``sentence`` the table does not publish,
-    written without a ``no: <reason>`` between it and the next value the sentence names."""
+    written without a ``no: <reason>`` between it and the next value the sentence names.
+
+    The state is what refused the value: every refusing part of its answer
+    (``publish_parts.answer_state``), or, for an answer read without its parts,
+    its first clause."""
     from malspark.agents._indicator_denylists import whole_value_starts
     from malspark.extractors.network_extractor import is_well_known_benign_host
+    from malspark.reporting.publish_parts import answer_state
     from malspark.reporting.renderers.stix_renderer import publishes
 
     def _answer(kind: str, value: str) -> str:
         try:
-            return str(answers(kind, value) or "")
+            answer = answers(kind, value) or ""
+            return answer if isinstance(answer, str) else str(answer)
         except Exception as exc:  # noqa: BLE001 — a value the table cannot answer is refused
             logger.debug("validation: no publish answer for a value (%s).", exc)
             return f"no: {NO_TABLE_ANSWER}"
@@ -9343,8 +9423,23 @@ def _unstated_values(
         weighed.add((kind, value))
         if not answer and kind == "domain" and is_well_known_benign_host(value):
             continue
-        out.append((kind, value, (answer or f"no: {NO_TABLE_ROW}").split(";", 1)[0].strip()))
+        out.append((kind, value, answer_state(answer or f"no: {NO_TABLE_ROW}")))
     return out
+
+
+def unpublished_value_label(found: Iterable[tuple[str, str, str]]) -> str:
+    """The label of a sentence's mark: each state once, with the values it refuses.
+
+    ``found`` is :func:`_unstated_values` of the sentence. The values are as
+    written: the renderer escapes and defangs the label. The mark recorded
+    for a sentence and the one a render labels from its own table are both
+    written here (``renderers.markdown._Context``).
+    """
+    by_state: dict[str, list[str]] = {}
+    for _kind, value, state in found:
+        if value not in by_state.setdefault(state, []):
+            by_state[state].append(value)
+    return "; ".join(f"{', '.join(values)} ({state})" for state, values in by_state.items())
 
 
 @_locating(
@@ -9363,13 +9458,15 @@ def unpublished_value_violations(
     prose (:func:`_prose_of_a_section`) is read sentence by sentence; a value
     the table does not answer ``yes`` for, with no ``no: <reason>`` between it
     and the next value its sentence names, is listed. One question per
-    section names each value with its state — the answer's first clause, the
-    one that says why — and the sentences that name it, numbered in the
+    section names each value with its state — every test that refused it,
+    each whole (``publish_parts.answer_state``) — and the sentences that name it, numbered in the
     section's order. A reference host no row holds is a place to read, not an
     indicator, and raises nothing. Nothing is removed: what the model answers
     stands, and each sentence it keeps is marked where it stands with its own
     values' states (``labels``, ``MARKED_IN_PLACE``).
     """
+
+    from malspark.reporting.publish_parts import told
 
     # (state, value) -> sentence numbers, in the order first met.
     named: dict[tuple[str, str], list[int]] = {}
@@ -9389,20 +9486,12 @@ def unpublished_value_violations(
             found = _unstated_values(written, answers)
             if not found:
                 continue
-            by_state: dict[str, list[str]] = {}
             for _kind, value, state in found:
                 named.setdefault((state, value), []).append(number)
-                # As written: the renderer escapes and defangs the label.
-                if value not in by_state.setdefault(state, []):
-                    by_state[state].append(value)
             stated_at.append((text, *_stripped(text, piece_begin, piece_end)))
             if written not in quoted:
                 quoted.append(written)
-                labels.append(
-                    "; ".join(
-                        f"{', '.join(values)} ({state})" for state, values in by_state.items()
-                    )
-                )
+                labels.append(unpublished_value_label(found))
     if not named:
         return []
     # Each state once, with every value it refuses and the sentences naming them.
@@ -9413,7 +9502,7 @@ def unpublished_value_violations(
         sentences.update(numbers)
     said = "; ".join(
         f"{', '.join(safe_finding_value(value) for value in values)} "
-        f"({safe_finding_value(state)}) in "
+        f"({told(state)}) in "
         + ", ".join(
             safe_finding_value(_sentence_start(written_as[number])) for number in sorted(sentences)
         )
@@ -9483,9 +9572,10 @@ def flow_voice_violations(
     cites no sandbox entry; one that also cites an entry that is not a sandbox
     observation (``tools`` names the tool behind each id), since every
     statement of an observed step is one the sandbox watched; and one that
-    names an address or a host the sandbox attributes no flow of the sample
-    to (``flow_fact``, :func:`reporting.evidence_bundles.sample_flow_fact`),
-    since a network step is observed for its own value. ``observed_item``
+    names an address or a host the sandbox has a fact about (``flow_fact``,
+    :func:`reporting.evidence_bundles.sample_flow_fact`), since a network
+    step is observed for its own value: the message carries each fact and
+    the rule for a network step, and asserts nothing of its own. ``observed_item``
     says whether a cited sandbox item id is an observation
     (``evidence_bundles.sandbox_item_observation``): an item is cited as the
     sandbox answer holding it is.
@@ -9528,16 +9618,19 @@ def flow_voice_violations(
                     f"{safe_finding_value(value)}: {safe_finding_value(said)}"
                     for value, said in unreached
                 )
+                named = (
+                    "a network value with this fact"
+                    if len(unreached) == 1
+                    else "network values with these facts"
+                )
                 out.append(
                     Violation(
                         code=FLOW_VOICE_CODE,
                         message=(
-                            f"step {safe_finding_value(order)} is marked observed and names a "
-                            "network value the "
-                            f"sandbox attributes no flow of the sample to ({facts}). A network "
-                            "step is observed only for a value the sample's own process tree "
-                            "reached. Mark the step assessed, or leave the value out of the "
-                            "observed step."
+                            f"step {safe_finding_value(order)} is marked observed and names "
+                            f"{named} ({facts}). A network step is observed only for a value the "
+                            "sample's own process tree reached. Mark the step assessed, or leave "
+                            "the value out of the observed step."
                         ),
                         path=f"steps.{index}.voice",
                     )
@@ -17999,7 +18092,7 @@ UNATTRIBUTED_INDICATOR_CODE = "stix.indicator_unattributed_flow"
 def unattributed_indicator_violations(
     bundle: Any, facts: Callable[[str, str], str] | None
 ) -> list[Violation]:
-    """Indicators that name a value the sandbox attributes no flow of the sample to.
+    """Indicators that name a value the publish rule does not count as the sample's observation.
 
     ``facts`` is ``(kind, value) -> the sandbox's fact`` for a value the
     sandbox recorded and did not attribute to the sample's process tree, and
@@ -18033,11 +18126,10 @@ def unattributed_indicator_violations(
                         code=UNATTRIBUTED_INDICATOR_CODE,
                         message=(
                             f"the indicator {name!r} names {safe_finding_value(value.value)!r} "
-                            f"and {safe_finding_value(said)}: the sandbox's record of it names "
-                            "no process of the sample's tree. Keep the indicator only if an "
-                            "entry of this run shows a process of the sample's tree made it, "
-                            "and cite that entry in the indicator's description; otherwise "
-                            "remove the indicator."
+                            f"and {safe_finding_value(said, whole=True)}. Keep the indicator "
+                            "only if an entry of this run shows a process of the sample's tree "
+                            "made it, and cite that entry in the indicator's description; "
+                            "otherwise remove the indicator."
                         ),
                         path=f"objects.{subject}",
                         subject=subject,
@@ -18072,11 +18164,10 @@ def unattributed_indicator_violations(
                     message=(
                         f"the indicator {name!r} names {safe_finding_value(value.value)!r}"
                         + (f", its host {safe_finding_value(host)!r}," if host else "")
-                        + f" and {safe_finding_value(said)}: the sandbox attributes no flow of the "
-                        "sample to it, and without one it is the analysis machine's own "
-                        "traffic. Keep the indicator only if this run's evidence shows the "
-                        "sample itself reached it, and cite that entry in the indicator's "
-                        "description; otherwise remove the indicator."
+                        + f" and {safe_finding_value(said, whole=True)}. The publish rule does not "
+                        "count it as the sample's own observation. Keep the indicator only if "
+                        "this run's evidence shows the sample itself reached it, and cite that "
+                        "entry in the indicator's description; otherwise remove the indicator."
                     ),
                     path=f"objects.{subject}",
                     subject=subject,

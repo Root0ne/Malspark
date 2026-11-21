@@ -4214,7 +4214,7 @@ def pack_block(
 
 # What the pack's network view says of each address, while a pack rendered
 # with the run's reader is written (:func:`_addresses_read`); ``None`` outside.
-_ADDRESS_FACTS: ContextVar[Callable[[Any], str] | None] = ContextVar(
+_ADDRESS_FACTS: ContextVar[Callable[[Any], tuple[str, str]] | None] = ContextVar(
     "pack_address_facts", default=None
 )
 
@@ -4233,7 +4233,7 @@ def _addresses_read(
     """
     from malspark.reporting.ledger_projection import address_flow_facts
 
-    facts: Callable[[Any], str] | None = None
+    facts: Callable[[Any], tuple[str, str]] | None = None
     if not isinstance(normalised_by, _Unstated):
         try:
             facts = address_flow_facts(list(entries), normalised_by=normalised_by)
@@ -5020,7 +5020,7 @@ def _sandbox_sections(data: dict[str, Any]) -> str:
 def _pcap(
     data: dict[str, Any],
     max_chars: int | None = None,
-    facts: Callable[[Any], str] | None = None,
+    facts: Callable[[Any], str | tuple[str, str]] | None = None,
 ) -> str:
     """The capture's facts on one line, the conversations cut to ``max_chars``, the cut said.
 
@@ -5029,7 +5029,8 @@ def _pcap(
     (``ledger_projection.address_flow_facts``): its words follow each
     conversation they say something of, as room allows after the
     conversations are chosen, and within the room the pack leaves its words
-    (:data:`_WORDS_ROOM`).
+    (:data:`_WORDS_ROOM`): first each conversation's words that hold no list
+    of processes, in order, then each list in the room left, in order.
     """
     if data.get("empty"):
         return "empty capture"
@@ -5058,14 +5059,17 @@ def _pcap(
     )
 
     # What the pack's network view says of each conversation's remote
-    # address, as the pack being written read it (:func:`_addresses_read`).
-    words = [facts(row.get("dst")) if facts is not None else "" for row in conversations]
+    # address, as the pack being written read it (:func:`_addresses_read`):
+    # the words that hold no list of processes, and the whole words.
+    words = [
+        _two_passes(facts(row.get("dst")) if facts is not None else "") for row in conversations
+    ]
 
-    def _line(shown: int, worded: int = 0) -> str:
+    def _line(shown: int, said: Sequence[str] = ()) -> str:
         if not conversations:
             return f"{head}; no external conversations{tail}"
         total = len(conversations)
-        said = (
+        counted = (
             f"all {_n(total)} external conversations by volume"
             if shown >= total
             else (
@@ -5075,10 +5079,10 @@ def _pcap(
         )
         # Each line holds commas and semicolons of its own: the rows are parted by a bar.
         rows = " | ".join(
-            _worded(conversation_line(row), words[index] if index < worded else "")
+            _worded(conversation_line(row), said[index] if index < len(said) else "")
             for index, row in enumerate(conversations[:shown])
         )
-        return f"{head}; {said}" + (f": {rows}" if shown else "") + tail
+        return f"{head}; {counted}" + (f": {rows}" if shown else "") + tail
 
     # The conversations are chosen without the words, by their own sizes: the
     # words never cost a conversation.
@@ -5097,18 +5101,36 @@ def _pcap(
         line = _line(low)
         if len(line) > max_chars:
             return ""
-    # Then the words, conversation by conversation in order, while room remains.
+    # Then the words, while room remains, in two passes: first, conversation
+    # by conversation in order, the words that hold no list of processes;
+    # then each list, in order, in the room left. A longer list never takes
+    # the room of a later conversation's words.
     left = _WORDS_ROOM.get()
     if max_chars is not None:
         left = max_chars - len(line) if left is None else min(left, max_chars - len(line))
-    worded = 0
-    for said in words[:low]:
-        extra = len(_worded("", said))
+    said = ["" for _ in words[:low]]
+    reached = 0
+    for index, (unlisted, _whole) in enumerate(words[:low]):
+        extra = len(_worded("", unlisted))
         if left is not None and extra > left:
             break
         left = None if left is None else left - extra
-        worded += 1
-    return _line(low, worded) if worded else line
+        said[index] = unlisted
+        reached = index + 1
+    for index, (unlisted, whole) in enumerate(words[:reached]):
+        if whole == unlisted:
+            continue
+        extra = len(_worded("", whole)) - len(_worded("", unlisted))
+        if left is not None and extra > left:
+            break
+        left = None if left is None else left - extra
+        said[index] = whole
+    return _line(low, said) if any(said) else line
+
+
+def _two_passes(words: str | tuple[str, str]) -> tuple[str, str]:
+    """What a fact gives a conversation: its words without a list of processes, and whole."""
+    return (words, words) if isinstance(words, str) else words
 
 
 def _worded(line: str, said: str) -> str:

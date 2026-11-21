@@ -158,15 +158,17 @@ class TestTheLiveReport:
         assert not any(HOST in p for p in patterns)
         url = _answer(report, "url", CRL)
         assert url.startswith(
-            "no: the sandbox report says it was made by a process the report does not list "
-            "(procid 46)"
+            "no: the publish rule counted its requests as made by a process the report does not "
+            "list (procid 46)"
         )
         # The name: its HTTP requests and the flow to the address it resolved
-        # to (procid 46); the DNS lookup's flow is the resolver's (procid 36).
+        # to (procid 46), each named with its makers; the DNS lookup's flow is
+        # the resolver's (procid 36).
         host = _answer(report, "domain", HOST)
         assert host.startswith(
-            "no: the sandbox report says it was made by a process the report does not list "
-            "(procid 46)"
+            "no: the publish rule counted its requests as made by a process the report does not "
+            "list (procid 46) and the flows to 172.217.76.94 (an address it resolved to) as made "
+            "by a process the report does not list (procid 46)"
         )
         # The rows stay, as recorded, with whose they are.
         (domain,) = [d for d in report.network.domains if d.fqdn == HOST]
@@ -178,7 +180,7 @@ class TestTheLiveReport:
     def test_the_address_names_the_process_the_report_does_not_list(self) -> None:
         report = _report(_sandbox(_json("behavioral1.json")))
         assert _answer(report, "ip", "172.217.76.94").startswith(
-            "no: the sandbox report says it was made by a process the report does not list "
+            "no: the publish rule found a flow to it made by a process the report does not list "
             "(procid 46)"
         )
 
@@ -197,7 +199,7 @@ class TestTheLauncherSFlow:
     def test_says_it_is_the_launcher_s(self) -> None:
         report = _report(_sandbox(_with_flows(flow_31=84, flow_32=84), LAUNCHER))
         assert _answer(report, "url", CRL).startswith(
-            "no: the sandbox report says it was made by the launcher's process "
+            "no: the publish rule counted its requests as made by the launcher's process "
             "(powershell.exe (procid 84))"
         )
         assert not any(HOST in p for p in _patterns(report))
@@ -238,8 +240,8 @@ class TestANameIsDecidedByItsRequestsAndTheFlowsToItsAddresses:
     def test_a_name_only_the_launcher_s_flows_reached_is_withheld(self) -> None:
         report = _report(_sandbox(_lookup_only(84), LAUNCHER))
         assert _answer(report, "domain", C2).startswith(
-            "no: the sandbox report says it was made by the launcher's process "
-            "(powershell.exe (procid 84))"
+            "no: the publish rule counted the flows to 172.217.76.94 (an address it resolved to) "
+            "as made by the launcher's process (powershell.exe (procid 84))"
         )
         assert not any(C2 in p for p in _patterns(report))
         # The row stays, with whose traffic it is.
@@ -373,7 +375,9 @@ class TestTheJudgeKeepsAWithheldUrlByItsHost:
     def test_a_url_on_a_name_with_no_question_recorded_stays_withheld(self) -> None:
         url = f"http://{NAME}/gate"
         answer = _url_answer(_judged(url, told=False), url)
-        assert answer.startswith("no: the sandbox report says it was made by a process outside")
+        assert answer.startswith(
+            "no: the publish rule counted its requests as made by a process outside"
+        )
         assert "no question with this fact is recorded" in answer
 
     def test_a_url_on_an_address_kept_with_its_host_s_fact_is_published(self) -> None:
@@ -439,7 +443,7 @@ class TestMixedRecords:
         assert url.made_by.launcher == ["powershell.exe (procid 84)"]
         assert url.made_by.unlisted == ["procid 46"]
         answer = _url_answer(report, MIXED_URL)
-        assert answer.startswith("no: the sandbox report says it was made by ")
+        assert answer.startswith("no: the publish rule counted its requests as made by ")
         assert "the launcher's process" in answer and "does not list" in answer
 
     @pytest.mark.parametrize("order", [0, 1])
@@ -464,14 +468,18 @@ class TestMixedRecords:
         report = _mixed(tcp=(UNLISTED_ROW, NO_PROCESS_ROW))
         (ip,) = report.network.ips
         assert ip.unlisted_processes == []
-        assert "does not list" not in _answer(report, "ip", MIXED_ADDRESS)
+        # What the rule read in each flow is said; it is not put on the unlisted process.
+        assert _answer(report, "ip", MIXED_ADDRESS).startswith(
+            "no: the publish rule found a flow to it made by a process the report does not list "
+            "(platform_process 46) and read no process id from its other flow"
+        )
 
     def test_an_address_every_flow_of_which_is_unlisted_names_them(self) -> None:
         report = _mixed(tcp=(UNLISTED_ROW, {**UNLISTED_ROW, TRAFFIC_PROCESS_KEY: "47"}))
         (ip,) = report.network.ips
         assert ip.unlisted_processes == ["procid 46", "procid 47"]
         assert _answer(report, "ip", MIXED_ADDRESS).startswith(
-            "no: the sandbox report says it was made by a process the report does not list "
+            "no: the publish rule found flows to it made by a process the report does not list "
             "(procid 46, procid 47)"
         )
 
@@ -483,7 +491,10 @@ class TestMixedRecords:
         (ip,) = report.network.ips
         assert ip.sample_process_tree is None and ip.unlisted_processes == []
         answer = _answer(report, "ip", MIXED_ADDRESS)
-        assert answer.startswith("no: ") and "does not list" not in answer
+        assert answer.startswith(
+            "no: the publish rule found flows to it made by the launcher's process (powershell.exe "
+            "platform_process 84) and by a process the report does not list (platform_process 46)"
+        )
 
 
 class TestATaskListingNoProcess:
@@ -534,7 +545,11 @@ class TestALauncherFlowSharingAnId:
 PAGE_NAME = "c2-gate.example.net"
 PAGE_ADDRESS = "93.184.7.7"
 PAGE_URL = f"http://{PAGE_NAME}/g"
-UNSTATED_ADDRESS = "no: the sandbox report does not say which process made the flows to it"
+# A page's flow placed under another lineage is read as placed under none.
+UNSTATED_ADDRESS = (
+    "no: the publish rule read only part of the network view and did not place the process a "
+    "flow to it names by id"
+)
 
 
 def _view_of(facts: dict[str, Any], *, page: bool) -> MalwareReport:
@@ -588,7 +603,9 @@ class TestAPageShowsOnlyThatARecordIsTheSampleS:
     @pytest.mark.parametrize("facts", [LAUNCHER_ROW, UNLISTED_ROW], ids=["launcher", "unlisted"])
     def test_a_whole_view_still_withholds_them(self, facts: dict[str, Any]) -> None:
         report = _view_of(facts, page=False)
-        assert _url_answer(report, PAGE_URL).startswith("no: the sandbox report says it was made")
+        assert _url_answer(report, PAGE_URL).startswith(
+            "no: the publish rule counted its requests as made"
+        )
 
     def test_the_sample_s_record_on_a_page_publishes_them(self) -> None:
         report = _view_of(SAMPLE_ROW, page=True)

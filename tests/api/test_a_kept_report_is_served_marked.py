@@ -46,16 +46,25 @@ def _row(incomplete_reason: str | None) -> Any:
     )
 
 
+def _service() -> Any:
+    """The report service as the detail reads it: the row, and its document as served."""
+    from unittest.mock import AsyncMock
+
+    svc = MagicMock(spec_set=["get_report", "served_document"])
+    svc.served_document = AsyncMock(side_effect=lambda report: report.malware_report)
+    return svc
+
+
 @pytest.mark.asyncio
 async def test_the_kept_report_carries_its_mark() -> None:
-    detail = await _detail(MagicMock(spec_set=["get_report"]), _row(NOTE))
+    detail = await _detail(_service(), _row(NOTE))
     assert detail.incomplete_reason == NOTE
     assert detail.verdict == "Malware"
 
 
 @pytest.mark.asyncio
 async def test_a_completed_runs_report_carries_none() -> None:
-    detail = await _detail(MagicMock(spec_set=["get_report"]), _row(None))
+    detail = await _detail(_service(), _row(None))
     assert detail.incomplete_reason is None
 
 

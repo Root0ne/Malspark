@@ -111,7 +111,7 @@ async def _detail(svc: ReportService, report: Any) -> ReportDetailResponse:
     reading = (report.run_summary or {}).get("verdict_reading")
     if isinstance(reading, str) and reading:
         detail = detail.model_copy(update={"verdict_reading": reading})
-    served = with_source_servers(report.malware_report)
+    served = with_source_servers(await svc.served_document(report))
     # The IOC table the console draws is the one /iocs serves, rebuilt by the
     # current rule; a report stored before its MISP attributes were built has
     # them built, and is told its STIX bundle is the one stored.
@@ -552,6 +552,9 @@ async def get_full_malware_report_iocs(
             "Filter to one row kind of the report's IOC table: hash, domain, ip, url, email, "
             "user_agent, ja3, ja3s, path, registry, registry_value, mutex, folder, scheduled_task, "
             "service, named_pipe, ads (an alternate data stream), command; "
+            "name_at_domain_text, dotted_name, text_not_a_plain_host_name, path_shaped_text, "
+            "registry_key_shaped_text (a row of the file's strings nothing in the run reads as "
+            "its kind, served as its form); "
             "and secret or crypto_wallet, which are served only when named here"
         ),
     ),

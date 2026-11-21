@@ -32,7 +32,7 @@ from malspark.reporting.models import (
 )
 from malspark.reporting.renderers import stix_renderer
 from malspark.reporting.renderers.stix_renderer import (
-    UNATTRIBUTED_FLOW,
+    FLOW_NOT_PLACED,
     address_flow_reason,
     publishes,
     sandbox_facts_for_the_judge,
@@ -120,9 +120,9 @@ def test_the_cell_follows_the_answer_s_reason_wherever_it_is_worded(
     assert said in row.published
 
 
-def test_the_cell_beside_today_s_absence_answer_says_what_it_says() -> None:
+def test_the_cell_beside_a_row_with_no_reading_says_the_decision() -> None:
     row = _row(_report(_tree_less()))
-    assert row.context == UNATTRIBUTED_FLOW
+    assert row.context == FLOW_NOT_PLACED
 
 
 def test_each_name_in_a_tree_less_cell_is_written_by_the_word_writer() -> None:

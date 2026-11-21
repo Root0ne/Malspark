@@ -114,10 +114,14 @@ class TestTheSourceReachesTheClient:
     def test_a_domain_row_carries_it(self, client: TestClient) -> None:
         rows = _rows(client, "?include=all&kind=domain")
 
-        assert {row["value"]: row["source"] for row in rows} == {
-            "c2.example.com": "sandbox",
-            "rosoft.com": "strings",
-        }
+        assert {row["value"]: row["source"] for row in rows} == {"c2.example.com": "sandbox"}
+
+    def test_a_strings_row_served_as_its_form_carries_it(self, client: TestClient) -> None:
+        # A domain of the file's strings that nothing in the run reads as a
+        # host is served as its form (T-778), with its source.
+        rows = _rows(client, "?include=all&kind=dotted_name")
+
+        assert {row["value"]: row["source"] for row in rows} == {"rosoft.com": "strings"}
 
     def test_an_address_and_a_url_carry_it_too(self, client: TestClient) -> None:
         rows = _rows(client, "?include=all")
@@ -334,7 +338,7 @@ class TestARecoveredValueNamesItsTool:
                 ]
             },
         }
-        rows = _rows(self._client(record), "?include=all&kind=domain")
+        rows = _rows(self._client(record), "?include=all")
         by_value = {row["value"]: row.get("recovered_by") for row in rows}
 
         assert by_value["c2.example.com"] == (

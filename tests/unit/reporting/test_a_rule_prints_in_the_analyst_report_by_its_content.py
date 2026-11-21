@@ -719,6 +719,8 @@ class TestARunThatDraftedNoRuleReadsAsBefore:
     @pytest.mark.parametrize("name", sorted(no_rule_reports()))
     @pytest.mark.parametrize("layout", [ANALYST, FULL])
     def test_byte_for_byte(self, name: str, layout: str) -> None:
+        # Re-pinned when a value read out of the capture came to be refused under the
+        # publish rule's subject (T-811): the user agent row of one report's full layout.
         report = no_rule_reports()[name]
 
         assert (

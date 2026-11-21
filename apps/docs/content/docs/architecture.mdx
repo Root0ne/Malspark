@@ -5893,12 +5893,29 @@ is assembled from what the run gathered rather than recomputed beside it:
   A flow to an address several names resolved to counts for each of them,
   which errs toward hiding nothing.
   A value of another lineage is not published as observed from the sample,
-  its row says whose it is (`made_by`, with `sample_process_tree: false`; an
+  its row says whose it is (`made_by`, with `sample_process_tree: false`; a
+  name's `made_by.sources` each kind of record the rule counted, its
+  requests, its lookups that state their process and the flows to the
+  addresses it resolved to, with the processes that kind names; an
   address's own fields as above, and `unlisted_processes` where every flow
   to it names a process the report does not list), and the `no:` names it
   ("made by a process the report does not list", "made by the launcher's
   process", …); the row stays in the sandbox document and the ledger as
-  recorded. A disputed
+  recorded. An address none of whose flows the rule placed in the sample's
+  tree says what the rule read in the flow rows to it (`flow_reading`, set by
+  the projection, absent on a report stored before it): no flow row, flow
+  rows it read no process id from, the processes it found the flows made by
+  and the ones the other flows name by id that it did not place, each number
+  under the field its row holds it in, a flow read in two views said once, a
+  view read as a part said so (only where no whole read of that view stands
+  for its detonation), and "flow rows" or "any flow row", never a singular,
+  where a count rests on more than one part view. A report stored without the
+  reading takes the words from its job's stored network entries when served,
+  only where those entries hold a whole network view and decide the row as it
+  is stored, its decisions as stored; otherwise it says "the publish rule
+  placed no flow to it inside the sample's process tree", and a made-by or
+  disputed row says the rule "counted its flows as made by" the processes it
+  names, with no count of flows. A disputed
   row, like any unattributed one, is published only when the judge keeps it
   after being asked once with the sandbox's fact: the verdict's own question
   names each judge indicator on such a value with the fact beside it
@@ -5994,16 +6011,18 @@ is assembled from what the run gathered rather than recomputed beside it:
   the capture's renderer (`ledger_projection.address_flow_facts`): the view
   projected as the report's network block is, the address looked up in its
   flow rows (`FLOW_ROWS`), and said as the publish rule says it
-  (`stix_renderer.address_flow_reason`: the processes it names, those the
-  report does not list, or that it does not say which process made the
-  flows), as a flow of the sample's process tree, or as "no flow row of the
-  sandbox's network view holds it", whatever a DNS answer or the host list
-  holds. A view not read whole (a page, a bounded or shortened answer, a
+  (`stix_renderer.address_flow_reason`: what the rule read in the flow rows
+  to it, `NetworkIP.flow_reading`), as a flow of the sample's process tree,
+  or as "no flow row of the sandbox's network view holds it", whatever a DNS
+  answer or the host list holds. A view not read whole (a page, a bounded or shortened answer, a
   truncated entry, or any of several answers being one) says nothing of any
   address; a value that does not parse as an address gets no words. The
   conversations shown are chosen as without the words, by their own sizes;
-  the words are then added conversation by conversation, in order, while the
-  room lasts. A bounded pack is laid out at the sizes its lines have without
+  the words are then added in two passes while the room lasts: first,
+  conversation by conversation in order, each sentence without any list of
+  processes, in every form; then, in order, each sentence whole
+  (`stix_renderer.address_flow_words`), so a longer list never takes a
+  later conversation's words. A bounded pack is laid out at the sizes its lines have without
   such words (the capture line's, the behaviour links' words on a value's
   process, said there as `process not attributed`, and on the start path):
   the entries shown, the trailer's count and every cut are that layout's at
@@ -6288,7 +6307,7 @@ is assembled from what the run gathered rather than recomputed beside it:
   the table would otherwise not ask (a sandbox's file write) is asked. The rule
   also answers two more kinds: a hash is publishable when it is a
   whole digest a second source knows (the sample's identity, a dropped file),
-  and a command line is not an indicator this run publishes. A C2 name decoded only from the sample's strings is an unpublished row under the rule ("seen only in the file's strings"), and the export declines it. A test holds the export
+  and a command line is not an indicator this run publishes. A C2 name read only from the sample's strings is an unpublished row under the rule, whose answer names the row that holds it, by its tool and entry, and what the publish rule read for it ("the row from iocs_from_file (ev_0006) holds it and the publish rule found no recovery of it and read no reputation record for it"), and the export declines it. A test holds the export
   and the table to one decision.
 * **A decoded value the code passes to an API argument of its role is a row of
   its own.** A decoded mutex name, file path or user agent has no standing by
@@ -6844,7 +6863,12 @@ reading "unrecorded" two ways is how one reading publishes what the other ranks
 as noise. The last is the weakest claim there is, so a `strings` domain is
 printed in the report — in its own Source column in the Markdown table and as
 a badge on the console's domain card — and left out of the STIX indicator set
-and out of the reputation lookups until a second source knows the same name.
+and out of the reputation lookups unless a record the rule reads admits it: the
+lookups take a `strings` name only when a reputation record already counts a
+malicious or suspicious mark against it, and the indicator set takes it on such
+a record or on a recovering tool's recovery of it. Neither asks which tool
+answers hold the same name; a refused row's answer says what the publish rule
+read and names each holder an analyst section cites.
 One predicate decides that, and both paths that mint a domain indicator ask
 it: the network block's own, and the string rows that reach the bundle
 through `static.interesting_strings`. A Tor address is corroborated by its own

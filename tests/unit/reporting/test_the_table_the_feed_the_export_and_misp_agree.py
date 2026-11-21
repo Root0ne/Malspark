@@ -165,9 +165,13 @@ def _bare(value: str) -> str:
     return tail if sep and head in {"md5", "sha1", "sha256", "imphash"} else value
 
 
-UNSAID = "no: the sandbox report does not say which process {did} it"
+UNSAID = "no: the publish rule found no process that {did} it"
 OUTSIDE_THE_TREE = (
-    "no: the sandbox report attributes it to a process outside the sample's process tree"
+    "no: the publish rule matched the process name explorer.exe to no process of the sample's "
+    "process tree"
+)
+OUTSIDE_THE_TREE_BY_PID = (
+    "no: the publish rule matched pid 999 to a listed process outside the sample's process tree"
 )
 KEPT_FROM_THE_TREE = (
     "yes: kept as an indicator by the judge's indicator; the sandbox recorded it from the "
@@ -229,7 +233,7 @@ class TestEveryRowHasAPublishAnswer:
 
         rows = _rows(report)
 
-        assert rows[OUTSIDE].published == OUTSIDE_THE_TREE
+        assert rows[OUTSIDE].published == OUTSIDE_THE_TREE_BY_PID
         # With no pid, the image name decides.
         assert rows[MUTEX].published == KEPT_FROM_THE_TREE
 
@@ -258,10 +262,11 @@ class TestEveryRowHasAPublishAnswer:
 
         # The judge was never asked with the sandbox's fact: its keep publishes
         # nothing, and the row's own sandbox record corroborates nothing.
+        # Each test that closed a way is its own part, joined as one sentence (T-782b).
         assert answer == (
-            "no: the sandbox report does not say which process wrote it; the judge's indicator "
-            "names it, and no question with this fact is recorded for this run, so its keep "
-            "publishes nothing"
+            "no: the publish rule found no process that wrote it, and the judge's "
+            "indicator names it, and no question with this fact is recorded for this run, so its "
+            "keep publishes nothing"
         )
         assert STRAY not in json.dumps(_export(report))
 
@@ -281,7 +286,7 @@ class TestEveryRowHasAPublishAnswer:
 
         assert _rows(report)[STRAY].published == (
             "yes: kept as an indicator by the judge when asked with the sandbox's fact; the "
-            "sandbox report does not say which process wrote it"
+            "publish rule found no process that wrote it"
         )
         assert STRAY in json.dumps(_export(report))
 
@@ -309,7 +314,7 @@ class TestEveryRowHasAPublishAnswer:
 
         assert row.source == "sandbox"
         assert str(row.published).startswith(
-            "no: the sandbox report does not say which process wrote it; the judge's indicator"
+            "no: the publish rule found no process that wrote it, and the judge's indicator"
         )
         assert dropped not in json.dumps(_export(report))
 
@@ -349,10 +354,15 @@ class TestTheFeedIsTheTable:
         report = _report()
         table = [r for r in build_consolidated_iocs(report) if r.kind != "secret"]
         feed = ioc_feed_rows(report.model_dump(mode="json"))
+        # A strings row nothing in the run reads as its kind is served as its
+        # form (T-778): the fixture's one such row, by the kind it is served
+        # under; every other row is served under the table's own kind.
+        formed = {SWEPT: "dotted_name"}
 
         assert [(row["kind"], _bare(row["value"]), row["publish_answer"]) for row in feed] == [
-            (row.kind, row.value, row.published) for row in table
+            (formed.get(row.value, row.kind), row.value, row.published) for row in table
         ]
+        assert set(formed) <= {row.value for row in table}
         assert [row["published"] for row in feed] == [publishes(row.published) for row in table]
 
     def test_a_digest_is_written_after_its_algorithm(self) -> None:

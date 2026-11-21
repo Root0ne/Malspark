@@ -50,7 +50,11 @@ from malspark.reporting.models import (
     DynamicBehavior,
     ExportRow,
     FileHashes,
+    FlowPartView,
+    FlowProcess,
+    FlowReading,
     ImportRow,
+    MakerSource,
     NetworkDomain,
     NetworkIOCs,
     NetworkIP,
@@ -78,6 +82,7 @@ from malspark.schemas.sandbox_report import (
     LINEAGE_MARKED,
     LINEAGE_MARKED_BY_KEY,
     LINEAGE_MARKED_STORED,
+    PROCESS_TASK_KEY,
     PROCESS_UNLISTED_KEY,
     SAMPLE_TREE_KEY,
     STAGED_KEY,
@@ -292,7 +297,42 @@ class _MakerTally:
         if self.unstated or not self.named:
             return
         row.sample_process_tree = False
-        row.made_by = TrafficMakers(**self.named, more=self.more)
+        row.made_by = TrafficMakers.model_validate({**self.named, "more": self.more})
+
+
+def _maker_sources(
+    own: list[_MakerTally | None], flows: list[tuple[str, _MakerTally]]
+) -> list[MakerSource]:
+    """Each kind of record a name's tally counted, with the processes it names (``MakerSource``).
+
+    ``own`` is the name's requests' tally and its lookups' tally, in that
+    order; ``flows`` each address it resolved to with its flows' tally, in the
+    name's order. Read only where the name's attribution is another
+    lineage's, so every counted record names a process. Addresses whose flows
+    name the same processes are one source; each address gives a name at
+    most ``_ADDRESS_MAKERS_NAMED`` processes of a kind, as the whole tally
+    takes them.
+    """
+    out: list[MakerSource] = []
+    for source, held in zip(("requests", "lookups"), own, strict=True):
+        if held is not None and held.named:
+            said = {"source": source, **held.named, "more": held.more}
+            out.append(MakerSource.model_validate(said))
+    by_makers: dict[tuple[Any, ...], MakerSource] = {}
+    for address, held in flows:
+        if not held.named:
+            continue
+        named = {kind: names[:_ADDRESS_MAKERS_NAMED] for kind, names in held.named.items()}
+        more = held.more or any(len(names) > _ADDRESS_MAKERS_NAMED for names in held.named.values())
+        shape = (tuple(sorted((k, tuple(v)) for k, v in named.items())), more)
+        known = by_makers.get(shape)
+        if known is None:
+            known = MakerSource(source="flows", **named, more=more)
+            by_makers[shape] = known
+            out.append(known)
+        if address not in known.addresses:
+            known.addresses.append(address)
+    return out
 
 
 _STRING_KINDS = {
@@ -707,7 +747,7 @@ def static_from_ledger(ledger: list[LedgerEntry]) -> StaticAnalysis | None:
                 for name, row in zip(packers, rows, strict=True)
             ]
 
-    for _entry, data in _payloads(ledger, "file_iocs", "text_iocs"):
+    for sweep, data in _payloads(ledger, "file_iocs", "text_iocs"):
         seen = True
         for row in data.get("iocs") or []:
             if not isinstance(row, dict):
@@ -717,6 +757,7 @@ def static_from_ledger(ledger: list[LedgerEntry]) -> StaticAnalysis | None:
                     value=str(row.get("value") or ""),
                     kind=_string_kind(row.get("kind")),  # type: ignore[arg-type]
                     notes=_opt(row.get("notes")),
+                    entry=str(sweep.id) or None,
                 )
             )
 
@@ -1553,7 +1594,18 @@ def network_from_ledger(
     makers: dict[tuple[str, str], list[bool | tuple[str, str] | None]] = {}
     tallies: dict[tuple[str, str], _MakerTally] = {}
 
-    def _made(kind: str, key: str, answer: bool | tuple[str, str] | None, whole: bool) -> None:
+    # A name's own records by the kind of record they are (``requests``,
+    # ``lookups``), each tallied apart too: the sentence names every kind of
+    # record with the processes it names (``MakerSource``).
+    source_tallies: dict[tuple[str, str], _MakerTally] = {}
+
+    def _made(
+        kind: str,
+        key: str,
+        answer: bool | tuple[str, str] | None,
+        whole: bool,
+        source: str = "",
+    ) -> None:
         # A page of a view can only show that a record is the sample's: one
         # naming another lineage counts as naming none, as the sample's may
         # be on another page. One rule for the three kinds.
@@ -1561,6 +1613,8 @@ def network_from_ledger(
             answer = None
         makers.setdefault((kind, key), []).append(answer)
         tallies.setdefault((kind, key), _MakerTally()).add(answer)
+        if source:
+            source_tallies.setdefault((source, key), _MakerTally()).add(answer)
 
     # The names a DNS or HTTP view named, and the names only the capture's TLS
     # list recorded: a TLS name says nothing about which process made the
@@ -1570,28 +1624,21 @@ def network_from_ledger(
 
     from malspark.schemas.sandbox_document import ADDRESS_TYPES, DnsAnswers, dns_row_name
 
-    # The addresses each name already holds, so a value is added once.
+    # The addresses each name already holds, so a value is added once, and
+    # each address as an answer first recorded it, which a name's sentence
+    # prints.
     held_ips: dict[str, set[str]] = {}
+    spelled: dict[str, str] = {}
     # The job's own detonation's views, then each further detonation's: a
     # value a further one observed is marked with it, and with every other
     # detonation that observed it too.
-    later_reads = [
-        (e, d)
-        for e, d in _payloads(ledger, "sandbox_network", detonations=True)
-        if later_detonation(e)
-    ]
     reading = reading_of_run(normalised_by)
-    views = [
-        *(
-            (d, w, ObservedIn(detonation=FIRST_DETONATION), reading)
-            for d, w in _sandbox_views(ledger, sandbox_report, normalised_by)
-        ),
-        *(
-            (d, w, observed_mark(e), None)
-            for (d, w), (e, _) in zip(_ledger_views(later_reads), later_reads, strict=True)
-        ),
-    ]
-    for data, whole, mark, read_by in views:
+    read = _views_read(ledger, sandbox_report, normalised_by)
+    # What the flow rows to each address name, as the rule reads them: the
+    # words of its sentence (``NetworkIP.flow_reading``), never its decision.
+    flow_tally = _FlowTally(read, _blanked_views(ledger))
+    for index, (data, whole, mark, view_entry) in enumerate(read):
+        read_by = reading if view_entry is None or not later_detonation(view_entry) else None
         marking[0] = mark
         # Each DNS question reads the answers for its own name, and a request's
         # unnamed answers, within the request's own size. A ``domains`` row is
@@ -1609,7 +1656,7 @@ def network_from_ledger(
                 # asking program's: only a process the record itself names is
                 # its maker, and a record naming none says nothing of the name.
                 if key == "dns" and name and _states_a_process(row):
-                    _made("domain", value_key("domain", name), traffic_maker(row), whole)
+                    _made("domain", value_key("domain", name), traffic_maker(row), whole, "lookups")
                 # The addresses the answer gave for it, as the record states them.
                 known_name = domains.get(value_key("domain", name)) if name else None
                 if known_name is None:
@@ -1628,7 +1675,9 @@ def network_from_ledger(
                     kind = answer.get("type") if isinstance(answer, dict) else None
                     if kind and str(kind).strip().lower() not in ADDRESS_TYPES:
                         continue
-                    address = address_key(_first_str(answer, "data", "ip", "address"))
+                    recorded = _first_str(answer, "data", "ip", "address")
+                    address = address_key(recorded)
+                    spelled.setdefault(address, recorded)
                     if _parses_as_an_address(address) and address not in name_ips:
                         name_ips.add(address)
                         known_name.resolved_ips.append(address)
@@ -1662,6 +1711,7 @@ def network_from_ledger(
                 _add("ip", address, "sandbox")
                 if isinstance(row, dict) and address:
                     _made("ip", address, traffic_maker(row), whole)
+                    flow_tally.add(index, address, row)
                     stated = row.get(SAMPLE_TREE_KEY)
                     # A page of a view cannot say that no flow to an address
                     # came from the tree: the one that did may be on another.
@@ -1705,7 +1755,7 @@ def network_from_ledger(
             _add("url", url, "sandbox")
             for made in traffic_makers(row):
                 if host:
-                    _made("domain", value_key("domain", host), made, whole)
+                    _made("domain", value_key("domain", host), made, whole, "requests")
                 if url:
                     _made("url", _fold_url_host(url), made, whole)
             if _flows_left_out(row):
@@ -1713,6 +1763,9 @@ def network_from_ledger(
                 for part in (("domain", value_key("domain", host)), ("url", _fold_url_host(url))):
                     if part[1]:
                         tallies.setdefault(part, _MakerTally()).more = True
+                if host:
+                    asked = ("requests", value_key("domain", host))
+                    source_tallies.setdefault(asked, _MakerTally()).more = True
             # The method and the user agent of one request record, never two
             # records' facts joined: the first record of the URL that names a
             # method gives both (its agent, or none where it states none);
@@ -1805,14 +1858,22 @@ def network_from_ledger(
             # reads those flows as a page's: a flow to an address withheld may
             # be the sample's.
             tally = _MakerTally()
-            own = tallies.get(("domain", value_key("domain", domain.fqdn)))
+            key = value_key("domain", domain.fqdn)
+            own = tallies.get(("domain", key))
             if own is not None:
                 tally.take(own)
+            counted: list[tuple[str, _MakerTally]] = []
             for address in domain.resolved_ips:
                 flows = tallies.get(("ip", address_key(address)))
                 if flows is not None:
                     tally.take(flows, _ADDRESS_MAKERS_NAMED, in_part=domain.resolved_ips_partial)
+                    counted.append((spelled.get(address_key(address), address), flows))
             tally.state(domain)
+            if domain.made_by is not None:
+                domain.made_by.sources = _maker_sources(
+                    [source_tallies.get((kind, key)) for kind in ("requests", "lookups")],
+                    counted,
+                )
     for request in network.urls:
         if request.source == "sandbox":
             tallies.get(("url", _fold_url_host(request.url)), _MakerTally()).state(request)
@@ -1834,6 +1895,7 @@ def network_from_ledger(
             # Only where every flow to it names such a host, as for the
             # processes the task does not list.
             ip.launcher_unsettled_processes = list(unsettled[ip.address])
+        ip.flow_reading = flow_tally.reading(ip.address)
     _state_who_kept(network, kept, isrs)
     for ip in network.ips:
         ip.observed_in = stated_marks(observed.get(("ip", ip.address), ()))
@@ -2785,12 +2847,25 @@ def address_key(value: Any) -> str:
         return text
 
 
-def _sandbox_views(
+class _ViewRead(NamedTuple):
+    """One sandbox network view the projection reads: its answer, whether it is whole, its mark.
+
+    ``entry`` is the ledger entry the view is the answer of, ``None`` for the
+    job's whole report.
+    """
+
+    data: dict[str, Any]
+    whole: bool
+    mark: ObservedIn
+    entry: LedgerEntry | None
+
+
+def _views_read(
     ledger: list[LedgerEntry],
     sandbox_report: dict[str, Any] | None,
     normalised_by: Sequence[str] | None,
-) -> list[tuple[dict[str, Any], bool]]:
-    """The sandbox network views to project, each with whether it is a whole view.
+) -> list[_ViewRead]:
+    """The sandbox network views to project, each with whether it is whole, then the later ones.
 
     The job's report read whole when it holds an observation; otherwise every
     ``sandbox_network`` answer in the ledger, a paged one marked as a page.
@@ -2798,16 +2873,306 @@ def _sandbox_views(
     recorded declaration source) may carry the platform's DNS request links;
     any other answer, a server's whatever its name, has them removed
     (``schemas.sandbox_document.without_dns_links``), so its rows read their
-    own answers.
+    own answers. Then each further detonation's views, marked with it.
     """
+    first = ObservedIn(detonation=FIRST_DETONATION)
+    views: list[_ViewRead] = []
     if isinstance(sandbox_report, dict) and sandbox_report:
         from malspark.providers.sandbox_tools import network_view
 
         # Read with the run's reader, as an agent's call of the view is.
         view = network_view(sandbox_report, normalised_by)
         if isinstance(view, dict) and not view.get("error"):
-            return [(view, True)]
-    return _ledger_views(_payloads(ledger, "sandbox_network"))
+            views.append(_ViewRead(view, True, first, None))
+    if not views:
+        reads = _payloads(ledger, "sandbox_network")
+        for (data, whole), (entry, _data) in zip(_ledger_views(reads), reads, strict=True):
+            views.append(_ViewRead(data, whole, first, entry))
+    later = [
+        (e, d)
+        for e, d in _payloads(ledger, "sandbox_network", detonations=True)
+        if later_detonation(e)
+    ]
+    for (data, whole), (entry, _data) in zip(_ledger_views(later), later, strict=True):
+        views.append(_ViewRead(data, whole, observed_mark(entry), entry))
+    return views
+
+
+class _FlowTally:
+    """What the flow rows to each address name, as the publish rule reads them (``FlowReading``).
+
+    Each row is read as the projection reads it: its answer
+    (:func:`traffic_maker`), which a page demotes to naming none, and the
+    lists the projection names a row's process in by its image (outside the
+    tree, a script host naming the launcher, the disputed lineage facts). A
+    process is keyed by its detonation, task and numbers (by its image only
+    where it holds no number and the rule placed it under a kind or its row
+    marks it outside the tree, whatever the view), its image taken from the
+    rows that give one, so a flow read again in another view or a page is one
+    process, and one a kind holds is never also said as placed under none.
+    Where its rows give more than one image, it is named by its numbers alone:
+    a number two programs held is never given one program's name. Its count is
+    the most rows any one view holds of it; where its rows were read in more
+    than one part view of its detonation and in no whole one, that is no count
+    of its flows, and it is marked so. Each number is read under the fields
+    the readers declare (``declared_process_id_fields``) and the one key every
+    reader writes it under (``TRAFFIC_PROCESS_KEY``), the latter only where no
+    declared field holds its value.
+
+    A view is read as a part only where no whole, uncut read of the view
+    stands for its detonation; an answer of the network view whose structure
+    is no object (``blanked``) is such a part.
+    """
+
+    def __init__(self, views: list[_ViewRead], blanked: Sequence[LedgerEntry] = ()) -> None:
+        from malspark.analysis.detonation_reads import own_detonation_read
+        from malspark.schemas.entry_reading import CUT_AS_TEXT, WHOLE, entry_reading
+        from malspark.schemas.sandbox_report import declared_process_id_fields
+
+        self.fields = declared_process_id_fields()
+        self.views = views
+        later = any(view.mark.detonation != FIRST_DETONATION for view in views)
+        # Whether the platform's own reading gives each view's detonation: a
+        # further one's read, the job's whole report, or the platform's read
+        # of the job's own detonation.
+        self.named = [
+            view.entry is None
+            or view.mark.detonation != FIRST_DETONATION
+            or own_detonation_read(view.entry)
+            for view in views
+        ]
+        states_of: list[tuple[tuple[str, ...], bool]] = []
+        for view in views:
+            states: tuple[str, ...] = ()
+            unknown = False
+            if view.entry is not None:
+                read = entry_reading(view.entry)
+                states, unknown = read.states, read.paging_unknown
+            states_of.append((states, unknown))
+        # Whether each view is a whole, uncut read: its count is a count.
+        self.exact = [
+            view.whole
+            and not unknown
+            and not (set(states) - {WHOLE, CUT_AS_TEXT})
+            and CUT_AS_TEXT not in states
+            for view, (states, unknown) in zip(views, states_of, strict=True)
+        ]
+        stood = {
+            view.mark.detonation for view, exact in zip(views, self.exact, strict=True) if exact
+        }
+        self.parts: list[FlowPartView] = []
+        for view, named, exact, (states, unknown) in zip(
+            views, self.named, self.exact, states_of, strict=True
+        ):
+            if exact or view.mark.detonation in stood:
+                continue
+            beside = set(states) - {WHOLE, CUT_AS_TEXT}
+            # Cut as text alone: the answer's rows were all parsed, and the
+            # rule read them as a part's.
+            cut = (
+                CUT_AS_TEXT in states
+                and not beside
+                and not unknown
+                and not (view.entry is not None and _view_paged(view.entry, view.data))
+            )
+            part = FlowPartView(detonation=view.mark.detonation if later and named else "", cut=cut)
+            if part not in self.parts:
+                self.parts.append(part)
+        for entry in blanked:
+            mark = observed_mark(entry)
+            if mark.detonation in stood:
+                continue
+            named = mark.detonation != FIRST_DETONATION or own_detonation_read(entry)
+            part = FlowPartView(detonation=mark.detonation if later and named else "")
+            if part not in self.parts:
+                self.parts.append(part)
+        # address -> process key -> [kind, {view: rows}, named, [images]]
+        self.keys: dict[str, dict[tuple[Any, ...], list[Any]]] = {}
+        # The addresses a flow row the rule placed in the sample's tree goes to.
+        self.tree: set[str] = set()
+
+    def add(self, index: int, address: str, row: dict[str, Any]) -> None:
+        """One flow row to ``address`` of the view ``index``."""
+        view = self.views[index]
+        answer = traffic_maker(row)
+        if answer is True:
+            self.tree.add(address)
+            return
+        if not view.whole and isinstance(answer, tuple):
+            answer = None
+        # A flow's row states its process on itself (:func:`traffic_maker`).
+        held = row
+        listed = str(row.get(FLOW_PROCESS_KEY) or "").strip()
+        which = str(row.get(LINEAGE_DISPUTED_KEY) or "")
+        kind = answer[0] if isinstance(answer, tuple) else ""
+        if not kind and row.get(SAMPLE_TREE_KEY) is False and view.whole:
+            kind = "outside"
+        elif not kind and listed and row.get(LINEAGE_KEY) == LINEAGE_LAUNCHER_UNSETTLED:
+            kind = "launcher_unsettled"
+        elif not kind and listed and which in (LINEAGE_MARKED, LINEAGE_FILE, LINEAGE_MARKED_STORED):
+            kind = "disputed"
+        ids: list[tuple[str, str]] = []
+        for name in self.fields:
+            number = pid_of(held.get(name))
+            if number and (name, number) not in ids:
+                ids.append((name, number))
+        platform = pid_of(held.get(TRAFFIC_PROCESS_KEY))
+        if platform and platform not in {number for _name, number in ids}:
+            ids.append((TRAFFIC_PROCESS_KEY, platform))
+        given = held.get(FLOW_PROCESS_KEY)
+        image = given.strip() if isinstance(given, str) else ""
+        task = held.get(PROCESS_TASK_KEY)
+        key = (
+            view.mark.detonation,
+            str(task).strip() if isinstance(task, str | int) else "",
+            tuple(ids),
+            image if not ids and (kind or row.get(SAMPLE_TREE_KEY) is False) else "",
+        )
+        held_key = self.keys.setdefault(address, {}).setdefault(key, ["", {}, False, []])
+        if kind and not held_key[0]:
+            held_key[0] = kind
+        held_key[1][index] = held_key[1].get(index, 0) + 1
+        held_key[2] = held_key[2] or self.named[index]
+        if image and image not in held_key[3]:
+            held_key[3].append(image)
+
+    def reading(self, address: str) -> FlowReading:
+        """The rule's reading of the flow rows to ``address``; empty where none was read."""
+        processes: list[FlowProcess] = []
+        unnamed = 0
+        unnamed_counted = True
+        for (detonation, task, ids, _image), (kind, rows, named, images) in self.keys.get(
+            address, {}
+        ).items():
+            flows = max(rows.values())
+            # Rows read in more than one part view and in no whole one: the
+            # pages may hold one flow twice or two flows once each.
+            counted = len(rows) == 1 or any(self.exact[index] for index in rows)
+            if not kind and not ids:
+                unnamed += flows
+                unnamed_counted = unnamed_counted and counted
+                continue
+            processes.append(
+                FlowProcess(
+                    ids=list(ids),
+                    image=images[0] if len(images) == 1 else "",
+                    task=task,
+                    detonation=detonation if named else "",
+                    kind=kind,
+                    flows=flows,
+                    counted=counted,
+                )
+            )
+        return FlowReading(
+            processes=processes,
+            unnamed=unnamed,
+            unnamed_counted=unnamed_counted,
+            part_views=list(self.parts),
+        )
+
+
+def _blanked_views(ledger: list[LedgerEntry]) -> list[LedgerEntry]:
+    """Each successful network-view answer whose structure is no object: a view read as a part."""
+    return [
+        entry
+        for entry in ledger or []
+        if entry.ok
+        and not isinstance(entry.structured, dict)
+        and (facts := tool_kinds.facts_of(entry)) is not None
+        and facts.kind == "sandbox_network"
+    ]
+
+
+def _flow_tally(ledger: list[LedgerEntry]) -> _FlowTally:
+    """Every flow row of ``ledger``'s network views, read as the projection reads it.
+
+    The views the projection reads without the job's whole report
+    (:func:`_views_read`), each flow row read as :class:`_FlowTally` reads it.
+    """
+    views = _views_read(ledger, None, None)
+    tally = _FlowTally(views, _blanked_views(ledger))
+    for index, view in enumerate(views):
+        for key in FLOW_ROWS:
+            for row in view.data.get(key) or []:
+                address = address_key(_first_str(row, "dst", "ip", "address"))
+                if isinstance(row, dict) and address:
+                    tally.add(index, address, row)
+    return tally
+
+
+# Each list of a stored address row with the kind its processes are read
+# under (``FlowProcess.kind``).
+_FLOW_LISTS = {
+    "outside_processes": ("outside",),
+    "unlisted_processes": ("unlisted",),
+    "launcher_unsettled_processes": ("launcher_unsettled",),
+    "marked_only_processes": ("disputed",),
+    "file_only_processes": ("disputed",),
+}
+
+
+def _reading_agrees(row: Mapping[str, Any], reading: FlowReading, tree: bool) -> bool:
+    """Whether a reading of the job's entries decides a stored address row as it is stored.
+
+    A flow row the rule placed in the sample's tree is read exactly where the
+    row is the tree's (``tree``); the row's verdict of outside the tree is read
+    as a process outside it; each list the row holds is read as a process of
+    its kind; and a disputed process read is in the row's disputed lists.
+    """
+    if tree != (row.get("sample_process_tree") is True):
+        return False
+    kinds = {process.kind for process in reading.processes}
+    if row.get("sample_process_tree") is False and "outside" not in kinds:
+        return False
+    for field, (kind,) in _FLOW_LISTS.items():
+        if row.get(field) and kind not in kinds:
+            return False
+    disputed = row.get("marked_only_processes") or row.get("file_only_processes")
+    return "disputed" not in kinds or bool(disputed)
+
+
+def lacks_flow_readings(document: Any) -> bool:
+    """Whether a stored report document holds an address row with no ``flow_reading``."""
+    network = document.get("network") if isinstance(document, Mapping) else None
+    ips = network.get("ips") if isinstance(network, Mapping) else None
+    return isinstance(ips, list) and any(
+        isinstance(row, Mapping) and row.get("flow_reading") is None for row in ips
+    )
+
+
+def with_flow_readings(document: Any, ledger: list[LedgerEntry] | None) -> Any:
+    """A stored report document whose address rows carry what the rule read in the job's flows.
+
+    Only the words of the rule's sentence are taken from the job's stored
+    network entries (``ledger``), as the pack's capture line takes them
+    (:func:`address_flow_facts`); every decision stays the stored row's. A row
+    takes the reading of its address only where the reading agrees with the
+    row's stored decision (:func:`_reading_agrees`): where the two disagree,
+    the row keeps no reading and says the decision alone. A row that already carries its
+    reading keeps it. Where ``ledger`` holds no whole, uncut network view of
+    the job's own detonation (a capture alone, a page, a view whose structure
+    is no object), or ``document`` no address row, the document is returned as
+    it is, and each row reads as stored: a reading never taken.
+    """
+    if not ledger or not lacks_flow_readings(document):
+        return document
+    network = document["network"]
+    ips = network["ips"]
+    tally = _flow_tally(ledger)
+    if not any(
+        exact and view.mark.detonation == FIRST_DETONATION
+        for view, exact in zip(tally.views, tally.exact, strict=True)
+    ):
+        return document
+    rows = []
+    for row in ips:
+        if isinstance(row, Mapping) and row.get("flow_reading") is None:
+            address = address_key(row.get("address"))
+            reading = tally.reading(address)
+            if _reading_agrees(row, reading, address in tally.tree):
+                row = {**row, "flow_reading": reading.model_dump(mode="json")}
+        rows.append(row)
+    return {**document, "network": {**network, "ips": rows}}
 
 
 def _ledger_views(
@@ -2821,18 +3186,23 @@ def _ledger_views(
     platform_sources = {SANDBOX_FAMILY, PACK_SOURCE}
     views: list[tuple[dict[str, Any], bool]] = []
     for entry, data in reads:
-        args = entry.args if isinstance(entry.args, dict) else {}
-        paged = any(_as_int(args.get(k)) for k in ("offset", "limit")) or any(
-            str(k).endswith("_total") or k in ("next_offset", "shortened", "truncated")
-            for k in data
-        )
         if getattr(entry, "source", None) not in platform_sources and isinstance(
             data.get("dns"), list
         ):
             data = {**data, "dns": without_dns_links(data["dns"])}
         # A shortened or truncated answer is a part of the view, like a page.
-        views.append((data, not paged and not getattr(entry, "truncated", False)))
+        views.append(
+            (data, not _view_paged(entry, data) and not getattr(entry, "truncated", False))
+        )
     return views
+
+
+def _view_paged(entry: LedgerEntry, data: dict[str, Any]) -> bool:
+    """Whether a network view's call or answer marks it a page or a shortened answer."""
+    args = entry.args if isinstance(entry.args, dict) else {}
+    return any(_as_int(args.get(k)) for k in ("offset", "limit")) or any(
+        str(k).endswith("_total") or k in ("next_offset", "shortened", "truncated") for k in data
+    )
 
 
 def _as_int(value: Any) -> int:
@@ -2880,22 +3250,24 @@ NO_FLOW_ROW = "no flow row of the sandbox's network view holds it"
 
 def address_flow_facts(
     ledger: list[LedgerEntry], *, normalised_by: Sequence[str] | None
-) -> Callable[[Any], str] | None:
-    """``address -> words``: what the sandbox's flow rows say of the process behind each address.
+) -> Callable[[Any], tuple[str, str]] | None:
+    """``address -> (first, whole)``: what the sandbox's flow rows say of the process behind it.
 
     Read from the record only: the ``sandbox_network`` answers of ``ledger``
     projected as the report's network block is (:func:`network_from_ledger`),
     with the run's reader ``normalised_by``. An address is looked up in the
     flow rows of those answers (:data:`FLOW_ROWS`): one a flow row holds is
-    said as the publish rule says its row (``stix_renderer.address_flow_reason``),
-    or :data:`SAMPLE_TREE_FLOW`; one no flow row holds is :data:`NO_FLOW_ROW`,
+    said as the publish rule says its row
+    (``stix_renderer.address_flow_words``: the sentence without any list of
+    processes, and the whole sentence), or
+    :data:`SAMPLE_TREE_FLOW`; one no flow row holds is :data:`NO_FLOW_ROW`,
     whatever a DNS answer or a host list holds; a value that does not parse as
     an address is said nothing of. ``None``, and so no words for any address,
     where the ledger holds no such answer or any answer read is not the whole
     view (a page, a bounded or shortened answer): no words are derived from
     part of a view.
     """
-    from malspark.reporting.renderers.stix_renderer import address_flow_reason
+    from malspark.reporting.renderers.stix_renderer import address_flow_words
 
     reads = _payloads(ledger, "sandbox_network")
     views = _ledger_views(reads)
@@ -2910,16 +3282,16 @@ def address_flow_facts(
     network = network_from_ledger([entry for entry, _data in reads], normalised_by=normalised_by)
     rows = {ip.address: ip for ip in (network.ips if network else []) if ip.source == "sandbox"}
 
-    def _fact(address: Any) -> str:
+    def _fact(address: Any) -> tuple[str, str]:
         key = address_key(address)
         if not _parses_as_an_address(key):
-            return ""
+            return "", ""
         row = rows.get(key) if key in flowed else None
         if row is None:
-            return NO_FLOW_ROW
+            return NO_FLOW_ROW, NO_FLOW_ROW
         if row.sample_process_tree is True:
-            return SAMPLE_TREE_FLOW
-        return address_flow_reason(row)
+            return SAMPLE_TREE_FLOW, SAMPLE_TREE_FLOW
+        return address_flow_words(row)
 
     return _fact
 

@@ -31,7 +31,6 @@ from malspark.reporting.detection_signatures import build_detection_rules
 from malspark.reporting.ledger_projection import network_from_ledger
 from malspark.reporting.models import MalwareReport
 from malspark.reporting.renderers.stix_renderer import (
-    FLOW_OUTSIDE_THE_TREE,
     MARKED_ONLY_PROCESS,
     ExtendedSTIXRenderer,
     emulation_kwargs,
@@ -207,7 +206,7 @@ def test_a_disputed_row_is_on_no_surface_and_its_no_states_both_facts(marked: se
 
     answer = _answer(report)
     assert answer.startswith(
-        "no: the sandbox report attributes its flows to StartMenuExperienceHost.exe "
+        "no: the publish rule found a flow to it made by StartMenuExperienceHost.exe "
         f"(procid 105), {MARKED_ONLY_PROCESS}"
     )
     # Three analysts named it while saying it is no indicator: that keeps nothing.
@@ -223,7 +222,8 @@ def test_with_nothing_marked_the_no_names_the_process_outside_the_tree() -> None
     report = _report(set())
     answer = _answer(report)
     assert answer.startswith(
-        f"no: {FLOW_OUTSIDE_THE_TREE} (StartMenuExperienceHost.exe (procid 105))"
+        "no: the publish rule found a flow to it made by a process outside the sample's "
+        "process tree (StartMenuExperienceHost.exe (procid 105))"
     )
     assert answer.endswith(MENTIONED)
     _on_no_surface(report)

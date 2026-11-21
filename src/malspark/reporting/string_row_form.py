@@ -14,11 +14,14 @@ A recovered e-mail is read as one by the tool that recovered it.
 A path or registry key row of source ``strings`` the extractor recorded taking
 out of a longer string of the file (``StringIOC.cut_from``) prints that it is
 text of that shape in a longer string. It says where the text stands, not that
-it is incomplete; a row with no such record keeps its kind.
+it is incomplete; a row with no such record keeps its kind, and so does one
+the run publishes, another source holds or a judge indicator names.
 
 A form row keeps its kind: the kind stays the key of every lookup and match
 (the publish answers, the judge's match, the defang). Only the edges that
-print the kind print the form instead (:func:`string_row_forms`). Nothing
+print the kind print the form instead (:func:`string_row_forms`), and an
+export carries the form as the row's kind (:func:`exported_form`); the kind
+the row is keyed on is not exported. Nothing
 here reads a list of names, suffixes or tools: only the row's source, its
 kind, its form and the run's other readers of the same value.
 """
@@ -39,6 +42,17 @@ NOT_A_PLAIN_HOST_BY_FORM = "Text, not a plain host name by its form"
 # string: true of a fragment and of a whole path standing in ``NAME=…`` alike.
 PATH_IN_A_LONGER_STRING = "Path-shaped text in a longer string"
 REGISTRY_KEY_IN_A_LONGER_STRING = "Registry-key-shaped text in a longer string"
+
+# The kind an export (``/iocs``, the console's table) carries a form row under,
+# by its printed type: the form, never the kind the row is keyed on inside the
+# report, which is not exported.
+EXPORTED_FORM_KINDS = {
+    NAME_AT_DOMAIN_TEXT: "name_at_domain_text",
+    DOTTED_NAME: "dotted_name",
+    NOT_A_PLAIN_HOST_BY_FORM: "text_not_a_plain_host_name",
+    PATH_IN_A_LONGER_STRING: "path_shaped_text",
+    REGISTRY_KEY_IN_A_LONGER_STRING: "registry_key_shaped_text",
+}
 
 _STRINGS = "strings"
 # The kinds the extractor records taking out of a longer string, and what such a row prints.
@@ -117,16 +131,18 @@ def string_row_form(row: Any, readers: _Readers) -> str | None:
     kind = str(row.kind or "")
     if str(row.source or "") != _STRINGS:
         return None
-    if kind in _IN_A_LONGER_STRING:
-        cut = (kind, value_key(kind, row.value)) in readers.cut
-        return _IN_A_LONGER_STRING[kind] if cut else None
-    if kind not in ("email", "domain"):
+    if kind not in ("email", "domain") and kind not in _IN_A_LONGER_STRING:
         return None
+    # A row the run publishes, another source holds or the judge names is read
+    # as its kind, whatever its form or its cut.
     if publishes(row.published):
         return None
     key = (kind, _same_value(kind, row.value))
     if key in readers.held or key in readers.judged:
         return None
+    if kind in _IN_A_LONGER_STRING:
+        cut = (kind, value_key(kind, row.value)) in readers.cut
+        return _IN_A_LONGER_STRING[kind] if cut else None
     if kind == "email":
         return None if row.recovered_by else NAME_AT_DOMAIN_TEXT
     if key[1] in readers.url_hosts:
@@ -159,3 +175,19 @@ def string_row_forms(report: Any, rows: Iterable[Any]) -> dict[tuple[str, str], 
             if form is not None:
                 out.setdefault((str(row.kind), value_key(str(row.kind), row.value)), form)
     return out
+
+
+def exported_form(row: Any, forms: dict[tuple[str, str], str]) -> tuple[str, str] | None:
+    """The kind and type an export carries a form row under; ``None`` for any other row.
+
+    ``forms`` is :func:`string_row_forms` of the table ``row`` belongs to;
+    only a row of the file's strings is read in it, so a row of another
+    source holding the same kind and value keeps its own.
+    """
+    from malspark.reporting.ledger_projection import value_key
+
+    if str(getattr(row, "source", None) or "") != _STRINGS:
+        return None
+    kind = str(getattr(row, "kind", None) or "")
+    label = forms.get((kind, value_key(kind, row.value)))
+    return (EXPORTED_FORM_KINDS[label], label) if label else None

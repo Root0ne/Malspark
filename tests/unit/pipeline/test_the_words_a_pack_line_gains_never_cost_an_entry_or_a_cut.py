@@ -16,6 +16,7 @@ every word.
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
 import pytest
@@ -23,14 +24,16 @@ import pytest
 from malspark.analysis import behaviour_code as bc
 from malspark.pipeline import triage_pack
 from malspark.reporting import ledger_projection
-from malspark.reporting.renderers.stix_renderer import UNATTRIBUTED_FLOW, made_by_reason
+from malspark.reporting.renderers.stix_renderer import MADE_BY_WHOM
 from malspark.schemas.sandbox_report import STAGED_KEY, STAGED_WORDS
 from tests.unit.analysis.test_a_behaviour_link_says_what_the_rows_say_of_its_process import (
+    UNLISTED_ONLY,
     UNLISTED_ROW,
     _network,
     _strings_of,
 )
 from tests.unit.pipeline.test_the_capture_line_says_what_the_sandbox_rows_say_of_each_address import (  # noqa: E501
+    SILENT_WORDS,
     _capture,
     _entry,
     _flows,
@@ -47,12 +50,13 @@ CONVERSATIONS = (
     "198.51.100.4",
     *(f"203.0.113.{n}" for n in range(1, 25)),
 )
-UNLISTED_WORDS = made_by_reason({"unlisted": ["procid 46"]})
+UNLISTED_WORDS = UNLISTED_ONLY
+UNLISTED_CAPTURE = "the publish rule found a flow to it made by " + MADE_BY_WHOM["unlisted"]
 # Every word this branch adds to a line, as written after its "; ".
 WORDS = (
     ledger_projection.SAMPLE_TREE_FLOW,
     ledger_projection.NO_FLOW_ROW,
-    UNATTRIBUTED_FLOW,
+    SILENT_WORDS,
     UNLISTED_WORDS,
 )
 
@@ -109,6 +113,9 @@ def _unworded(line: str) -> str:
     if line.startswith("[ev_0015] "):
         line = line.replace(f"; {UNLISTED_WORDS}", f"; {bc.NOT_ATTRIBUTED}")
         line = line.replace(f"({UNLISTED_WORDS}", f"({bc.NOT_ATTRIBUTED}")
+    # The capture line's words on an address the rule puts on an unlisted
+    # process: its first pass without the list, or whole.
+    line = re.sub(f"; {re.escape(UNLISTED_CAPTURE)}(?: \\([^()]*\\))?", "", line)
     for said in (STAGED_WORDS, *WORDS):
         line = line.replace(f"; {said}", "")
     return line

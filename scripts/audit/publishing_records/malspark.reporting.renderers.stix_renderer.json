@@ -1,0 +1,56 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:FLOW_COUNTED",
+   "condition": "the publish answer and context cell of a sandbox address row the publish rule puts on a lineage whose list is set only where every flow to it is of that kind (outside the sample's process tree, a process the report does not list, a script host naming the launcher) that holds no reading of its flow rows: a row of a report stored before the reading was recorded, on the surfaces served or packaged from that stored report (the report and its HTML, the IOC list, the evidence bundle, the job package) with no job entry that agrees with its stored decision; on the build path every address row carries its reading, so the form reaches no judge fact, flow-voice fact or capture line",
+   "basis": [
+    "the stored row's outside_processes, unlisted_processes and launcher_unsettled_processes",
+    "the stored row's sample_process_tree"
+   ],
+   "test": "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestAReadingNeverTakenIsKeptApart::test_a_made_by_row_with_no_reading_states_no_count",
+   "text_digest": "adf4d335e0657b988bd0bba21e804a9ecceac6d5747f55e773c673319e65ae6b"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:FLOW_COUNTED_SOME",
+   "condition": "the publish answer and context cell of a sandbox address row with a disputed lineage (a list set wherever any flow to it is disputed) that holds no reading of its flow rows: a row of a report stored before the reading was recorded, on the surfaces served or packaged from that stored report (the report and its HTML, the IOC list, the evidence bundle, the job package) with no job entry that agrees with its stored decision; it names the disputed processes and claims nothing of the other flows to it; on the build path every address row carries its reading, so the form reaches no judge fact, flow-voice fact or capture line",
+   "basis": [
+    "the stored row's marked_only_processes, file_only_processes and marked_by"
+   ],
+   "test": [
+    "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestAReadingNeverTakenIsKeptApart::test_a_disputed_row_with_no_reading_states_no_count",
+    "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestAReadingNeverTakenIsKeptApart::test_a_disputed_row_with_no_reading_claims_no_other_flow"
+   ],
+   "text_digest": "8c903869648f30d54569f46423c0884a523cba8681bc3a553d81ae2653be5c71"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:FLOW_NO_ID_UNCOUNTED",
+   "condition": "in the publish answer and the words beside it of a sandbox address row none of whose flows the rule placed in the sample's process tree, whose flow rows name no process id and were read in more than one part view of one detonation and in no whole one",
+   "basis": [
+    "the row's flow_reading: unnamed and unnamed_counted"
+   ],
+   "test": "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestACountOverPagesIsNoCount::test_two_pages_each_with_a_flow_naming_no_id",
+   "text_digest": "505873f7dec10ae73ec2b3b76d1cb20164518193201b59346b83841d9e0927b6"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:FLOW_OTHER_NO_ID_UNCOUNTED",
+   "condition": "in the publish answer and the words beside it of a sandbox address row whose sentence names processes first, where its other flow rows name no process id and were read in more than one part view of one detonation and in no whole one",
+   "basis": [
+    "the row's flow_reading: processes, unnamed and unnamed_counted"
+   ],
+   "test": "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestACountOverPagesIsNoCount::test_the_other_rows_over_two_pages",
+   "text_digest": "4e0b667f02278018cf18155c4cdef344b1ba73e3cfc96d6d1ac469c9f863d5b0"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:FLOW_ROWS_UNCOUNTED",
+   "condition": "in the publish answer and the words beside it of a sandbox address row where the flow rows of a process it names were read in more than one part view of one detonation and in no whole one, in place of a count of flows",
+   "basis": [
+    "the row's flow_reading: each process's flows and counted"
+   ],
+   "test": [
+    "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestACountOverPagesIsNoCount::test_two_pages_each_with_a_flow_of_one_number",
+    "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestACountOverPagesIsNoCount::test_a_disputed_process_over_two_pages"
+   ],
+   "text_digest": "b2927418bf228d58486a2c98204192467728f88b63ed5090f51eba20f0ba8127"
+  }
+ ]
+}

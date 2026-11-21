@@ -69,7 +69,8 @@ def _c2(sentence: str) -> str:
     ]
     c2 = _section(_analyst(report), "## 6. Command and control")
     assert "**[" not in c2 and "left out" not in c2
-    assert "**[not published by this run: x" in MarkdownRenderer(layout=BUNDLE).render(report)
+    # The bundle marks it, labelled with the state its own IOC table gives (T-782b).
+    assert "**[not published by this run: " in MarkdownRenderer(layout=BUNDLE).render(report)
     return c2
 
 

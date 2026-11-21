@@ -559,7 +559,9 @@ class TestAgainstTheSequentialBase:
     digests were re-pinned for the rules of T-782a and T-780: the mark beside a refused C2
     endpoint gives the reason of the host test that refused it (T-782a), and the methodology's
     clause on the judge's STIX bundle is said from the counts of the two bundles (T-780).
-    Those are the only changes, and the requests did not move.
+    Those are the only changes, and the requests did not move. The Markdown and HTML digests
+    were re-pinned when a row the host test refuses came to say the test's own reason
+    (T-782a): the one refused domain row's answer is the only change.
     """
 
     def test_the_requests_and_the_report_are_those_of_the_base(self) -> None:

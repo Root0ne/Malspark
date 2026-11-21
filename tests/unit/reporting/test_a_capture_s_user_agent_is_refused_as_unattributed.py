@@ -65,7 +65,7 @@ def test_the_table_refuses_a_capture_s_value_as_unattributed(kind: str, value: s
 def test_the_capture_s_unattributed_address_is_refused_the_same_way() -> None:
     (row,) = [r for r in build_consolidated_iocs(_report()) if r.value == UNATTRIBUTED_IP]
 
-    assert row.published.startswith("no: the sandbox report does not say which process")
+    assert row.published.startswith("no: the publish rule placed no flow to it inside")
 
 
 def test_no_surface_publishes_them() -> None:

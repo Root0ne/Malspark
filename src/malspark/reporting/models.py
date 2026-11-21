@@ -29,11 +29,14 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
+    ValidatorFunctionWrapHandler,
+    WrapValidator,
     model_serializer,
 )
 from pydantic.json_schema import SkipJsonSchema
 
 from malspark.core.reputation import ReputationRecord
+from malspark.reporting.publish_parts import PublishAnswer
 from malspark.schemas.stix_models import get_utcnow
 
 # ---------------------------------------------------------------------------
@@ -220,6 +223,11 @@ class StringIOC(BaseModel):
     # build without the sample, and then left out of the dump, so a stored
     # report reads and dumps as it did.
     cut_from: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    # The ledger entry whose answer holds this row, where the build read the row
+    # from one (``ledger_projection``): what a refusal names as the row's source.
+    # ``None`` for a producer that does not record it, and then left out of the
+    # dump, so a stored report reads and dumps as it did.
+    entry: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ExportRow(BaseModel):
@@ -466,6 +474,29 @@ class DynamicBehavior(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class MakerSource(BaseModel):
+    """One kind of record a name's maker tally counted, with the processes it names.
+
+    ``source`` is ``requests`` (the name's HTTP requests), ``lookups`` (its DNS
+    requests that name their own process) or ``flows`` (the flows to
+    ``addresses``, addresses it resolved to whose flows name the same
+    processes). The processes as in :class:`TrafficMakers`, each kind left out
+    of a dump where empty; ``more``: the records name more processes than are
+    listed here (a request carrying part of its flow id's processes, or more
+    processes of a kind reached an address than a name takes from it).
+    """
+
+    model_config = _STRICT_CONFIG
+
+    source: Literal["requests", "lookups", "flows"]
+    addresses: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    outside: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    launcher: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    unlisted: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    disputed: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    more: bool = Field(default=False, exclude_if=lambda value: not value)
+
+
 class TrafficMakers(BaseModel):
     """The processes of another lineage than the sample's that a sandbox names for some traffic.
 
@@ -486,6 +517,11 @@ class TrafficMakers(BaseModel):
     unlisted: list[str] = Field(default_factory=list)
     disputed: list[str] = Field(default_factory=list)
     more: bool = Field(default=False, exclude_if=lambda value: not value)
+    # For a name: each kind of record the tally counted, with the processes
+    # that kind of record names (``MakerSource``), so a sentence names every
+    # source with its own makers. Left out of a dump where none is kept, so a
+    # stored report reads as it was written.
+    sources: list[MakerSource] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
 class NetworkDomain(BaseModel):
@@ -556,6 +592,71 @@ class NetworkDomain(BaseModel):
         return dumped
 
 
+class FlowProcess(BaseModel):
+    """One process the flow rows to an address name, as the publish rule read those rows.
+
+    ``ids`` are the numbers the rows give it, each under the field the row
+    holds it under (``[field, number]``), in the readers' declared order;
+    ``image`` its name where the rows give one as text; ``task`` the task the
+    rows state (``PROCESS_TASK_KEY``). ``detonation`` names the detonation
+    only where the platform's own reading of the view gives it (``d1`` for the
+    job's own, ``d2``… for a further one), else ``""``. ``kind`` is the
+    ``TrafficMakers`` kind the rule placed it under, ``""`` where it placed it
+    under none; ``flows`` how many flow rows name it within one view (the most
+    any one view holds, never a sum over views). ``counted`` is ``False``
+    where its rows were read in more than one part view of its detonation and
+    in no whole one, so ``flows`` is no count of its flows; left out of a dump
+    where it is ``True``.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    ids: list[tuple[str, str]] = Field(default_factory=list)
+    image: str = ""
+    task: str = ""
+    detonation: str = ""
+    kind: str = ""
+    flows: int = 1
+    counted: bool = Field(default=True, exclude_if=lambda value: value)
+
+
+class FlowPartView(BaseModel):
+    """A network view the publish rule read as a part (``FlowReading.part_views``).
+
+    ``detonation`` as in :class:`FlowProcess`; ``cut`` is ``True`` where the
+    entry kept a prefix of its text (``entry_reading.CUT_AS_TEXT``) and the rule
+    read every row the answer holds as a part's, ``False`` where the view itself
+    is a page or a shortened answer.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    detonation: str = ""
+    cut: bool = False
+
+
+class FlowReading(BaseModel):
+    """What the publish rule read in the flow rows to one address (``NetworkIP.flow_reading``).
+
+    ``processes`` each process the rows name by a number or that the rule
+    placed under a kind, once each (one flow read again in another view or a
+    page is one process); ``unnamed`` how many rows name no process id and are
+    placed under no kind, counted within one view of each detonation, and
+    ``unnamed_counted`` ``False`` where such rows of one detonation were read
+    in more than one part view and in no whole one, so ``unnamed`` is no count
+    of their flows (left out of a dump where it is ``True``); ``part_views``
+    the views of the run the rule read as a part. No process and no unnamed
+    row: no flow row to the address was read.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    processes: list[FlowProcess] = Field(default_factory=list)
+    unnamed: int = 0
+    unnamed_counted: bool = Field(default=True, exclude_if=lambda value: value)
+    part_views: list[FlowPartView] = Field(default_factory=list)
+
+
 class NetworkIP(BaseModel):
     """Observed IPv4 / IPv6 endpoint."""
 
@@ -607,6 +708,12 @@ class NetworkIP(BaseModel):
     launcher_unsettled_processes: list[str] = Field(
         default_factory=list, exclude_if=lambda value: not value
     )
+    # What the publish rule read in the flow rows to it (``FlowReading``): set
+    # (possibly empty) by the projection that built the row, ``None`` on a row
+    # read from a report stored before it was recorded, and then left out of
+    # the dump. The words of the rule's sentence come from it; no decision
+    # reads it.
+    flow_reading: FlowReading | None = Field(default=None, exclude_if=lambda value: value is None)
     # Whether the address is a public DNS resolver's, which a sandbox guest
     # reaches whatever the sample does.
     public_resolver: bool = False
@@ -1804,6 +1911,12 @@ class JudgeIndicator(BaseModel):
     indicator_types: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
+def _answer_with_its_parts(value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+    """A publish answer given as its parts is kept as given, parts and all; any other text is
+    read as text (a row read from a stored file has none)."""
+    return value if isinstance(value, PublishAnswer) else handler(value)
+
+
 class ConsolidatedIOC(BaseModel):
     """One row of the consolidated, typed IOC table.
 
@@ -1824,10 +1937,13 @@ class ConsolidatedIOC(BaseModel):
     # ``hash``, …), who recorded the row (``identity``, ``sandbox``,
     # ``analyst``, ``judge``, ``strings``, ``persistence``), what else is known
     # about it, and the one publish rule's answer: ``yes`` or ``no: <reason>``.
+    # A refused row the table builds keeps the answer's parts
+    # (``publish_parts.PublishAnswer``), which every reader composes from; it is
+    # stored and served as its text.
     kind: str | None = None
     source: str | None = None
     context: str = ""
-    published: str | None = None
+    published: Annotated[str | None, WrapValidator(_answer_with_its_parts)] = None
     # What the row is to every surface, set with ``published`` by the table
     # (``builder.ioc_table``): ``sample_identity`` (a digest of the sample's
     # own bytes), ``similarity`` (its imphash, ssdeep or TLSH, which also match

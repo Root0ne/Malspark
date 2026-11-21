@@ -12,10 +12,12 @@ import { ArtifactSections } from "@/components/analysis/ArtifactTable";
 import DetonationMark from "@/components/analysis/DetonationMark";
 import { isCoveredBySection, sectionsForTab } from "@/components/analysis/reportSections";
 import { endpointReputation, reputationTooltip, verdictWords } from "@/components/analysis/reputation";
-import { domainFacts, ipFacts } from "@/components/analysis/networkFacts";
+import { domainFacts, formValues, ipFacts, valueKey } from "@/components/analysis/networkFacts";
 import StructuredValue, { StructuredCell } from "@/components/analysis/StructuredValue";
 import {
   NETWORK_ROWS_STEP,
+  hostLabel,
+  hostReading,
   hostReputation,
   hostRows,
   hostSource,
@@ -49,15 +51,19 @@ export default function NetworkContent({ report }: { report: ReportDetailDTO }) 
   // Network IOCs recovered from the sample's static strings (a hard-coded C2
   // domain) live on `static.interesting_strings`, not on the sandbox-only
   // `network` block; they are listed here, labelled as found in the strings.
+  // A value the IOC table serves as its form is no endpoint (`formValues`).
+  const forms = formValues(mr);
   const staticIocs: StringIOC[] = (mr?.static?.interesting_strings ?? []).filter(
-    (s) => s.kind === "domain" || s.kind === "ip" || s.kind === "url",
+    (s) =>
+      (s.kind === "domain" || s.kind === "ip" || s.kind === "url") &&
+      !forms.has(valueKey(s.value)),
   );
   const reportSections = mr?.sections;
   const evidenceSections = sectionsForTab(reportSections, "network", report.section_tabs);
   const covering = evidenceSections.filter((s) => s.key === "sandbox_network" || s.key === "iocs");
   const otherSections = evidenceSections.filter((s) => !covering.includes(s));
   const showsStaticIocs = staticIocs.length > 0 && !isCoveredBySection(reportSections, ["iocs"]);
-  const hosts = hostRows(net);
+  const hosts = hostRows(net, forms);
   const urls = net?.urls ?? [];
   const domains = net?.domains ?? [];
   const tls: { kind: string; value: unknown }[] = [
@@ -326,10 +332,11 @@ function HostDetail({ row }: { row: HostRow }) {
   const rep = hostReputation(row);
   const source = hostSource(row);
   const facts = row.kind === "domain" ? domainFacts(row.domain) : ipFacts(row.ip);
+  const reading = hostReading(row);
   return (
     <div className="space-y-4 text-sm">
       <div className="flex flex-wrap items-center gap-1.5">
-        <Flag tone="neutral">{row.kind === "domain" ? "Domain" : "IP address"}</Flag>
+        <Flag tone="neutral">{hostLabel(row)}</Flag>
         {hostSuspicious(row) && <Flag tone="red">Suspicious</Flag>}
         <ReputationPill rep={rep} />
         <SourceWord source={source} />
@@ -345,12 +352,10 @@ function HostDetail({ row }: { row: HostRow }) {
       )}
       {row.kind === "domain" ? (
         <dl className="space-y-2">
-          {row.domain.reason && <Pair label="Why it stands out">{row.domain.reason}</Pair>}
+          {reading.reason && <Pair label="Why it stands out">{reading.reason}</Pair>}
           <Pair label="Resolved to">{row.domain.resolved_ips.length > 0 ? row.domain.resolved_ips.join(", ") : "Nothing recorded"}</Pair>
           {row.domain.queried_pids.length > 0 && <Pair label="Queried by PID">{row.domain.queried_pids.join(", ")}</Pair>}
-          {typeof row.domain.dga_score === "number" && row.domain.dga_score > 0 && (
-            <Pair label="Generated-name score">{row.domain.dga_score.toFixed(2)}</Pair>
-          )}
+          {reading.score !== null && <Pair label="Generated-name score">{reading.score.toFixed(2)}</Pair>}
         </dl>
       ) : (
         <dl className="space-y-2">

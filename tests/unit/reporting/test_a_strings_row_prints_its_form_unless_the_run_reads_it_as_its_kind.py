@@ -266,6 +266,38 @@ class TestWhichRowIsAFormRow:
         )
         assert _forms([_row("path", "/dd/yy", "sandbox")], static=static) == {}
 
+    _CUT = (
+        ("path", "C:\\Users\\Public\\relay.exe", "x=C:\\Users\\Public\\relay.exe"),
+        ("registry", "HKCU\\Software\\Relay\\Run", "zHKCU\\Software\\Relay\\Run"),
+    )
+
+    @pytest.mark.parametrize(("kind", "value", "cut_from"), _CUT)
+    def test_a_cut_row_a_judge_indicator_names_keeps_its_kind(
+        self, kind: str, value: str, cut_from: str
+    ) -> None:
+        static = StaticAnalysis(
+            interesting_strings=[StringIOC(kind=kind, value=value, cut_from=cut_from)]
+        )
+        judged = [JudgeIndicator(kind=kind, value=value)]
+        assert _forms([_row(kind, value)], static=static, judge_indicators=judged) == {}
+
+    @pytest.mark.parametrize(("kind", "value", "cut_from"), _CUT)
+    def test_a_published_cut_row_keeps_its_kind(self, kind: str, value: str, cut_from: str) -> None:
+        static = StaticAnalysis(
+            interesting_strings=[StringIOC(kind=kind, value=value, cut_from=cut_from)]
+        )
+        assert _forms([_row(kind, value, published="yes")], static=static) == {}
+
+    @pytest.mark.parametrize(("kind", "value", "cut_from"), _CUT)
+    def test_a_cut_row_another_source_holds_keeps_its_kind(
+        self, kind: str, value: str, cut_from: str
+    ) -> None:
+        static = StaticAnalysis(
+            interesting_strings=[StringIOC(kind=kind, value=value, cut_from=cut_from)]
+        )
+        rows = [_row(kind, value), _row(kind, value, "analyst")]
+        assert _forms(rows, static=static) == {}
+
     def test_the_rows_are_not_changed(self) -> None:
         rows = [_row("email", "aes128-gcm@openssh.com"), _row("domain", "end.next")]
         before = [row.model_dump() for row in rows]
@@ -320,10 +352,10 @@ class TestTheReportPrintsTheForm:
         assert f"| {PATH_IN_A_LONGER_STRING} | `/dd/yy` |" in host
         assert "fragment" not in markdown.lower()
 
-    def test_a_row_of_another_source_with_the_same_value_prints_its_type(self) -> None:
+    def test_a_cut_row_another_source_holds_prints_its_type(self) -> None:
         # The table keeps a sandbox-written path and the strings path spelled
-        # with other separators as two rows of one lookup key; only the
-        # strings row carries the extractor's record of a longer string.
+        # with other separators as two rows of one lookup key: the sandbox's
+        # row reads the strings row as a path, whatever the extractor cut.
         report = _report(
             static=StaticAnalysis(
                 interesting_strings=[
@@ -340,7 +372,8 @@ class TestTheReportPrintsTheForm:
         }
         host = _section(MarkdownRenderer().render(report), "### File and host indicators")
         assert "| File path | `C:\\x\\a.exe` |" in host
-        assert f"| {PATH_IN_A_LONGER_STRING} | `C:/x/a.exe` |" in host
+        assert "| File path | `C:/x/a.exe` |" in host
+        assert PATH_IN_A_LONGER_STRING not in host
 
     def test_the_strings_table_prints_the_form_as_the_kind(self) -> None:
         strings = _section(MarkdownRenderer().render(_swept_report()), "Strings of note")

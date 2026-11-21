@@ -277,7 +277,7 @@ class TestThePublishRule:
         answer = _answer(_report(network), "ip", CONTACT)
 
         assert answer == (
-            "no: the sandbox report does not say which process made the flows to it, "
+            "no: the publish rule read no process id from the flow to it, "
             "and no model kept it as an indicator"
         )
 
@@ -296,8 +296,9 @@ class TestThePublishRule:
 
         answer = _answer(_report(network), "ip", RESOLVER)
 
-        assert answer.startswith("no: the sandbox report attributes its flows to a process")
-        assert "public DNS resolver" in answer
+        # The resolver is the test that refuses it; the sandbox's fact follows it (T-782b).
+        assert answer.startswith("no: a public DNS resolver, which this run never publishes")
+        assert "; the publish rule found a flow to it made by a process" in answer
 
     def test_a_claim_that_mentions_it_keeps_nothing_and_is_named_in_the_reason(self) -> None:
         isrs = _network_analyst(claim=f"The sandbox shows only {CONTACT}:80, background noise.")
@@ -320,10 +321,12 @@ class TestThePublishRule:
 
         answer = _answer(_report(network), "ip", CONTACT)
 
+        # The judge's test refuses it beside the sandbox's fact; the listing is a fact after
+        # them (T-782b).
         assert answer == (
-            "no: the sandbox report does not say which process made the flows to it; "
-            "an artifact of the network analyst lists it, and a listing does not change what "
-            "the sandbox recorded about it; the judge did not keep it as an indicator"
+            "no: the publish rule read no process id from the flow to it, and the "
+            "judge did not keep it as an indicator; an artifact of the network analyst lists "
+            "it, and a listing does not change what the sandbox recorded about it"
         )
 
     def test_an_attributed_address_an_artifact_lists_stays_published(self) -> None:
@@ -395,7 +398,11 @@ class TestThePublishRule:
 
         answer = _answer(_report(network), "domain", row.fqdn, source=row.source)
 
-        assert answer == "no: seen only in the file's strings"
+        assert answer == (
+            "no: its row's source is strings and no row of the string sweep holds it and the "
+            "publish rule found no "
+            "recovery of it and read no reputation record for it"
+        )
 
     def test_the_judge_s_indicator_keeping_it_publishes_it(self) -> None:
         network = network_from_ledger(_ledger(tcp=[{"dst": CONTACT, "dport": 80}]))
@@ -419,7 +426,7 @@ class TestThePublishRule:
 
         answer = _answer(_report(network), "ip", upper)
 
-        assert answer.startswith("no: the sandbox report does not say")
+        assert answer.startswith("no: the publish rule read no process id")
 
     def test_a_well_known_name_the_guest_resolved_waits_for_a_model(self) -> None:
         report = _report(

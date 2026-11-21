@@ -185,6 +185,14 @@ class TestNoStringDerivedDomainReachesTheBundle:
         assert {d.fqdn for d in report.network.domains} >= {"rosoft.com", "jector.sa"}
 
 
+# What the rule answers for a name only the sweep's row of iocs_from_file holds: the
+# row it is from, then what the publish rule read (no recovery, no reputation record).
+SWEPT_DOMAIN = (
+    "no: the row from iocs_from_file (ev_0001) holds it and the publish rule "
+    "found no recovery of it and read no reputation record for it"
+)
+
+
 class TestTheReportSaysWhereEachNameCameFrom:
     """ "Labelled" has to be true where somebody reads it.
 
@@ -213,7 +221,7 @@ class TestTheReportSaysWhereEachNameCameFrom:
         ]
         by_fqdn = {line.split("`")[1]: line for line in rows}
         assert by_fqdn["rosoft[.]com"].startswith("| Dotted name |")
-        assert "| strings | no: seen only in the file's strings |" in by_fqdn["rosoft[.]com"]
+        assert f"| strings | {SWEPT_DOMAIN} |" in by_fqdn["rosoft[.]com"]
         assert "| sandbox | yes: the sandbox recorded it |" in by_fqdn["c2[.]evil[.]tld"]
 
 
@@ -301,7 +309,7 @@ class TestTheMachineReadableSurfacesSayItToo:
         # own column now, and the publish rule's answer beside it.
         rows = {row.value: row for row in report.consolidated_iocs if row.type == "Domain"}
         assert rows["rosoft.com"].source == "strings"
-        assert rows["rosoft.com"].published == "no: seen only in the file's strings"
+        assert rows["rosoft.com"].published == SWEPT_DOMAIN
         assert rows["c2.evil.tld"].source == "sandbox"
         assert publishes(rows["c2.evil.tld"].published)
 

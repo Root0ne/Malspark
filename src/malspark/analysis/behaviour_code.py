@@ -409,6 +409,12 @@ def _publish_rule_unlisted(
     def _of_address(address: str) -> str:
         return said.get(("ip", value_key("ip", address)), "")
 
+    rows = {value_key("ip", ip.address): ip for ip in (network.ips if network else [])}
+
+    def _unlisted_of_address(address: str) -> tuple[str, ...]:
+        row = rows.get(value_key("ip", address))
+        return tuple(row.unlisted_processes) if row is not None else ()
+
     for one in asked:
         key = (one.kind, value_key(one.kind, one.value))
         host = url_address(one.value) if one.kind == "url" else ""
@@ -421,13 +427,23 @@ def _publish_rule_unlisted(
         elif key in keyed:
             one.unlisted = said.get(key, "")
         else:
+            # One decision of every row the value rides on: each puts it on
+            # the same processes the report does not list. Each sentence is
+            # its own row's, said once.
             at = [request_address(record) for record in one.records]
-            sentences = [_of_address(address) for address in dict.fromkeys(a for a in at if a)]
+            decided = [
+                (_of_address(address), _unlisted_of_address(address))
+                for address in dict.fromkeys(a for a in at if a)
+            ]
             named = [record for record, address in zip(one.records, at, strict=True) if not address]
             if named:
-                sentences.append(unlisted_reason("url", records_made_by(named)))
-            agreed = len(set(sentences)) == 1
-            one.unlisted = sentences[0] if agreed else ""
+                made = records_made_by(named)
+                unlisted = tuple(getattr(made.made_by, "unlisted", None) or ())
+                decided.append((unlisted_reason("url", made), unlisted))
+            agreed = len({processes for _said, processes in decided}) == 1 and all(
+                said for said, _processes in decided
+            )
+            one.unlisted = " and ".join(dict.fromkeys(s for s, _p in decided)) if agreed else ""
 
 
 @dataclass

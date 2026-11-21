@@ -82,7 +82,7 @@ def test_an_address_no_flow_of_the_sample_reached_is_asked_about_with_the_fact()
     (found,) = _asked(_step(f"Connects to {BACKGROUND} over TLS.", ["ev_0012"]), ["ev_0012"])
 
     assert BACKGROUND in found.message
-    assert "does not say which process made the flows to it" in found.message
+    assert "the publish rule placed no flow to it inside the sample's process tree" in found.message
 
 
 def test_a_host_that_resolved_to_the_reached_address_stands_observed() -> None:

@@ -106,10 +106,19 @@ class TestWhatThePipelineRecords:
                 assert decided == INCONCLUSIVE_VERDICT or decided in ("Malware", "Benign")
 
 
+def _service() -> Any:
+    """The report service as the detail reads it: the row, and its document as served."""
+    from unittest.mock import AsyncMock
+
+    svc = MagicMock(spec_set=["get_report", "served_document"])
+    svc.served_document = AsyncMock(side_effect=lambda report: report.malware_report)
+    return svc
+
+
 class TestWhatTheApiSends:
     @pytest.mark.asyncio
     async def test_the_reading_reaches_the_response(self) -> None:
-        svc = MagicMock(spec_set=["get_report"])
+        svc = _service()
         svc.get_report = AsyncMock()
 
         for reading in READINGS:
@@ -118,7 +127,7 @@ class TestWhatTheApiSends:
 
     @pytest.mark.asyncio
     async def test_a_report_stored_before_it_existed_carries_none(self) -> None:
-        svc = MagicMock(spec_set=["get_report"])
+        svc = _service()
 
         for summary in (None, {}, {"validation": {"retries": 0}}):
             detail = await _detail(svc, _report_row(summary))
@@ -126,7 +135,7 @@ class TestWhatTheApiSends:
 
     @pytest.mark.asyncio
     async def test_a_value_that_is_not_a_word_is_not_sent(self) -> None:
-        svc = MagicMock(spec_set=["get_report"])
+        svc = _service()
 
         for value in ("", None, 7, ["stated"]):
             detail = await _detail(svc, _report_row({"verdict_reading": value}))
@@ -134,7 +143,7 @@ class TestWhatTheApiSends:
 
     @pytest.mark.asyncio
     async def test_the_verdict_and_the_confidence_are_unchanged_by_it(self) -> None:
-        svc = MagicMock(spec_set=["get_report"])
+        svc = _service()
 
         detail = await _detail(svc, _report_row({"verdict_reading": VERDICT_READ_UNRECOGNISED}))
 

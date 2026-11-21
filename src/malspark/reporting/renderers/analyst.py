@@ -635,11 +635,36 @@ def verbatim_texts(report: MalwareReport) -> list[VerbatimText]:
     return [text for section in read[-1].shown.values() for text in section.values()]
 
 
+def _whole_answer_printed(ctx: _Context) -> Callable[[str, str, str], bool]:
+    """Whether the analyst report's indicator table prints a value's whole answer.
+
+    It prints each row it does not export with the publish rule's whole answer,
+    except a row only the sandbox or the string sweep recorded, which it counts
+    (:meth:`_Analyst._indicators`); a cell beside a value whose answer no
+    printed row carries prints the whole answer itself (``_Context.publish_state``).
+    """
+    from malspark.reporting.ledger_projection import value_key
+    from malspark.reporting.renderers.stix_renderer import publishes
+
+    printed: dict[tuple[str, str], set[str]] = {}
+    for ioc in ctx.iocs:
+        if publishes(ioc.published) or str(ioc.source or "") in _OBSERVED_ONLY:
+            continue
+        kind = str(ioc.kind or "")
+        printed.setdefault((kind, value_key(kind, ioc.value)), set()).add(str(ioc.published or ""))
+
+    def held(kind: str, value: str, answer: str) -> bool:
+        return str(answer) in printed.get((kind, value_key(kind, value)), set())
+
+    return held
+
+
 def analyst_sections(
     renderer: MarkdownRenderer, report: MalwareReport, ctx: _Context
 ) -> tuple[list[str], list[CitationNote]]:
     """The analyst report's sections in their fixed order, and the notes they cite."""
     layout = _Analyst(report, ctx)
+    ctx.whole_answer_printed = _whole_answer_printed(ctx)
     reading = _READING.get()
     if reading is not None:
         reading.append(layout)

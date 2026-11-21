@@ -301,14 +301,40 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # address the publish rule places in no tree states the sentence of the row's own publish answer
 # (T-811); the reputation header cell names each count the lookup's record holds and states no
 # fraction (T-781). Those are the only changes.
+# The Markdown and HTML re-pinned when a publish answer came to be given as its parts (T-782b):
+# a public DNS resolver's §9 row states the resolver first and the sandbox's fact after it, a
+# listed row's states the judge's test with its why and the listing after them, and a cell beside
+# such a value states its refusing parts. Those are the only changes.
+# local8's Markdown and HTML re-pinned when a mark of a value the run does not publish came to be
+# labelled from the render's own reading of its sentence (T-782b): the mark states the refusing
+# parts the render's IOC table gives the value. That is the only change.
+# run4's and run5's Markdown and HTML re-pinned when a value the string sweep holds and nothing
+# admitted came to be refused with the row it is from and what the rule's lookup found (T-782c):
+# the one such path row, in the strings table and in §9's table, is the only change.
+# The Markdown and HTML re-pinned when a host row no record of which the publish rule could
+# place came to say what the rule found (T-782d): each such digest row in §9's table is the
+# only change.
+# The Markdown and HTML re-pinned when every clause of a strings refusal came to name its
+# finding as the publish rule's and its row by what the row records (T-782c): the one such
+# path row, in the strings table and in §9's table, is the only change.
+# The Markdown and HTML re-pinned when a sandbox address row's refusal came to say what the
+# publish rule read in the flow rows to it, under one subject for every network row (T-811):
+# read from its stored file, each such row with no reading prints "the publish rule placed no
+# flow to it inside the sample's process tree" and each disputed one "the publish rule found a
+# flow to it made by …", wherever the row's answer or its context cell prints. Those are the
+# only changes.
+# haiku4's and local8's Markdown and HTML re-pinned when a disputed address row read from its
+# stored file, with no reading of its flow rows, came to say the publish rule "counted flows to
+# it as made by" its processes, with no count of flows and no word of the other flows to it
+# (T-811): that row's answer and context cell are the only change.
 # run7's Markdown and HTML re-pinned when the line under an analyst's table the report reads no
 # value of came to say so (T-780): that line is the only change.
 STORED_RENDERS = {
-    "run7": ("218384a3a5222598", "00db5bd44b95049b"),
-    "run5": ("996b7821dc72c2a4", "622734e18cd2d733"),
-    "run4": ("64a1ebdddbc77ec1", "9ac5b154dffb12e8"),
-    "local8": ("82372dac6755e55d", "d11614eee2c447fb"),
-    "haiku4": ("774141b000a547d4", "1b81b27047512cab"),
+    "run7": ("05df01d163a3fc39", "28f9aefd57b6db32"),
+    "run5": ("94143f0e9b75f230", "a50eee57a3b2250f"),
+    "run4": ("63ed48679c51edcf", "2497a07295eb3770"),
+    "local8": ("142eb3d0937a8e74", "0c9d8845fc7107b4"),
+    "haiku4": ("6fe2d4d8cee337ac", "40947280fbb55747"),
 }
 
 

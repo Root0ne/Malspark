@@ -3057,6 +3057,12 @@ class _Context:
         self.category_mark = ""
         # The IOC table's answers, read on first use by ``publish_state``.
         self._answers: Any = None
+        # Whether this render prints a value's whole answer in an indicator row,
+        # given its kind, value and answer: a cell beside the value then prints
+        # what refused it, and else the whole answer (``publish_state``). ``None``
+        # where the render's indicator section prints every row whole; the
+        # analyst layout sets it.
+        self.whole_answer_printed: Callable[[str, str, str], bool] | None = None
         stored = list(getattr(report, "flagged_statements", None) or [])
         # The sentences printed in their writer's own words that the agreement question left
         # out (``FlaggedStatement.left_out``), by each place of the analyst report it is left
@@ -3067,12 +3073,9 @@ class _Context:
             for place in row.left_out:
                 self.verbatim_left.setdefault(place, []).append(row.sentence)
         stored = [row for row in stored if not row.left_out]
-        for statement in _joined_marks(with_decided_statements(stored, report)):
-            if statement.code == "report.unpublished_value" and self._all_stated(
-                statement.sentence
-            ):
-                # Every value of the sentence stands with a publish state the
-                # table agrees with: a mark beside it would state it twice.
+        for read in _joined_marks(with_decided_statements(stored, report)):
+            statement = as_rendered(read, self._read_again)
+            if statement is None:
                 continue
             if statement.sentence.strip():
                 try:
@@ -3260,8 +3263,12 @@ class _Context:
 
         The platform states the IOC table's answer beside the value; nothing
         is asked. A reference host no row holds is no indicator and gets
-        nothing. The state is the answer's first clause, as the prose marks
-        print it; one value alone is not named again. Written defanged and
+        nothing. The state is what refused the value, every refusing part of
+        the answer (``publish_parts.answer_state``), as the prose marks print
+        it, where this render prints the whole answer in an indicator row; where
+        it prints it in none (:attr:`whole_answer_printed`), the whole answer,
+        every part of it (:meth:`_cell_state`). One value
+        alone is not named again. Written defanged and
         with Markdown's own characters escaped (:func:`_inline_safe`). Fails
         closed: a table that cannot be read states every value refused for
         that reason, and a lookup that fails says the state is unknown.
@@ -3269,7 +3276,10 @@ class _Context:
         try:
             from malspark.reporting.defang import defang
 
-            found = self._unstated(text)
+            found = [
+                (kind, value, self._cell_state(kind, value, state))
+                for kind, value, state in self._unstated(text)
+            ]
             if not found:
                 return ""
             if len(found) == 1:
@@ -3281,16 +3291,36 @@ class _Context:
             logger.debug("markdown: a cell's publish state was not read (%s).", exc)
             return f" ({STATE_UNKNOWN})" if _names_a_network_value(text) else ""
 
-    def _all_stated(self, sentence: str) -> bool:
-        """Whether each unpublished value of ``sentence`` has a state the table agrees with.
+    def _cell_state(self, kind: str, value: str, state: str) -> str:
+        """What a cell prints beside one unpublished value: its state, or its whole answer
+        where this render prints that in no indicator row (:attr:`whole_answer_printed`).
 
-        Fails towards the mark: a sentence that cannot be read keeps it.
+        The whole answer is printed with no bound: the cell is then its only
+        carrier, so every refusing part prints whole and then every fact, as an
+        indicator row prints them (the answer's own composition,
+        ``publish_parts.PublishAnswer``).
+        """
+        from malspark.reporting.publish_parts import PublishAnswer
+
+        if self.whole_answer_printed is None:
+            return state
+        answer = self._answers(kind, value)
+        if not isinstance(answer, PublishAnswer) or self.whole_answer_printed(kind, value, answer):
+            return state
+        return str(answer)
+
+    def _read_again(self, sentence: str) -> list[tuple[str, str, str]] | None:
+        """:meth:`_unstated` of a marked sentence, or ``None`` where it cannot be read.
+
+        ``[]``: each unpublished value of ``sentence`` has a state the table
+        agrees with. Fails towards the mark: a sentence that cannot be read
+        keeps it, with its stored label.
         """
         try:
-            return not self._unstated(sentence)
+            return self._unstated(sentence)
         except Exception as exc:  # noqa: BLE001 — the mark is kept
             logger.debug("markdown: a marked sentence was not read again (%s).", exc)
-            return False
+            return None
 
     def _unstated(self, text: Any) -> list[tuple[str, str, str]]:
         """``(kind, value, state)`` for each value of ``text`` this run does not publish,
@@ -5553,6 +5583,66 @@ def _joined_marks(rows: Sequence[Any]) -> list[Any]:
         elif row.label and row.label not in out[joined[key]].label:
             first = out[joined[key]]
             out[joined[key]] = first.model_copy(update={"label": f"{first.label}; {row.label}"})
+    return out
+
+
+def as_rendered(statement: Any, read_again: Callable[[str], Any]) -> Any:
+    """A stored mark as a render prints it, or ``None`` for one the render drops.
+
+    A mark of the unpublished-value code is read again against the render's IOC
+    table (``read_again``: the values of the sentence the table does not
+    publish and the sentence leaves unstated, ``None`` where the sentence
+    cannot be read). None left: every value stands with a state the table
+    agrees with, and a mark beside it would state it twice, so it is dropped.
+    Some left: the label says what the table says of each
+    (``validation.unpublished_value_label``), as the indicator rows beside it
+    do. Not read, or any other code: the mark as stored. Whether the model was
+    asked stays the recorded fact.
+    """
+    if statement.code != "report.unpublished_value":
+        return statement
+    unstated = read_again(statement.sentence)
+    if unstated == []:
+        return None
+    if not unstated:
+        return statement
+    from malspark.pipeline.validation import unpublished_value_label
+
+    label = unpublished_value_label(unstated)
+    return statement if label == statement.label else statement.model_copy(update={"label": label})
+
+
+def served_statements(report: MalwareReport, statements: Sequence[Any], rows: Any) -> list[Any]:
+    """The flagged statements a report is served with: the marks its render prints.
+
+    Each is read as the render reads it (:func:`as_rendered`) against ``rows``,
+    the IOC table served beside it; a statement the agreement round left out of
+    the analyst report (``left_out``) is served as stored, as the bundle prints
+    it whole. A table that cannot be read refuses every value for that reason,
+    as the render's does. Nothing stored changes.
+    """
+    from malspark.pipeline.validation import _unstated_values
+
+    try:
+        from malspark.reporting.narrative_agent import published_answers
+
+        answers: Callable[[str, str], str] = published_answers(report, rows=rows)
+    except Exception as exc:  # noqa: BLE001 — every value is then refused
+        logger.debug("markdown: the served IOC table was not read (%s).", exc)
+        answers = lambda kind, value: TABLE_NOT_READ  # noqa: E731
+
+    def read_again(sentence: str) -> list[tuple[str, str, str]] | None:
+        try:
+            return _unstated_values(str(sentence or ""), answers)
+        except Exception as exc:  # noqa: BLE001 — the stored row is served
+            logger.debug("markdown: a served mark was not read again (%s).", exc)
+            return None
+
+    out: list[Any] = []
+    for statement in statements:
+        shown = statement if statement.left_out else as_rendered(statement, read_again)
+        if shown is not None:
+            out.append(shown)
     return out
 
 

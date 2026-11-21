@@ -232,12 +232,18 @@ def _questions_and_keys(n: int) -> dict[str, Any]:
 
 
 def _held(build: Callable[[], Any]) -> tuple[int, Any]:
-    """The bytes ``build`` leaves allocated, measured with the collector held."""
+    """The bytes ``build`` keeps allocated: measured after a collection on each side.
+
+    A collection empties the interpreter's free lists, so the work a build did
+    and released (the tuples of a traversal, at most a fixed number of them
+    kept for reuse) is not counted as held; what its result keeps is.
+    """
     gc.collect()
     tracemalloc.start()
     try:
         before = tracemalloc.get_traced_memory()[0]
         built = build()
+        gc.collect()
         after = tracemalloc.get_traced_memory()[0]
     finally:
         tracemalloc.stop()

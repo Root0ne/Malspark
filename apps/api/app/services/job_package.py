@@ -65,7 +65,10 @@ it is written, and streamed from there; verification reads it in one pass in
 it is read. The API build holds the job's rows once (the ledger rows are read
 once and shared between the seal verification and the written run); an
 offline build loads ``evidence.json`` once to find the spilled references, and
-the seal verification of a run directory loads it again, as it always does.
+the seal verification of a run directory loads it again, as it always does. A
+report stored before its address rows recorded what the publish rule read in
+the flows to them has ``evidence.json`` loaded once more where the caller
+gave the references (the API build), for the words of those rows.
 Each file is bounded by ``upload_max_bytes``, as verification bounds it: a
 file above it is hashed as it streams, left out of the archive, and listed in
 the manifest as absent with its SHA-256, its size and the reason
@@ -426,6 +429,12 @@ def _typed(report: Any, job: Any) -> tuple[Any, str | None]:
         return None, f"The report document does not validate ({type(exc).__name__})."
 
 
+def _ledger_items(evidence: Any) -> list[Any]:
+    """The ledger rows of a run's ``evidence.json`` (its ``items``, or the list itself)."""
+    items = evidence.get("items") if isinstance(evidence, Mapping) else evidence
+    return items if isinstance(items, list) else []
+
+
 def spilled_refs(items: Iterable[Any]) -> list[dict[str, Any]]:
     """Every ``spilled`` reference of the ledger rows ``items``, with its entry id and seq."""
     out: list[dict[str, Any]] = []
@@ -626,6 +635,19 @@ def build_package(
         if seal is None and isinstance(report, Mapping):
             seal = report.get(ledger_chain.SEAL_KEY)
 
+        # A report stored before its address rows recorded what the publish
+        # rule read in the flows to them takes the words of the rule's
+        # sentence from the run's ledger, as the served report does
+        # (``ledger_projection.with_flow_readings``); the file is read once
+        # and its spilled references are read from the same reading.
+        from malspark.reporting.follow_up import stored_ledger
+        from malspark.reporting.ledger_projection import lacks_flow_readings, with_flow_readings
+
+        evidence: Any = None
+        if lacks_flow_readings(report) and "evidence.json" in present:
+            evidence = _load(run_dir / "evidence.json")
+            report = with_flow_readings(report, stored_ledger(_ledger_items(evidence))[0])
+
         rendered, why = _markdown(report, job, layout)
         if rendered is not None:
             stage.text(MARKDOWN, rendered, "the report rendered by the Markdown exporter")
@@ -692,13 +714,13 @@ def build_package(
             )
         else:
             if refs is None:
-                evidence = _load(run_dir / "evidence.json") if "evidence.json" in present else None
-                items = evidence.get("items") if isinstance(evidence, Mapping) else evidence
-                refs = spilled_refs(items if isinstance(items, list) else [])
-                del evidence, items
+                if evidence is None and "evidence.json" in present:
+                    evidence = _load(run_dir / "evidence.json")
+                refs = spilled_refs(_ledger_items(evidence))
             listed = _stage_spilled(stage, refs, fetch, unfetched, max_object_bytes, bound_name)
             stage.json(SPILLED, listed, "every spilled part: its digest, and its bytes or why not")
             _part("spilled_objects", SPILLED, None, kept=sum(1 for r in listed if "path" in r))
+        del evidence
 
         stage.json(
             SEAL,

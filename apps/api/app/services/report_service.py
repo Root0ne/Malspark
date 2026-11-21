@@ -13,6 +13,7 @@ from malspark.reporting.detection_signatures import analyst_print_gate, rule_sta
 from malspark.reporting.models import ConsolidatedIOC, DetectionRule
 from malspark.reporting.renderers.stix_renderer import SAMPLE_DIGESTS, publishes, stated_verdict
 from malspark.reporting.run_diff import RunRecord, diff_runs
+from malspark.reporting.string_row_form import exported_form, string_row_forms
 from malspark.schemas.stix_models import tlp_name, with_current_property_names
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -153,7 +154,11 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     (``builder.full_ioc_list``), so the default list is the table's published
     rows alone.
     A domain or an address keeps the network block's suspicion flag and
-    reason. A stored report the model cannot read serves the rows it stored.
+    reason. A row of the file's strings that nothing in the run reads as its
+    kind (a form row, ``reporting.string_row_form``) is served as its form:
+    the form as its ``kind`` (which a ``kind`` filter reads), the type §9
+    prints as its ``type``, and no suspicion flag or note. A stored report
+    the model cannot read serves the rows it stored.
     The sample's own digests, which the router established and no rule
     decides, are served even when the table cannot be read at all. A
     ``secret`` or ``crypto_wallet`` row is served only to a ``kind`` filter
@@ -161,8 +166,10 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     and the ledger ids the table ties to it (``evidence_ids``).
     """
     typed = _typed_report(mr)
+    forms: dict[tuple[str, str], str] = {}
     if typed is not None:
         table = full_ioc_list(typed)
+        forms = _forms(typed)
     else:
         table = []
         for stored in mr.get("consolidated_iocs") or []:
@@ -178,14 +185,19 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     out: list[dict] = []
     for row in table:
         row_kind = str(row.kind or "")
-        if not row.value or (kind and kind != row_kind):
+        formed = exported_form(row, forms)
+        served_kind = formed[0] if formed else row_kind
+        if not row.value or (kind and kind != served_kind):
             continue
         if row_kind in _ASKED_FOR_BY_NAME and kind != row_kind:
             continue
-        listed = network.get((row_kind, row.value.strip().lower().rstrip("."))) or {}
+        # A form row is no domain, so the network block's flag and reason,
+        # read of it as one, do not stand on it.
+        listed = {} if formed else network.get((row_kind, row.value.strip().lower().rstrip(".")))
+        listed = listed or {}
         out.append(
             {
-                "kind": row_kind,
+                "kind": served_kind,
                 "value": _feed_value(row_kind, row.type, row.value),
                 "is_suspicious": bool(listed.get("is_suspicious")),
                 # An analyst's mutex, path, key, task or service carries the
@@ -205,11 +217,41 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
                 # Under which detonations a further detonation observed it
                 # (``reporting.detonation_marks``); absent for the job's own alone.
                 **_observed_in(row),
-                # What an identifier row the rule refuses is (``builder.full_ioc_list``).
+                # What an identifier row the rule refuses is (``builder.full_ioc_list``),
+                # and the form a form row has, as §9 prints it.
                 **({"type": row.type} if _refused_identifier(row) else {}),
+                **({"type": formed[1]} if formed else {}),
             }
         )
     return out
+
+
+def _forms(report: Any) -> dict[tuple[str, str], str]:
+    """The form rows of the report's IOC table (``string_row_form``); ``{}`` where unread.
+
+    Read over the table §9 prints (``builder.ioc_table``), so an export
+    names the form §9 prints. A table whose forms cannot be read is served
+    with each row's own kind, and the log says so.
+    """
+    try:
+        return string_row_forms(report, ioc_table(report))
+    except Exception as exc:  # noqa: BLE001 — the rows are then served with their own kinds
+        logger.error(
+            "the IOC table's form rows could not be read; each row is served with its kind "
+            "(%s: %s)",
+            type(exc).__name__,
+            log_safe(exc),
+        )
+        return {}
+
+
+def _served_row(row: ConsolidatedIOC, forms: dict[tuple[str, str], str]) -> dict[str, Any]:
+    """One row of the IOC table as the console is served it: a form row as its form."""
+    dumped = row.model_dump(mode="json")
+    formed = exported_form(row, forms)
+    if formed:
+        dumped.update(kind=formed[0], type=formed[1], is_network=False)
+    return dumped
 
 
 def _refused_identifier(row: Any) -> bool:
@@ -316,9 +358,14 @@ def with_current_iocs(mr: Any, owner: str) -> tuple[Any, str | None]:
     """The stored report as served: its IOC table rebuilt, and MISP attributes when it has none.
 
     The table is the one ``/iocs`` and §9 read (``builder.ioc_table``), so the
-    console's indicator panel shows the rows the feed serves. Its flagged
+    console's indicator panel shows the rows the feed serves; a form row is
+    served as the feed serves it, its form as its ``kind`` and ``type``, and
+    not marked a network value. The MISP attributes are built from the
+    table's own rows. Its flagged
     statements carry, after the stored ones, the sentences the exports mark
-    against what the run published (``prose_decisions``). A report stored
+    against what the run published (``prose_decisions``), each as the report's
+    render prints it (``markdown.served_statements``): a mark the render drops
+    is not served, and a served label is the render's. A report stored
     before MISP attributes were built has them built here, their uuids derived
     from ``owner`` (the report's id). A drafted rule stored before ``printed``
     and ``standing`` existed has them filled from ``rule_standing``, so the
@@ -333,11 +380,18 @@ def with_current_iocs(mr: Any, owner: str) -> tuple[Any, str | None]:
         return mr, None
     from malspark.reporting.misp import build_misp_attributes
     from malspark.reporting.prose_decisions import with_decided_statements
+    from malspark.reporting.renderers.markdown import served_statements
 
     table = ioc_table(typed)
-    served = {**mr, "consolidated_iocs": [row.model_dump(mode="json") for row in table]}
-    flagged = with_decided_statements(list(typed.flagged_statements), typed)
-    if len(flagged) > len(typed.flagged_statements):
+    forms = _forms(typed)
+    served = {**mr, "consolidated_iocs": [_served_row(row, forms) for row in table]}
+    # The marks the report prints: each stored mark read again against the served table as
+    # the render reads it (``markdown.served_statements``), so the console shows no mark the
+    # report drops and the label the report prints.
+    flagged = served_statements(
+        typed, with_decided_statements(list(typed.flagged_statements), typed), table
+    )
+    if flagged != list(typed.flagged_statements):
         served["flagged_statements"] = [row.model_dump(mode="json") for row in flagged]
     stored_rules = mr.get("detection_signatures")
     if isinstance(stored_rules, list) and any(_lacks_standing(rule) for rule in stored_rules):
@@ -632,7 +686,7 @@ class ReportService:
         report_id: uuid.UUID,
         user: User,
     ) -> dict | None:
-        """Return the full ``MalwareReport`` JSON document.
+        """Return the full ``MalwareReport`` JSON document, as served (:meth:`served_document`).
 
         Returns ``None`` when the row exists but predates the feature (the
         column is ``NULL``); the caller distinguishes that from a missing
@@ -641,7 +695,55 @@ class ReportService:
         report = await self.get_report(report_id, user)
         if not report:
             return None
-        return report.malware_report
+        served: dict | None = await self.served_document(report)
+        return served
+
+    async def served_document(self, report: Any) -> Any:
+        """A report row's stored document, its address rows given what the rule read in the flows.
+
+        A document stored before an address row recorded what the publish rule
+        read in the flow rows to it (``NetworkIP.flow_reading``) takes the
+        words of the rule's sentence from the job's stored network entries
+        (``ledger_projection.with_flow_readings``), as the pack's capture line
+        does; every decision stays the stored row's, and nothing stored
+        changes. Where the job's entries cannot be read the document is served
+        as stored, and each such row says what is true without them.
+        """
+        from malspark.reporting.ledger_projection import lacks_flow_readings
+
+        mr = report.malware_report
+        if not lacks_flow_readings(mr):
+            return mr
+        from malspark.reporting.follow_up import stored_ledger
+        from malspark.reporting.ledger_projection import with_flow_readings
+
+        from app.models.evidence import EvidenceEntry
+        from app.schemas.evidence import EvidenceEntryResponse
+
+        try:
+            found = await self.db.execute(
+                select(EvidenceEntry)
+                .where(EvidenceEntry.job_id == report.job_id)
+                .order_by(EvidenceEntry.seq)
+            )
+            orm_rows = list(found.scalars().all())
+        except Exception as exc:  # noqa: BLE001 — the stored document is served as stored
+            logger.warning(
+                "the job's evidence entries could not be read; the report is served as stored "
+                "(%s: %s)",
+                type(exc).__name__,
+                log_safe(exc),
+            )
+            return mr
+
+        def _derive() -> Any:
+            rows = [
+                EvidenceEntryResponse.model_validate(row).model_dump(mode="json", exclude_none=True)
+                for row in orm_rows
+            ]
+            return with_flow_readings(mr, stored_ledger(rows)[0])
+
+        return await asyncio.to_thread(_derive)
 
     async def get_malware_report_markdown(
         self,
@@ -820,7 +922,7 @@ class ReportService:
         report = await self.get_report(report_id, user)
         if report is None or not isinstance(report.malware_report, dict):
             return None
-        mr = report.malware_report
+        mr = await self.served_document(report)
         typed = _typed_report(mr)
         if typed is None:
             return None
@@ -844,7 +946,8 @@ class ReportService:
         ``kind`` is a row kind of the table (``hash``, ``domain``, ``ip``,
         ``url``, ``email``, ``user_agent``, ``ja3``, ``ja3s``, ``path``,
         ``registry``, ``mutex``, ``scheduled_task``, ``service``, ``command``,
-        ...). None returns every kind.
+        ...), or the form a form row is served as (``dotted_name``, ...). None
+        returns every kind.
 
         ``include`` decides what a consumer gets. This is a feed another system
         acts on, so the default is what the platform would *publish*: the rows

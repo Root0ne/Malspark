@@ -7,7 +7,7 @@ observes the sample or recovers the value (emulation, decoding, a transform
 that ran a step, a kind that states ``observes``), or of a tool that declares
 no kind, which is used at full strength and named in the reason. Another
 declared kind — a decompile, a string search, a byte read, an extractor —
-reads the file's text again and confirms nothing.
+confirms nothing, and a refusal names such a cited holder with its kind's standing.
 
 The decision is per entry and is recorded once at build time, so the IOC
 table, the feed and the export read one record. A value the sweep cut out of
@@ -136,7 +136,11 @@ class TestAnotherReadingOfTheBytesConfirmsNothing:
 
         answer = _answer(report, RUNTIME_PATH)
         assert not publishes(answer), answer
-        assert "reads the file's text again" in answer
+        # A report stored before the per-entry record names the cited section by its tool.
+        assert (
+            "reader prints it in a section holding an entry an analyst section cites, of a kind "
+            "the publish rule counts as confirming nothing"
+        ) in answer
 
     def test_a_registry_key_a_listing_holds(self) -> None:
         report = _held_by("listing", REGISTRY_KEY, "registry")
@@ -231,7 +235,10 @@ class TestTheDecisionIsPerEntry:
             "registry", REGISTRY_KEY, "strings", corroborating=corroborating_values(report)
         )
         assert not publishes(answer), answer
-        assert "reads the file's text again" in answer
+        assert (
+            "reader (ev_0070) holds it in an entry an analyst section cites, of a kind the publish "
+            "rule counts as confirming nothing"
+        ) in answer
 
     def test_a_section_citing_no_entry_confirms_nothing(self) -> None:
         report = _report(
@@ -478,8 +485,11 @@ class TestEverySurfaceReadsOneRecord:
 
         answer = _answer(report, "Global\\RelayLock7")
         # The entry that holds it is cited: the section prints it beside one that is not.
-        assert "only in entries no analyst claim cites" not in answer, answer
-        assert "beside an entry no analyst claim cites" in answer, answer
+        assert " only " not in answer, answer
+        assert (
+            "sbx prints it in a section holding an entry an analyst section cites beside one no "
+            "analyst section cites"
+        ) in answer, answer
 
     def _recorded(
         self, kind: str, value: str, output: str, corpus: RunEvidenceCorpus | None
@@ -643,7 +653,10 @@ class TestATransformWithStepsRecovers:
 
         answer = _answer(report, value)
         assert not publishes(answer), answer
-        assert "reads the file's text again" in answer
+        assert (
+            "transform_bytes (ev_0120) holds it in an entry an analyst section cites, of a kind "
+            "the publish rule counts as confirming nothing"
+        ) in answer
 
 
 class TestObservingIsDeclared:
@@ -688,10 +701,13 @@ class TestEachReasonStatesItselfFirst:
         assert rest.strip().startswith('the string reads "/opt/relay/bin/agent:xx')
         assert len(answer) < 200
 
-    def test_a_reading_again_keeps_the_reason_the_composer_was_given(self) -> None:
+    def test_a_reading_again_s_first_clause_names_its_row_and_the_lookup_s_result(self) -> None:
         answer = _answer(_held_by("listing", RUNTIME_PATH), RUNTIME_PATH)
 
-        assert answer.split(";", 1)[0] == "no: seen only in the file's strings"
+        assert answer.split(";", 1)[0] == (
+            "no: its row records no entry and its source is strings and the publish rule's lookup "
+            "found no second source"
+        )
 
     def test_an_undeclared_confirmation_keeps_the_published_reason_first(self) -> None:
         answer = _answer(_held_by(None, SHAPED_PATH), SHAPED_PATH)

@@ -83,7 +83,13 @@ class TestTheMarkAfterAKeptSentence:
             unpublished_value_violations({"body": sentence}, lambda kind, value: HOSTILE),
         )
 
-        text = MarkdownRenderer().render(report)
+        # The mark is labelled from the render's own table (T-782b): it is read here as the
+        # hostile rows above, to see what a hostile label becomes.
+        with patch(
+            "malspark.reporting.builder.build_consolidated_iocs",
+            lambda built: list(built.consolidated_iocs),
+        ):
+            text = MarkdownRenderer().render(report)
 
         line = next(line for line in text.splitlines() if "not published by this run" in line)
         _clean(line.split("**[", 1)[1])

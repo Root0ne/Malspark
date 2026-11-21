@@ -555,7 +555,20 @@ class TestTheReport:
         # indicator table heads its first column with whose kind it prints, and a
         # strings row nothing in the analysis reads as its kind prints its form, in
         # §9's table of such rows and in the strings table (T-778, the dump and the
-        # Markdown of the rich and hostile shapes). Those are the only changes.
+        # Markdown of the rich and hostile shapes). Re-pinned for the rule of T-782c: a
+        # sweep row records the entry it was read from (the dump of the rich and hostile
+        # shapes), and a value the string sweep holds and nothing admitted is refused with
+        # the row it is from and what the network rule read (the hostile Markdown's two
+        # rows of its URL). Re-pinned for the rule of T-782d: a host row no record of
+        # which the publish rule could place says what the rule found (the dump and the
+        # Markdown of the rich and hostile shapes, their four host rows). Re-pinned when every
+        # clause of that refusal came to name its finding as the publish rule's and the row by
+        # the tool and entry it records (T-782c): the hostile Markdown's two rows of its URL.
+        # Re-pinned when an address row came to record what the publish rule read in the
+        # flow rows to it (T-811): the dump of the rich and hostile shapes, each address
+        # row's empty reading; the Markdown did not move. Re-pinned when a row the host test
+        # refuses came to say the test's own reason (T-782a): the hostile Markdown's two
+        # rows of its dotted name; the dump did not move. Those are the only changes.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the
