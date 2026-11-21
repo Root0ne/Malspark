@@ -136,11 +136,14 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # a public DNS resolver's §9 row states the resolver first and the sandbox's fact after it, a
 # listed row's states the judge's test with its why and the listing after them, and a cell beside
 # such a value states its refusing parts. Those are the only changes; the STIX did not change.
+# local8's Markdown and HTML re-pinned when a mark of a value the run does not publish came to be
+# labelled from the render's own reading of its sentence (T-782b): the mark states the refusing
+# parts the render's IOC table gives the value. That is the only change. The STIX did not change.
 STORED_RENDERS = {
     "run7": ("d369c9b6dd6637e8", "fcfdb48e546dd330", "af1240b0f29bfd9c"),
     "run5": ("e2078eef68da0895", "1c54e53f083ee8a3", "2e717357e24fbfe2"),
     "run4": ("241dd81d9faa8855", "5b4206854f545890", "0a90e4edd679e2be"),
-    "local8": ("0aaa1f67985af5de", "0404e78804a01c56", "75d022862e3237de"),
+    "local8": ("21051e7de76441ef", "ca4956da428d81b9", "75d022862e3237de"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

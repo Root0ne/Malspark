@@ -9369,6 +9369,21 @@ def _unstated_values(
     return out
 
 
+def unpublished_value_label(found: Iterable[tuple[str, str, str]]) -> str:
+    """The label of a sentence's mark: each state once, with the values it refuses.
+
+    ``found`` is :func:`_unstated_values` of the sentence. The values are as
+    written: the renderer escapes and defangs the label. The mark recorded
+    for a sentence and the one a render labels from its own table are both
+    written here (``renderers.markdown._Context``).
+    """
+    by_state: dict[str, list[str]] = {}
+    for _kind, value, state in found:
+        if value not in by_state.setdefault(state, []):
+            by_state[state].append(value)
+    return "; ".join(f"{', '.join(values)} ({state})" for state, values in by_state.items())
+
+
 @_locating(
     _Names(
         top=frozenset({"body", "text", "steps"}),
@@ -9413,20 +9428,12 @@ def unpublished_value_violations(
             found = _unstated_values(written, answers)
             if not found:
                 continue
-            by_state: dict[str, list[str]] = {}
             for _kind, value, state in found:
                 named.setdefault((state, value), []).append(number)
-                # As written: the renderer escapes and defangs the label.
-                if value not in by_state.setdefault(state, []):
-                    by_state[state].append(value)
             stated_at.append((text, *_stripped(text, piece_begin, piece_end)))
             if written not in quoted:
                 quoted.append(written)
-                labels.append(
-                    "; ".join(
-                        f"{', '.join(values)} ({state})" for state, values in by_state.items()
-                    )
-                )
+                labels.append(unpublished_value_label(found))
     if not named:
         return []
     # Each state once, with every value it refuses and the sentences naming them.

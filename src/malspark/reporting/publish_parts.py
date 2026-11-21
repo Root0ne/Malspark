@@ -18,7 +18,10 @@ Every reader composes from the parts:
 * the **whole answer** (:func:`told_whole`) is every refusing part whole, then
   the facts in order until the first that does not fit the bound, that one and
   every later one counted: what the recommendation retry and the export's
-  decline say, and a cell in a layout that prints the whole answer nowhere else.
+  decline say;
+* a cell in a layout that prints the whole answer nowhere else is its only
+  carrier and prints it with no bound: every refusing part whole, then every
+  fact, the answer's own composition.
 
 An answer read from a stored file is plain text with no parts: it prints as
 stored, and every reader takes it as before, its state the text before the

@@ -10,10 +10,13 @@ hold ``;`` or ``,`` and is never split, and a refusing part is never cut.
 * The state (a cell where the same render prints the whole answer, a mark's
   label, the writers' retry feedback, the reason a restatement is read
   against) is every refusing part.
-* The whole answer (the recommendation retry, the export's decline, a cell in a
-  layout that prints the whole answer nowhere else) is every refusing part
-  whole, then the facts in order until the first that does not fit the bound;
-  that one and every later one are counted.
+* The whole answer (the recommendation retry, the export's decline) is every
+  refusing part whole, then the facts in order until the first that does not
+  fit the bound; that one and every later one are counted. A cell in a layout
+  that prints the whole answer nowhere else is its only carrier and prints
+  every part, with no bound.
+* A mark of the unpublished-value code is labelled from the render's own
+  reading of its sentence, composed as the stored label is.
 * An answer read from a stored file has no parts: it prints as stored and is
   read as before, its state the text before the first ``;``.
 """
@@ -27,8 +30,10 @@ from typing import Any
 
 import pytest
 
+from malspark.pipeline import validation
 from malspark.pipeline.events import FINDING_VALUE_LIMIT, safe_finding_value
 from malspark.pipeline.validation import (
+    UNPUBLISHED_VALUE_CODE,
     _states_publish_state,
     _unstated_values,
     recommendation_indicator_violations,
@@ -38,6 +43,7 @@ from malspark.reporting import builder
 from malspark.reporting.models import (
     ConsolidatedIOC,
     FileHashes,
+    FlaggedStatement,
     MalwareReport,
     SampleIdentity,
     key_ordered,
@@ -52,6 +58,7 @@ from malspark.reporting.publish_parts import (
     told_whole,
     whole_answer,
 )
+from malspark.reporting.renderers import markdown
 from malspark.reporting.renderers import stix_renderer as S
 from malspark.reporting.renderers.analyst import _whole_answer_printed
 from malspark.reporting.renderers.markdown import _Context
@@ -624,7 +631,22 @@ class TestTheCells:
 
         said = self._context(answer, False).publish_state("8.8.8.8")
 
-        assert "public DNS resolver" in said and "procid 35" in said and "more fact" in said
+        assert len(str(answer)) > FINDING_VALUE_LIMIT
+        assert said == f" ({answer})"
+        assert "procid 35" in said and MENTIONERS in said and "more fact" not in said
+
+    def test_a_cell_that_is_the_only_carrier_prints_every_part_whole_however_long(
+        self,
+    ) -> None:
+        answer = S.not_kept_reason(LONG_WHY, MENTIONERS, LISTER)
+        ctx = _Context.of(_report())
+        ctx._answers = lambda kind, value: answer if value == "x.example.org" else ""
+        ctx.whole_answer_printed = lambda kind, value, said: False
+
+        said = ctx.publish_state("x.example.org")
+
+        assert said == f" ({answer})"
+        assert all(part in said for part in (*answer.refusing, *answer.facts))
 
     def test_the_analyst_layout_prints_the_whole_answer_of_an_observed_only_row(self) -> None:
         answer = S.public_resolver_reason(FACT)
@@ -647,6 +669,93 @@ class TestTheCells:
 
         assert not printed("ip", "8.8.8.8", answer)
         assert printed("domain", "a.example.net", listed)
+
+
+class TestTheMarks:
+    """A stored mark of the unpublished-value code is labelled from the render's own reading."""
+
+    SENTENCE = f"The sample asks 8.8.8.8 for names (publish state: {FACT})."
+    STORED = f"8.8.8.8 (no: {FACT})"
+
+    @staticmethod
+    def _context(monkeypatch: pytest.MonkeyPatch, answer: str, *rows: FlaggedStatement) -> _Context:
+        table = [
+            ConsolidatedIOC(
+                type="IPv4", kind="ip", value="8.8.8.8", source="sandbox", published=answer
+            )
+        ]
+        monkeypatch.setattr(markdown, "_indicator_rows", lambda report, word=str: list(table))
+        return _Context.of(_report().model_copy(update={"flagged_statements": list(rows)}))
+
+    def _mark(self, code: str = UNPUBLISHED_VALUE_CODE, *, asked: bool = False) -> FlaggedStatement:
+        return FlaggedStatement(sentence=self.SENTENCE, code=code, label=self.STORED, asked=asked)
+
+    def test_the_label_is_the_state_the_render_s_table_gives_not_the_stored_one(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        answer = S.public_resolver_reason(FACT, LISTER, MENTIONERS)
+
+        ((sentence, mark),) = self._context(monkeypatch, answer, self._mark()).flagged
+
+        assert sentence == self.SENTENCE
+        label = f"8[.]8[.]8[.]8 (no: {S.PUBLIC_RESOLVER})"
+        assert mark == f"**[not published by this run: {label}; not asked]**"
+        assert "procid" not in mark
+
+    def test_the_label_is_composed_as_validation_composes_the_stored_label(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        answer = S.public_resolver_reason(FACT, LISTER, MENTIONERS)
+        answers = lambda kind, value: answer if value == "8.8.8.8" else ""  # noqa: E731
+        (found,) = unpublished_value_violations({"body": self.SENTENCE}, answers)
+
+        ((_sentence, mark),) = self._context(monkeypatch, answer, self._mark(asked=True)).flagged
+
+        assert found.labels == (
+            validation.unpublished_value_label(_unstated_values(self.SENTENCE, answers)),
+        )
+        assert (
+            mark == f"**[not published by this run: {markdown._defanged_text(found.labels[0])}]**"
+        )
+
+    def test_asked_stays_the_stored_fact(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        answer = S.public_resolver_reason(FACT)
+
+        for asked in (True, False):
+            ((_sentence, mark),) = self._context(
+                monkeypatch, answer, self._mark(asked=asked)
+            ).flagged
+            assert mark.endswith("; not asked]**") is not asked
+
+    def test_a_sentence_whose_state_the_render_s_table_agrees_with_is_not_marked(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        answer = refused(FACT)
+
+        assert self._context(monkeypatch, answer, self._mark()).flagged == []
+
+    def test_the_stored_label_prints_where_the_reading_fails(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def unread(*_args: Any) -> list[tuple[str, str, str]]:
+            raise RuntimeError("unread")
+
+        monkeypatch.setattr(validation, "_unstated_values", unread)
+        answer = S.public_resolver_reason(FACT)
+
+        ((_sentence, mark),) = self._context(monkeypatch, answer, self._mark()).flagged
+
+        assert "procid 35" in mark and S.PUBLIC_RESOLVER not in mark
+
+    def test_a_mark_of_another_code_prints_its_stored_label(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        answer = S.public_resolver_reason(FACT)
+        row = self._mark("report.citation_wrong_entry")
+
+        ((_sentence, mark),) = self._context(monkeypatch, answer, row).flagged
+
+        assert "procid 35" in mark and S.PUBLIC_RESOLVER not in mark
 
 
 def _redacted() -> MalwareReport:

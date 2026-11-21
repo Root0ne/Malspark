@@ -3062,15 +3062,24 @@ class _Context:
                 self.verbatim_left.setdefault(place, []).append(row.sentence)
         stored = [row for row in stored if not row.left_out]
         for statement in _joined_marks(with_decided_statements(stored, report)):
-            if statement.code == "report.unpublished_value" and self._all_stated(
-                statement.sentence
-            ):
-                # Every value of the sentence stands with a publish state the
-                # table agrees with: a mark beside it would state it twice.
-                continue
+            stored_label = statement.label
+            if statement.code == "report.unpublished_value":
+                unstated = self._read_again(statement.sentence)
+                if unstated == []:
+                    # Every value of the sentence stands with a publish state the
+                    # table agrees with: a mark beside it would state it twice.
+                    continue
+                if unstated:
+                    # The mark says what this render's table says of each value
+                    # the sentence leaves unstated, as the indicator rows beside
+                    # it do; the stored label stands where the sentence could not
+                    # be read again.
+                    from malspark.pipeline.validation import unpublished_value_label
+
+                    stored_label = unpublished_value_label(unstated)
             if statement.sentence.strip():
                 try:
-                    label = _inline_safe(statement.label, pipes=False, plain=self._defang)
+                    label = _inline_safe(stored_label, pipes=False, plain=self._defang)
                 except Exception as exc:  # noqa: BLE001 — the sentence is marked all the same
                     logger.debug("markdown: a mark's label was not written (%s).", exc)
                     label = STATE_UNKNOWN
@@ -3258,7 +3267,7 @@ class _Context:
         the answer (``publish_parts.answer_state``), as the prose marks print
         it, where this render prints the whole answer in an indicator row; where
         it prints it in none (:attr:`whole_answer_printed`), the whole answer,
-        bounded at a part's end (``publish_parts.whole_answer``). One value
+        every part of it (:meth:`_cell_state`). One value
         alone is not named again. Written defanged and
         with Markdown's own characters escaped (:func:`_inline_safe`). Fails
         closed: a table that cannot be read states every value refused for
@@ -3284,26 +3293,34 @@ class _Context:
 
     def _cell_state(self, kind: str, value: str, state: str) -> str:
         """What a cell prints beside one unpublished value: its state, or its whole answer
-        where this render prints that in no indicator row (:attr:`whole_answer_printed`)."""
-        from malspark.reporting.publish_parts import PublishAnswer, whole_answer
+        where this render prints that in no indicator row (:attr:`whole_answer_printed`).
+
+        The whole answer is printed with no bound: the cell is then its only
+        carrier, so every refusing part prints whole and then every fact, as an
+        indicator row prints them (the answer's own composition,
+        ``publish_parts.PublishAnswer``).
+        """
+        from malspark.reporting.publish_parts import PublishAnswer
 
         if self.whole_answer_printed is None:
             return state
         answer = self._answers(kind, value)
         if not isinstance(answer, PublishAnswer) or self.whole_answer_printed(kind, value, answer):
             return state
-        return whole_answer(answer)
+        return str(answer)
 
-    def _all_stated(self, sentence: str) -> bool:
-        """Whether each unpublished value of ``sentence`` has a state the table agrees with.
+    def _read_again(self, sentence: str) -> list[tuple[str, str, str]] | None:
+        """:meth:`_unstated` of a marked sentence, or ``None`` where it cannot be read.
 
-        Fails towards the mark: a sentence that cannot be read keeps it.
+        ``[]``: each unpublished value of ``sentence`` has a state the table
+        agrees with. Fails towards the mark: a sentence that cannot be read
+        keeps it, with its stored label.
         """
         try:
-            return not self._unstated(sentence)
+            return self._unstated(sentence)
         except Exception as exc:  # noqa: BLE001 — the mark is kept
             logger.debug("markdown: a marked sentence was not read again (%s).", exc)
-            return False
+            return None
 
     def _unstated(self, text: Any) -> list[tuple[str, str, str]]:
         """``(kind, value, state)`` for each value of ``text`` this run does not publish,
