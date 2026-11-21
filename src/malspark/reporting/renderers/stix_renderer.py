@@ -2588,6 +2588,12 @@ def email_is_publishable(value: Any) -> bool:
     return email_failure(value) == ""
 
 
+# A row's answer where the host test refused its value: the reason the test
+# gives (:func:`host_failure`, :func:`url_failure`, :func:`email_failure`),
+# under the family's one subject. No renderer words a host reason of its own.
+HOST_TEST_FOUND = "the publish rule found that {reason}"
+
+
 def email_failure(value: Any) -> str:
     """Why this literal is no mailbox that could exist, ``""`` when it is one.
 
@@ -5607,10 +5613,14 @@ def publish_answer(
         return public_resolver_reason(unattributed, listed_by, mentioned_by)
     if kind == "url" and is_public_resolver(url_host(text).strip("[]")):
         return public_resolver_reason(unattributed, listed_by, mentioned_by)
-    if kind == "domain" and not host_is_public(text):
-        return refused("not a name that resolves outside the analysed network")
-    if kind == "url" and not host_is_public(url_host(text)):
-        return refused("its host does not resolve outside the analysed network")
+    # The host test decides and gives its reason: one function each
+    # (``host_is_public`` is ``host_failure(h) == ""``, and a URL's is
+    # ``url_failure``).
+    failure = host_failure(text) if kind == "domain" else url_failure(text) if kind == "url" else ""
+    if kind == "domain" and failure:
+        return refused(HOST_TEST_FOUND.format(reason=f"it fails the host test: {failure}"))
+    if kind == "url" and failure:
+        return refused(HOST_TEST_FOUND.format(reason=failure))
     if kind == "ip" and not address_is_publishable(text, source):
         return refused("not an address this run may publish")
     if kind == "domain" and in_published_url and is_well_known_benign_host(text):
@@ -5647,7 +5657,7 @@ def publish_answer(
         # both are stated, each its own part.
         return not_kept_reason(unattributed, mentioned_by, listed_by, recovery)
     if kind == "email" and not email_is_publishable(text):
-        return refused("not a mailbox at a host that could exist")
+        return refused(HOST_TEST_FOUND.format(reason=email_failure(text)))
     if (
         kind == "email"
         and from_strings

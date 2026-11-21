@@ -566,7 +566,9 @@ class TestTheReport:
         # the tool and entry it records (T-782c): the hostile Markdown's two rows of its URL.
         # Re-pinned when an address row came to record what the publish rule read in the
         # flow rows to it (T-811): the dump of the rich and hostile shapes, each address
-        # row's empty reading; the Markdown did not move. Those are the only changes.
+        # row's empty reading; the Markdown did not move. Re-pinned when a row the host test
+        # refuses came to say the test's own reason (T-782a): the hostile Markdown's two
+        # rows of its dotted name; the dump did not move. Those are the only changes.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the
