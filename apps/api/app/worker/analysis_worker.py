@@ -2317,6 +2317,7 @@ async def keep_the_built_report(
             *(run_summary.get("degradation_reasons") or []),
             note,
         ]
+        techniques = await _technique_column(state)
         async with db_session() as db:
             report = await _store_the_report(
                 db,
@@ -2329,6 +2330,7 @@ async def keep_the_built_report(
                 incomplete_reason=note,
                 core_settings=core_settings,
                 spill=_job_spill(container),
+                technique_column=techniques,
             )
             await db.commit()
             report_id = report.id
@@ -2454,6 +2456,7 @@ async def keep_the_stopped_run(
             isolated_memory=getattr(container, "isolated_memory", False) is True,
         )
         _end_the_token_ledger(container)
+        techniques = await _technique_column(state)
         async with db_session() as db:
             report = await _store_the_report(
                 db,
@@ -2466,6 +2469,7 @@ async def keep_the_stopped_run(
                 incomplete_reason=note,
                 core_settings=core_settings,
                 spill=_job_spill(container),
+                technique_column=techniques,
             )
             await db.commit()
             report_id = report.id
@@ -3710,6 +3714,9 @@ async def run_analysis(ctx: dict, job_id: str) -> dict[str, Any]:
         # looking for them: a report whose citations resolve to nothing, or
         # a "completed" row with no report under it, is worse than one more
         # run of the analysis.
+        # The technique column is read off a render of the report before the
+        # transaction opens, on a worker thread (``_technique_column``).
+        _techniques = await _technique_column(pipeline_result)
         async with db_session() as db:
             # ── 5. Mark job complete ─────────────────────────────
             # First in the transaction, so the row is held until the report
@@ -3783,6 +3790,7 @@ async def run_analysis(ctx: dict, job_id: str) -> dict[str, Any]:
                 incomplete_reason=stored_note,
                 core_settings=core_settings,
                 spill=_job_spill(app.container),
+                technique_column=_techniques,
             )
             if stored_note is not None:
                 stored_report_id = report.id
@@ -4242,6 +4250,11 @@ def judge_bundle_json(bundle: dict) -> dict:
 
 
 def _extract_mitre(result: dict) -> list | None:
+    """The legacy ``mitre_techniques`` column of ``result`` (:func:`_mitre_column`)."""
+    return _mitre_column(result)[0]
+
+
+def _mitre_column(result: dict) -> tuple[list | None, str | None]:
     """Extract MITRE ATT&CK techniques for the legacy ``mitre_techniques`` column.
 
     Preference order:
@@ -4260,17 +4273,25 @@ def _extract_mitre(result: dict) -> list | None:
     — because the judge's attack-patterns carried names and no ATT&CK
     reference. A behaviour with no technique id is reported as a behaviour, in
     the report's own ``unmapped_behaviours``, and never as a technique.
+
+    On the first path a technique's ``description`` is the text the analyst
+    report's ATT&CK table prints as its procedure, plain text as the cell
+    holds it, ``""`` where its row prints ``-`` (``technique_descriptions``).
+    The second value says why those words were not read, where they were not
+    (each description is then ``""``), else ``None``.
     """
     mr = result.get("malware_report") or {}
     mappings = mr.get("ttp_mappings") or []
     if not mappings and isinstance(mr.get("ttp_mappings"), list):
-        return None
+        return None, None
     if mappings:
         from malspark.reporting.technique_evidence import (
             technique_absence_ids,
             technique_evidence_ids,
             technique_sandbox_items,
         )
+
+        from app.services.technique_descriptions import printed_words
 
         # ``evidence_ids`` is the technique's evidence as every surface prints
         # it (``technique_evidence``), the entries cited by the statements that
@@ -4280,6 +4301,7 @@ def _extract_mitre(result: dict) -> list | None:
         # from the entries; absent where it has none. ``absence_sources``
         # names the sources its statements cite only to state an absence, in
         # neither list; absent where it has none.
+        printed, why = printed_words(mr)
         rows: list[dict[str, Any]] = []
         for m in mappings:
             if not m.get("technique_id"):
@@ -4287,7 +4309,7 @@ def _extract_mitre(result: dict) -> list | None:
             row: dict[str, Any] = {
                 "technique_id": m.get("technique_id", ""),
                 "name": m.get("technique_name") or m.get("name", ""),
-                "description": " | ".join(m.get("evidence_quotes") or [])[:512],
+                "description": (printed or {}).get(str(m.get("technique_id")), ""),
             }
             evidence = technique_evidence_ids(m)
             if evidence is not None:
@@ -4299,11 +4321,11 @@ def _extract_mitre(result: dict) -> list | None:
             if absent:
                 row["absence_sources"] = absent
             rows.append(row)
-        return rows or None
+        return rows or None, why if rows else None
 
     stix = result.get("stix_bundle_extended") or result.get("stix_output")
     if not stix or not isinstance(stix, dict):
-        return None
+        return None, None
 
     techniques = []
     for obj in stix.get("objects", []):
@@ -4328,7 +4350,7 @@ def _extract_mitre(result: dict) -> list | None:
                 "description": obj.get("description", ""),
             }
         )
-    return techniques if techniques else None
+    return techniques if techniques else None, None
 
 
 # ── ARQ Worker Configuration ────────────────────────────────────
@@ -5264,6 +5286,14 @@ async def _seal_the_ledger(
     return seal
 
 
+async def _technique_column(pipeline_result: dict[str, Any]) -> tuple[list | None, str | None]:
+    """The report's ``mitre_techniques`` column and why its descriptions were not read, where
+    they were not (:func:`_mitre_column`): read off a render of the report on a worker thread,
+    so the event loop never waits on it, and by the callers before the report's transaction
+    opens, so the transaction does not either."""
+    return await asyncio.to_thread(_mitre_column, pipeline_result)
+
+
 async def _store_the_report(
     db: Any,
     *,
@@ -5276,15 +5306,43 @@ async def _store_the_report(
     incomplete_reason: str | None = None,
     core_settings: Any = None,
     spill: Any = None,
+    technique_column: tuple[list | None, str | None] | None = None,
 ) -> Any:
     """Add the report and everything that cites it to ``db``, uncommitted.
 
     The report, the per-agent findings, the evidence ledger and the
     transcript go together because the report's sections cite the ledger's
     ids. ``incomplete_reason`` is set on a report kept from a run that
-    failed after the report was built, and says so.
+    failed after the report was built, and says so. ``technique_column`` is
+    the report's ``mitre_techniques`` column as :func:`_technique_column`
+    read it; without it, it is read here, on a worker thread. Where its
+    descriptions were not read off the analyst report's ATT&CK table, the
+    reason is logged and recorded in the run summary's degradation reasons.
     """
     from app.models.report import AgentFinding, AnalysisReport
+
+    techniques, unread = (
+        technique_column
+        if technique_column is not None
+        else await _technique_column(pipeline_result)
+    )
+    if unread is not None:
+        from app.services.technique_descriptions import NOT_READ_REASON
+
+        logger.error(
+            "The technique descriptions were not read off the analyst report: job=%s (%s); "
+            "each is stored empty.",
+            job_id,
+            unread,
+            extra={"job_id": job_id, "component": "report"},
+        )
+        run_summary = {
+            **run_summary,
+            "degradation_reasons": [
+                *(run_summary.get("degradation_reasons") or []),
+                NOT_READ_REASON.format(why=unread),
+            ],
+        }
 
     report = AnalysisReport(
         job_id=job_uuid,
@@ -5293,7 +5351,7 @@ async def _store_the_report(
         malware_category=_extract_category(pipeline_result),
         stix_bundle=stix_bundle,
         judge_stix_bundle=judge_bundle_record(pipeline_result),
-        mitre_techniques=_extract_mitre(pipeline_result),
+        mitre_techniques=techniques,
         # The agents' *final* prose. This used to persist only
         # ``reports`` — the first-pass text — so the report an analyst
         # rewrote after the negotiation was thrown away, and the stored

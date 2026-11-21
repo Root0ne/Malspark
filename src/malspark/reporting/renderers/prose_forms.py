@@ -275,6 +275,26 @@ def _piped(text: str) -> str:
     return text.replace(_PIPE, "\\" + _PIPE)
 
 
+def unspelled(text: str, report: Any) -> str:
+    """``text``, plain words a render printed, with each pack spelling of a recorded text
+    (:func:`pack_spellings`) read as the text, in the form the words hold it: raw as the
+    text, and with each backslash escaped as the text escaped the same way, so a doubled
+    backslash reads in the words as it does on the page. No Markdown escape is added."""
+    if "\\x5c" not in text:
+        return text
+    forms = _forms(pack_spellings(report))
+    pattern = _spelling_pattern(forms)
+    if pattern is None:
+        return text
+
+    def value(found: re.Match[str]) -> str:
+        written, how, piped = forms[found.group(0)]
+        out = _escaped(written) if how == _ESCAPED else written
+        return _piped(out) if piped else out
+
+    return pattern.sub(value, text)
+
+
 def _code_spans(line: str) -> list[tuple[int, int]]:
     """The code spans of one line: a backtick run outside a span, closed by the next run of
     its length. An unclosed run opens none. A backslash outside a span escapes the next

@@ -218,9 +218,9 @@ SEEDS: tuple[tuple[str, str, str, str, frozenset[str], Callable[[Change], bool]]
         _says("SEED-CATEGORY"),
     ),
     (
-        "apps/api/app/worker/analysis_worker.py",
-        '"description": " | ".join(m.get("evidence_quotes") or [])[:512],',
-        '"description": "SEED-MITRE " + " | ".join(m.get("evidence_quotes") or [])[:512],',
+        "apps/api/app/services/technique_descriptions.py",
+        "return printed_procedures(typed), None",
+        'return {k: "SEED-MITRE " + v for k, v in printed_procedures(typed).items()}, None',
         "build",
         frozenset({"mitre"}),
         _says("SEED-MITRE"),

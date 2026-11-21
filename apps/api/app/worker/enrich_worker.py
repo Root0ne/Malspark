@@ -588,12 +588,20 @@ async def write_under_lock(
     and as a chained ``report.amend`` audit row in this transaction. ``kind``
     names what changed it. The ledger rows are not touched. A report stored
     before sealing existed is written as before.
+
+    The ``mitre_techniques`` column is written again from the payload written,
+    each description the text that payload's analyst report prints in its
+    ATT&CK table (``technique_descriptions.described``, read on a worker
+    thread), so the stored record never states less than the report served
+    from it; the amendment covers the column. Where the words cannot be read
+    the column stays as stored, and the log says why.
     """
     from datetime import UTC, datetime
 
     from sqlalchemy.orm.attributes import flag_modified
 
     from app.services import audit_chain, ledger_chain
+    from app.services.technique_descriptions import described
 
     async with db_session_factory() as db:
         report = await db.get(
@@ -603,6 +611,14 @@ async def write_under_lock(
             return False
         stored = dict(report.malware_report) if isinstance(report.malware_report, dict) else {}
         payload, column = change(stored, report.run_summary)
+        techniques, unread = await asyncio.to_thread(described, report.mitre_techniques, payload)
+        if unread is not None:
+            logger.error(
+                "enrich: report %s keeps its stored technique descriptions (%s).",
+                report_uuid,
+                unread,
+            )
+        rewritten = techniques != report.mitre_techniques
         seal_record = getattr(report, "ledger_seal", None)
         key, no_key = (
             ledger_chain.platform_key_status() if isinstance(seal_record, dict) else (None, None)
@@ -617,6 +633,7 @@ async def write_under_lock(
                 kind=kind,
                 key=key,
                 at=datetime.now(UTC),
+                columns={"mitre_techniques": techniques} if rewritten else None,
             )
         elif no_key is not None:
             # Nothing can be chained without the key: the change is written,
@@ -632,6 +649,9 @@ async def write_under_lock(
         if column is not None:
             report.run_summary = column
             flag_modified(report, "run_summary")
+        if rewritten:
+            report.mitre_techniques = techniques
+            flag_modified(report, "mitre_techniques")
         if record is not None and key is not None:
             await db.flush()
             await audit_chain.append(
