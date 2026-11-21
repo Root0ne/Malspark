@@ -261,13 +261,29 @@ def _payload(n: int) -> str:
     shapes of a placeholder; a closed backtick pair, a backslash before a star
     and ``&lt;`` are what a writer's code span, an escape and a character
     reference would take instead of showing (:data:`_SHOWN_BEFORE`,
-    :data:`_SHOWN_AFTER`); the line after the break opens a heading of its own.
+    :data:`_SHOWN_AFTER`); the platform's note marker, a link to a note's anchor and
+    an HTML anchor into the evidence bundle (:data:`MARKER_FORMS`) would cite a note
+    the platform did not set; the line after the break opens a heading of its own.
     """
     return (
         f"1. # zH{n}z [zL{n}z](#zT{n}z) **zB{n}z** ~~zS{n}z~~ <u>zU{n}z</u> "
         f"<img src=zI{n}z> |zP{n}z| \x00claim0\x00 \x000\x00v0\x000\x00 `zC{n}z` "
-        f"\\*zK{n}z &lt;zE{n}z zZ{n}z\n# zN{n}z"
+        f"{_marker_forms(n)} \\*zK{n}z &lt;zE{n}z zZ{n}z\n# zN{n}z"
     )
+
+
+# The forms of a citation only the platform sets (T-814): its note marker, a link to a
+# note's anchor and an HTML anchor into the evidence bundle, each with the link part's
+# token as its text.
+MARKER_FORMS = (
+    "[[zL{n}z]](evidence-bundle.html#cite-1)",
+    "[zL{n}z](#note-1)",
+    '<a href="evidence-bundle.html#cite-1">zL{n}z</a>',
+)
+
+
+def _marker_forms(n: int) -> str:
+    return " ".join(form.format(n=n) for form in MARKER_FORMS)
 
 
 # What a reader shows around a part's token where the value is printed with
@@ -771,6 +787,12 @@ def _faults(surface: str, rendered: str, tokens: _Tokens) -> list[str]:
                 if found.group(1) in "HLTBSUIPZN":
                     faults.append(f"{surface}: {place} in <{tag} {name}>")
         text = " ".join("".join(texts).split())
+        if tag in ("a", "sup"):
+            # No link or superscript holds a value's words but the operator's reference.
+            for found in _TOKEN.finditer(text):
+                place = tokens.places.get(int(found.group(2)), "?")
+                if place != "report.references[].source":
+                    faults.append(f"{surface}: {place} inside <{tag}>")
         if tag == "code":
             # Two values' backticks never pair into a span: a span holding two
             # values' words is the platform's span of a compound value (a DLL
@@ -957,6 +979,51 @@ def test_no_value_the_platform_did_not_write_makes_structure_on_any_surface() ->
     for place in sorted(NOT_PRINTED):
         assert place in places, f"{place}: listed, not written"
         assert place not in shown, f"{place}: listed as printed nowhere, printed"
+
+
+def _model_texts(held: Any, path: str, tokens: _Tokens, places: set[str]) -> Any:
+    """``held`` with each text of a model's provenance the citation forms with a token of
+    its own (:data:`MARKER_FORMS`), every other text kept."""
+    if isinstance(held, str):
+        if path in places and provenance(path) == "M":
+            n = tokens._next(path, "M")
+            return f"zA{n}z {_marker_forms(n)} zY{n}z"
+        return held
+    if isinstance(held, BaseModel):
+        for name in type(held).model_fields:
+            written = _model_texts(getattr(held, name), f"{path}.{name}", tokens, places)
+            object.__setattr__(held, name, written)
+        return held
+    if isinstance(held, (list, tuple)):
+        return type(held)(_model_texts(item, f"{path}[]", tokens, places) for item in held)
+    if isinstance(held, dict):
+        return {
+            key: _model_texts(item, f"{path}.key", tokens, places) for key, item in held.items()
+        }
+    return held
+
+
+def test_no_text_of_a_model_cites_a_note_on_any_surface() -> None:
+    # Every place of a model's text, body prose among them, holding the forms of a
+    # citation only the platform sets: no surface makes a link or a superscript of one,
+    # and the platform's own note markers stay (T-814).
+    report = rich_report()
+    _filled(report)
+    tokens = _Tokens()
+    _model_texts(report, "report", tokens, _text_places())
+    assert set(tokens.kinds.values()) == {"M"}
+    faults: list[str] = []
+    printed: set[str] = set()
+    for surface, rendered in _surfaces(report).items():
+        faults += [fault for fault in _faults(surface, rendered, tokens) if " <a>" in fault]
+        faults += [fault for fault in _faults(surface, rendered, tokens) if "inside <" in fault]
+        printed |= {tokens.places[int(m.group(2))] for m in _TOKEN.finditer(rendered)}
+        if surface == "report.html":
+            assert '<sup class="cite"><a href="evidence-bundle.html#cite-1">1</a></sup>' in (
+                rendered
+            )
+    assert not sorted(set(faults)), "\n".join(sorted(set(faults)))
+    assert {"report.executive_summary", "report.key_findings[].text"} <= printed
 
 
 def test_the_operator_s_reference_is_one_link_on_every_markdown_surface() -> None:

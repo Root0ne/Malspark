@@ -122,6 +122,11 @@ INLINE_FORMS = [
     "\\\\host\\share",
     "C:\\",
     "CN=`x` a",
+    # The forms of a citation only the platform sets (T-814).
+    "[[1]](evidence-bundle.html#cite-1)",
+    "[ev_0001](evidence-bundle.html#cite-1)",
+    "[1](#note-1)",
+    '<a href="evidence-bundle.html#cite-1">1</a>',
 ]
 PAYLOADS = BLOCK_STARTS + INLINE_FORMS
 # A value printed as a code span that holds a run of two backticks, at the
@@ -161,14 +166,15 @@ ELEMENTS = (
 _RAW_HTML = MarkdownIt("commonmark", {"html": True}).enable("table").enable("strikethrough")
 
 
-def _readings(markdown: str) -> list[str]:
+def _readings(markdown: str, *, closed: bool = False) -> list[str]:
     """The HTML report's own reading of a Markdown text, and one that takes raw HTML.
 
     The text is read as a render leaves it: after the closing pass, which escapes
-    the ``&`` of each character reference outside code.
+    the ``&`` of each character reference outside code. A writer's text is put
+    through that escape first; a render or a closed text (``closed``) is read as it is.
     """
-    closed = _escaped_references(markdown)
-    return [HtmlRenderer._markdown_to_html(closed), _RAW_HTML.render(closed)]
+    closed_text = markdown if closed else _escaped_references(markdown)
+    return [HtmlRenderer._markdown_to_html(closed_text), _RAW_HTML.render(closed_text)]
 
 
 def _elements(rendered: str) -> dict[str, int]:
@@ -274,6 +280,29 @@ def test_a_model_s_line_keeps_the_writing_of_model_prose() -> None:
     # A list a model writes at its line's start stays the model's.
     assert _prose_item("1. first, **bold**") == "- 1. first, **bold**"
     assert _prose_item("> quoted") == "- \\> quoted"
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "[[1]](evidence-bundle.html#cite-1)",
+        "[x](evidence-bundle.html#sec-key-findings)",
+        "[1](#note-1)",
+        '<a href="evidence-bundle.html#cite-1">1</a>',
+    ],
+)
+def test_a_model_s_line_cites_no_note_and_keeps_its_other_writing(marker: str) -> None:
+    # A model's line through the closing pass: a citation only the platform sets is
+    # printed as its characters, and the line's bold and code span stay its own.
+    ctx = _context()
+    line = _prose_item(f"first, **bold** `code` {marker}")
+    written = MarkdownRenderer()._closed([line], ctx)
+    plain = MarkdownRenderer()._closed([_prose_item("first, **bold** `code` x")], ctx)
+    for reading, baseline in zip(
+        _readings(written, closed=True), _readings(plain, closed=True), strict=True
+    ):
+        assert _elements(reading) == _elements(baseline), (marker, reading)
+        assert _shown(reading).endswith(_same_words(html.unescape(marker))), (marker, reading)
 
 
 # ---------------------------------------------------------------------------
@@ -398,7 +427,9 @@ def test_no_place_of_a_report_lets_a_value_form_structure(payload: str) -> None:
     for layout in LAYOUTS:
         written = MarkdownRenderer(layout=layout).render(_report(payload, 1))
         plain = MarkdownRenderer(layout=layout).render(_report("plain", 1))
-        for reading, baseline in zip(_readings(written), _readings(plain), strict=True):
+        for reading, baseline in zip(
+            _readings(written, closed=True), _readings(plain, closed=True), strict=True
+        ):
             assert _elements(reading) == _elements(baseline), (layout, payload)
             shown = _shown(reading)
             owed = _same_words(_context().plain(payload))
@@ -509,7 +540,7 @@ def test_a_reference_target_stays_one_link_and_its_text_loses_no_character(
     )
     for layout in LAYOUTS:
         markdown = MarkdownRenderer(layout=layout).render(report)
-        product, raw = _readings(markdown)
+        product, raw = _readings(markdown, closed=True)
         for reading in (product, raw):
             assert _elements(reading)["img"] == 0, (layout, url)
         if kept:
@@ -535,7 +566,9 @@ def test_a_mediation_note_carrying_a_provider_s_text_forms_no_structure() -> Non
     for layout in ("bundle", "full"):
         written = MarkdownRenderer(layout=layout).render(report(note))
         plain = MarkdownRenderer(layout=layout).render(report(mediator_no_answer_note("plain")))
-        for reading, baseline in zip(_readings(written), _readings(plain), strict=True):
+        for reading, baseline in zip(
+            _readings(written, closed=True), _readings(plain, closed=True), strict=True
+        ):
             assert _elements(reading) == _elements(baseline), (layout, reading)
             assert _same_words(note) in _shown(reading), layout
 
@@ -545,7 +578,9 @@ def _shown_whole(report: Any, baseline: Any, said: str, layouts: tuple[str, ...]
     for layout in layouts:
         written = MarkdownRenderer(layout=layout).render(report)
         plain = MarkdownRenderer(layout=layout).render(baseline)
-        for reading, held in zip(_readings(written), _readings(plain), strict=True):
+        for reading, held in zip(
+            _readings(written, closed=True), _readings(plain, closed=True), strict=True
+        ):
             assert _elements(reading) == _elements(held), (layout, reading)
             assert _same_words(said) in _shown(reading), layout
 
