@@ -2,10 +2,10 @@
 
 A writer who restates a value's state outside brackets ("X: <reason>", "X and
 <reason>", "X because <reason>, so …") restates it whatever commas the reason
-holds; the restatement is read to the end of the ";" clause group as well as to
-the first comma. A claim that the value is published or kept, another value's
-reason, or one value's state said for two values stays refused. Every value is
-synthetic.
+holds; the restatement begins in the clause right after the value and is read to
+the end of its ";" clause group. A reason that begins in a later clause, a claim
+that the value is published or kept, another value's reason, or one value's state
+said for two values stays refused. Every value is synthetic.
 """
 
 from __future__ import annotations
@@ -54,6 +54,11 @@ def test_a_restatement_outside_brackets_states_the_value_s_state(
     form: str, value: str, reason: str
 ) -> None:
     assert _flagged(form.format(value=value, reason=reason)) == []
+
+
+@pytest.mark.parametrize(("value", "reason"), [(ONION, ONION_REASON), (NAME, TWO_REASON)])
+def test_a_reason_that_begins_in_a_later_clause_states_no_state(value: str, reason: str) -> None:
+    assert _flagged(f"{value} is the C2, and {reason}.") == [value]
 
 
 class TestAContradictionStaysRefused:

@@ -9230,26 +9230,40 @@ def _negation_states_a_state(after: str) -> bool:
     return bool(_STATE_PUBLISH_WORDS & set(words[:2]))
 
 
-def _restates_reason(after: str, answer: str, *, slack: float = 0.0) -> bool:
+def _restates_reason(
+    after: str, answer: str, *, slack: float = 0.0, begins_before: int | None = None
+) -> bool:
     """Whether ``after`` restates the table's reason: each refusing part's words in order.
 
     The reason is every refusing part of the answer (``publish_parts``), each
     read whole and restated on its own (:func:`_restates_words`), so a gap
     between two words is never read across two parts. An answer read without
-    its parts (a stored row) is read as before: its first clause.
+    its parts (a stored row) is read as before: its first clause. With
+    ``begins_before``, at least one part's restatement begins among the first
+    ``begins_before`` words of ``after``.
     """
     from malspark.reporting.publish_parts import refusing_parts
 
     parts = refusing_parts(answer)
-    if parts is not None:
-        return all(_restates_words(after, part, slack=slack) for part in parts)
-    reason = str(answer or "")
-    if reason.lower().startswith("no:"):
-        reason = reason[3:]
-    return _restates_words(after, reason.split(";", 1)[0], slack=slack)
+    if parts is None:
+        reason = str(answer or "")
+        if reason.lower().startswith("no:"):
+            reason = reason[3:]
+        parts = (reason.split(";", 1)[0],)
+    if not all(_restates_words(after, part, slack=slack) for part in parts):
+        return False
+    return (
+        begins_before is None
+        or not parts
+        or any(
+            _restates_words(after, part, slack=slack, begins_before=begins_before) for part in parts
+        )
+    )
 
 
-def _restates_words(after: str, reason: str, *, slack: float = 0.0) -> bool:
+def _restates_words(
+    after: str, reason: str, *, slack: float = 0.0, begins_before: int | None = None
+) -> bool:
     """Whether ``after`` restates ``reason``: its words in order, a few apart.
 
     Each of its words that carries meaning is looked for after the last one
@@ -9257,7 +9271,8 @@ def _restates_words(after: str, reason: str, *, slack: float = 0.0) -> bool:
     them that may be missing, a negation of the reason never among them: each
     negation is found as often as the reason carries it. A negation in the
     restatement that the reason does not carry turns it around and is no
-    restatement.
+    restatement. With ``begins_before``, the first word found is among the
+    first ``begins_before`` words of ``after``.
     """
     wanted = [word for word in re.findall(r"\w+", reason.lower()) if word not in _REASON_FILLER]
     if len(wanted) < _REASON_MIN_WORDS:
@@ -9265,7 +9280,8 @@ def _restates_words(after: str, reason: str, *, slack: float = 0.0) -> bool:
     written = re.findall(r"\w+", after.lower())
     allowed = int(len(wanted) * slack)
     negations = Counter(word for word in wanted if word in _NEGATIONS)
-    for start in range(len(written)):
+    starts = len(written) if begins_before is None else min(begins_before, len(written))
+    for start in range(starts):
         at: int | None = None
         found: Counter[str] = Counter()
         count = 0
@@ -9300,9 +9316,10 @@ def _states_publish_state(after: str, answer: str) -> bool:
     clause right after the value
     (:func:`_clause_after`), a state under its own name that reads as not
     published or restates most of the table's reason, the platform's own "not
-    published by this run", or the table's whole reason restated in order,
-    read to the first comma or, for a reason that holds commas of its own, to
-    the end of the clause group (up to a ``;`` outside brackets). A
+    published by this run", or the table's whole reason restated in order:
+    the restatement begins in that clause and is read to the end of its clause
+    group (up to a ``;`` outside brackets), whatever commas the reason holds; a
+    reason that begins in a later clause states no publish state. A
     named state that says anything else (unknown, pending, published) is no
     state the table agrees with.
     """
@@ -9319,11 +9336,10 @@ def _states_publish_state(after: str, answer: str) -> bool:
             _reads_withheld(said) or _restates_reason(said, answer, slack=_NAMED_REASON_SLACK)
             for said in named
         )
-    # A reason that holds a comma of its own is read to the end of its clause group.
-    return (
-        bool(_NOT_PUBLISHED_RE.search(clause))
-        or _restates_reason(clause, answer)
-        or _restates_reason(_clause_after(after, ";"), answer)
+    # A restatement begins in the clause right after the value and is read to
+    # the end of its clause group, whatever commas the reason holds.
+    return bool(_NOT_PUBLISHED_RE.search(clause)) or _restates_reason(
+        _clause_after(after, ";"), answer, begins_before=len(re.findall(r"\w+", clause))
     )
 
 
