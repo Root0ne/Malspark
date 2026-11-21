@@ -6068,14 +6068,18 @@ def analyst_list_note(
     ``typed`` counts the values a table of values types as an indicator: how many, how many
     the indicator section holds as the analyst's row, and how many it holds under another
     source (:func:`_typed_values_shown`); where not each of them is the analyst's row there,
-    the line counts each case (T-780)."""
+    the line counts each case (T-780), and where the report reads none it says so."""
     who = ", ".join(f"the {_one_line(name)} analyst" for name in analysts)
     indicators = section_reference(INDICATORS_TITLE)
     values = (
         f" Each value it types as an indicator is in {indicators} as the analyst's, with the "
         "publish rule's answer."
     )
-    if typed is not None and typed[1] != typed[0]:
+    if typed is not None and not typed[0]:
+        # Read as the builder reads it, the table gives no value: nothing is
+        # said of where its values are.
+        values = " The report reads no value of it as an indicator."
+    elif typed is not None and typed[1] != typed[0]:
         total, theirs, other = typed
         cases = [
             (theirs, f"in {indicators} as the analyst's, with the publish rule's answer"),
