@@ -1,0 +1,100 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.analysis.run_summary:NEGOTIATION_CONFIDENCE_LABEL",
+   "condition": "printed in the served report's Appendix B as the label of negotiation.final_confidence, to three decimals, when the run summary's negotiation record holds a final_confidence; nothing without one",
+   "basis": ["run_summary.negotiation.final_confidence"],
+   "test": "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_the_last_round_confidence_is_named_as_the_analysts_and_said_only_where_stored",
+   "text_digest": "a465c3c9f2456937cf504d14cf387132254aa86f73bc0fba158e9ae5040eb02b"
+  },
+  {
+   "constant": "malspark.analysis.run_summary:NOT_APPLICABLE_PHRASE",
+   "condition": "printed when negotiation.termination_reason is not_applicable: in section 3 as the analyst agreement clause, and in Appendix B inside the consensus sentence (NOT_APPLICABLE_SENTENCE)",
+   "basis": ["run_summary.negotiation.termination_reason"],
+   "test": "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_a_debate_that_measured_no_agreement_says_so_and_names_no_cause",
+   "text_digest": "3b31144409634770596b2626cacecfaae2bad4d0f03212cc332f4fcc77b9733e"
+  },
+  {
+   "constant": "malspark.analysis.run_summary:OPERATOR_CHOICES_HEADING",
+   "condition": "printed in section 13 as the heading over the operator's choices when the report's operator_choices list is not empty; nothing for a report with none",
+   "basis": ["MalwareReport.operator_choices"],
+   "test": [
+    "tests/unit/reporting/test_the_report_says_what_the_run_did_not_do.py::TestTheFirstScreenSaysWhatADegradedRunMeans::test_an_operator_choice_is_listed_in_section_13_apart_and_never_in_the_banner",
+    "tests/unit/reporting/test_the_report_says_what_the_run_did_not_do.py::TestTheFirstScreenSaysWhatADegradedRunMeans::test_a_report_with_no_choice_reads_as_it_did"
+   ],
+   "text_digest": "60168cceef81d95e3bf20cd345e310f8e047a7eb64b4a098682b830da0feb07b"
+  },
+  {
+   "function": "malspark.analysis.run_summary:_part_clause",
+   "condition": "inside the token sentence, one clause per reported part (prompt-cache reads, prompt-cache writes, reasoning) whose call count is above zero and whose value is a number; nothing otherwise",
+   "basis": ["run_summary.tokens cached_input_tokens and cached_calls, cache_write_input_tokens and cache_write_calls, reasoning_tokens and reasoning_calls"],
+   "test": [
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_a_part_of_the_spend_is_said_only_where_a_call_reported_it",
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_the_spend_says_each_part_a_provider_reported_with_the_calls_it_covers"
+   ],
+   "text_digest": "29ced54badd3a3815769a661f33dc2e0e855ed261767933749f3b10dfa99fd03"
+  },
+  {
+   "function": "malspark.analysis.run_summary:_unreported_clause",
+   "condition": "inside the token sentence, after the count of calls that reported no usage: the agent, call and model of each unreported row, identical rows once with their count; nothing for a summary stored without rows",
+   "basis": ["run_summary.tokens.unreported"],
+   "test": [
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_the_calls_that_reported_nothing_are_each_said_once_with_their_count",
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_a_spend_no_call_reported_names_the_calls_and_counts_nothing"
+   ],
+   "text_digest": "3cfdf67f68def57ba95a7134d9ddd1eecc3e47aab2bbb25c45e4e89e81796490"
+  },
+  {
+   "function": "malspark.analysis.run_summary:bundle_loss_sentence",
+   "condition": "printed in section 13, beside the grounding corpus sentence, when the truncation record shows the exported STIX bundle lost anything: objects repaired away (the integrity removals less the cap's orphans), indicators over the total cap, relationships the cap orphaned, references trimmed; nothing when none",
+   "basis": ["run_summary.truncation integrity_objects_removed, integrity_dropped.cap_orphan, indicator_cap_removed, integrity_refs_trimmed"],
+   "test": [
+    "tests/unit/analysis/test_the_two_surfaces_say_the_same_thing.py::test_the_sentence_is_the_one_the_fixture_pins",
+    "tests/unit/analysis/test_the_two_surfaces_say_the_same_thing.py::test_the_real_metrics_object_reads_the_same"
+   ],
+   "text_digest": "ef757e3c179b3d7f6adc598cd778fa3c1d07e211fe3658b78df73f45025f3721"
+  },
+  {
+   "function": "malspark.analysis.run_summary:corpus_held_sentence",
+   "condition": "printed in section 13 when the truncation record holds the grounding corpus's answers, bytes held and ceiling, and the corpus went partial or holds more than half its ceiling; nothing otherwise",
+   "basis": ["run_summary.truncation evidence_corpus_answers, evidence_corpus_bytes_held, evidence_corpus_bytes_ceiling, evidence_corpus_partial_reason"],
+   "test": [
+    "tests/unit/analysis/test_the_corpus_says_what_it_held.py::test_a_corpus_with_room_to_spare_is_carried_silently",
+    "tests/unit/analysis/test_the_corpus_says_what_it_held.py::test_a_corpus_past_half_its_ceiling_says_what_it_held",
+    "tests/unit/analysis/test_the_corpus_says_what_it_held.py::test_a_partial_corpus_says_what_it_held_however_small",
+    "tests/unit/analysis/test_the_corpus_says_what_it_held.py::test_a_run_with_no_figures_says_nothing"
+   ],
+   "text_digest": "dfbdddfcdd0254948f5f67c2f0542e1d08f8f80c17eacf23bd50d8ed6d0f014d"
+  },
+  {
+   "function": "malspark.analysis.run_summary:generation_lines",
+   "condition": "printed in the served report's Appendix B: one line per model with a measured generation rate and one per measured prompt reading rate, then for each sized call its output budget where recorded and its timeout (none of its own when no limit is configured and nothing is derived; the configured value when nothing is derived; else the derived arithmetic, with the prompt read at its own rate where one was measured); nothing for a summary without the generation record",
+   "basis": ["run_summary.generation models: tokens_per_second, tokens, seconds, calls, sources, prompt_tokens_per_second, prompt_tokens, prompt_seconds, prompt_sources", "run_summary.generation timeouts: configured_s, derived_s, applied_s, max_tokens, tokens_per_second, prompt_tokens, prompt_tokens_per_second, budget; and margin"],
+   "test": [
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_each_rate_and_each_timeout_is_said_with_its_arithmetic",
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_a_models_name_is_written_by_the_callers_writers_and_nothing_measured_says_nothing"
+   ],
+   "text_digest": "aae990ce9f86b5526d9ec28d174360359bb3e5159ae9ad9eaa504b7a5a56e162"
+  },
+  {
+   "function": "malspark.analysis.run_summary:server_rest_sentence",
+   "condition": "printed in the served report's Appendix B, one line per row of run_summary.server_rests: the server by its label and key (its key alone where it has no other label), the rest in seconds, the failures in a row, and the last reason where recorded",
+   "basis": ["run_summary.server_rests server, label, cooldown_s, failures, reason"],
+   "test": "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_a_rested_server_is_said_with_its_rest_its_failures_and_its_last_reason",
+   "text_digest": "7827fd072a976ffc8482b83728043e4e53b6bf0ea455e65cb9b06402703868dd"
+  },
+  {
+   "function": "malspark.analysis.run_summary:tokens_sentence",
+   "condition": "printed in the served report's Appendix B, and stored as run_summary.tokens.sentence, when the run made at least one model call: that no count is shown where estimates were mixed in, that no call's usage was reported, or the input and output counts over the calls with the unreported, cache, reasoning and cost clauses; nothing for no calls",
+   "basis": ["run_summary.tokens llm_calls, estimated_calls, unreported_calls, input_tokens, output_tokens, cost, cost_calls"],
+   "test": [
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_the_spend_says_each_part_a_provider_reported_with_the_calls_it_covers",
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_a_spend_no_call_reported_names_the_calls_and_counts_nothing",
+    "tests/unit/core/test_token_ledger.py::TestTheSentence::test_counts_and_the_calls_that_reported_nothing",
+    "tests/unit/core/test_token_ledger.py::TestTheSentence::test_a_summary_stored_with_estimates_prints_no_count",
+    "tests/unit/core/test_token_ledger.py::TestTheSentence::test_no_calls_no_sentence"
+   ],
+   "text_digest": "f2a59bd6e5e9539eac5f224c639e90f70ce9a6d19729973fcf7e4878b8ad22c9"
+  }
+ ]
+}

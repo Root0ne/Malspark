@@ -1,0 +1,331 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.analysis.disclosure:FOOTNOTE_SENTENCE",
+   "condition": "closes Appendix B's disclosure part (MarkdownRenderer._appendix_run) where disclosure_lines gives any line",
+   "basis": ["core.host_locality (what counts as this machine)"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_appendix_opens_with_the_intro_and_closes_with_the_footnote",
+   "text_digest": "55e9c67b8a77c28bb4d195b529655bf6592e1be6a79fd0d0087730cdd610d85a"
+  },
+  {
+   "constant": "malspark.analysis.disclosure:INTRO_SENTENCE",
+   "condition": "opens Appendix B's disclosure part (MarkdownRenderer._appendix_run) where disclosure_lines gives any line",
+   "basis": ["run_summary.disclosure"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_appendix_opens_with_the_intro_and_closes_with_the_footnote",
+   "text_digest": "e4c0f9b8aa9ab648e08858f5b0926bc2e4ead4eeba017561152b76eb480c1397"
+  },
+  {
+   "constant": "malspark.analysis.disclosure:LEFT_THE_MACHINE_RECORD",
+   "condition": "ends the analyst report's section 11 row on what left this machine (left_the_machine) whenever left_the_machine prints",
+   "basis": ["run_summary.disclosure"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_what_left_this_machine_is_one_run_of_sentences_ending_on_the_bundle",
+   "text_digest": "c12c960417669f93cde94bc474d1bb8452db9de9b3c2992f98032306ed2c2328"
+  },
+  {
+   "constant": "malspark.analysis.disclosure:RUNTIME_ASSUMPTION",
+   "condition": "in _nothing_sentence, after the model endpoints, where nothing_left is true and the record holds model rows",
+   "basis": ["run_summary.disclosure.models[].runtime"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_nothing_left_says_every_thing_it_rests_on",
+    "tests/unit/analysis/test_the_disclosure_says_what_left_the_machine.py::test_a_run_that_stayed_local_says_nothing_and_what_that_rests_on"
+   ],
+   "text_digest": "8803e2afc6092ed57644b92fb1b6c9f3bed472f6b870fc35bb5105d37d424145"
+  },
+  {
+   "constant": "malspark.analysis.disclosure:STAGED_FILES",
+   "condition": "in _upload_line and _short_upload, as what a staging row sent where its what names artefact, capture or sandbox_report",
+   "basis": ["run_summary.disclosure.uploads[].what"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_each_upload_row_says_what_was_sent_to_whom_and_whether_it_arrived",
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_an_upload_row_s_short_form_says_what_was_sent_and_to_whom"
+   ],
+   "text_digest": "b62230a3f0694ad98fc0ce39005d2e3fdc79358e06fa818d536bd1f93628d373"
+  },
+  {
+   "constant": "malspark.analysis.disclosure:TRACING_SENTENCE",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) where the record's tracing is true",
+   "basis": ["run_summary.disclosure.tracing"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_store_unreadable_rows_and_tracing_are_said_whole",
+   "text_digest": "391ab3b267113fe682ee41f7081fbb7126416e23aedfa30baa8cfc8cf3824f30"
+  },
+  {
+   "constant": "malspark.analysis.disclosure:_NOT_A_RUNTIME",
+   "condition": "in _model_line, for a model row at a local address with answered calls and no runtime answer",
+   "basis": ["run_summary.disclosure.models[].where", "run_summary.disclosure.models[].calls", "run_summary.disclosure.models[].runtime"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_model_row_is_said_by_its_place_its_calls_and_its_runtime",
+   "text_digest": "5b97ebd74732115235fce5305849c8b1f7ab0d7f9fc58039134c7b18bca5ceb8"
+  },
+  {
+   "constant": "malspark.analysis.disclosure:_NO_CALL",
+   "condition": "in _short, where a short form's row records zero calls",
+   "basis": ["run_summary.disclosure.<part>[].calls"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_short_form_says_who_received_how_often_or_that_no_call_is_recorded",
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_an_upload_row_s_short_form_says_what_was_sent_and_to_whom"
+   ],
+   "text_digest": "e955c72d7bb3899e8051db521be64ac7821c5b0de1335d26d7f0f6c84601659f"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_again",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines), after a lookup, upload, server or undeclared row's calls where its served count is above zero: \"(+N answered without a run)\"; nothing for none or a row stored before the count",
+   "basis": ["run_summary.disclosure.<part>[].served"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_host_is_marked_and_a_receiver_named_as_the_record_places_it",
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_lookup_row_says_who_was_asked_how_often_and_about_what"
+   ],
+   "text_digest": "1aa23d1b62a4627beb1f50cdefedf56deeb587cf2b93fa0ad41b52d4227fa9db"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_asked_parts",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) and the analyst report's section 11 row on what left this machine (left_the_machine)'s enrichment lines where the enrichment asked: per row, the host with its mark or a tool server and why it cannot be placed, the kinds with counts, the source, and the failed and errored counts where above zero",
+   "basis": ["run_summary.disclosure.enrichment.asked[].host", "run_summary.disclosure.enrichment.asked[].where", "run_summary.disclosure.enrichment.asked[].kinds", "run_summary.disclosure.enrichment.asked[].source", "run_summary.disclosure.enrichment.asked[].failed", "run_summary.disclosure.enrichment.asked[].errored", "run_summary.disclosure.enrichment.asked[].why"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_sources_an_enrichment_may_reach_and_asked_are_named",
+   "text_digest": "6e94386169229f406cd21a41a9bc56be06a5b23a845fd6d8b7e1c73235640793"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_counts",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) and the analyst report's section 11 row on what left this machine (left_the_machine): each agent's or kind's count after its name, the agent key the ledger filed under no agent said as \"no agent\"",
+   "basis": ["run_summary.disclosure.models[].agents", "run_summary.disclosure.lookups[].kinds", "run_summary.disclosure.enrichment.asked[].kinds"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_host_is_marked_and_a_receiver_named_as_the_record_places_it",
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_model_row_is_said_by_its_place_its_calls_and_its_runtime"
+   ],
+   "text_digest": "a54263ce9b34e37c4c283e04b13770cba730e16ff072f1ac9a2d63dd02ed16dd"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_detonation_of",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines), after \"Sample upload\" for a submission row that names a further detonation: \"(detonation N, asked for by <askers>)\", \"an agent\" where no asker is recorded; nothing for the job's own submission",
+   "basis": ["run_summary.disclosure.uploads[].detonation", "run_summary.disclosure.uploads[].requested_by"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_submission_names_its_detonation_its_archive_and_its_launch_arguments",
+   "text_digest": "2a8185f5fc096607927474a149832f70925063fa3ed930d436e0b6e3673f4114"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_enrichment_left",
+   "condition": "in the analyst report's section 11 row on what left this machine (left_the_machine): for a running enrichment, the questions with the hosts it may reach and what an earlier enrichment asked; for a done or stopped one that asked, its state lines; nothing for a queued one, one that asked nothing, or no enrichment",
+   "basis": ["run_summary.disclosure.enrichment.state", "run_summary.disclosure.enrichment.asked", "run_summary.disclosure.enrichment.may_reach[].hosts"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_kind_whose_destination_is_not_recorded_is_named_with_its_count",
+   "text_digest": "bcfeffe18024db90b969926d458c06a01a9950d06542093c58dd1a847c72e1ae"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_enrichment_state_lines",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) where the record holds an enrichment, and in the analyst report's section 11 row on what left this machine (left_the_machine) for a done or stopped one that asked: by state, done (asked nothing, or what it asked), stopped (with what it asked before), running (with what an earlier enrichment asked), else queued with what it may reach or \"no source\"",
+   "basis": ["run_summary.disclosure.enrichment.state", "run_summary.disclosure.enrichment.asked", "run_summary.disclosure.enrichment.may_reach"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_enrichment_is_said_by_its_state",
+   "text_digest": "e561777e093248b9ec0dcb186df056e5f0be499075c4ded70801d6f41d308688"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_how",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines), the transport of a lookup, upload, server, undeclared row or enrichment source: \"stdio, run on this machine\" for stdio, the recorded transport otherwise, \"transport not recorded\" for none",
+   "basis": ["run_summary.disclosure.<part>[].transport", "run_summary.disclosure.enrichment.may_reach[].transport"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_host_is_marked_and_a_receiver_named_as_the_record_places_it",
+   "text_digest": "913e84e2d34150178e6a8aa977717785c09c5a99eab3d2415cb71d4195b35b1e"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_kinds",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) and the analyst report's section 11 row on what left this machine (left_the_machine), a lookup row's indicator kinds with their counts, then \"N giving no argument declared as an indicator\" where without_indicator is above zero",
+   "basis": ["run_summary.disclosure.lookups[].kinds", "run_summary.disclosure.lookups[].without_indicator"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_lookup_row_says_who_was_asked_how_often_and_about_what",
+   "text_digest": "b36ad83f53d43c8777fb1ad1399ca7e4d4f221ed017e1c3685e3e5f0b24dccd0"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_launch_clause",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines), after a submission row that holds launch_arguments: the arguments written out, as \"The launch arguments an agent found\" for a detonation row and \"The job's launch arguments\" otherwise; nothing where the row holds none",
+   "basis": ["run_summary.disclosure.uploads[].launch_arguments", "run_summary.disclosure.uploads[].detonation"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_submission_names_its_detonation_its_archive_and_its_launch_arguments",
+   "text_digest": "5f0d86984b87ebdf61b94bdc61633335b154e9d08e3009c17bd42b85b941a442"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_launch_clause_of",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines), the launch clause of a submission row: sent with no sandbox report back where unobserved, sent where honoured, requested and not honoured otherwise; each with how it was passed (via) and the note where recorded",
+   "basis": ["run_summary.disclosure.uploads[].launch_arguments_unobserved", "run_summary.disclosure.uploads[].launch_arguments_honoured", "run_summary.disclosure.uploads[].launch_arguments_via", "run_summary.disclosure.uploads[].launch_arguments_note"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_submission_names_its_detonation_its_archive_and_its_launch_arguments",
+   "text_digest": "9615d4efcd4b83d0366ac33bb2e6650fe0d9d1d1cda58ae28c9ec1f4ea559a17"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_lookup_line",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) for each lookup row, and in the analyst report's section 11 row on what left this machine (left_the_machine) (short) for each one not local: the host and its mark through the server where placed with a host, else the server, its transport and the reason it cannot be placed; the short form says who was asked, how many times and about what",
+   "basis": ["run_summary.disclosure.lookups[].host", "run_summary.disclosure.lookups[].where", "run_summary.disclosure.lookups[].source", "run_summary.disclosure.lookups[].transport", "run_summary.disclosure.lookups[].calls", "run_summary.disclosure.lookups[].served", "run_summary.disclosure.lookups[].kinds", "run_summary.disclosure.lookups[].without_indicator", "run_summary.disclosure.lookups[].why"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_lookup_row_says_who_was_asked_how_often_and_about_what",
+   "text_digest": "aed9357daacf3b496c5e4914972ba0fd6847715ae3a30b67f580bdbd421d550b"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_mark",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) and the analyst report's section 11 row on what left this machine (left_the_machine), after a host: \"(outside this machine)\" where the row's where is not local, \"(taken as local: a service name)\" for a local single-label or service-name host, \"(local)\" for any other local host",
+   "basis": ["run_summary.disclosure.<part>[].where", "run_summary.disclosure.<part>[].host", "core.host_locality.taken_as_service_name"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_host_is_marked_and_a_receiver_named_as_the_record_places_it",
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_tool_server_row_says_where_the_server_is_and_its_calls"
+   ],
+   "text_digest": "a8bdd7ecf2858bde4251839637d84024b73dbc8b77853bd2c161bc1cfa610a74"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_model_line",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) for each model row, and in the analyst report's section 11 row on what left this machine (left_the_machine) (short) for each model row not local: by host or service, calls, agents, runtime, model lists and the global flag (one sentence per branch: unplaced, received with a runtime, received at a local address with no runtime, received elsewhere, listed or global with no answered call); the short form names the receiver and the call count only",
+   "basis": ["run_summary.disclosure.models[].host", "run_summary.disclosure.models[].service", "run_summary.disclosure.models[].where", "run_summary.disclosure.models[].calls", "run_summary.disclosure.models[].agents", "run_summary.disclosure.models[].configured_for", "run_summary.disclosure.models[].global", "run_summary.disclosure.models[].runtime", "run_summary.disclosure.models[].why"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_model_row_is_said_by_its_place_its_calls_and_its_runtime",
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_model_endpoint_with_no_answered_call_says_why_it_is_listed",
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_model_row_s_short_form_names_the_receiver_and_the_calls_only"
+   ],
+   "text_digest": "c7c424517cfb2fd020a9fa3fa7d60efd7e70505c108efbb8ef9fb9491b25af2d"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_not_recorded_line",
+   "condition": "in the analyst report's section 11 row on what left this machine (left_the_machine) for a running enrichment and for tracing: the kind with its count or \"count not recorded\", then the hosts it may reach or \"destination not recorded\"",
+   "basis": ["run_summary.disclosure.enrichment.may_reach[].hosts", "run_summary.disclosure.tracing"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_kind_whose_destination_is_not_recorded_is_named_with_its_count",
+   "text_digest": "78d51e404825f53ac9b8e68dad6b35e1635fc39c89afb27a54766c67f8dbb5a8"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_nothing_sentence",
+   "condition": "first line of the Disclosure block of Appendix B (disclosure_lines) where nothing_left is true: \"Nothing left this machine\" and what it rests on: the model endpoints that answered as runtimes, the local tool servers called, the store's place, the uploads where any, no lookup and tracing off",
+   "basis": ["run_summary.disclosure.nothing_left", "run_summary.disclosure.models[].host", "run_summary.disclosure.models[].runtime", "run_summary.disclosure.local_servers", "run_summary.disclosure.stores", "run_summary.disclosure.uploads"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_nothing_left_says_every_thing_it_rests_on",
+    "tests/unit/analysis/test_the_disclosure_says_what_left_the_machine.py::test_a_run_that_stayed_local_says_nothing_and_what_that_rests_on"
+   ],
+   "text_digest": "a67d338449d83f940ea8b883ca0d7b087ba876d99f83946f61b9740861b3b339"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_partial_line",
+   "condition": "first line of the Disclosure block of Appendix B (disclosure_lines) where nothing_left is false and partial_reason is set, and the head of the analyst report's section 11 row on what left this machine (left_the_machine) where the row prints: the record may be incomplete, with the reason",
+   "basis": ["run_summary.disclosure.partial_reason"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_partial_record_and_a_block_not_built_are_said_so",
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_what_left_this_machine_is_one_run_of_sentences_ending_on_the_bundle"
+   ],
+   "text_digest": "73847f5847d6faef89fcc19ae2606c3514de8e8c5ec39c3dc1f1ee3de52fad2f"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_reach",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines)'s line on an enrichment queued: each source it may reach, by name or registry lookup with the path a keyless lookup takes, its kinds, and its server, hosts or no host; the configured sources unnamed with why where they could not be read",
+   "basis": ["run_summary.disclosure.enrichment.may_reach[].source", "run_summary.disclosure.enrichment.may_reach[].kinds", "run_summary.disclosure.enrichment.may_reach[].hosts", "run_summary.disclosure.enrichment.may_reach[].server", "run_summary.disclosure.enrichment.may_reach[].transport", "run_summary.disclosure.enrichment.may_reach[].why", "enrichment.whois_client.REGISTRY_LOOKUPS"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_sources_an_enrichment_may_reach_and_asked_are_named",
+   "text_digest": "2ac56241319bb7ecbaf3cb106e043c79179045573cbefe589db2db15a4d6017c"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_server",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) and the analyst report's section 11 row on what left this machine (left_the_machine), naming a recorded source: \"tool server <key>\" for mcp:<key> or any other non-empty source, \"the <key> provider's tool server\" for provider:<key>, \"a tool server\" for none",
+   "basis": ["run_summary.disclosure.<part>[].source", "run_summary.disclosure.local_servers"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_host_is_marked_and_a_receiver_named_as_the_record_places_it",
+   "text_digest": "29bd61afab472612e0363e28487883745b8fbd05c7ed675ac3e4a205702a6872"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_server_line",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) for each server row, and in the analyst report's section 11 row on what left this machine (left_the_machine) (short) for each server or undeclared row not local: the server over its transport at its host with the mark where placed with a host, else the server, its transport and why it cannot be placed; the short form names the server, where, and the calls",
+   "basis": ["run_summary.disclosure.servers[].source", "run_summary.disclosure.servers[].transport", "run_summary.disclosure.servers[].host", "run_summary.disclosure.servers[].where", "run_summary.disclosure.servers[].calls", "run_summary.disclosure.servers[].served", "run_summary.disclosure.servers[].why", "run_summary.disclosure.undeclared[]"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_tool_server_row_says_where_the_server_is_and_its_calls",
+   "text_digest": "15012e4e41b6d6b1733ac1a68abbf60bf587674c5a3167a0637ecd5a82dee16e"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_short",
+   "condition": "in the analyst report's section 11 row on what left this machine (left_the_machine), the short form of a model, lookup, upload, server or store row the record does not place on this machine: what, the receiver where named, the count or (calls 0) _NO_CALL, then \", where it runs is not recorded\" for an unplaced row with a host or \", destination not recorded\" for one without",
+   "basis": ["run_summary.disclosure.<part>[].where", "run_summary.disclosure.<part>[].host", "run_summary.disclosure.<part>[].calls"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_short_form_says_who_received_how_often_or_that_no_call_is_recorded",
+   "text_digest": "3a9103bc1ef4e364194e4574793a2b7218809b037e76bd00ae02e02324b9685d"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_short_upload",
+   "condition": "in the analyst report's section 11 row on what left this machine (left_the_machine) for each upload row not local: a submission (what was submitted, how often, to which sandbox, or _NO_CALL with no call), a staging (what was staged, how often, to which server), or the server handed the sample; with the failed attempts",
+   "basis": ["run_summary.disclosure.uploads[].by", "run_summary.disclosure.uploads[].source", "run_summary.disclosure.uploads[].host", "run_summary.disclosure.uploads[].where", "run_summary.disclosure.uploads[].calls", "run_summary.disclosure.uploads[].failed", "run_summary.disclosure.uploads[].what"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_an_upload_row_s_short_form_says_what_was_sent_and_to_whom",
+   "text_digest": "18a70bd50aaa867c369587b08d4b47ef4ce1a2d380fd9d9fa18ee89228117ba8"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_stayed_count",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines)'s line on calls that stayed: the calls made, the answers without a run and the steps not run said apart in brackets; with no call made, only those two",
+   "basis": ["run_summary.disclosure.stayed[].made", "run_summary.disclosure.stayed[].served", "run_summary.disclosure.stayed[].not_run"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_calls_that_stayed_are_named_by_source_with_what_did_not_run",
+   "text_digest": "dde70ca2670f2270299fad18bd873b9477e51e6f1890f71587aaeb576c001152"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_stayed_line",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) where the record holds stayed rows: the total, then each source with its count",
+   "basis": ["run_summary.disclosure.stayed[]"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_calls_that_stayed_are_named_by_source_with_what_did_not_run",
+    "tests/unit/analysis/test_the_disclosure_says_what_left_the_machine.py::test_a_run_that_stayed_local_says_nothing_and_what_that_rests_on"
+   ],
+   "text_digest": "e2026f185bd82312645f4be2b229b87949949e52e9b99305611760ac632a95a4"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_stayed_name",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines)'s line on calls that stayed: \"the platform's own tools\" for the platform source, \"questions put to the team\" for the team server, \"the platform's in-process source <key>\" for an in-process source, the tool server otherwise",
+   "basis": ["run_summary.disclosure.stayed[].source", "core.builtin_declarations.in_process_declarations", "agents.delegation.TEAM_SERVER"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_calls_that_stayed_are_named_by_source_with_what_did_not_run",
+    "tests/unit/analysis/test_the_disclosure_says_what_left_the_machine.py::test_a_run_that_stayed_local_says_nothing_and_what_that_rests_on"
+   ],
+   "text_digest": "fe2af400a358eb2cc98b6ad0d74694fb552182f4f7305ac576dc430662fe7572"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_store_line",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) for each store row, and in the analyst report's section 11 row on what left this machine (left_the_machine) (short) for each one not local: the store at its host with the mark and what the job does with it where placed with a host, else why where its cases went cannot be told; the short form names the store and where",
+   "basis": ["run_summary.disclosure.stores[].backend", "run_summary.disclosure.stores[].host", "run_summary.disclosure.stores[].where", "run_summary.disclosure.stores[].why"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_store_unreadable_rows_and_tracing_are_said_whole",
+   "text_digest": "33c000e0b2aac0b0227773fa10265389788fe383098d14676b029f9df657b280"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_submitted_subject",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) and the analyst report's section 11 row on what left this machine (left_the_machine), the subject of a submission row: \"the sample\", or the archive with its digest, the sample's digest and the launcher's script host (\"script\" where none is recorded) where the row holds a launcher archive digest",
+   "basis": ["run_summary.disclosure.uploads[].launch_launcher.archive_sha256", "run_summary.disclosure.uploads[].launch_launcher.sample_sha256", "run_summary.disclosure.uploads[].launch_launcher.script_host"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_submission_names_its_detonation_its_archive_and_its_launch_arguments",
+   "text_digest": "3a5e685d3b9021cdff0aecf7391c4338770162ad6fff0d2d6b7b7db56c01d05c"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_undeclared_line",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) where the record holds undeclared rows: the calls to tools that declare no effects, per server, that whether they reached the network cannot be told, then the servers' openWorldHint count and the count of calls whose server stated more where above zero",
+   "basis": ["run_summary.disclosure.undeclared[].source", "run_summary.disclosure.undeclared[].transport", "run_summary.disclosure.undeclared[].calls", "run_summary.disclosure.undeclared[].served", "run_summary.disclosure.undeclared[].open_world_hints", "run_summary.disclosure.undeclared[].server_stated"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_calls_to_undeclared_tools_say_what_the_servers_hinted_and_stated",
+   "text_digest": "5a7a13fd6bf2c6aed6e090ce71665e68b6299231baf2180a8af661ecf6dd4fe6"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_unreadable_line",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) where unreadable_entries is above zero: the count of ledger rows the report could not read, singular or plural",
+   "basis": ["run_summary.disclosure.unreadable_entries"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_store_unreadable_rows_and_tracing_are_said_whole",
+    "tests/unit/analysis/test_the_disclosure_says_what_left_the_machine.py::test_a_ledger_row_the_report_could_not_read_is_a_call_that_cannot_be_placed"
+   ],
+   "text_digest": "fc85a9f2e1a44a3768880d52cb185806ea4cefa9be29364256f0174c4753cffa"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_untold",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) and in section 11's enrichment line, for a row the record does not place: the row's why, or \"the record does not say\" where it holds none, then \"so where <they|it|its cases|the questions> went cannot be told\"",
+   "basis": ["run_summary.disclosure.<part>[].why"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_host_is_marked_and_a_receiver_named_as_the_record_places_it",
+   "text_digest": "4097581de71bdbfeec99dfe65e12739a31e9730fc5b979d7d87546875649b474"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_upload_line",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) for each upload row: a sandbox submission (with its detonation, archive and launch clause), a staging (the sample, a STAGED_FILES file or a file of the job named by its word) or a tool declared to send the sample out; the failed attempts and, for an unplaced row, why where it went cannot be told; the short form is _short_upload's",
+   "basis": ["run_summary.disclosure.uploads[].by", "run_summary.disclosure.uploads[].source", "run_summary.disclosure.uploads[].transport", "run_summary.disclosure.uploads[].host", "run_summary.disclosure.uploads[].where", "run_summary.disclosure.uploads[].calls", "run_summary.disclosure.uploads[].failed", "run_summary.disclosure.uploads[].served", "run_summary.disclosure.uploads[].what", "run_summary.disclosure.uploads[].why"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_each_upload_row_says_what_was_sent_to_whom_and_whether_it_arrived",
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_submission_names_its_detonation_its_archive_and_its_launch_arguments"
+   ],
+   "text_digest": "694465f4e824afd38cf681a1abb1a6badd64772e98760f2408deacbebc62b98d"
+  },
+  {
+   "function": "malspark.analysis.disclosure:_withheld_lines",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) where the enrichment record holds withheld rows: one sentence per server tool its host withheld, with the reason or \"no reason was given\"",
+   "basis": ["run_summary.disclosure.enrichment.withheld[].server", "run_summary.disclosure.enrichment.withheld[].tool", "run_summary.disclosure.enrichment.withheld[].reason"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_sources_an_enrichment_may_reach_and_asked_are_named",
+   "text_digest": "49d56edfdd95e2260da2fd3a53f30d85b53f0ed0137d617ddb5777e046ebbc06"
+  },
+  {
+   "function": "malspark.analysis.disclosure:left_the_machine",
+   "condition": "as the analyst report's section 11 row on what left this machine (left_the_machine) where the record holds models, nothing_left is false and some row is not local, an enrichment is running or, done or stopped, asked, or tracing is on: the partial line, each such row's short form, the enrichment and tracing lines, then LEFT_THE_MACHINE_RECORD; \"\" otherwise",
+   "basis": ["run_summary.disclosure.models", "run_summary.disclosure.lookups", "run_summary.disclosure.uploads", "run_summary.disclosure.servers", "run_summary.disclosure.stores", "run_summary.disclosure.undeclared", "run_summary.disclosure.enrichment", "run_summary.disclosure.tracing", "run_summary.disclosure.partial_reason", "run_summary.disclosure.nothing_left"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_what_left_this_machine_is_one_run_of_sentences_ending_on_the_bundle",
+   "text_digest": "f671bc002dad13b33ade7671e12f284af45be52d02b0d9f3bbca7338a4e95c3a"
+  },
+  {
+   "function": "malspark.analysis.disclosure:not_built_line",
+   "condition": "in Appendix B under the efficiency and the coverage block, where the run summary's record of that block holds not_built and no version: \"The <block> block was not built: <reason>.\"; \"\" for any other record",
+   "basis": ["run_summary.efficiency.not_built", "run_summary.coverage.not_built"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_partial_record_and_a_block_not_built_are_said_so",
+   "text_digest": "a804dfb9f42159aa60ed0e80224d969f64b9930b8d53ddc212fda675190d3655"
+  }
+ ]
+}
