@@ -85,16 +85,18 @@
   },
   {
    "function": "malspark.analysis.isolation:_launcher_sentence",
-   "condition": "inside a started process's line whose block declares a launcher (launcher_depth above 0): the declaration of the top level or levels, the started process's own launcher check (_started_check), then that the descendants were not judged (with why), that no process under the launcher was measured, or how many under it were measured and, over every process the walk found below the started one (launcher levels included, summed over its starts where it had more than one), how many did not pass the check each is held to; each count named by its own set",
+   "condition": "inside a started process's line whose block declares a launcher (launcher_depth above 0): the declaration of the top level or levels, the started process's own launcher check (_started_check), then that the descendants were not judged (with why), that no process under the launcher was measured, or how many under it were measured and, over every process the walk found below the started one (launcher levels included, summed over its starts where it had more than one, that clause standing between commas), how many did not pass the check each is held to; each count named by its own set",
    "basis": ["isolation row launcher_depth, descendants_judged, descendants_why, under_launcher, descendants, descendants_failing, attaches, platform_names_in_env"],
    "test": [
     "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_the_tree_under_a_declared_launcher_is_said_by_what_was_measured_under_it",
     "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_a_row_kept_by_a_declared_launcher_says_it_rests_on_the_declaration",
     "tests/unit/analysis/test_the_run_says_where_the_sample_was_read_and_how_it_was_kept.py::test_under_two_launcher_levels_a_failing_first_level_is_counted_over_the_whole_tree",
     "tests/unit/analysis/test_the_run_says_where_the_sample_was_read_and_how_it_was_kept.py::test_under_three_launcher_levels_each_count_is_named_by_its_own_set",
-    "tests/unit/analysis/test_the_run_says_where_the_sample_was_read_and_how_it_was_kept.py::test_a_started_launcher_that_fails_is_said_apart_from_the_tree_that_passed"
+    "tests/unit/analysis/test_the_run_says_where_the_sample_was_read_and_how_it_was_kept.py::test_a_started_launcher_that_fails_is_said_apart_from_the_tree_that_passed",
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_the_tree_count_reads_as_one_sentence_for_one_or_several_processes_and_starts",
+    "tests/unit/analysis/test_the_run_says_where_the_sample_was_read_and_how_it_was_kept.py::test_one_process_under_a_launcher_over_two_starts_reads_as_one_sentence"
    ],
-   "text_digest": "ceca49799cdca656c60e494ae99c589ef459c7e30f622ef45b43aff4b31509b2"
+   "text_digest": "c51bb05bdbe69cf1b129a1f40ebaef4c2c44000e615cfc01137225d007cb4985"
   },
   {
    "function": "malspark.analysis.isolation:_service_line",
@@ -150,7 +152,7 @@
   },
   {
    "function": "malspark.analysis.isolation:isolation_lines",
-   "condition": "the isolation block of the served report's Appendix B, inside the disclosure block, for a disclosure record whose isolation part holds rows: a headline (no read recorded; every source kept as measured; kept but resting on a declared launcher for the sources named; not every source kept, where a row not isolated read in the worker or had its started process measured with a check read and not held (a launcher held only to its environment); else not every source shown to be kept, each listed with what was measured or why it was not), the worker line where there are rows, one line per row by where it read, one line for the reads with no source, then the sample integrity and sandbox target lines; [] for a record without the part",
+   "condition": "the isolation block of the served report's Appendix B, inside the disclosure block, for a disclosure record whose isolation part holds rows: a headline (no read recorded; every source kept as measured; kept but resting on a declared launcher for the sources named; not every source kept, where a row not isolated read in the worker or had its started process measured with a check read and not held (a launcher held only to its environment); the descendants do not choose it, since their failing count takes a process left unread as not passing and so cannot tell a failed check from an unread one, and a row whose descendants failed or were not read keeps the next form, which holds of either; else not every source shown to be kept, each listed with what was measured or why it was not), the worker line where there are rows, one line per row by where it read, one line for the reads with no source, then the sample integrity and sandbox target lines; [] for a record without the part",
    "basis": ["disclosure.isolation rows, unsourced_reads, isolated, isolated_by, worker", "isolation row where, measured_by, launcher_depth, needs_network and each measured check field"],
    "test": [
     "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_the_part_heads_its_rows_with_what_holds_of_all_of_them",

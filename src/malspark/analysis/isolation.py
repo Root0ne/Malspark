@@ -1051,6 +1051,8 @@ def _launcher_sentence(row: Mapping[str, Any], levels: int) -> str:
         below += f", over its {starts} starts"
     if count == 1:
         held = "passed" if not failing else "did not pass"
+        # The starts clause stands between commas before the verb.
+        below += "," if starts > 1 else ""
         return f"{declared} {under} {noun} measured. The one process {below} {held} its check."
     if not failing:
         said = "each passed its check"
@@ -1113,7 +1115,15 @@ def _service_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
 
 def _shown_not_kept(row: Mapping[str, Any]) -> bool:
     """Whether a row was read in the worker, or its started process measured with a check read
-    and not held; a row only not verified or not measured is neither."""
+    and not held; a row only not verified or not measured is neither.
+
+    Only the started process's own checks choose the headline that says a
+    source was not kept. The descendants are not read here: their count of
+    failures takes a process left unread as not passing, so it cannot tell a
+    process that failed a check from one that was not read, and a row whose
+    descendants failed or were not read keeps the headline that says not every
+    source was shown to be kept, which holds of either.
+    """
     if row.get("where") == IN_PROCESS:
         return True
     if row.get("where") != CHILD or row.get("measured_by") != "worker":

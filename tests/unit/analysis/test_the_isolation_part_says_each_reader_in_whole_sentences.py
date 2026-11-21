@@ -299,6 +299,41 @@ def test_the_tree_under_a_declared_launcher_is_said_by_what_was_measured_under_i
     )
 
 
+def test_the_tree_count_reads_as_one_sentence_for_one_or_several_processes_and_starts() -> None:
+    passed = "The process the worker started passed its launcher check."
+    row = {
+        "platform_names_in_env": [],
+        "descendants_judged": True,
+        "under_launcher": 1,
+        "descendants": 1,
+        "descendants_failing": 0,
+    }
+    head = f"{LAUNCHER_ONE} {passed} 1 process under the launcher was measured."
+    said = {
+        (1, 1): f"{head} The one process below the process the worker started passed its check.",
+        (1, 2): (
+            f"{head} The one process below the process the worker started, over its 2 starts, "
+            "passed its check."
+        ),
+        (2, 1): (
+            f"{head} Of the 2 processes below the process the worker started, each passed its "
+            "check."
+        ),
+        (2, 3): (
+            f"{head} Of the 2 processes below the process the worker started, over its 3 starts, "
+            "each passed its check."
+        ),
+    }
+    for (count, starts), sentence in said.items():
+        held = {**row, "descendants": count, "attaches": starts}
+        assert isolation._launcher_sentence(held, 1) == sentence, (count, starts)
+    failing = {**row, "attaches": 2, "descendants_failing": 1}
+    assert isolation._launcher_sentence(failing, 1) == (
+        f"{head} The one process below the process the worker started, over its 2 starts, did "
+        "not pass its check."
+    )
+
+
 def test_the_started_launcher_is_said_by_its_own_check() -> None:
     assert isolation._started_check({"platform_names_in_env": []}) == (
         "The process the worker started passed its launcher check"

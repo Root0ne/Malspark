@@ -512,6 +512,20 @@ def test_a_started_launcher_that_fails_is_said_apart_from_the_tree_that_passed()
     ) in line
 
 
+def test_one_process_under_a_launcher_over_two_starts_reads_as_one_sentence() -> None:
+    # Two starts of a one-level launcher; one process was below it at one start.
+    first = {"where": CHILD, **SHARED, "descendants": [UNDER]}
+    second = {"where": CHILD, **SHARED}
+    part = _part(LAUNCHED, [_reads()], {"mcp:analysis": [first, second]})
+    row = part["rows"][0]
+    assert (row["attaches"], row["descendants"], row["under_launcher"]) == (2, 1, 1)
+    assert (
+        "1 process under the launcher was measured. The one process below the process the "
+        "worker started, over its 2 starts, passed its check. So: isolated by its block's "
+        "declaration."
+    ) in isolation_lines(part)[2]
+
+
 def test_under_two_launcher_levels_a_failing_first_level_is_counted_over_the_whole_tree() -> None:
     # The started process passes; its child, a launcher level, holds a platform
     # variable; the one process under the launcher passes every check.
