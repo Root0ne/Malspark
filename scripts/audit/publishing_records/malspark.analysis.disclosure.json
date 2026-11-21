@@ -49,11 +49,58 @@
    "text_digest": "391ab3b267113fe682ee41f7081fbb7126416e23aedfa30baa8cfc8cf3824f30"
   },
   {
+   "constant": "malspark.analysis.disclosure:_CASE_HELD",
+   "condition": "the case-memory line's sentence on the job's case where the store row records the case held and the record is not partial",
+   "basis": ["run_summary.disclosure.stores[].case", "run_summary.disclosure.partial_reason"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_store_unreadable_rows_and_tracing_are_said_whole",
+    "tests/unit/analysis/test_the_calls_made_here_and_the_case_memory_are_said_as_recorded.py::test_a_store_holding_a_case_of_another_sample_that_shares_a_technique_says_it_was_shown"
+   ],
+   "text_digest": "d216024b1536af851e2c793ca67e7a5db08c8c9fde0b00b283b12b0624b43640"
+  },
+  {
+   "constant": "malspark.analysis.disclosure:_CASE_NOT_HELD",
+   "condition": "the case-memory line's sentence on the job's case where the store row records it withheld or none built and the record is not partial, with the recorded why in parentheses where there is one",
+   "basis": ["run_summary.disclosure.stores[].case", "run_summary.disclosure.stores[].case_why", "run_summary.disclosure.partial_reason"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_store_unreadable_rows_and_tracing_are_said_whole",
+    "tests/unit/analysis/test_the_calls_made_here_and_the_case_memory_are_said_as_recorded.py::test_a_case_withheld_where_the_report_node_decides_says_why"
+   ],
+   "text_digest": "5c5b0fcc78077efd72fda01649a6d55820ea32e958753cb51d23f31a95500612"
+  },
+  {
+   "constant": "malspark.analysis.disclosure:_CASE_STOPPED",
+   "condition": "the case-memory line's sentence on the job's case where the record has a partial_reason (a run stopped part-way), with or without a recorded case",
+   "basis": ["run_summary.disclosure.partial_reason"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_store_unreadable_rows_and_tracing_are_said_whole",
+    "tests/unit/analysis/test_the_calls_made_here_and_the_case_memory_are_said_as_recorded.py::test_a_cancelled_run_files_no_case_and_says_whether_its_judge_was_reached"
+   ],
+   "text_digest": "c8418a0e33138ae17d018e87523378647b53e7572432238983f1c3fbf02b70ab"
+  },
+  {
    "constant": "malspark.analysis.disclosure:_NOT_A_RUNTIME",
    "condition": "in _model_line, for a model row at a local address with answered calls and no runtime answer",
    "basis": ["run_summary.disclosure.models[].where", "run_summary.disclosure.models[].calls", "run_summary.disclosure.models[].runtime"],
    "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_a_model_row_is_said_by_its_place_its_calls_and_its_runtime",
    "text_digest": "5b97ebd74732115235fce5305849c8b1f7ab0d7f9fc58039134c7b18bca5ceb8"
+  },
+  {
+   "constant": "malspark.analysis.disclosure:_NOT_RECORDED_EITHER",
+   "condition": "the case-memory line's one sentence after the configuration for a store row stored before the job recorded its case memory (no case field) in a record that is not partial",
+   "basis": ["run_summary.disclosure.stores[].case", "run_summary.disclosure.partial_reason"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_store_unreadable_rows_and_tracing_are_said_whole",
+    "tests/unit/analysis/test_the_disclosure_says_what_left_the_machine.py::test_a_backend_that_declares_neither_an_address_nor_the_process_cannot_be_placed"
+   ],
+   "text_digest": "3db0026d9d5d09aecd97f0dff464c7058dd852a8b0b1090eee96f349c9f8ee3e"
+  },
+  {
+   "constant": "malspark.analysis.disclosure:_NOT_RECORDED_READ",
+   "condition": "the case-memory line's sentence on the judge's read where the store row does not record it as one of the known reads: a partial record stored before the job recorded its case memory, or a value not known",
+   "basis": ["run_summary.disclosure.stores[].similar_read", "run_summary.disclosure.partial_reason"],
+   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_store_unreadable_rows_and_tracing_are_said_whole",
+   "text_digest": "b2ed8538c1f2b4e61fd5c125f594100eeec2cfe2b7fbf19b9552e34e2eeba9b0"
   },
   {
    "constant": "malspark.analysis.disclosure:_NO_CALL",
@@ -74,6 +121,17 @@
     "tests/unit/analysis/test_the_calls_made_here_and_the_case_memory_are_said_as_recorded.py::test_nothing_left_names_a_refreshing_tool_only_when_one_was_called_here"
    ],
    "text_digest": "950efcdeeec4518b521916b40e1e799561638a7b222dab599d2da6f493a2f605"
+  },
+  {
+   "constant": "malspark.analysis.disclosure:_SIMILAR_READ",
+   "condition": "the case-memory line's sentence on the judge's read of similar cases, by how the read ended as the store row records it: read and none shown, read failed, store not opened, no analyst claim to search with, not reached",
+   "basis": ["run_summary.disclosure.stores[].similar_read"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_store_unreadable_rows_and_tracing_are_said_whole",
+    "tests/unit/analysis/test_the_calls_made_here_and_the_case_memory_are_said_as_recorded.py::test_a_store_that_holds_no_other_case_or_was_down_says_how_the_read_ended",
+    "tests/unit/analysis/test_the_calls_made_here_and_the_case_memory_are_said_as_recorded.py::test_a_store_that_could_not_be_opened_is_noted_where_the_judge_node_opens_it"
+   ],
+   "text_digest": "8472a1724e99be84ff4ad603ee7519780405280c27060e9d5092bd510d2a4db4"
   },
   {
    "function": "malspark.analysis.disclosure:_again",
@@ -253,6 +311,16 @@
    "text_digest": "18a70bd50aaa867c369587b08d4b47ef4ce1a2d380fd9d9fa18ee89228117ba8"
   },
   {
+   "function": "malspark.analysis.disclosure:_similar_sentence",
+   "condition": "after the case in the case-memory line of a store row that records the judge's read (similar_read): the count of similar cases of other samples shown, one and many said apart, where the read showed some; else the sentence of _SIMILAR_READ for how the read ended, or, for any other value, that this record does not say",
+   "basis": ["run_summary.disclosure.stores[].similar_read", "run_summary.disclosure.stores[].similar_shown"],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_store_unreadable_rows_and_tracing_are_said_whole",
+    "tests/unit/analysis/test_the_calls_made_here_and_the_case_memory_are_said_as_recorded.py::test_a_store_holding_a_case_of_another_sample_that_shares_a_technique_says_it_was_shown"
+   ],
+   "text_digest": "47e2054c5e4dce202e23e7764f49b2c1694450c6e89740b93bea5d0248494b70"
+  },
+  {
    "function": "malspark.analysis.disclosure:_stayed_count",
    "condition": "in the Disclosure block of Appendix B (disclosure_lines)'s line on calls that stayed: the calls made, the answers without a run and the steps not run said apart in brackets; with no call made, only those two",
    "basis": ["run_summary.disclosure.stayed[].made", "run_summary.disclosure.stayed[].served", "run_summary.disclosure.stayed[].not_run"],
@@ -291,10 +359,24 @@
   },
   {
    "function": "malspark.analysis.disclosure:_store_line",
-   "condition": "in the Disclosure block of Appendix B (disclosure_lines) for each store row, and in the analyst report's section 11 row on what left this machine (left_the_machine) (short) for each one not local: the store at its host with the mark and what the job does with it where placed with a host, else why where its cases went cannot be told; the short form names the store and where",
-   "basis": ["run_summary.disclosure.stores[].backend", "run_summary.disclosure.stores[].host", "run_summary.disclosure.stores[].where", "run_summary.disclosure.stores[].why"],
-   "test": "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_store_unreadable_rows_and_tracing_are_said_whole",
-   "text_digest": "33c000e0b2aac0b0227773fa10265389788fe383098d14676b029f9df657b280"
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) for each store row, and in the analyst report's section 11 row on what left this machine (left_the_machine) (short) for each one not local: the store at its host with the mark, configured as this job's case memory, where placed with a host, else with why where it runs cannot be told; then what the run recorded of its case and of the judge's read of similar cases (_case_sentences); the short form names the store and where",
+   "basis": [
+    "run_summary.disclosure.stores[].backend",
+    "run_summary.disclosure.stores[].host",
+    "run_summary.disclosure.stores[].where",
+    "run_summary.disclosure.stores[].why",
+    "run_summary.disclosure.stores[].case",
+    "run_summary.disclosure.stores[].case_why",
+    "run_summary.disclosure.stores[].similar_read",
+    "run_summary.disclosure.stores[].similar_shown",
+    "run_summary.disclosure.partial_reason"
+   ],
+   "test": [
+    "tests/unit/analysis/test_the_disclosure_sentences_are_said_whole.py::test_the_store_unreadable_rows_and_tracing_are_said_whole",
+    "tests/unit/analysis/test_the_disclosure_says_what_left_the_machine.py::test_a_backend_that_declares_neither_an_address_nor_the_process_cannot_be_placed",
+    "tests/unit/analysis/test_the_calls_made_here_and_the_case_memory_are_said_as_recorded.py::test_a_cancelled_run_files_no_case_and_says_whether_its_judge_was_reached"
+   ],
+   "text_digest": "67cee666d7c7b448b787b5badd44df4912dd3c336d3c0be22f8aeacdf3cdc553"
   },
   {
    "function": "malspark.analysis.disclosure:_submitted_subject",

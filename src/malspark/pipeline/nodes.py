@@ -78,7 +78,16 @@ from malspark.loaders.binary_chunker import (
     head_room,
     joined_when_it_fits,
 )
-from malspark.memory.long_term_memory import build_stored_case, earlier_run_of, earlier_run_text
+from malspark.memory.long_term_memory import (
+    CASE_HELD,
+    CASE_NONE,
+    CASE_WITHHELD,
+    SIMILAR_NOT_OPENED,
+    build_stored_case,
+    earlier_run_of,
+    earlier_run_text,
+    note_on,
+)
 from malspark.pipeline import triage_pack
 from malspark.pipeline.claim_drops import (
     answer_unchanged,
@@ -3792,6 +3801,23 @@ def case_for_the_judge_alone(
     )
 
 
+def _note_the_case(container: Any, case: str, why: str = "") -> None:
+    """What the platform decided of the job's own case, with why: read only by the
+    disclosure's case-memory row (``analysis.disclosure``), which no model reads."""
+    note_on(container, "memory_case", {"case": case, "why": why})
+
+
+def _case_withheld_why(failed: Sequence[str]) -> str:
+    """Why the judge's quality gate keeps no case, as the case-memory row says it."""
+    if failed:
+        return "analysts failed: " + ", ".join(str(name) for name in failed)
+    return "no negotiation round completed"
+
+
+def _techniques(count: int, which: str) -> str:
+    return f"{count} {which} technique{'' if count == 1 else 's'}"
+
+
 def _remember_the_published_techniques(
     container: Any, report: Any, isr_reports: Mapping[str, Any], corroboration: Mapping[str, Any]
 ) -> None:
@@ -3825,6 +3851,13 @@ def _remember_the_published_techniques(
         moved = with_published_techniques(case, published, isr_reports, corroborated)
         if is_thin_case(moved):
             container.pending_memory_case = None
+            _note_the_case(
+                container,
+                CASE_WITHHELD,
+                "its published evidence was too thin to keep: "
+                f"{_techniques(moved.corroborated_count, 'corroborated')}, "
+                f"{_techniques(moved.total_techniques, 'published')}",
+            )
             logger.info(
                 "LTM: skipping store for '%s' (reason: thin published evidence: "
                 "corroborated=%d, published techniques=%d).",
@@ -7167,6 +7200,9 @@ def make_judge_node(
                 memory_store = container.get_memory_store()
             except Exception as e:
                 logger.warning("Memory store unavailable: %s. Skipping LTM context.", e)
+                # The judge then reads no similar case: noted for the disclosure's
+                # case-memory row, which no model reads.
+                note_on(container, "similar_case_read", {"read": SIMILAR_NOT_OPENED, "shown": 0})
 
             # The corpus an indicator's pattern value has to appear in. It is
             # no longer a filter: the judge is told which values are not in it
@@ -7924,6 +7960,7 @@ def make_judge_node(
                         state.get("file_hash", "unknown")[:16],
                         _ltm_skip_reason,
                     )
+                    _note_the_case(container, CASE_WITHHELD, _case_withheld_why(_failed_analysts))
                 else:
                     try:
                         # The judge's own category, or nothing. A keyword
@@ -7946,6 +7983,7 @@ def make_judge_node(
                         # that fails after its judge leaves no entry behind.
                         if a_report_node_follows(container):
                             container.pending_memory_case = case
+                            _note_the_case(container, CASE_HELD)
                             logger.info(
                                 "LTM: case '%s' (category=%s, claimed techniques memory keeps=%d) "
                                 "is held "
@@ -7961,12 +7999,24 @@ def make_judge_node(
                             ]
                             held, how = case_for_the_judge_alone(case, bundle, isr_reports, _agreed)
                             container.pending_memory_case = held
+                            _note_the_case(
+                                container,
+                                CASE_HELD if held is not None else CASE_WITHHELD,
+                                "" if held is not None else "its evidence was too thin to keep",
+                            )
                             logger.info("LTM: case '%s': %s.", case.sample_id, how)
                     except Exception as e:
                         logger.warning(
                             "LTM case could not be built (%s). Analysis result is unaffected.",
                             e,
                         )
+                        _note_the_case(container, CASE_NONE, "the case could not be built")
+            elif memory_store is None:
+                _note_the_case(
+                    container, CASE_NONE, "the store could not be opened when the judge ran"
+                )
+            else:
+                _note_the_case(container, CASE_NONE, "no analyst report was left to build it from")
 
             # Function-hash attribution (deterministic, exact opcode-hash).
             # Read side: which known families this sample shares code with

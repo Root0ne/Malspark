@@ -35,7 +35,7 @@ from __future__ import annotations
 import functools
 import re
 import unicodedata
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -744,6 +744,73 @@ def similar_cases_shown(cases: Iterable[StoredCase], shown: str) -> Any:
         if techniques and f"{similar_case_head(idx, len(listed), case)}\n" in shown:
             kept.append(SimilarCase(sample_id=str(case.sample_id), techniques=techniques))
     return SimilarCases(cases=kept) if kept else None
+
+
+# ---------------------------------------------------------------------------
+# What the job recorded of its case memory, for the disclosure's case-memory row
+# ---------------------------------------------------------------------------
+#
+# Each is noted on the job's container where the platform does or decides the
+# thing, and read only when the disclosure is built (``analysis.disclosure``):
+# no model and no decision reads them.
+
+# How the judge's one read of similar cases of other samples ended
+# (``ServiceContainer.similar_case_read``): cases shown in its verdict prompt,
+# a read that showed none, a read that raised, a store that could not be
+# opened, no analyst claim to search with; and, for a job that never got to
+# the read, not reached.
+SIMILAR_SHOWN = "shown"
+SIMILAR_NONE_SHOWN = "none_shown"
+SIMILAR_FAILED = "failed"
+SIMILAR_NOT_OPENED = "not_opened"
+SIMILAR_NOTHING_TO_SEARCH = "nothing_to_search"
+SIMILAR_NOT_REACHED = "not_reached"
+SIMILAR_READS: tuple[str, ...] = (
+    SIMILAR_SHOWN,
+    SIMILAR_NONE_SHOWN,
+    SIMILAR_FAILED,
+    SIMILAR_NOT_OPENED,
+    SIMILAR_NOTHING_TO_SEARCH,
+    SIMILAR_NOT_REACHED,
+)
+# What the platform decided of the job's own case (``ServiceContainer.memory_case``):
+# held to file once the job completes, withheld by a gate, or none built.
+CASE_HELD = "held"
+CASE_WITHHELD = "withheld"
+CASE_NONE = "none"
+CASES: tuple[str, ...] = (CASE_HELD, CASE_WITHHELD, CASE_NONE)
+
+
+def similar_case_read(cases: Sequence[StoredCase] | None, *, searched: bool, shown: str) -> dict:
+    """How the judge's read of similar cases ended, as the disclosure's case-memory row says it.
+
+    ``cases`` is what the read returned (``None`` for a read that raised);
+    ``searched`` whether there was anything to search with; ``shown`` the
+    similar-case block as the fitted verdict prompt carries it. A case counts
+    as shown when its header and techniques lines reached the prompt whole
+    (:func:`similar_case_head`), as :func:`similar_cases_shown` reads it.
+    """
+    if cases is None:
+        return {"read": SIMILAR_FAILED, "shown": 0}
+    if not searched:
+        return {"read": SIMILAR_NOTHING_TO_SEARCH, "shown": 0}
+    listed = list(cases)
+    count = sum(
+        1
+        for idx, case in enumerate(listed, 1)
+        if f"{similar_case_head(idx, len(listed), case)}\n" in shown
+    )
+    return {"read": SIMILAR_SHOWN if count else SIMILAR_NONE_SHOWN, "shown": count}
+
+
+def note_on(container: Any, name: str, value: Any) -> None:
+    """Set ``name`` on the job's container where it can hold it; never raises."""
+    if container is None:
+        return
+    try:
+        setattr(container, name, value)
+    except Exception:  # noqa: BLE001 — a container that keeps no notes keeps none
+        return
 
 
 # ---------------------------------------------------------------------------

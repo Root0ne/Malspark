@@ -107,7 +107,9 @@ from malspark.memory.long_term_memory import (
     a_past_case_technique,
     foreign_ids_written_out,
     foreign_quoted_value,
+    note_on,
     similar_case_head,
+    similar_case_read,
     similar_cases_shown,
 )
 from malspark.memory.technique_cards import technique_card_lines
@@ -2712,6 +2714,8 @@ class JudgeAgent(BudgetMeter):
         # prompt showed (``stix_models.SimilarCases``), or ``None``; the judge
         # node records it on the bundle.
         self.similar_cases_shown: Any = None
+        # How this judge's read of similar cases ended (``long_term_memory.similar_case_read``).
+        self.similar_case_read: Any = None
         # The judge calls tools too — threat intel on a disputed indicator, an
         # ATT&CK or family lookup — and a verdict that cites one has to be
         # checkable the same way an analyst's claim is. Same counter as the
@@ -4638,6 +4642,7 @@ class JudgeAgent(BudgetMeter):
         from malspark.memory.long_term_memory import memory_owner_of
 
         self.similar_cases_shown = None
+        self.similar_case_read = None
         cases = self._similar_cases(
             isr_reports,
             memory_store,
@@ -4695,6 +4700,16 @@ class JudgeAgent(BudgetMeter):
             # judge is shown them: the node records it on the bundle, where
             # it decides nothing (``long_term_memory.similar_cases_shown``).
             self.similar_cases_shown = similar_cases_shown(cases or [], fitted["long-term memory"])
+        if memory_store is not None:
+            # How the read ended, as the disclosure's case-memory row says it; noted on the
+            # job's container, where no model and no decision reads it. Without a store the
+            # node notes why (``long_term_memory.SIMILAR_NOT_OPENED``).
+            self.similar_case_read = similar_case_read(
+                cases,
+                searched=bool(isr_reports) and bool(self._similar_case_query(isr_reports).strip()),
+                shown=fitted.get("long-term memory", ""),
+            )
+            note_on(self._container, "similar_case_read", self.similar_case_read)
         self.verdict_prompt_notice = notice
         if notice:
             self.logger.warning("JudgeAgent verdict prompt: %s", notice)
@@ -6249,18 +6264,7 @@ class JudgeAgent(BudgetMeter):
         if memory_store is None or not isr_reports:
             return []
 
-        # Build search query from all current ISR claims
-        query_parts: list[str] = []
-        for isr in isr_reports.values():
-            for claim in isr.claims:
-                query_parts.append(claim.claim)
-                if claim.evidence_ref:
-                    query_parts.append(claim.evidence_ref)
-                # The same rule the stored case follows: an id that is no
-                # technique of this case does not look for cases that had it.
-                if claim.technique_id and a_past_case_technique(claim):
-                    query_parts.append(claim.technique_id)
-        query = " ".join(query_parts)
+        query = JudgeAgent._similar_case_query(isr_reports)
 
         if not query.strip():
             return []
@@ -6289,6 +6293,21 @@ class JudgeAgent(BudgetMeter):
                 describe_exception_for_log(exc),
             )
             return None
+
+    @staticmethod
+    def _similar_case_query(isr_reports: dict | None) -> str:
+        """The text the similar cases are searched with: every current ISR claim."""
+        query_parts: list[str] = []
+        for isr in (isr_reports or {}).values():
+            for claim in isr.claims:
+                query_parts.append(claim.claim)
+                if claim.evidence_ref:
+                    query_parts.append(claim.evidence_ref)
+                # The same rule the stored case follows: an id that is no
+                # technique of this case does not look for cases that had it.
+                if claim.technique_id and a_past_case_technique(claim):
+                    query_parts.append(claim.technique_id)
+        return " ".join(query_parts)
 
     @staticmethod
     def _memory_block(cases: Sequence[StoredCase]) -> str:

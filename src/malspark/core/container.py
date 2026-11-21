@@ -621,6 +621,12 @@ class ServiceContainer:
         # The similar cases of other samples the judge is shown, by the job's
         # sha256, read once (``long_term_memory.similar_cases``).
         self.similar_cases: dict[str, Any] = {}
+        # How the judge's read of those cases ended, and what the platform
+        # decided of the job's own case, with why (``long_term_memory.SIMILAR_READS``,
+        # ``long_term_memory.CASES``): read only by the disclosure's case-memory
+        # row (``analysis.disclosure``); ``None`` until noted.
+        self.similar_case_read: Any = None
+        self.memory_case: Any = None
         # The function-hash corpus write the judge decided on, as
         # ``(store, sample_id, family, functions)``, held for the same reason.
         self.pending_function_hashes: Any = None

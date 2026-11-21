@@ -81,6 +81,18 @@ from malspark.core.host_locality import (
     taken_as_service_name,
 )
 from malspark.core.tool_declarations import NETWORK_CASE_STORE, NETWORK_ON_REFRESH
+from malspark.memory.long_term_memory import (
+    CASE_HELD,
+    CASE_NONE,
+    CASES,
+    SIMILAR_FAILED,
+    SIMILAR_NONE_SHOWN,
+    SIMILAR_NOT_OPENED,
+    SIMILAR_NOT_REACHED,
+    SIMILAR_NOTHING_TO_SEARCH,
+    SIMILAR_READS,
+    SIMILAR_SHOWN,
+)
 
 # The version of the stored record's shape. Version 2 adds the isolation part
 # (``analysis.isolation``), version 3 the effects part (``analysis.tool_effects``),
@@ -1006,6 +1018,7 @@ def disclosure_record(
     sample_paths: Iterable[str] = (),
     endpoints: Iterable[str] | None = None,
     addressed: Iterable[str] | None = None,
+    memory: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """What the run sent beyond this machine, as the run summary stores it.
 
@@ -1027,8 +1040,10 @@ def disclosure_record(
     model endpoints the job's settings configure and ``addressed`` the hosts
     they address, read off the job's own settings (:func:`run_disclosure`);
     each is read off ``snapshot`` where ``None``, whose secret scrub may have
-    masked a host that holds a configured secret's text. Linear in the
-    entries and the snapshot.
+    masked a host that holds a configured secret's text. ``memory`` is what
+    the job recorded of its case memory (:func:`memory_facts`), laid on the
+    store row; ``None`` records nothing of it. Linear in the entries and the
+    snapshot.
     """
     entries = list(entries)
     tools = _tool_rows(snapshot, entries)
@@ -1045,7 +1060,10 @@ def disclosure_record(
         "undeclared": _ordered(tools.undeclared.values()),
         "local_servers": sorted(tools.local_servers),
         "stayed": [{"source": source, **counts} for source, counts in sorted(tools.stayed.items())],
-        "stores": _stores(snapshot, memory_backends() if backends is None else backends),
+        "stores": [
+            {**row, **(memory or {})}
+            for row in _stores(snapshot, memory_backends() if backends is None else backends)
+        ],
         "tracing": bool(tracing) or _setting_on(snapshot.get(TRACING_SETTING)),
         "unreadable_entries": max(0, int(unreadable or 0)),
         "addressed": (
@@ -1458,6 +1476,38 @@ def job_sample_paths(container: Any) -> list[str]:
     return paths
 
 
+def memory_facts(container: Any) -> dict[str, Any]:
+    """What the job recorded of its case memory, as the store row keeps it.
+
+    ``case`` (``long_term_memory.CASES``): held where the job holds a case to file
+    once it completes, else what the platform noted where it withheld one or built
+    none, with ``case_why``; ``similar_read`` (``long_term_memory.SIMILAR_READS``)
+    and ``similar_shown``: how the judge's read of similar cases ended, as the
+    judge noted it, else not reached. Each is noted where the platform decides or
+    does it, before this record is built; no model reads them.
+    """
+    from malspark.memory.long_term_memory import StoredCase
+
+    decided = getattr(container, "memory_case", None)
+    case, why = CASE_NONE, ""
+    if isinstance(getattr(container, "pending_memory_case", None), StoredCase):
+        case = CASE_HELD
+    elif isinstance(decided, Mapping) and decided.get("case") in CASES:
+        if decided["case"] != CASE_HELD:
+            case, why = str(decided["case"]), str(decided.get("why") or "")
+    read = getattr(container, "similar_case_read", None)
+    if isinstance(read, Mapping) and read.get("read") in SIMILAR_READS:
+        outcome, shown = str(read["read"]), read.get("shown")
+    else:
+        outcome, shown = SIMILAR_NOT_REACHED, 0
+    return {
+        "case": case,
+        "case_why": why,
+        "similar_read": outcome,
+        "similar_shown": shown if isinstance(shown, int) and not isinstance(shown, bool) else 0,
+    }
+
+
 def run_disclosure(
     container: Any,
     *,
@@ -1510,6 +1560,7 @@ def run_disclosure(
             sample_paths=job_sample_paths(container),
             endpoints=configured_endpoint_labels(settings),
             addressed=settings_hosts(settings),
+            memory=memory_facts(container),
         )
     except Exception as exc:  # noqa: BLE001 — an absent block is right; a guessed one is not
         from malspark.core.logger import logger
@@ -1994,17 +2045,93 @@ def _stayed_line(
     )
 
 
-def _store_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: bool = False) -> str:
-    """A store row's sentence; ``short``, which store, and where."""
+# What the case-memory line says of the job's case, by what the platform decided
+# (``long_term_memory.CASES``), and of a run that stopped part-way.
+_CASE_HELD = (
+    "The run held its case to file there once the job completes; whether it was filed is not "
+    "recorded in this report."
+)
+_CASE_NOT_HELD = "The run held no case to file there"
+_CASE_STOPPED = "The run stopped part-way, and a job that does not complete files no case."
+# What it says of a row stored before the job recorded its case memory.
+_NOT_RECORDED_READ = "This record does not say whether the judge read similar cases from it."
+_NOT_RECORDED_EITHER = (
+    "This record does not say whether the judge read similar cases from it or whether the job "
+    "filed its case in it."
+)
+# What it says of the judge's read of similar cases, by how the read ended
+# (``long_term_memory.SIMILAR_READS``); a shown count is said apart.
+_SIMILAR_READ = {
+    SIMILAR_NONE_SHOWN: "The judge read it for similar cases of other samples and was shown none.",
+    SIMILAR_FAILED: "The judge's read of similar cases from it failed, so it was shown none.",
+    SIMILAR_NOT_OPENED: (
+        "The store could not be opened when the judge was to read similar cases from it, so it "
+        "was shown none."
+    ),
+    SIMILAR_NOTHING_TO_SEARCH: (
+        "The judge had no analyst claim to search it with, so it read no similar case from it."
+    ),
+    SIMILAR_NOT_REACHED: "The run did not reach the judge's read of similar cases from it.",
+}
+
+
+def _similar_sentence(row: Mapping[str, Any]) -> str:
+    """How the judge's read of similar cases from the store ended, as the row records it."""
+    read = str(row.get("similar_read") or "")
+    if read == SIMILAR_SHOWN:
+        count = int(row.get("similar_shown") or 0)
+        cases = (
+            "1 similar case of another sample"
+            if count == 1
+            else f"{count} similar cases of other samples"
+        )
+        return f"The judge was shown {cases} read from it."
+    return _SIMILAR_READ.get(read, _NOT_RECORDED_READ)
+
+
+def _case_sentences(row: Mapping[str, Any], partial: str) -> list[str]:
+    """What the run recorded of its case and of the judge's read, after the configuration.
+
+    A row stored before the job recorded them says that this record does not say.
+    """
+    if "case" not in row:
+        if partial:
+            return [_CASE_STOPPED, _NOT_RECORDED_READ]
+        return [_NOT_RECORDED_EITHER]
+    if partial:
+        case = _CASE_STOPPED
+    elif row.get("case") == CASE_HELD:
+        case = _CASE_HELD
+    else:
+        why = str(row.get("case_why") or "")
+        case = f"{_CASE_NOT_HELD} ({why})." if why else f"{_CASE_NOT_HELD}."
+    return [case, _similar_sentence(row)]
+
+
+def _store_line(
+    row: Mapping[str, Any], code: Callable[[str], str], *, short: bool = False, partial: str = ""
+) -> str:
+    """A store row's sentence; ``short``, which store, and where.
+
+    The full form says the store as the settings configure it, then what the run
+    recorded of its case and of the judge's read of similar cases from it
+    (:func:`memory_facts`); ``partial`` is why the record may be incomplete.
+    """
     store = f"the {code(str(row.get('backend') or ''))} case-memory store"
     if short:
         return _short("Case memory", _receiver(row, store, code), "", row, None)
     if _placed(row) and row.get("host"):
-        return (
-            f"Case memory: {store} at {code(str(row['host']))} {_mark(row)}, which this job "
-            "reads similar cases from and stores its case in."
+        head = (
+            f"Case memory: {store} at {code(str(row['host']))} {_mark(row)}, configured as this "
+            "job's case memory."
         )
-    return f"Case memory: {store}{_at(row, code)}{_untold(row, 'its cases')}."
+    else:
+        why = str(row.get("why") or "the record does not say")
+        head = (
+            f"Case memory: {store}{_at(row, code)}, configured as this job's case memory; {why}, "
+            "so where it runs cannot be told."
+        )
+    return " ".join([head, *_case_sentences(row, partial)])
 
 
 TRACING_SENTENCE = (
@@ -2254,12 +2381,13 @@ def disclosure_lines(record: Any, code: Callable[[str], str] = _code) -> list[st
         lines.append(_nothing_sentence(record, code))
     elif record.get("partial_reason"):
         lines.append(_partial_line(record))
+    partial = str(record.get("partial_reason") or "")
     writers: tuple[tuple[str, Callable[[Mapping[str, Any], Callable[[str], str]], str]], ...] = (
         ("models", _model_line),
         ("lookups", _lookup_line),
         ("uploads", _upload_line),
         ("servers", _server_line),
-        ("stores", _store_line),
+        ("stores", lambda row, code: _store_line(row, code, partial=partial)),
     )
     for part, write in writers:
         for row in record.get(part) or []:
