@@ -5249,6 +5249,12 @@ def _held_count(value: Any) -> int | None:
     return None
 
 
+def _service_name(rep: dict[str, Any]) -> str:
+    """The record's ``source`` where it is text; a value of another type names no service."""
+    source = rep.get("source")
+    return source if isinstance(source, str) else ""
+
+
 def _network_counts(rep: dict[str, Any]) -> str:
     """The counts an enrichment record holds under ``malicious``, ``suspicious``,
     ``harmless``, ``undetected`` (:data:`_NETWORK_COUNTS`) and ``engines``, as
@@ -5278,7 +5284,7 @@ def _network_counts(rep: dict[str, Any]) -> str:
         if name in _NETWORK_COUNTS and (held := _held_count(value)) is not None
     }
     record = ReputationRecord(
-        service=str(rep.get("source") or "").strip(),
+        service=_service_name(rep).strip(),
         malicious=stats.get("malicious"),
         suspicious=stats.get("suspicious"),
         engines=_held_count(rep.get("engines")),
@@ -5289,6 +5295,23 @@ def _network_counts(rep: dict[str, Any]) -> str:
     return counts_line(
         record, unnamed="reputation", written=lambda text: _inline_safe(text, pipes=False)
     )
+
+
+def _analysed(stamp: Any) -> str:
+    """The date clause of a record's analysis time, or ``""`` where it converts to no date.
+
+    A date is a positive whole number of seconds (not a bool) that converts;
+    one too large for the platform is no date, and reading it never raises.
+    """
+    if isinstance(stamp, bool) or not isinstance(stamp, int) or stamp <= 0:
+        return ""
+    from datetime import UTC, datetime
+
+    try:
+        day = datetime.fromtimestamp(stamp, tz=UTC).date()
+    except (OverflowError, OSError, ValueError, TypeError):
+        return ""
+    return f" (analysed {day.isoformat()})"
 
 
 def _reputations(report: MalwareReport) -> dict[str, str]:
@@ -5314,18 +5337,14 @@ def _reputations(report: MalwareReport) -> dict[str, str]:
         held = [_held_count(rep.get(k)) for k in _NETWORK_COUNTS]
         if report.reputation is None and all(count is not None for count in held):
             # The service's name is its answer's text, by the inline rule.
-            name = _inline_safe(rep.get("source"), pipes=False) or "reputation"
+            name = _inline_safe(_service_name(rep), pipes=False) or "reputation"
             total = sum(count for count in held if count is not None)
             said = f"{name}: {held[0]} of {total} engines flag it as malicious"
         else:
             said = _network_counts(rep)
             if not said:
                 continue
-        stamp = rep.get("last_analysis_date_unix")
-        if isinstance(stamp, int) and stamp > 0:
-            from datetime import UTC, datetime
-
-            said += f" (analysed {datetime.fromtimestamp(stamp, tz=UTC).date().isoformat()})"
+        said += _analysed(rep.get("last_analysis_date_unix"))
         out[value.strip().lower().rstrip(".")] = said
     return out
 

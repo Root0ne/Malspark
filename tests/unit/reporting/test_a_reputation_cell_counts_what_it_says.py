@@ -8,10 +8,12 @@ record holds it under, and the engine count the service gave. It sums no
 denominator and writes no "of": a category the record holds no count of is
 not named, and a total is not printed, since a server record's total may be
 the sum of the members its reader kept. A value that is no whole number, a
-digit string too long to convert among them, is no count, and reading it never
-stops the render. A report stored before the records keeps its cell as it was
-printed where the value's record holds all four counts as whole numbers; any
-other record of such a report is printed by its counts.
+digit string too long to convert among them, is no count; a timestamp that
+converts to no date prints no date, and a service name that is no text names
+no service. Nothing a record holds stops the render. A report stored before
+the records keeps its cell as it was printed where the value's record holds
+all four counts as whole numbers; any other record of such a report is printed
+by its counts.
 """
 
 from __future__ import annotations
@@ -233,3 +235,80 @@ def test_a_stored_report_enriched_by_a_source_keeping_some_counts_prints_no_summ
     assert cell is not None and cell.startswith(f"{record['source']}, {FRAME}: ")
     assert not re.search(r"\d+ of \d+|/", cell)
     assert "total" not in cell
+
+
+def _stored_json(record_json: str, *, stored: bool) -> MalwareReport:
+    """A report read from report.json text whose one domain's record is ``record_json``."""
+    held = "" if stored else ', "reputation": []'
+    return MalwareReport.model_validate_json(
+        f'{{"identity": {{"hashes": {{"sha256": "{"a" * 64}"}}}}, "network": {{"domains": '
+        f'[{{"fqdn": "one.example.org", "source": "sandbox", "reputation": {record_json}}}]}}'
+        f"{held}}}"
+    )
+
+
+def _renders_whole(report: MalwareReport) -> None:
+    from malspark.reporting.renderers import HtmlRenderer, MarkdownRenderer
+
+    for layout in ("analyst", "bundle", "full"):
+        assert "rendering failed" not in MarkdownRenderer(layout=layout).render(report), layout
+    for layout in ("bundle", "full"):
+        assert "one[.]example[.]org" in HtmlRenderer(layout=layout).render(
+            report, embed_figures=False
+        ), layout
+
+
+# A timestamp that converts to no date is no date: the cell prints no date clause.
+STAMPS = [str(10**30), str(-(10**30)), '"abc"', "NaN", "Infinity", "true"]
+
+
+@pytest.mark.parametrize("stamp", STAMPS)
+@pytest.mark.parametrize(
+    ("stored", "said"),
+    [
+        (False, f"acme, {FRAME}: malicious 1, harmless 2, undetected 3"),
+        (True, "acme: 1 of 6 engines flag it as malicious"),
+    ],
+)
+def test_a_timestamp_that_converts_to_no_date_prints_no_date_and_the_report_renders(
+    stamp: str, stored: bool, said: str
+) -> None:
+    record = (
+        '{"source": "acme", "malicious": 1, "suspicious": 0, "harmless": 2, "undetected": 3, '
+        f'"last_analysis_date_unix": {stamp}}}'
+    )
+    report = _stored_json(record, stored=stored)
+
+    assert _reputations(report)["one.example.org"] == said
+    _renders_whole(report)
+
+
+@pytest.mark.parametrize(
+    ("stored", "said"),
+    [
+        (False, f"reputation, {FRAME}: malicious 1, harmless 2, undetected 3"),
+        (True, "reputation: 1 of 6 engines flag it as malicious"),
+    ],
+)
+@pytest.mark.parametrize("source", ['["acme"]', '{"name": "acme"}', "7", "true"])
+def test_a_service_name_that_is_no_text_is_left_out_and_the_report_renders(
+    source: str, stored: bool, said: str
+) -> None:
+    record = (
+        f'{{"source": {source}, "malicious": 1, "suspicious": 0, "harmless": 2, "undetected": 3}}'
+    )
+    report = _stored_json(record, stored=stored)
+
+    assert _reputations(report)["one.example.org"] == said
+    _renders_whole(report)
+
+
+def test_a_count_held_as_a_list_or_an_object_is_no_count_and_the_report_renders() -> None:
+    record = '{"source": "acme", "malicious": [1], "harmless": {"n": 2}, "engines": [9]}'
+    report = _stored_json(record, stored=False)
+
+    assert "one.example.org" not in _reputations(report)
+    _renders_whole(report)
+    report = _stored_json('{"source": "acme", "malicious": 1, "harmless": [2]}', stored=True)
+    assert _reputations(report)["one.example.org"] == f"acme, {FRAME}: malicious 1"
+    _renders_whole(report)
