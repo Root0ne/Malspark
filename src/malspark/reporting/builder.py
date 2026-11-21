@@ -1286,9 +1286,14 @@ def _build_consolidated_iocs(
     def _captured(kind: str, value: str) -> str:
         return publish_answer(kind, value, "sandbox", unattributed=UNATTRIBUTED_CAPTURE_VALUE)
 
+    # The network block's record of each name whose row it wrote, so a form
+    # row's context is written again without the block's reading of it as a host.
+    named: dict[tuple[str, str], Any] = {}
     if net:
         for d in net.domains:
             reputations[d.fqdn.strip().lower().rstrip(".")] = d.reputation
+            if ("Domain", d.fqdn.strip().lower()) not in seen:
+                named[("Domain", d.fqdn.strip().lower())] = d
             _add(
                 "Domain",
                 "domain",
@@ -1400,11 +1405,45 @@ def _build_consolidated_iocs(
                 }
             )
         out.append(row)
+    out = _form_rows_said_as_text(report, out, named, word)
     # Each value a further detonation an agent asked for observed, marked with
     # every detonation that observed it (``detonation_marks``).
     from malspark.reporting.detonation_marks import with_value_marks
 
     return with_record(with_value_marks(out, report), report)
+
+
+def _form_rows_said_as_text(
+    report: MalwareReport,
+    rows: list[ConsolidatedIOC],
+    named: Mapping[tuple[str, str], Any],
+    word: Callable[[str], str],
+) -> list[ConsolidatedIOC]:
+    """The table with each form row's context free of the network block's reading of it as a host.
+
+    A form row (``reporting.string_row_form``) is exported as text nothing in
+    the run reads as a host, so its context carries no suspicion reason and no
+    generated-name score; everything else the block records stays. Every
+    other row is as written, and so is every row where the forms cannot be
+    read: each export then serves the row under its own kind as well.
+    """
+    from malspark.reporting.string_row_form import exported_form, string_row_forms
+
+    try:
+        forms = string_row_forms(report, rows)
+    except Exception:  # noqa: BLE001 — the rows are kept as written
+        logger.exception("builder: the IOC table's form rows could not be read.")
+        return rows
+    if not forms:
+        return rows
+    out: list[ConsolidatedIOC] = []
+    for row in rows:
+        record = named.get((row.type, row.value.lower()))
+        if record is not None and exported_form(row, forms):
+            context = _domain_context(record, word, as_a_host=False)
+            row = row.model_copy(update={"context": context, "description": context})
+        out.append(row)
+    return out
 
 
 def with_record(rows: Iterable[ConsolidatedIOC], report: Any) -> list[ConsolidatedIOC]:
@@ -1672,13 +1711,15 @@ def _process_tree_words(ip: Any, word: Callable[[str], str] = str) -> str:
     return stix_renderer.address_flow_reason(ip, word)
 
 
-def _domain_context(d: Any, word: Callable[[str], str] = str) -> str:
+def _domain_context(d: Any, word: Callable[[str], str] = str, *, as_a_host: bool = True) -> str:
     """What else the network block knows about a name, for the IOC table's context cell.
 
     ``word`` writes each value the record holds (:func:`build_consolidated_iocs`).
+    Without ``as_a_host`` the block's suspicion reason and generated-name
+    score, its readings of the name as a host, are not said.
     """
-    notes = [word(d.reason)] if d.reason else []
-    if isinstance(d.dga_score, int | float) and d.dga_score > 0:
+    notes = [word(d.reason)] if d.reason and as_a_host else []
+    if as_a_host and isinstance(d.dga_score, int | float) and d.dga_score > 0:
         notes.append(f"DGA score {float(d.dga_score):.2f}")
     if d.is_punycode:
         target = f" resembling {word(d.homograph_target)}" if d.homograph_target else ""

@@ -108,7 +108,10 @@ builds each row once, and the report's §9, this feed, MISP, the STIX bundle
 and the rule drafts read it. A row of the file's strings that nothing in the
 run reads as its kind is served as the form it has (`dotted_name`,
 `name_at_domain_text`, ...), with the type §9 prints and no suspicion flag or
-note; the console's network counts do not count it as a domain. A path the
+note; the console's network counts do not count it as a domain. The stored
+`report.json` holds the table as the run recorded it, with the table's key as
+each row's `kind`; the served indicator exports give a form row under its
+form. A path the
 file's strings hold is asked its shape by the same rule: one with neither a
 listed file extension nor a system location is not the shape of a file the
 sample uses, and is withheld. A

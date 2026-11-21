@@ -14,7 +14,8 @@ A recovered e-mail is read as one by the tool that recovered it.
 A path or registry key row of source ``strings`` the extractor recorded taking
 out of a longer string of the file (``StringIOC.cut_from``) prints that it is
 text of that shape in a longer string. It says where the text stands, not that
-it is incomplete; a row with no such record keeps its kind.
+it is incomplete; a row with no such record keeps its kind, and so does one
+the run publishes, another source holds or a judge indicator names.
 
 A form row keeps its kind: the kind stays the key of every lookup and match
 (the publish answers, the judge's match, the defang). Only the edges that
@@ -130,16 +131,18 @@ def string_row_form(row: Any, readers: _Readers) -> str | None:
     kind = str(row.kind or "")
     if str(row.source or "") != _STRINGS:
         return None
-    if kind in _IN_A_LONGER_STRING:
-        cut = (kind, value_key(kind, row.value)) in readers.cut
-        return _IN_A_LONGER_STRING[kind] if cut else None
-    if kind not in ("email", "domain"):
+    if kind not in ("email", "domain") and kind not in _IN_A_LONGER_STRING:
         return None
+    # A row the run publishes, another source holds or the judge names is read
+    # as its kind, whatever its form or its cut.
     if publishes(row.published):
         return None
     key = (kind, _same_value(kind, row.value))
     if key in readers.held or key in readers.judged:
         return None
+    if kind in _IN_A_LONGER_STRING:
+        cut = (kind, value_key(kind, row.value)) in readers.cut
+        return _IN_A_LONGER_STRING[kind] if cut else None
     if kind == "email":
         return None if row.recovered_by else NAME_AT_DOMAIN_TEXT
     if key[1] in readers.url_hosts:

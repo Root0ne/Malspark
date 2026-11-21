@@ -195,6 +195,38 @@ class TestTheFeedSaysTheForm:
         assert [row["kind"] for row in rows] == ["email"]
         assert "type" not in rows[0]
 
+    @pytest.mark.parametrize(
+        ("kind", "value", "cut_from", "printed"),
+        [
+            ("path", "C:\\Users\\Public\\relay.exe", "x=C:\\Users\\Public\\relay.exe", "File path"),
+            ("registry", "HKCU\\Software\\Relay\\Run", "zHKCU\\Software\\Relay\\Run", None),
+        ],
+    )
+    def test_a_cut_value_the_judge_names_keeps_its_kind_on_every_edge(
+        self, kind: str, value: str, cut_from: str, printed: str | None
+    ) -> None:
+        report = _report(
+            static=StaticAnalysis(
+                interesting_strings=[StringIOC(kind=kind, value=value, cut_from=cut_from)]
+            ),
+            judge_indicators=[JudgeIndicator(kind=kind, value=value)],
+        )
+        feed = [
+            row for row in ioc_feed_rows(report.model_dump(mode="json")) if row["value"] == value
+        ]
+        assert [row["kind"] for row in feed] == [kind]
+        assert "type" not in feed[0]
+        assert value in _feed(report, kind)
+        served, _note = with_current_iocs(report.model_dump(mode="json"), "r")
+        rows = [row for row in served["consolidated_iocs"] if row["value"] == value]
+        assert [row["kind"] for row in rows] == [kind]
+        assert rows[0]["type"] not in EXPORTED_FORM_KINDS
+        section_9 = MarkdownRenderer().render(report).split("## 9.", 1)[1].split("\n## ", 1)[0]
+        assert PATH_IN_A_LONGER_STRING not in section_9
+        assert "in a longer string" not in section_9
+        if printed:
+            assert _section_9_types(report)[value] == printed
+
     def test_no_value_is_served_under_two_kinds(self) -> None:
         values = [row["value"].lower() for row in ioc_feed_rows(_swept().model_dump(mode="json"))]
         assert len(values) == len(set(values))
@@ -231,6 +263,76 @@ class TestTheConsoleTableSaysTheForm:
         assert served["misp_attributes"] == build_misp_attributes(
             report, ioc_table(report), owner="r"
         )
+
+
+def _scored(**over: Any) -> MalwareReport:
+    """A form row and a row the run reads as a domain, both with a generated-name note."""
+    return _report(
+        network=NetworkIOCs(
+            domains=[
+                NetworkDomain(
+                    fqdn="g59bq3uukp.j52keb9e.name",
+                    source="strings",
+                    is_suspicious=True,
+                    reason=_DGA,
+                    dga_score=0.82,
+                    queried_pids=[4242],
+                ),
+                NetworkDomain(fqdn="k3v9q.example.org", source="strings", dga_score=0.41),
+                NetworkDomain(
+                    fqdn="qx7rk2vbn9.example-c2.net",
+                    source="sandbox",
+                    is_suspicious=True,
+                    reason=_DGA,
+                    dga_score=0.82,
+                ),
+            ]
+        ),
+        **over,
+    )
+
+
+def _section_9_line(report: MalwareReport, value: str) -> str:
+    markdown = MarkdownRenderer().render(report)
+    section = markdown[markdown.index("## 9.") :]
+    defanged = value.replace(".", "[.]")
+    return next(line for line in section.splitlines() if f"`{defanged}`" in line)
+
+
+class TestTheContextCellOfAFormRowSaysNoHostReading:
+    def test_the_table_s_context_of_a_form_row_holds_no_generated_name_note_or_score(
+        self,
+    ) -> None:
+        rows = {row.value: row for row in ioc_table(_scored())}
+        for value in ("g59bq3uukp.j52keb9e.name", "k3v9q.example.org"):
+            assert "DGA" not in rows[value].context
+            assert "DGA" not in rows[value].description
+        assert rows["g59bq3uukp.j52keb9e.name"].context == "queried by pid 4242"
+        assert rows["k3v9q.example.org"].context == ""
+
+    def test_a_row_the_run_reads_as_a_domain_keeps_its_note_and_score(self) -> None:
+        rows = {row.value: row for row in ioc_table(_scored())}
+        assert rows["qx7rk2vbn9.example-c2.net"].context == f"{_DGA}; DGA score 0.82"
+
+    def test_a_judge_named_value_keeps_its_note_and_score(self) -> None:
+        report = _scored(
+            judge_indicators=[JudgeIndicator(kind="domain", value="g59bq3uukp.j52keb9e.name")]
+        )
+        rows = {row.value: row for row in ioc_table(report)}
+        assert rows["g59bq3uukp.j52keb9e.name"].context == (
+            f"{_DGA}; DGA score 0.82; queried by pid 4242"
+        )
+
+    def test_section_9_and_the_served_table_print_the_same_cell(self) -> None:
+        report = _scored()
+        line = _section_9_line(report, "g59bq3uukp.j52keb9e.name")
+        assert "DGA" not in line and "queried by pid 4242" in line
+        assert "DGA-like" in _section_9_line(report, "qx7rk2vbn9.example-c2.net")
+        served, _note = with_current_iocs(report.model_dump(mode="json"), "r")
+        context = {row["value"]: row["context"] for row in served["consolidated_iocs"]}
+        assert context["g59bq3uukp.j52keb9e.name"] == "queried by pid 4242"
+        assert context["k3v9q.example.org"] == ""
+        assert context["qx7rk2vbn9.example-c2.net"] == f"{_DGA}; DGA score 0.82"
 
 
 class TestThePublishingExportsCarryNoFormRow:
