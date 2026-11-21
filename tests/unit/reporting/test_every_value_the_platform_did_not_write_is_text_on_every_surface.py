@@ -1045,7 +1045,9 @@ PLACING_CALLERS = {
     "rested tool server": "Tool server ",
     "generation": "Generation rate of ",
     "disclosure": "Model prompts: ",
-    "isolation": "Not every source that read the sample's bytes was kept from the worker",
+    "isolation": (
+        "Not every source that read the sample's bytes was shown to be kept from the worker"
+    ),
     "effects": "Reached the network: ",
     "efficiency": "Run fingerprint: ",
     "coverage": ": coverage unknown: ",
