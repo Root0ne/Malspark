@@ -456,7 +456,11 @@ def test_a_declared_launcher_is_held_to_its_environment_and_its_server_to_every_
     # What the launcher was measured as is still said, beside the block's word.
     assert "it ran as user 1000 (one of its real" in line
     assert LAUNCHER_SAID in line
-    passed = "1 process under the launcher was measured, and every process of the tree passed."
+    passed = (
+        "The process the worker started passed its launcher check. 1 process under the "
+        "launcher was measured. The one process below the process the worker started passed "
+        "its check."
+    )
     assert passed in line
     assert line.endswith("So: isolated by its block's declaration.")
     # The same tree without the declaration is judged as it always was.
@@ -490,9 +494,77 @@ def test_every_process_under_a_launcher_is_held_to_every_check() -> None:
     row = part["rows"][0]
     assert (row["under_launcher"], row["descendants_failing"], row["isolated"]) == (2, 1, False)
     assert (
-        "2 processes under the launcher were measured, and 1 of the tree did not pass."
-        in isolation_lines(part)[2]
+        "2 processes under the launcher were measured. Of the 2 processes below the process "
+        "the worker started, 1 did not pass its check." in isolation_lines(part)[2]
     )
+
+
+def test_a_started_launcher_that_fails_is_said_apart_from_the_tree_that_passed() -> None:
+    leaky = {**SHARED, "platform_names_in_env": ["DATABASE_URL"], "descendants": [UNDER]}
+    part = _part(LAUNCHED, [_reads()], {"mcp:analysis": [{"where": CHILD, **leaky}]})
+    line = isolation_lines(part)[2]
+    assert part["isolated"] is False
+    assert "every process of the tree passed" not in line
+    assert (
+        "The process the worker started did not pass its launcher check (its environment held "
+        "the platform's own variables). 1 process under the launcher was measured. The one "
+        "process below the process the worker started passed its check. So: not isolated."
+    ) in line
+
+
+def test_one_process_under_a_launcher_over_two_starts_reads_as_one_sentence() -> None:
+    # Two starts of a one-level launcher; one process was below it at one start.
+    first = {"where": CHILD, **SHARED, "descendants": [UNDER]}
+    second = {"where": CHILD, **SHARED}
+    part = _part(LAUNCHED, [_reads()], {"mcp:analysis": [first, second]})
+    row = part["rows"][0]
+    assert (row["attaches"], row["descendants"], row["under_launcher"]) == (2, 1, 1)
+    assert (
+        "1 process under the launcher was measured. The one process below the process the "
+        "worker started, over its 2 starts, passed its check. So: isolated by its block's "
+        "declaration."
+    ) in isolation_lines(part)[2]
+
+
+def test_under_two_launcher_levels_a_failing_first_level_is_counted_over_the_whole_tree() -> None:
+    # The started process passes; its child, a launcher level, holds a platform
+    # variable; the one process under the launcher passes every check.
+    helper = {**SHARED, "platform_names_in_env": ["DATABASE_URL"], "depth": 1}
+    server = {**KEPT, "uid": 10003, "depth": 2}
+    note = {"where": CHILD, **SHARED, "descendants": [helper, server]}
+    two = {**STDIO, "mcp.servers.analysis.launcher_depth": 2}
+    part = _part(two, [_reads()], {"mcp:analysis": [note]})
+    row = part["rows"][0]
+    assert (row["under_launcher"], row["descendants"], row["descendants_failing"]) == (1, 2, 1)
+    assert row["isolated"] is False
+    line = isolation_lines(part)[2]
+    assert "of them did not pass" not in line
+    assert (
+        "The process the worker started passed its launcher check. 1 process under the "
+        "launcher was measured. Of the 2 processes below the process the worker started, 1 did "
+        "not pass its check. So: not isolated."
+    ) in line
+
+
+def test_under_three_launcher_levels_each_count_is_named_by_its_own_set() -> None:
+    # Launcher levels at depths 1 and 2, one failing; two processes under them,
+    # one failing every check it is held to.
+    first = {**SHARED, "depth": 1}
+    second = {**SHARED, "platform_names_in_env": None, "depth": 2}
+    server = {**KEPT, "uid": 10003, "depth": 3}
+    worker_side = {**SHARED, "depth": 3}
+    note = {"where": CHILD, **SHARED, "descendants": [first, second, server, worker_side]}
+    three = {**STDIO, "mcp.servers.analysis.launcher_depth": 3}
+    part = _part(three, [_reads()], {"mcp:analysis": [note]})
+    row = part["rows"][0]
+    assert (row["under_launcher"], row["descendants"], row["descendants_failing"]) == (2, 4, 2)
+    line = isolation_lines(part)[2]
+    assert "the top 3 levels of its tree a launcher" in line
+    assert (
+        "The process the worker started passed its launcher check. 2 processes under the "
+        "launcher were measured. Of the 4 processes below the process the worker started, 2 did "
+        "not pass their checks. So: not isolated."
+    ) in line
 
 
 def test_a_launcher_of_two_levels_covers_its_own_child_and_no_further() -> None:
@@ -709,6 +781,22 @@ def test_starts_measured_differently_leave_the_differing_field_absent() -> None:
     assert row["attaches"] == 2
     assert row["why_not_measured"] == NOT_MEASURED_DISAGREE
     assert row["isolated"] is True
+
+
+def test_a_field_unread_at_every_start_of_a_row_measured_differently_is_said_not_read_as_one() -> (
+    None
+):
+    # Two starts: the user differs, and the process table is read at neither.
+    first = {"where": CHILD, **KEPT, "uid": 2000, "own_pid_namespace": None}
+    second = {"where": CHILD, **KEPT, "uid": 2001, "own_pid_namespace": None}
+    part = _part(STDIO, [_reads()], {"mcp:analysis": [first, second]})
+    row = part["rows"][0]
+    assert (row["uid"], row["own_pid_namespace"]) == (None, None)
+    line = isolation_lines(part)[2]
+    assert "it ran as a user not read as one value across its starts (none of" in line
+    assert "; its process table was not read as one value across its starts;" in line
+    assert "could not be read" not in line
+    assert "could not be compared" not in line
 
 
 def test_a_server_reached_at_an_address_is_not_verified() -> None:

@@ -881,6 +881,8 @@ def laid_under(
     under the effects of each tool its server listed, last
     (``derived_declarations.with_server_effects``): a tool nothing has listed
     has not said whether it does otherwise, so the statement says nothing of it.
+    Which fields of each tool's effects only the platform's reading gave is kept apart
+    (``Declared.read_fields``), never in the tools in force.
     """
     from malspark.core.declared_reading import shipped_tools_of
     from malspark.core.derived_declarations import with_server_effects
@@ -895,6 +897,8 @@ def laid_under(
         trusted=declared.trusts_served,
         roles=declared.roles,
     )
+    # What is in force before the platform's reading is laid under, to tell its fields apart.
+    before = dict(tools)
     if read or program:
         from malspark.core.derived_declarations import lay_under
 
@@ -913,6 +917,13 @@ def laid_under(
             sample_open=declared.sample_open,
         )
     listed = {*held, *(read or {}), *(program or {})} - removed
+    unread = with_server_effects(
+        {name: before.get(name, ToolFacts()) for name in tools},
+        declared.default_effects,
+        declared.analyse_effects,
+        declared.sample_open,
+        listed=listed,
+    )
     tools = with_server_effects(
         tools,
         declared.default_effects,
@@ -920,4 +931,60 @@ def laid_under(
         declared.sample_open,
         listed=listed,
     )
-    return dataclasses.replace(declared, tools=tools, served_fields=said, served_claims=claims)
+    return dataclasses.replace(
+        declared,
+        tools=tools,
+        served_fields=said,
+        served_claims=claims,
+        read_fields=_read_fields(tools, unread, removed),
+    )
+
+
+# The fields of a tool's effects the tool-effects part says in the voice of where they
+# came from (``analysis.tool_effects``), dotted as :data:`Declared.served_fields` are.
+READ_FIELDS: tuple[str, ...] = (
+    "discloses_sample",
+    "effects.executes",
+    "effects.network",
+    "effects.third_party",
+    "effects.why_undeclared",
+)
+
+
+def _set_value(facts: ToolFacts | None, dotted: str) -> tuple[bool, Any]:
+    """Whether ``facts`` sets the field ``dotted``, and to what."""
+    if facts is None:
+        return False, None
+    top, _, sub = dotted.partition(".")
+    fields = _set_fields(facts)
+    if not sub:
+        return top in fields, fields.get(top)
+    below = fields.get(top)
+    if not isinstance(below, Mapping) or sub not in below:
+        return False, None
+    return True, below[sub]
+
+
+def _read_fields(
+    tools: Mapping[str, ToolFacts], unread: Mapping[str, ToolFacts], removed: Iterable[str]
+) -> dict[str, tuple[str, ...]]:
+    """Per tool, the :data:`READ_FIELDS` the platform's reading set, not a declaration.
+
+    Each field ``tools`` set that the same tools without the reading (``unread``: the
+    block's own, its server's declaration and the block's statement of its tools as a
+    whole) leave unset or set otherwise. Every field of a tool the block removed is the
+    platform's cautious reading. Read by no decision: only stored with each entry.
+    """
+    gone = set(removed)
+    out: dict[str, tuple[str, ...]] = {}
+    for name, facts in tools.items():
+        before = None if name in gone else unread.get(name)
+        read = tuple(
+            dotted
+            for dotted in READ_FIELDS
+            if _set_value(facts, dotted)[0]
+            and _set_value(facts, dotted) != _set_value(before, dotted)
+        )
+        if read:
+            out[name] = read
+    return out

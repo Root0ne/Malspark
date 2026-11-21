@@ -211,7 +211,7 @@ def test_a_stored_run_reads_the_same_in_a_process_with_no_operator_settings(
     in_the_worker = _readings(ledger)
     stored = [entry.model_dump(mode="json") for entry in ledger]
     assert stored[0]["facts"]["kind"] == "signature_rules"
-    assert stored[2]["facts"] == {"v": 1}
+    assert stored[2]["facts"] == {"v": 1, "platform_read": []}
     # A process with no operator settings: the API, a later stage.
     monkeypatch.setattr(config_module, "_settings_instance", Settings())
     reread = [LedgerEntry.model_validate(row) for row in stored]

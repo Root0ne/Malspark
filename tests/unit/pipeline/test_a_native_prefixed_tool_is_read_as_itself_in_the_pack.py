@@ -130,4 +130,4 @@ def test_the_pack_stores_a_server_step_under_its_declared_name(
     (entry,) = recorder.entries
     # Read as ``mine__x`` itself, which nothing declares; not as the server's ``x``.
     assert entry.tool == "mine__x"
-    assert entry.facts == {"v": FACTS_VERSION}
+    assert entry.facts == {"v": FACTS_VERSION, "platform_read": []}

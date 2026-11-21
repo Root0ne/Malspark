@@ -932,6 +932,7 @@ def _facts_at_write(
         return None
     from malspark.core.declared_reading import (
         FACTS_VERSION,
+        READ_KEY,
         facts_record,
         with_declared_name,
         with_hints,
@@ -942,7 +943,7 @@ def _facts_at_write(
         # Settings that could not be read still leave the call's original
         # name, which only its handle knew: kept on a record that declares
         # nothing, so the entry reads as an undeclared tool by that name.
-        record = {"v": FACTS_VERSION}
+        record = {"v": FACTS_VERSION, READ_KEY: []}
     return with_hints(with_declared_name(record, tool, declared_name), hints)
 
 

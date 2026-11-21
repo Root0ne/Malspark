@@ -363,12 +363,25 @@ says what the run sent beyond the machine it ran on:
   the platform reads as undeclared however many other facts they state.
 - **Case memory**, **tracing** and the ledger: the long-term memory store,
   placed by what its backend declares (kept in the process, or the settings
-  leaf that holds its address); tracing when it is on in the settings
-  (`langchain_tracing_v2`) or in the process environment; and the ledger rows
+  leaf that holds its address) and said as configured as the job's case
+  memory, then what the run recorded: whether it held its case to file there
+  once the job completes (whether it was filed is not recorded in the report),
+  held none and why, or stopped part-way, when a job files no case; and how the
+  read of similar cases of other samples from it for the judge's last verdict
+  prompt ended (how many that prompt was given, none, a failed read, a store
+  that could not be opened, nothing to search with, or not reached). A record stored before
+  these were recorded says that it does not say; tracing when it is on in the
+  settings (`langchain_tracing_v2`) or in the process environment; and the ledger rows
   the report could not read.
 - **Calls that stayed on this machine**: the tool calls no line above counts,
   each by its source: the platform's in-process tools, questions put to
   another agent of the team, and calls to a tool server run on this machine.
+  Where a tool called through one of those sources is declared to reach the
+  network only to refresh its reference data, or to read the case-memory
+  store, the line says "Tool calls made on this machine" and names each such
+  tool with its declaration. It says the case-memory line places that store
+  only where that line places it at a host; otherwise it says that line cannot
+  tell where the store runs.
   With it the block's lines count every ledger entry once, as the run's
   finished tool-call events do.
 - **Enrichment**: when enrichment is on, the follow-up job queued after the
@@ -424,7 +437,10 @@ or proxy to a remote runtime answers the probe the same way and cannot be told
 apart, and the block says so), the local tool servers called are taken as
 local by their tools' declarations, where the case-memory store is, that the
 sample went only to local addresses, that no lookup was asked and that tracing
-is off. Wherever it cannot tell, it says what and why instead: a call it
+is off. Where a tool called on this machine is declared to reach the network
+to refresh its reference data, it says **Nothing of the sample left this
+machine, as the declarations count it** and names that tool among what it
+rests on. Wherever it cannot tell, it says what and why instead: a call it
 cannot place, a lookup or an upload through a local tool server, a call
 through a local gateway, a call through a local tool server to a tool that
 declares that it reaches the network, a call to a
@@ -553,25 +569,45 @@ uploaded, and a mismatch there marks the run degraded.
 
 Inside the same block, after the isolation part and under its own **Tool
 effects** lead, the report says, for every tool the run called (a repeat and
-a guard's answer are not calls), whether it ran the sample's code (natively,
-under emulation or in a sandbox), whether it reached the network, and what of
-the sample it sent to a third party (its hash or its bytes). A tool that reaches
+a guard's answer are not calls), what is listed of it beyond answering: whether it
+runs the sample's code (natively, under emulation or in a sandbox), reaches the
+network, and sends the sample's hash or bytes to a third party. Each line says
+where its answer came from, never as an event: "Declared to …" only for what a
+declaration states (an operator's, a shipped one, or a server's own the block
+trusts), with its `when` and its offline condition; "Taken as …" for what the
+platform read of a tool's listing or program (a reputation service's lookup, a
+program-analysis server's tool, a tool its block removed that is still read as
+sending the sample) and for the cautious reading, such as a tool taken to reach
+the network because it sends the sample's hash out, or taken to send the
+sample's file out because it is read as disclosing the sample; and a server's
+own untrusted declaration or hint as its own. Which fields of a tool's effects
+the platform read is recorded when the reading is laid under the declarations
+and stored with every ledger entry, empty where nothing was read, where no model
+reads it. "Ran the sample's code" is said only of a tool whose record says a
+declaration states how it runs the code, with a completed call and no declared
+condition on the run. A record stored before these origins were recorded, and
+an entry written before them and rebuilt, cannot tell a declaration from a
+reading, and says every effect as taken: the run of the sample's code, the
+sandboxes, the network in every way, the hash and bytes sent, and that a tool
+does none of these. A tool that reaches
 a network only in a named way says which: only to refresh reference data it
-keeps, the configured case store, or the sandbox service its server fronts.
+keeps, the configured case store (placed only where the disclosure's
+case-memory row places it at a host), or the sandbox service its server fronts.
 For the last, the line says where the disclosure placed that call: the
 operator's own and not a third party only where it is placed on this machine,
 the host the settings name where it is outside, and that it cannot be told,
 with the disclosure's own reason, where the disclosure cannot place it. A
-submission to VirusTotal is said to hand the sample to a third party's
-sandbox, which may run what it is sent.
+submission to VirusTotal, whose tools are read from its listing, is said to be
+taken as running the sample in a sandbox its server does not front, which may
+be a third party's.
 
 Only a call that completed had an effect. Each tool's calls are counted by how
 they ended: completed, failed (made, and broke), not run (the pipeline wrote
 that it never made it, as the triage pack does for a step its budget stopped
 or a tool that is not installed) and refused (a guard answered it with no tool
-run). A tool with no completed call is said to have failed ("whether its
-declared effects happened cannot be told"), not to have been run ("none of its
-declared effects happened") or to have been refused ("nothing was sent"),
+run). A tool with no completed call is said to have failed ("whether the
+effects listed for it happened cannot be told"), not to have been run ("none of
+the effects listed for it happened") or to have been refused ("nothing was sent"),
 never to have run or sent anything. The platform's own in-process tools, such
 as `read_evidence`, are left out by the disclosure's rule (no source and no
 server). A server's own hint never moves a call to another row of the
@@ -581,13 +617,15 @@ stores this as `disclosure.effects`, in records of version 3. Each answer is
 read, in this order:
 
 1. from the tool's declaration (`effects` and `discloses_sample` in its
-   `tool_facts`, the built-ins' shipped declarations and an operator's alike),
-   as its ledger entry stored it when the call was made;
+   `tool_facts`, the built-ins' shipped declarations and an operator's alike,
+   with what the platform read of the tool's listing laid under them), as its
+   ledger entry stored it when the call was made;
 2. for the network only, from the `openWorldHint` the tool's own MCP server
    gave it when it was attached, said to be the server's own hint;
 3. otherwise the tool is listed as **undeclared** for that answer, and is not
-   taken as safe, with the reason its declaration gives (only the built-in
-   tools that run whatever script or command they are given are undeclared). An entry that recorded no source is undeclared on every
+   taken as safe, with the reason its declaration or the platform's reading of
+   its listing gives (only tools that run whatever script or command they are
+   given are undeclared for a stated reason). An entry that recorded no source is undeclared on every
    count; it is never read by its tool's name.
 
 The part shares its facts with the rest of the block rather than repeating

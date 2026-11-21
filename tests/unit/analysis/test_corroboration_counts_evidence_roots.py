@@ -155,7 +155,7 @@ class TestEachEntryStatesItsRoots:
         assert roots.of_entry("ev_0006").reason.startswith("no: get_ip_report is a reference")
         assert roots.of_entry("ev_0007").reason.startswith("no: the call failed")
         assert roots.of_entry("ev_0008").reason.startswith(
-            "no: the call names its function by name"
+            "no: the call is given a name and no address"
         )
         assert roots.of_entry("ev_0999").reason.startswith("no: ev_0999 is not an entry")
         for eid in ("ev_0006", "ev_0007", "ev_0008"):
@@ -592,8 +592,8 @@ class TestAnAssertionWithNoPlace:
         assert roots.of_assertion("ev_0002", "T1027") == (
             [],
             [
-                "ev_0002: no: capa's answer carries no offset, address, section, event or flow to "
-                "place"
+                "ev_0002: no: the reading found nothing to place in a row of capa's answer that "
+                "the statement's words or the technique pick out"
             ],
         )
         assert roots.of_assertion("ev_0002", "T1055")[0] == ["0x1300 in .text", "0x1400 in .text"]

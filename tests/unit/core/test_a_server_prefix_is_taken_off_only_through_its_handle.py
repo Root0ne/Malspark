@@ -118,7 +118,8 @@ def test_a_renamed_call_keeps_its_original_name_when_settings_cannot_be_read(
 
     monkeypatch.setattr("malspark.core.declared_reading.declarations", unreadable)
     renamed = _entry("mine__x", "x")
-    assert renamed.facts == {"v": FACTS_VERSION, DECLARED_NAME_KEY: "x"}
+    # A record that declares nothing, read of nothing: it records that it read nothing.
+    assert renamed.facts == {"v": FACTS_VERSION, "platform_read": [], DECLARED_NAME_KEY: "x"}
     assert tool_kinds.declared_name(renamed) == "x"
     assert _entry("mine__x", "mine__x").facts is None
 
