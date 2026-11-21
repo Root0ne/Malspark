@@ -132,11 +132,14 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # each reason stands whole (T-780); the context cell of a sandbox address the publish rule places
 # in no tree states the sentence of the row's own publish answer (T-811). Those are the only
 # changes; the STIX did not change.
+# The STIX re-pinned when the indicator of the sample's similarity digests came to be described
+# by the digests its pattern holds (T-785), and run7's Markdown and HTML when the line under an
+# analyst's table the report reads no value of came to say so (T-780): the only changes.
 STORED_RENDERS = {
-    "run7": ("21eba17850b8a933", "3d218ceb646bafbe", "af1240b0f29bfd9c"),
-    "run5": ("996b7821dc72c2a4", "622734e18cd2d733", "2e717357e24fbfe2"),
-    "run4": ("64a1ebdddbc77ec1", "9ac5b154dffb12e8", "0a90e4edd679e2be"),
-    "local8": ("82372dac6755e55d", "d11614eee2c447fb", "75d022862e3237de"),
+    "run7": ("218384a3a5222598", "00db5bd44b95049b", "b15eda451166721a"),
+    "run5": ("996b7821dc72c2a4", "622734e18cd2d733", "da124711a6423447"),
+    "run4": ("64a1ebdddbc77ec1", "9ac5b154dffb12e8", "c98bd74e8825a72a"),
+    "local8": ("82372dac6755e55d", "d11614eee2c447fb", "5ef0ca19f5e5ec42"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
