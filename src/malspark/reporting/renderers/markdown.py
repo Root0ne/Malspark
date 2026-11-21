@@ -3061,25 +3061,13 @@ class _Context:
             for place in row.left_out:
                 self.verbatim_left.setdefault(place, []).append(row.sentence)
         stored = [row for row in stored if not row.left_out]
-        for statement in _joined_marks(with_decided_statements(stored, report)):
-            stored_label = statement.label
-            if statement.code == "report.unpublished_value":
-                unstated = self._read_again(statement.sentence)
-                if unstated == []:
-                    # Every value of the sentence stands with a publish state the
-                    # table agrees with: a mark beside it would state it twice.
-                    continue
-                if unstated:
-                    # The mark says what this render's table says of each value
-                    # the sentence leaves unstated, as the indicator rows beside
-                    # it do; the stored label stands where the sentence could not
-                    # be read again.
-                    from malspark.pipeline.validation import unpublished_value_label
-
-                    stored_label = unpublished_value_label(unstated)
+        for read in _joined_marks(with_decided_statements(stored, report)):
+            statement = as_rendered(read, self._read_again)
+            if statement is None:
+                continue
             if statement.sentence.strip():
                 try:
-                    label = _inline_safe(stored_label, pipes=False, plain=self._defang)
+                    label = _inline_safe(statement.label, pipes=False, plain=self._defang)
                 except Exception as exc:  # noqa: BLE001 — the sentence is marked all the same
                     logger.debug("markdown: a mark's label was not written (%s).", exc)
                     label = STATE_UNKNOWN
@@ -5196,6 +5184,66 @@ def _joined_marks(rows: Sequence[Any]) -> list[Any]:
         elif row.label and row.label not in out[joined[key]].label:
             first = out[joined[key]]
             out[joined[key]] = first.model_copy(update={"label": f"{first.label}; {row.label}"})
+    return out
+
+
+def as_rendered(statement: Any, read_again: Callable[[str], Any]) -> Any:
+    """A stored mark as a render prints it, or ``None`` for one the render drops.
+
+    A mark of the unpublished-value code is read again against the render's IOC
+    table (``read_again``: the values of the sentence the table does not
+    publish and the sentence leaves unstated, ``None`` where the sentence
+    cannot be read). None left: every value stands with a state the table
+    agrees with, and a mark beside it would state it twice, so it is dropped.
+    Some left: the label says what the table says of each
+    (``validation.unpublished_value_label``), as the indicator rows beside it
+    do. Not read, or any other code: the mark as stored. Whether the model was
+    asked stays the recorded fact.
+    """
+    if statement.code != "report.unpublished_value":
+        return statement
+    unstated = read_again(statement.sentence)
+    if unstated == []:
+        return None
+    if not unstated:
+        return statement
+    from malspark.pipeline.validation import unpublished_value_label
+
+    label = unpublished_value_label(unstated)
+    return statement if label == statement.label else statement.model_copy(update={"label": label})
+
+
+def served_statements(report: MalwareReport, statements: Sequence[Any], rows: Any) -> list[Any]:
+    """The flagged statements a report is served with: the marks its render prints.
+
+    Each is read as the render reads it (:func:`as_rendered`) against ``rows``,
+    the IOC table served beside it; a statement the agreement round left out of
+    the analyst report (``left_out``) is served as stored, as the bundle prints
+    it whole. A table that cannot be read refuses every value for that reason,
+    as the render's does. Nothing stored changes.
+    """
+    from malspark.pipeline.validation import _unstated_values
+
+    try:
+        from malspark.reporting.narrative_agent import published_answers
+
+        answers: Callable[[str, str], str] = published_answers(report, rows=rows)
+    except Exception as exc:  # noqa: BLE001 — every value is then refused
+        logger.debug("markdown: the served IOC table was not read (%s).", exc)
+        answers = lambda kind, value: TABLE_NOT_READ  # noqa: E731
+
+    def read_again(sentence: str) -> list[tuple[str, str, str]] | None:
+        try:
+            return _unstated_values(str(sentence or ""), answers)
+        except Exception as exc:  # noqa: BLE001 — the stored row is served
+            logger.debug("markdown: a served mark was not read again (%s).", exc)
+            return None
+
+    out: list[Any] = []
+    for statement in statements:
+        shown = statement if statement.left_out else as_rendered(statement, read_again)
+        if shown is not None:
+            out.append(shown)
     return out
 
 

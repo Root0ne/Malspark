@@ -256,6 +256,74 @@ FORMS: list[tuple[str, str, str, str, dict[str, Any], tuple[str, ...], tuple[str
         (),
     ),
 ]
+# A why that holds a bracket inside a bracket, as a stored run's state does, and one of three
+# levels.
+LINEAGE = (
+    "the sandbox report says it was made by a process whose lineage the report's two facts "
+    "dispute (StartMenuExperienceHost.exe (procid 99))"
+)
+THREE_LEVELS = (
+    "the sandbox report attributes its flows to svchost.exe (procid 7 (child of services.exe "
+    "[procid 3 (session 0)]))"
+)
+
+
+def _combinations() -> list[tuple[str, Any]]:
+    """Every combination of refusing parts the network branches of ``publish_answer`` write,
+    each why among them, and the one-part forms of the other branches."""
+    out: list[tuple[str, Any]] = []
+    whys = {
+        "flow": S.UNATTRIBUTED_FLOW,
+        "long": LONG_WHY,
+        "lineage": LINEAGE,
+        "three": THREE_LEVELS,
+    }
+    who = {
+        "alone": {},
+        "listed": {"listed_by": LISTER},
+        "mentioned": {"mentioned_by": MENTIONERS},
+        "both": {"listed_by": LISTER, "mentioned_by": MENTIONERS},
+    }
+    recovery = {"": {}, "benign recovery": {"recovered": TWO_PLACES, "verdict": "Benign"}}
+    for why_name, why in whys.items():
+        for who_name, named in who.items():
+            for untold in ("", NOT_ASKED_IN_TIME):
+                for rec_name, rec in recovery.items():
+                    label = " ".join(
+                        part
+                        for part in (why_name, who_name, "untold" if untold else "", rec_name)
+                        if part
+                    )
+                    keywords: dict[str, Any] = {"unattributed": why, **named, **rec}
+                    if untold:
+                        keywords["untold"] = untold
+                    out.append(
+                        (label, S.publish_answer("ip", "45.77.10.30", "sandbox", **keywords))
+                    )
+    out += [
+        ("resolver", S.public_resolver_reason(LINEAGE, LISTER, MENTIONERS)),
+        ("seen in six entries", S.seen_in_reason(SIX_ENTRIES, LISTER)),
+        ("named only, the report searched", S.named_only_reason(LISTER, S.SEARCHED_THE_REPORT)),
+        ("judge only", S.judge_only_reason()),
+        ("not resolving", S.publish_answer("domain", "host.local", "sandbox")),
+        ("string cut", refused(S.CUT_REASON, facts=('the string reads "evil.ex"',))),
+        ("strings, two holders", refused(S.SEEN_ONLY_IN_THE_STRINGS, facts=(FACT, LISTING))),
+        ("bound browser user agent", refused(f"{S.BOUND}; {S.BROWSER_LIKE}")),
+        (
+            "benign name in a URL, lineage",
+            S.not_kept_reason(f"{S.BENIGN_NAME_IN_A_URL} (https://a.example/x;y=1)", "", LISTER),
+        ),
+    ]
+    return out
+
+
+COMBINATIONS = _combinations()
+
+
+def _named_states(text: str) -> list[str]:
+    return validation._named_states(text)
+
+
 # The forms whose state is longer than the text before their first ";".
 LONGER_STATES = {
     "resolver with the sandbox's fact, a lister and mentioners",
@@ -604,6 +672,54 @@ class TestTheRestatement:
 
         assert _states_publish_state(f" (publish state: {FACT}) during the run.".lower(), answer)
 
+    @pytest.mark.parametrize("how", ["no", "named", "bare"])
+    @pytest.mark.parametrize("why", [LINEAGE, THREE_LEVELS], ids=["two levels", "three levels"])
+    def test_a_bracket_inside_a_bracket_of_a_state_is_part_of_it(self, how: str, why: str) -> None:
+        answer = S.not_kept_reason(why)
+        value = "fd.api.iris.microsoft.com"
+        sentence = f"The sample reaches {value}{self._written(how, answer_state(answer))}"
+
+        assert str(answer_state(answer)).endswith(f"), and {S.NO_MODEL_KEPT}")
+        assert _unstated_values(sentence, lambda kind, held: answer if held == value else "") == []
+
+    def test_a_state_holding_a_semicolon_and_an_and_is_read_whole(self) -> None:
+        answer = S.named_only_reason(LISTER)
+        state = str(answer_state(answer))
+
+        assert ";" in state and ", and " in state
+        for how in ("no", "named", "bare"):
+            assert _states_publish_state(self._written(how, state), answer), how
+
+    def test_an_unbalanced_bracket_is_read_to_the_end_of_its_line(self) -> None:
+        text = f"publish state: {FACT} (and more [of it\nthe next line) here"
+
+        assert _named_states(text) == [f"{FACT} (and more [of it"]
+        assert _named_states("publish state: (((") == ["((("]
+        assert _named_states("no named state here") == []
+
+    def test_named_states_are_read_in_one_pass_over_the_text(self) -> None:
+        class Counted(str):
+            reads = 0
+
+            def __getitem__(self, key: Any) -> Any:
+                Counted.reads += 1
+                return str.__getitem__(self, key)
+
+        for body in ("(" * 5000, "publish state: x (" * 2000, "publish state: " + "([" * 3000):
+            Counted.reads = 0
+            text = Counted(f"publish state: {body}")
+            _named_states(text)
+            assert Counted.reads <= len(text), (body[:20], Counted.reads, len(text))
+
+    @pytest.mark.parametrize("how", ["no", "named", "bare"])
+    @pytest.mark.parametrize(("label", "answer"), COMBINATIONS, ids=[c[0] for c in COMBINATIONS])
+    def test_every_built_combination_of_refusing_parts_restated_word_for_word_passes(
+        self, how: str, label: str, answer: PublishAnswer
+    ) -> None:
+        assert isinstance(answer, PublishAnswer), label
+
+        assert _states_publish_state(self._written(how, answer_state(answer)), answer)
+
 
 def _report() -> MalwareReport:
     return MalwareReport(identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)))
@@ -792,6 +908,47 @@ class TestEveryBuildPathCarriesTheParts:
 
         assert stored and all(not isinstance(row.published, PublishAnswer) for row in stored)
 
+    def test_a_report_whose_rebuild_fails_prints_its_stored_answers_on_every_surface(
+        self,
+    ) -> None:
+        import html
+        import re
+
+        from malspark.reporting.misp import build_misp_attributes
+        from malspark.reporting.renderers import HtmlRenderer
+        from malspark.reporting.renderers.markdown import MarkdownRenderer
+
+        def failed(*_args: Any, **_kwargs: Any) -> list[ConsolidatedIOC]:
+            raise RuntimeError("the rebuild failed")
+
+        def plain(text: str) -> str:
+            text = html.unescape(re.sub(r"<[^>]+>", "", text))
+            text = text.replace("\\", "").replace("[.]", ".").replace("[:]", ":")
+            return " ".join(re.sub(r"[*_`]", "", text).split()).lower()
+
+        report = _redacted()
+        stored = [row for row in report.consolidated_iocs if row.kind]
+        refused_text = [
+            str(row.published) for row in stored if row.published and not S.publishes(row.published)
+        ]
+        assert any(text.startswith("no: the sandbox report") for text in refused_text)
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(builder, "build_consolidated_iocs", failed)
+            rows = builder.ioc_table(report, raise_unread=True)
+            printed = {
+                layout: MarkdownRenderer(layout=layout).render(report)
+                for layout in ("full", "bundle", "analyst")
+            }
+            printed["html"] = HtmlRenderer().render(report, nonce="fixed")
+            S.ExtendedSTIXRenderer().render(report)
+            build_misp_attributes(report, rows, owner="a-report-id")
+
+        assert [str(row.published) for row in rows] == [str(row.published) for row in stored]
+        assert not any(isinstance(row.published, PublishAnswer) for row in rows)
+        for surface in ("full", "bundle", "html"):
+            for text in refused_text:
+                assert plain(text) in plain(printed[surface]), (surface, text)
+
     # The answer writers a ``published=`` site or a ``.published =`` assignment may be fed by,
     # the names their answers are bound to, and a copy of another row's answer.
     WRITERS = frozenset(
@@ -821,3 +978,108 @@ class TestEveryBuildPathCarriesTheParts:
                 assert isinstance(value, ast.Attribute) and value.attr == "published", ast.unparse(
                     value
                 )
+
+    def _assert_written_with_parts(self, value: ast.expr) -> None:
+        if isinstance(value, ast.Call):
+            func = value.func
+            name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+            assert name in self.WRITERS, ast.unparse(value)
+        elif isinstance(value, ast.Name):
+            assert value.id in self.HELD, ast.unparse(value)
+        else:
+            assert isinstance(value, ast.Attribute) and value.attr == "published", ast.unparse(
+                value
+            )
+
+    def test_no_module_sets_a_row_s_answer_text_without_its_parts(self) -> None:
+        # Every site in the package that sets a row's answer: a row built with one, a row
+        # copied with one, or one assigned to a row; each takes it from an answer writer, a
+        # name an answer is bound to, or another row's answer.
+        package = Path(builder.__file__).resolve().parents[1]
+        writers: set[str] = set()
+        for path in sorted(package.rglob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text())):
+                values: list[ast.expr] = []
+                if isinstance(node, ast.Call):
+                    func = node.func
+                    name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+                    for keyword in node.keywords:
+                        if name == "ConsolidatedIOC" and keyword.arg == "published":
+                            values.append(keyword.value)
+                        if (
+                            name in ("model_copy", "model_construct")
+                            and keyword.arg == "update"
+                            and isinstance(keyword.value, ast.Dict)
+                        ):
+                            values += [
+                                held
+                                for key, held in zip(
+                                    keyword.value.keys, keyword.value.values, strict=True
+                                )
+                                if isinstance(key, ast.Constant) and key.value == "published"
+                            ]
+                if isinstance(node, ast.Assign):
+                    values += [
+                        node.value
+                        for target in node.targets
+                        if isinstance(target, ast.Attribute) and target.attr == "published"
+                    ]
+                for value in values:
+                    self._assert_written_with_parts(value)
+                    writers.add(path.relative_to(package).as_posix())
+
+        assert "reporting/builder.py" in writers, writers
+
+
+# The refused network values of the stored runs a word-for-word restatement does not pass
+# for, each with the rule of the reading that explains it (T-821): a state that quotes its
+# own value spelled otherwise reads that spelling as a second place of the value, whose
+# state then stands nowhere after it.
+STATE_QUOTES_ITS_OWN_VALUE = frozenset({("gentlemen-r1/1", "domain", "time.date")})
+
+
+def test_every_stored_refused_value_s_state_restated_word_for_word_passes() -> None:
+    from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before import (
+        _benchmark,
+    )
+
+    root = _benchmark()
+    if root is None:
+        pytest.skip("the stored benchmark runs are not on this machine")
+    # A stored run is a directory holding its report and its ledger.
+    runs = sorted(
+        path.parent
+        for path in root.rglob("report.json")
+        if (path.parent / "evidence.json").is_file()
+    )
+    if not runs:
+        pytest.skip("the stored benchmark runs are not on this machine")
+    restated = 0
+    failing: set[tuple[str, str, str]] = set()
+    for run in runs:
+        name = run.relative_to(root).as_posix()
+        report = MalwareReport.model_validate(json.loads((run / "report.json").read_text()))
+        seen: set[tuple[str, str]] = set()
+        for row in builder.ioc_table(report, raise_unread=True):
+            answer = row.published
+            key = (str(row.kind), str(row.value))
+            if row.kind not in ("ip", "domain", "url") or S.publishes(answer) or key in seen:
+                continue
+            seen.add(key)
+            assert isinstance(answer, PublishAnswer), (name, key, answer)
+            state = str(answer_state(answer))
+            wanted = str(row.value)
+
+            def answers(kind: str, value: str, held: str = answer, wanted: str = wanted) -> str:
+                return held if value == wanted else ""
+
+            for written in (f"({state})", f"({state[4:]})", f"(publish state: {state[4:]})"):
+                restated += 1
+                found = _unstated_values(
+                    f"The sample reaches {wanted} {written} during the run.", answers
+                )
+                if any(value == wanted for _kind, value, _state in found):
+                    failing.add((name, *key))
+
+    assert restated == 2235
+    assert failing == STATE_QUOTES_ITS_OWN_VALUE

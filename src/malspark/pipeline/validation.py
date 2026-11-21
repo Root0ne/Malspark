@@ -8972,14 +8972,45 @@ def recommendation_technique_violations(
 # prints it.
 _PUBLISH_STATE_RE = re.compile(r"(?<![\w-])no:\s*\S", re.IGNORECASE)
 # A publish state written under its own name: ``publish state: <what>``,
-# ``publication state is <what>``. What it says is read against the table.
-# What it says is read to the end of its own bracket: a bracket inside it, a
-# process's ``(procid 36)``, is part of what it says.
+# ``publication state is <what>``. What it says is read against the table, to
+# the end of its own bracket (:func:`_named_states`).
 _NAMED_PUBLISH_STATE_RE = re.compile(
-    r"(?<![\w-])(?:publish(?:ed|ing)?|publication)\s+state\s*(?::|=|-|–|—|\bis\b)"
-    r"\s*(?P<said>(?:[^()\[\]\n]|\([^()\n]*\)|\[[^\[\]\n]*\])*)",
+    r"(?<![\w-])(?:publish(?:ed|ing)?|publication)\s+state\s*(?::|=|-|–|—|\bis\b)\s*",
     re.IGNORECASE,
 )
+
+
+def _named_states(text: str) -> list[str]:
+    """What each publish state written under its own name in ``text`` says.
+
+    Each is read from its name to the end of its own bracket: the round or
+    square bracket that closes at the depth the name stands at, or the end of
+    the line. A bracket inside it, at any depth (a process's ``(procid 36)``
+    inside a lineage's bracket), is part of what it says; a bracket that never
+    closes reads to the end of the line. One pass: each character is read once,
+    and the next name is looked for after the end of the last state.
+    """
+    out: list[str] = []
+    start = 0
+    while (found := _NAMED_PUBLISH_STATE_RE.search(text, start)) is not None:
+        begin = index = found.end()
+        depth = 0
+        while index < len(text):
+            char = text[index]
+            if char == "\n":
+                break
+            if char in "([":
+                depth += 1
+            elif char in ")]":
+                if depth == 0:
+                    break
+                depth -= 1
+            index += 1
+        out.append(text[begin:index])
+        start = max(index, found.end() + 1)
+    return out
+
+
 # A named state that reads as "not published": a negation that is not of
 # "unpublished", or a word that withholds the value. Anything else (unknown,
 # pending, likely published, kept as an indicator) says no such thing.
@@ -9119,7 +9150,7 @@ def _claims_published(text: str) -> bool:
 
     A state under its own name that opens with "yes" or "published" says so too.
     """
-    if any(_STATE_AFFIRMS_RE.search(said) for said in _NAMED_PUBLISH_STATE_RE.findall(text)):
+    if any(_STATE_AFFIRMS_RE.search(said) for said in _named_states(text)):
         return True
     return _unnegated(_PUBLISHED_CLAIM_RE, text)
 
@@ -9276,7 +9307,7 @@ def _states_publish_state(after: str, answer: str) -> bool:
     if _claims_kept(after):
         return False
     clause = _clause_after(after)
-    named = [said for said in _NAMED_PUBLISH_STATE_RE.findall(clause) if said.strip()]
+    named = [said for said in _named_states(clause) if said.strip()]
     if named:
         return all(
             _reads_withheld(said) or _restates_reason(said, answer, slack=_NAMED_REASON_SLACK)

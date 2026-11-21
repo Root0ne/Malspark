@@ -318,7 +318,9 @@ def with_current_iocs(mr: Any, owner: str) -> tuple[Any, str | None]:
     The table is the one ``/iocs`` and §9 read (``builder.ioc_table``), so the
     console's indicator panel shows the rows the feed serves. Its flagged
     statements carry, after the stored ones, the sentences the exports mark
-    against what the run published (``prose_decisions``). A report stored
+    against what the run published (``prose_decisions``), each as the report's
+    render prints it (``markdown.served_statements``): a mark the render drops
+    is not served, and a served label is the render's. A report stored
     before MISP attributes were built has them built here, their uuids derived
     from ``owner`` (the report's id). A drafted rule stored before ``printed``
     and ``standing`` existed has them filled from ``rule_standing``, so the
@@ -333,11 +335,17 @@ def with_current_iocs(mr: Any, owner: str) -> tuple[Any, str | None]:
         return mr, None
     from malspark.reporting.misp import build_misp_attributes
     from malspark.reporting.prose_decisions import with_decided_statements
+    from malspark.reporting.renderers.markdown import served_statements
 
     table = ioc_table(typed)
     served = {**mr, "consolidated_iocs": [row.model_dump(mode="json") for row in table]}
-    flagged = with_decided_statements(list(typed.flagged_statements), typed)
-    if len(flagged) > len(typed.flagged_statements):
+    # The marks the report prints: each stored mark read again against the served table as
+    # the render reads it (``markdown.served_statements``), so the console shows no mark the
+    # report drops and the label the report prints.
+    flagged = served_statements(
+        typed, with_decided_statements(list(typed.flagged_statements), typed), table
+    )
+    if flagged != list(typed.flagged_statements):
         served["flagged_statements"] = [row.model_dump(mode="json") for row in flagged]
     stored_rules = mr.get("detection_signatures")
     if isinstance(stored_rules, list) and any(_lacks_standing(rule) for rule in stored_rules):

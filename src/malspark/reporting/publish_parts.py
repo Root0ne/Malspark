@@ -99,8 +99,14 @@ def answer_state(answer: Any) -> str:
 
 
 def told(state: Any) -> str:
-    """A state as a finding row tells it: whole where it is made of parts, which are the
-    platform's own text, and bounded as a model-written value is where it is not."""
+    """A state as a finding row tells it: whole where it is made of parts, and bounded as a
+    model-written value is where it is not.
+
+    The parts are written by the publish rule, and they carry values the platform did not
+    write (a process name, a URL, an analyst's name); a part is never cut, and it is made
+    fit to store and print as any finding value is, on one line and with every operator
+    credential kept out (``events.safe_finding_value``). Escaping for a surface stays with
+    each surface."""
     from malspark.pipeline.events import safe_finding_value
 
     return safe_finding_value(state, whole=isinstance(state, PublishAnswer))
