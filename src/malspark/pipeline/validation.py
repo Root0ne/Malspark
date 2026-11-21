@@ -9300,7 +9300,9 @@ def _states_publish_state(after: str, answer: str) -> bool:
     clause right after the value
     (:func:`_clause_after`), a state under its own name that reads as not
     published or restates most of the table's reason, the platform's own "not
-    published by this run", or the table's whole reason restated in order. A
+    published by this run", or the table's whole reason restated in order,
+    read to the first comma or, for a reason that holds commas of its own, to
+    the end of the clause group (up to a ``;`` outside brackets). A
     named state that says anything else (unknown, pending, published) is no
     state the table agrees with.
     """
@@ -9317,7 +9319,12 @@ def _states_publish_state(after: str, answer: str) -> bool:
             _reads_withheld(said) or _restates_reason(said, answer, slack=_NAMED_REASON_SLACK)
             for said in named
         )
-    return bool(_NOT_PUBLISHED_RE.search(clause)) or _restates_reason(clause, answer)
+    # A reason that holds a comma of its own is read to the end of its clause group.
+    return (
+        bool(_NOT_PUBLISHED_RE.search(clause))
+        or _restates_reason(clause, answer)
+        or _restates_reason(_clause_after(after, ";"), answer)
+    )
 
 
 def _prose_of_a_section(payload: Any) -> list[str]:
