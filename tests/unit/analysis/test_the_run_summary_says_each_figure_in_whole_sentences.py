@@ -187,8 +187,8 @@ def test_each_rate_and_each_timeout_is_said_with_its_arithmetic() -> None:
         "yet, or no output budget)",
         "Timeout of `c:read`: 491s — the larger of 120s configured and (24000 prompt tokens "
         "read at 100.00 tokens/s + 8192 tokens written at 20.00 tokens/s) × 1.5 = 491s",
-        "Timeout of `d:whole`: 307s — 8192 tokens at 40.00 tokens/s (prompt read included) "
-        "× 1.5 = 307s",
+        "Timeout of `d:whole`: 307s — 8192 tokens at 40.00 tokens/s (whether this rate "
+        "includes the prompt read is not recorded) × 1.5 = 307s",
     ]
 
 
@@ -203,6 +203,36 @@ def test_a_models_name_is_written_by_the_callers_writers_and_nothing_measured_sa
     assert lines[0].startswith("Generation rate of [<m1>]: 57.00 tokens/s")
     assert generation_lines(None) == []
     assert generation_lines({"models": {}, "timeouts": {}}) == []
+
+
+def test_a_single_rate_is_said_to_include_the_prompt_read_only_where_the_wall_clock_timed_it() -> (
+    None
+):
+    from malspark.llm.generation_rate import (
+        IN_CALL_SOURCE,
+        OLLAMA_SOURCE,
+        WALL_CLOCK_SOURCE,
+    )
+
+    def said(sources: Any) -> str:
+        record = {
+            "margin": 1.5,
+            "models": {"m": {"tokens_per_second": 40.0, "sources": sources}},
+            "timeouts": {"d:whole": {**GENERATION["timeouts"]["d:whole"], "model": "m"}},
+        }
+        (line,) = [line for line in generation_lines(record) if line.startswith("Timeout")]
+        return line
+
+    assert said([WALL_CLOCK_SOURCE]) == (
+        "Timeout of `d:whole`: 307s — 8192 tokens at 40.00 tokens/s (prompt read included) "
+        "× 1.5 = 307s"
+    )
+    not_recorded = (
+        "Timeout of `d:whole`: 307s — 8192 tokens at 40.00 tokens/s (whether this rate "
+        "includes the prompt read is not recorded) × 1.5 = 307s"
+    )
+    for sources in ([OLLAMA_SOURCE], [WALL_CLOCK_SOURCE, IN_CALL_SOURCE], [], None):
+        assert said(sources) == not_recorded, sources
 
 
 # ---------------------------------------------------------------------------

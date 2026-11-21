@@ -56,7 +56,7 @@ from malspark.analysis.disclosure import INTRO_SENTENCE as DISCLOSURE_INTRO
 from malspark.analysis.disclosure import disclosure_lines, not_built_line
 from malspark.analysis.efficiency import INTRO_SENTENCE as EFFICIENCY_INTRO
 from malspark.analysis.efficiency import efficiency_lines
-from malspark.analysis.isolation import INTRO_SENTENCE as ISOLATION_INTRO
+from malspark.analysis.isolation import intro_sentence as isolation_intro
 from malspark.analysis.isolation import isolation_lines
 from malspark.analysis.run_summary import (
     NEGOTIATION_CONFIDENCE_LABEL,
@@ -2719,7 +2719,7 @@ class MarkdownRenderer:
             part = held.get("isolation") if isinstance(held, dict) else None
             isolated = spoken(lambda word: isolation_lines(part, word), code, part)
             if isolated:
-                lines.extend(["", ISOLATION_INTRO, ""])
+                lines.extend(["", isolation_intro(part), ""])
                 lines.extend(_item(line) for line in isolated)
             # What each tool the run called is declared to do beyond answering
             # (``analysis.tool_effects``); a record stored before the part

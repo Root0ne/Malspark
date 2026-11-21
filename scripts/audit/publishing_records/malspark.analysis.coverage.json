@@ -30,10 +30,14 @@
   },
   {
    "constant": "malspark.analysis.coverage:NOTHING_MISSING",
-   "condition": "the only line of the could-not-establish block when the record holds \"v\", no not_established row prints a line, no partial_reason is given and the report's analyst record names no failed, skipped or silent analyst",
+   "condition": "the only line of the could-not-establish block when the record holds \"v\", no not_established row prints a line, no partial_reason is given and the report's analyst record names no failed, skipped or silent analyst; each call state it names (failed, refused by a guard, not run, cut, not shown) makes a not_established row, and an answer read in part (capped, paged, narrowed, not declared whole) is answered and makes none, which the line says",
    "basis": ["run_summary.coverage.not_established", "run_summary.coverage.partial_reason", "the report's analyst record (failed_analysts, degradation reasons, stage agent_reasons, agent_stats)"],
-   "test": "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_a_record_with_nothing_missing_says_so_and_no_record_says_nothing",
-   "text_digest": "568d1a6d81c33a4f22924a479acfefb809b36674041047af06481dd30369466d"
+   "test": [
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_a_record_with_nothing_missing_says_so_and_no_record_says_nothing",
+    "tests/unit/analysis/test_a_negative_says_what_looked.py::test_a_run_with_nothing_missing_never_says_every_call_answered_whole",
+    "tests/unit/analysis/test_a_negative_says_what_looked.py::test_each_call_state_the_nothing_missing_line_names_makes_a_row"
+   ],
+   "text_digest": "3f9c645b8177bf5912238089da08276bb98c54a5e1ed13c58a17f72f08867092"
   },
   {
    "constant": "malspark.analysis.coverage:NOT_ESTABLISHED_INTRO",

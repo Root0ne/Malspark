@@ -26,7 +26,7 @@ from malspark.analysis.coverage import (
     negative_clauses,
     states_a_negative,
 )
-from malspark.schemas.evidence import LedgerEntry
+from malspark.schemas.evidence import LedgerEntry, not_shown_record
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
 SAMPLE = "/jobs/j1/sample.exe"
@@ -714,6 +714,94 @@ def test_a_run_that_saw_everything_says_so_and_names_the_capture() -> None:
     assert "over the packet capture" in looked[0]
     # A capture summary is not declared to read its whole input.
     assert _only_negative(record)["coverage"] == PARTIAL
+
+
+_CAPTURE = "/jobs/j1/captures/run.pcap"
+_STRINGS_FACTS = {"v": 1, "kind": "strings", "arguments": {"path": "path"}}
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        # An answer its tool capped.
+        _entry(
+            1,
+            "strings",
+            {"path": SAMPLE},
+            facts=_STRINGS_FACTS,
+            output='{"strings": [{"offset": 1, "text": "abc"}], "has_more": true, "total": 900}',
+        ),
+        # An answer narrowed by an argument.
+        _entry(
+            1,
+            "strings",
+            {"path": SAMPLE, "min_length": 12},
+            facts=_STRINGS_FACTS,
+            output='{"strings": []}',
+        ),
+        # An answer of a tool not declared to read its whole input.
+        _entry(
+            1,
+            "pcap_summary",
+            {"pcap_path": _CAPTURE},
+            server="network",
+            source="mcp:network",
+            facts={"v": 1, "kind": "packet_summary", "arguments": {"path": "pcap_path"}},
+        ),
+    ],
+    ids=["capped", "narrowed", "not_declared_whole"],
+)
+def test_a_run_with_nothing_missing_never_says_every_call_answered_whole(entry: Any) -> None:
+    record = _record(
+        [entry],
+        _claim("No mutex name was found [ev_0001]."),
+        sandbox_report={"network": {"pcap_local_path": _CAPTURE}},
+    )
+
+    assert record["not_established"] == []
+    (line,) = coverage_lines(record, analysts=([], {}, []))[0]
+    assert "answered whole" not in line
+    assert line.endswith("an answer its tool capped, paged or narrowed is not counted here.")
+    # The negative citing the call says it read part of its input.
+    assert _only_negative(record)["coverage"] == PARTIAL
+
+
+@pytest.mark.parametrize(
+    ("entry", "state"),
+    [
+        (_entry(1, "strings", {"path": SAMPLE}, kind="strings", ok=False, error="boom"), "failed"),
+        (
+            _entry(1, "strings", {"path": SAMPLE}, kind="strings", repeated_of="ev_0001"),
+            "guard",
+        ),
+        (
+            _entry(1, "strings", {"path": SAMPLE}, kind="strings", ok=False, error="not run: off"),
+            "not_run",
+        ),
+        (
+            _entry(1, "strings", {"path": SAMPLE}, kind="strings", chars_dropped=500),
+            "cut",
+        ),
+        (
+            _entry(
+                1,
+                "strings",
+                {"path": SAMPLE},
+                kind="strings",
+                truncated=True,
+                output=not_shown_record(500),
+            ),
+            "not_shown",
+        ),
+    ],
+)
+def test_each_call_state_the_nothing_missing_line_names_makes_a_row(entry: Any, state: str) -> None:
+    record = _record([entry], sandbox_report={"network": {"pcap_local_path": _CAPTURE}})
+
+    assert [row["state"] for row in record["not_established"]] == [state]
+    missing = coverage_lines(record, analysts=([], {}, []))[0]
+    assert NOTHING_MISSING not in missing
+    assert len(missing) == 1
 
 
 def test_a_repeat_is_read_as_the_entry_that_holds_its_answer() -> None:

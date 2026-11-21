@@ -1,0 +1,14 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.llm.generation_rate:WALL_CLOCK_SOURCE",
+   "condition": "written at measurement time into run_summary.generation.models[].sources for a model one of whose answers carried no server generation time and was timed by the call's wall clock; printed in that model's generation rate line among its sources; compared in the single-rate timeout line (run_summary._prompt_read), which says the prompt read is included only where every recorded source of the timeout's model is this one",
+   "basis": ["run_summary.generation models[].sources"],
+   "test": [
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_a_single_rate_is_said_to_include_the_prompt_read_only_where_the_wall_clock_timed_it",
+    "tests/unit/llm/test_generation_rate.py::TestTheTimeoutLineSaysThePromptReadOnlyWhereTheRecordHoldsIt::test_a_model_timed_only_by_the_wall_clock"
+   ],
+   "text_digest": "7bda0b7f1ddc9fb9d915f9428d9cd120bc37e1537abcc159294b346846f62495"
+  }
+ ]
+}
