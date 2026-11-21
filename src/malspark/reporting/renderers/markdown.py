@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import bisect
 import ipaddress
+import json
 import math
 import re
 import secrets
@@ -1326,7 +1327,7 @@ class MarkdownRenderer:
                     )
                 )
             measured.extend(_left_out(len(carved), 10, "carved payloads"))
-            measured.extend(_left_out(len(dropped), 20, "dropped files"))
+            measured.extend(_dropped_left_out(dropped, 20))
         # What the carver's own cap left out, stated beside what it carved.
         carve_notes = [r for r in (static.embedded_resources if static else []) if is_carve_note(r)]
         if carve_notes:
@@ -8315,6 +8316,32 @@ def _left_out(total: int, shown: int, what: str) -> list[str]:
     if rest <= 0:
         return []
     return ["", LEFT_OUT_LINE.format(rest=rest, what=what)]
+
+
+def _dropped_item(op: Mapping[str, Any]) -> str:
+    """The item of a sandbox's dropped-files list a row names, as one key.
+
+    A row with the sandbox's name for the file is that item whatever guest path
+    it fills: two entries listing one item, one with the path and one without,
+    name one file. A row with no name is keyed by every field, its path among them.
+    """
+    held = {k: v for k, v in op.items() if k != "path"} if op.get("name") else dict(op)
+    return json.dumps(held, sort_keys=True, default=str)
+
+
+def dropped_files_left_out(dropped: Sequence[Mapping[str, Any]], shown: int) -> int:
+    """How many files the dropped-files table leaves out when it prints the first ``shown``
+    rows of ``dropped``: each item of the rows after them that no row shown names, counted
+    once (:func:`_dropped_item`)."""
+    printed = {_dropped_item(op) for op in dropped[:shown]}
+    return len({key for op in dropped[shown:] if (key := _dropped_item(op)) not in printed})
+
+
+def _dropped_left_out(dropped: Sequence[Mapping[str, Any]], shown: int) -> list[str]:
+    """The line the dropped-files table ends with, counting the files it leaves out
+    (:func:`dropped_files_left_out`), or nothing when it shows every one."""
+    rest = dropped_files_left_out(dropped, shown)
+    return ["", LEFT_OUT_LINE.format(rest=rest, what="dropped files")] if rest else []
 
 
 def _outside_marks(text: str, cut: int) -> int:

@@ -67,6 +67,7 @@ from malspark.reporting.renderers.markdown import (
     _code_span,
     _degraded_sentence,
     _divider,
+    _dropped_left_out,
     _emphasis_escaped,
     _encryption_table,
     _encrypts_files,
@@ -1913,7 +1914,7 @@ class _Analyst:
                 )
             )
         lines.extend(_left_out(len(carved), 10, "carved payloads"))
-        lines.extend(_left_out(len(dropped), 20, "dropped files"))
+        lines.extend(_dropped_left_out(dropped, 20))
         notes = [r for r in (static.embedded_resources if static else []) if is_carve_note(r)]
         if notes:
             lines.extend(
