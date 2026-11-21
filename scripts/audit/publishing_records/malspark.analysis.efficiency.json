@@ -1,0 +1,140 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.analysis.efficiency:INTRO_SENTENCE",
+   "condition": "printed by the run summary appendix over the efficiency block when efficiency_lines gives at least one line: run_summary.efficiency a mapping holding \"v\" with a part that prints",
+   "basis": ["run_summary.efficiency"],
+   "test": "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_the_report_heads_the_block_with_its_intro_sentence",
+   "text_digest": "9a19bbfa3891226ee007604c0bb70556b2146b0cf23da2808d03c21063436b73"
+  },
+  {
+   "constant": "malspark.analysis.efficiency:PART_LABELS",
+   "condition": "in an agent's input line, the name of each request part whose summed character count is above 0",
+   "basis": ["run_summary.efficiency.inputs.loops[].parts"],
+   "test": [
+    "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_each_agent_s_input_is_said_by_part_with_the_tokens_reported",
+    "tests/unit/analysis/test_the_input_is_measured_by_part.py::test_the_record_and_the_report_name_an_agent_whose_calls_were_not_measured"
+   ],
+   "text_digest": "2115a71389151c3fa6d1942d43289c075053c4a91fa1786ee60ab94c5986e6e2"
+  },
+  {
+   "constant": "malspark.analysis.efficiency:_CALL_WORDS",
+   "condition": "in the calls line's clause by maker, the words of each count of a maker that is above 0",
+   "basis": ["run_summary.efficiency.calls.by_agent"],
+   "test": "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_the_calls_that_found_nothing_new_are_said_by_their_maker",
+   "text_digest": "9842ae44b9fac5b28f94ec4c8b687b8505eb4bf195299f98f9804ffd2fde008c"
+  },
+  {
+   "constant": "malspark.analysis.efficiency:_COMPONENT_LABELS",
+   "condition": "in the run fingerprint line, the name of each component the record holds, beside its digest's first twelve characters",
+   "basis": ["run_summary.efficiency.fingerprint.components"],
+   "test": "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_the_fingerprint_is_said_with_its_components_and_what_it_could_not_hold",
+   "text_digest": "5df6529dda4299a3e2b2a6b6e2faf160476614c80e77b9fa8a04be09129ab029"
+  },
+  {
+   "function": "malspark.analysis.efficiency:_agent_input_line",
+   "condition": "one line per agent the inputs rows name: its tool loops and kinds of single call, requests and characters, each part's share; the input tokens the provider reported and for how many requests, or that it reported none; the token ledger's model calls of the agent where the record's calls name it",
+   "basis": ["run_summary.efficiency.inputs.loops[]: agent, kind, requests, parts, reported_requests, input_tokens", "run_summary.efficiency.inputs.calls"],
+   "test": [
+    "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_each_agent_s_input_is_said_by_part_with_the_tokens_reported",
+    "tests/unit/analysis/test_the_input_is_measured_by_part.py::test_the_record_and_the_report_name_an_agent_whose_calls_were_not_measured"
+   ],
+   "text_digest": "188dc2b54b91c1d4accc26feceb09a2ac2377b91337e694e5ba173df0c846902"
+  },
+  {
+   "function": "malspark.analysis.efficiency:_calls_line",
+   "condition": "printed when the record holds a calls part: the five counts of tool calls that found nothing new, then, where any maker has a count above 0, the counts by maker (the triage pack and the pipeline named in words) and by tool",
+   "basis": ["run_summary.efficiency.calls: repeated, refused, run_again, retried_after_failure, same_call_elsewhere, by_agent, by_tool"],
+   "test": [
+    "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_the_calls_that_found_nothing_new_are_said_by_their_maker",
+    "tests/unit/analysis/test_repeated_and_refused_calls_are_counted.py::test_no_ledger_is_no_part_and_a_clean_one_counts_zeros"
+   ],
+   "text_digest": "c87b0dc12c239e78bfb671cf3f92768880e37c2ba3981a8d75f4eb254910ac3b"
+  },
+  {
+   "function": "malspark.analysis.efficiency:_fingerprint_lines",
+   "condition": "printed when the record holds a fingerprint part: the hash with its components and the parts the job could not give; the agents whose servers were not attached; the agents not resolved, reached only by delegation; each tool server as it gave itself at attach, where the parts name servers",
+   "basis": ["run_summary.efficiency.fingerprint: sha256, components, unread, not_attached, not_resolved, parts.servers"],
+   "test": [
+    "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_the_fingerprint_is_said_with_its_components_and_what_it_could_not_hold",
+    "tests/unit/analysis/test_the_run_fingerprint_names_what_changed.py::test_the_report_lines_give_the_hash_and_the_servers"
+   ],
+   "text_digest": "4023c488b04b59125fa4882609a1fa7e7ace59743729f0b71977d38b7f585ee3"
+  },
+  {
+   "function": "malspark.analysis.efficiency:_input_lines",
+   "condition": "printed when the record holds an inputs part with a row: the agents' input lines, the agents of the token ledger not measured by part, the peer reports shown to the named revisions where rows are held, and the sentence that every part is a character count",
+   "basis": ["run_summary.efficiency.inputs: loops, calls, peer_reports"],
+   "test": [
+    "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_each_agent_s_input_is_said_by_part_with_the_tokens_reported",
+    "tests/unit/analysis/test_the_input_is_measured_by_part.py::test_the_record_and_the_report_name_an_agent_whose_calls_were_not_measured"
+   ],
+   "text_digest": "2e08f2ff4bca6944c20ea5272d88983bc55dfbdc3b7c0d36bb60eda127d78ac0"
+  },
+  {
+   "function": "malspark.analysis.efficiency:_kind_clause",
+   "condition": "inside an agent's output line, once for validation retries and once for drops questions: the output tokens, their share, the calls and those reporting no usage where any",
+   "basis": ["run_summary.efficiency.output.<agent>.retry", "run_summary.efficiency.output.<agent>.drop_question", "run_summary.efficiency.output.<agent>.output_tokens"],
+   "test": "tests/unit/analysis/test_the_retry_share_of_the_output_is_counted.py::test_the_report_line_names_an_agent_that_was_asked_again",
+   "text_digest": "c6009e9c61c3f2b390558c8fc6df2c367f51a3715b5ed6f3c6e09e09956979ea"
+  },
+  {
+   "function": "malspark.analysis.efficiency:_ledger_reads_line",
+   "condition": "printed when the record holds a ledger_reads part: the reads by id outside a tool loop, by call, or none; the reads that named no entry and the repeated reads refused where any",
+   "basis": ["run_summary.efficiency.ledger_reads: reads, by_call, unfound, refused"],
+   "test": [
+    "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_the_rows_read_back_and_the_reads_outside_a_loop_are_said",
+    "tests/unit/agents/test_the_judges_calls_may_read_the_ledger.py::TestTheReadsAreCounted::test_each_read_is_counted_by_call_and_stated_in_the_efficiency_block"
+   ],
+   "text_digest": "03e4255a712abc07b7dde23a43b208cc21eed04a3af399fc8ae6aafcb584c7fd"
+  },
+  {
+   "function": "malspark.analysis.efficiency:_lines",
+   "condition": "the sentence that the counts may be incomplete, first, when the record holds a partial_reason (a run stopped part-way)",
+   "basis": ["run_summary.efficiency.partial_reason"],
+   "test": "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_a_record_of_a_stopped_run_says_its_counts_may_be_incomplete",
+   "text_digest": "796d453086a5de67fe2e1f47076d4e7d3a404faae7503e7a4ee064d36111b109"
+  },
+  {
+   "function": "malspark.analysis.efficiency:_maker_label",
+   "condition": "a maker named in the uncited and calls lines: \"the triage pack\" for pack, \"the pipeline\" for pipeline, any other name as a code span",
+   "basis": ["run_summary.efficiency.uncited.by_agent", "run_summary.efficiency.calls.by_agent"],
+   "test": [
+    "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_the_evidence_nothing_cites_is_said_with_who_made_it_and_the_failed_calls",
+    "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_the_calls_that_found_nothing_new_are_said_by_their_maker"
+   ],
+   "text_digest": "cefe7cf51fd1847de937808f079345a2dfd309b8a6b0151d920e4f884c1f511b"
+  },
+  {
+   "function": "malspark.analysis.efficiency:_output_lines",
+   "condition": "printed when the record holds an output part: one line per agent with a validation retry or a drops question, or, when no agent had one, the line that none was asked",
+   "basis": ["run_summary.efficiency.output.<agent>: output_tokens, retry, drop_question, unreported_calls"],
+   "test": [
+    "tests/unit/analysis/test_the_retry_share_of_the_output_is_counted.py::test_the_report_line_names_an_agent_that_was_asked_again",
+    "tests/unit/analysis/test_the_retry_share_of_the_output_is_counted.py::test_a_run_never_asked_again_says_so"
+   ],
+   "text_digest": "c7c6a10f007ff2fc3602fb24b9d82069ef30caeebcae3b057b18931da17cf188"
+  },
+  {
+   "function": "malspark.analysis.efficiency:_rows_read_line",
+   "condition": "printed when the record holds a rows_read part: the reads back by id with each agent's reads, rows and pack rows, or none; the reads that named no row where any",
+   "basis": ["run_summary.efficiency.rows_read: reads, by_agent, unfound"],
+   "test": [
+    "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_the_rows_read_back_and_the_reads_outside_a_loop_are_said",
+    "tests/unit/analysis/test_the_rows_read_back_are_counted.py::test_the_report_line_says_how_many_rows_and_how_many_pack_rows",
+    "tests/unit/analysis/test_the_rows_read_back_are_counted.py::test_a_ledger_with_no_read_says_none"
+   ],
+   "text_digest": "be7c565f1f3965333f5a6223213e6aef5800265894635d33739c634d02f1f4f9"
+  },
+  {
+   "function": "malspark.analysis.efficiency:_uncited_line",
+   "condition": "printed when the record holds an uncited part: of the entries whose tool answered, how many nothing cites, by maker and tool where any; where the part holds a failed count, the failed calls not counted as evidence or that no call failed",
+   "basis": ["run_summary.efficiency.uncited: entries, uncited, by_agent, by_tool, failed"],
+   "test": [
+    "tests/unit/analysis/test_the_efficiency_lines_say_each_count_in_whole_words.py::test_the_evidence_nothing_cites_is_said_with_who_made_it_and_the_failed_calls",
+    "tests/unit/analysis/test_the_evidence_no_claim_cites_is_counted.py::test_the_record_and_the_report_carry_it"
+   ],
+   "text_digest": "37f9495f0c39c5356cf31112fccdd74116e52af37a4252110df19d9d36eaede8"
+  }
+ ]
+}

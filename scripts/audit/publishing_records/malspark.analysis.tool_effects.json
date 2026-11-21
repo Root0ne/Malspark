@@ -1,0 +1,114 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.analysis.tool_effects:INTRO_SENTENCE",
+   "condition": "printed in the served report's Appendix B as the lead of the tool effects block, after the isolation block inside the disclosure block, when the disclosure record holds an effects part and effects_lines gives a line; a record stored without the part prints none",
+   "basis": ["run_summary.disclosure.effects (whether the part is stored)"],
+   "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_the_report_heads_the_part_with_its_lead_sentence_after_the_isolation_part",
+   "text_digest": "1e929812fba008889109a23a2ed5a27112cbfb93ed92bfe1e3cedc8fc513f3c2"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_ENDED",
+   "condition": "the lead of the line naming the tools, other than those declared to do none of the three, with a call not run, refused or failed, one line for each of the three in that order",
+   "basis": ["effects row not_run, refused, failed"],
+   "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+   "text_digest": "cc030ba0d051182279547f2b66e3bddc02c9903ab0789976da63f07fc48a4323"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_RAN",
+   "condition": "the lead of the line naming the tools with a completed call declared to run the sample's code natively, and of the line for under emulation",
+   "basis": ["effects row executes, completed"],
+   "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+   "text_digest": "4bd7492936cb85c6b7fbd6aa5967fb99a70e87a11e7674b1c0c9c855ba06cb01"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_REACHED",
+   "condition": "the lead of the lines naming the tools with a completed call declared to reach only the sandbox service their server fronts, the configured case-memory store, or reference data they refresh",
+   "basis": ["effects row network, completed"],
+   "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+   "text_digest": "c2f6cb7b3d9ef6c3463cc446bbb5123fd14f4d432c75c2ae6892983fcf3f8595"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_UNDECLARED_EXECUTES",
+   "condition": "named in the undeclared line of a tool with a completed or failed call whose declaration leaves executes unset",
+   "basis": ["effects row executes, completed, failed"],
+   "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+   "text_digest": "cc49e09b4955d23e4ac1ad333f29ec0879d895f196dafc6a8c5fc27a6ea986e5"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_UNDECLARED_NETWORK",
+   "condition": "named in the undeclared line of a tool with a completed or failed call whose network is answered by no declaration, statement or hint",
+   "basis": ["effects row network, completed, failed"],
+   "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+   "text_digest": "20c36cda9115be8af577044e58cb3b134020fd5e42ea1ca81917a422fd7b1ecc"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_UNDECLARED_THIRD_PARTY",
+   "condition": "named in the undeclared line of a tool with a completed or failed call whose declaration leaves third_party unset",
+   "basis": ["effects row third_party, completed, failed"],
+   "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+   "text_digest": "29c9b2bd37fdfa31a7c2e29b76b9f996b0dc09399994caf2f1820de113efef24"
+  },
+  {
+   "function": "malspark.analysis.tool_effects:_by_hint_only",
+   "condition": "beside a tool in the reached-the-network line when its network answer is its server's own declaration its block does not trust, or its server's openWorldHint; nothing for a declared answer",
+   "basis": ["effects row network_by"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_network_answered_by_the_server_s_own_word_says_whose_word_it_is",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it"
+   ],
+   "text_digest": "1cff3ac229f25bb31f901b77afb0d5bbe3c50b2bf58fdd4f27d35729dd31407c"
+  },
+  {
+   "function": "malspark.analysis.tool_effects:_label",
+   "condition": "names where each tool was called through in every line of the block: a server that recorded no source, the platform's own tools, an in-process source by its declared label (or as the in-process source), a tool server, a provider's tool server, any other source",
+   "basis": ["effects row source, server", "the in-process declarations' labels"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_each_place_a_tool_was_called_through_is_named_by_its_kind",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_an_in_process_source_with_no_label_is_named_as_one"
+   ],
+   "text_digest": "86be69818ff11130b8d184ec6d699066f7f14f555dc69501f298eea90b782067"
+  },
+  {
+   "function": "malspark.analysis.tool_effects:_of_calls.<locals>._note",
+   "condition": "beside a tool in the not-run, refused or failed line when that count is not every call of the tool: the count of all its calls, with the steps never run and, for a refusal, the answers served, counted by the row's shape",
+   "basis": ["effects row calls, served, not_run, refused, failed"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_share_of_calls_is_said_only_where_it_is_not_every_call",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it"
+   ],
+   "text_digest": "222dffb3b2014c6c1d40e2e814a489cac9c03e0172969ca3f66682ee6cce032a"
+  },
+  {
+   "function": "malspark.analysis.tool_effects:_read_note",
+   "condition": "beside a tool in the ran-the-sample's-code lines: where the isolation part placed its source's read (no read recorded, the worker process, a started process kept by measurement, kept by a declared launcher or not shown kept, a local server, outside this machine, or untold)",
+   "basis": ["effects row read_where, read_isolated, read_isolated_by"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_where_a_tool_that_ran_the_sample_read_it_is_said_as_isolation_placed_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it"
+   ],
+   "text_digest": "dc0afcf608ae6653d5f1668b36ce676cd1172021e1cd48bbddd937eea63b440d"
+  },
+  {
+   "function": "malspark.analysis.tool_effects:_sandbox_place.<locals>._note",
+   "condition": "beside a tool in the lines on the sandbox service its server fronts: at a host the disclosure places on this machine (the operator's own), at a host outside it, or that where it went cannot be told, with the disclosure's reason or that the record does not say",
+   "basis": ["effects row placed_where, placed_host, placed_why"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_call_to_the_sandbox_a_server_fronts_is_said_where_the_disclosure_placed_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it"
+   ],
+   "text_digest": "371951d8c0d7a0246cf034ecc9fcb00cad282a80a62dfb60a52b1dc00bdadd91"
+  },
+  {
+   "function": "malspark.analysis.tool_effects:effects_lines",
+   "condition": "the tool effects block of the served report's Appendix B for a disclosure record with an effects part: the line that the part may be incomplete where a partial reason is recorded; that no tool call was recorded; or, for tools with a completed call, the lines on running the sample's code, sandboxes, the network, the hash and the bytes sent, then the tools declared to do none, server hints and statements, the calls that did not complete, and the questions a declaration leaves open; [] for a record without the part",
+   "basis": ["disclosure.effects partial_reason, tools (each row's counts and declared answers)"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_part_with_no_call_says_so_and_a_record_without_the_part_says_nothing",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_one_tool_declared_to_do_none_is_counted_in_the_singular"
+   ],
+   "text_digest": "566cf67744e9f525b8a12e5964e75071532e62dfc64be59a2343f7c2d1b2fc67"
+  }
+ ]
+}

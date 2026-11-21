@@ -1,0 +1,147 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.analysis.coverage:ABSENCE_POINTER",
+   "condition": "appended by the report's capability subsection absence line (\"Nothing recorded in this run\") when a tool looked at the file and run_summary.coverage is a mapping holding \"v\"; the line for no tool that looked returns before it",
+   "basis": ["run_summary.coverage", "the report's evidence index (the tools that looked at the file)"],
+   "test": "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_the_report_heads_each_block_and_points_to_it_from_a_nothing_recorded_line",
+   "text_digest": "ff9e8a97580e0be8b88cee2f99c18dfd1d8fb42e00a67df054555aadf2eda7f2"
+  },
+  {
+   "constant": "malspark.analysis.coverage:GUARD_NOTE",
+   "condition": "inside a tool's looked line, after the count of answers a guard gave, when the row's guard_answers is above 0",
+   "basis": ["run_summary.coverage.tools[].guard_answers"],
+   "test": "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_each_tool_is_said_with_its_calls_inputs_and_states",
+   "text_digest": "8e654a67d54faf3c99c7c2273664b3b2cb36dc63357eddb4581237e04392edc3"
+  },
+  {
+   "constant": "malspark.analysis.coverage:LOOKED_INTRO",
+   "condition": "printed by the run summary appendix over the looked block when coverage_lines gives at least one looked line: a record holding \"v\" with a tools row",
+   "basis": ["run_summary.coverage.tools"],
+   "test": "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_the_report_heads_each_block_and_points_to_it_from_a_nothing_recorded_line",
+   "text_digest": "afdc7606c540e7b665bf04fdb97f1060d501fc04115c30107d44d4af18f78739"
+  },
+  {
+   "constant": "malspark.analysis.coverage:NEGATIVES_INTRO",
+   "condition": "printed by the run summary appendix over the negatives block when coverage_lines gives at least one negative line: a record holding \"v\" with a negatives row",
+   "basis": ["run_summary.coverage.negatives"],
+   "test": "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_the_report_heads_each_block_and_points_to_it_from_a_nothing_recorded_line",
+   "text_digest": "fac9d4272850e5e882932e8ebff55ee3ed036cf736b3d82dc0f2ba5f4d9da54d"
+  },
+  {
+   "constant": "malspark.analysis.coverage:NOTHING_MISSING",
+   "condition": "the only line of the could-not-establish block when the record holds \"v\", no not_established row prints a line, no partial_reason is given and the report's analyst record names no failed, skipped or silent analyst",
+   "basis": ["run_summary.coverage.not_established", "run_summary.coverage.partial_reason", "the report's analyst record (failed_analysts, degradation reasons, stage agent_reasons, agent_stats)"],
+   "test": "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_a_record_with_nothing_missing_says_so_and_no_record_says_nothing",
+   "text_digest": "568d1a6d81c33a4f22924a479acfefb809b36674041047af06481dd30369466d"
+  },
+  {
+   "constant": "malspark.analysis.coverage:NOT_ESTABLISHED_INTRO",
+   "condition": "printed by the run summary appendix over the could-not-establish block whenever run_summary.coverage is a mapping holding \"v\" (that block always has a line, the nothing-recorded line at least)",
+   "basis": ["run_summary.coverage"],
+   "test": "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_the_report_heads_each_block_and_points_to_it_from_a_nothing_recorded_line",
+   "text_digest": "94c3b01af029a44e63297c9f7aa734be7051e72b5aabe4be07a3e94156f4b759"
+  },
+  {
+   "constant": "malspark.analysis.coverage:_COVERAGE_WORDS",
+   "condition": "in every negative line, the words for the row's coverage value (full, input_unknown, partial, failed, unknown); a missing value reads as unknown and any other value prints as given",
+   "basis": ["run_summary.coverage.negatives[].coverage"],
+   "test": [
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_a_negative_citing_nothing_the_ledger_holds_says_so",
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_each_negative_is_said_with_its_coverage_and_what_looked",
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_a_partial_negative_names_each_gap"
+   ],
+   "text_digest": "a65dcb99bf3f3f1bcbbe31ddf6443a054325e9bc5af5b6bc77a123d8ee34ed5c"
+  },
+  {
+   "constant": "malspark.analysis.coverage:_STATE_WORDS",
+   "condition": "the words for a call's answer state other than answered: in a not-established call line, in a looked line per state counted above 0, in a negative's call phrase and in a cited gap; a state not in the table prints as given",
+   "basis": ["run_summary.coverage.not_established[].state", "run_summary.coverage.tools[].states", "run_summary.coverage.negatives[].looked[].state", "run_summary.coverage.negatives[].gaps[].state"],
+   "test": [
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_what_could_not_be_established_is_said_row_by_row",
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_each_tool_is_said_with_its_calls_inputs_and_states",
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_a_partial_negative_names_each_gap"
+   ],
+   "text_digest": "3987fc09af309d1c92d132c1dfb9a7025e779864ad5916203a0e3ee6a718d387"
+  },
+  {
+   "function": "malspark.analysis.coverage:_analyst_lines",
+   "condition": "in the could-not-establish block, one sentence per failed analyst, per skipped analyst (with its reason where one is given) and per analyst that ran and made no claims, from the report's own analyst record, which the renderer passes for every record holding \"v\"",
+   "basis": ["the report's analyst record: failed_analysts and degradation reasons, stage agent_reasons, agent_stats claim counts"],
+   "test": [
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_what_could_not_be_established_is_said_row_by_row",
+    "tests/unit/reporting/test_the_report_prints_what_looked_and_what_was_not_established.py::test_the_analysts_come_from_the_report_s_own_analyst_record"
+   ],
+   "text_digest": "fa942662576a514c7d4040f909ffd4178dd28d1faac686daab1f03f03086aef9"
+  },
+  {
+   "function": "malspark.analysis.coverage:_call_phrase",
+   "condition": "one phrase per call a negative row looked at: the tool, its entry and its inputs; for a state other than answered the state's words and the reason where one is recorded; for an answered call whose read is not_known, the clause that the record cannot tell how much was read",
+   "basis": ["run_summary.coverage.negatives[].looked[]: tool, kind, server, entry, over, state, reason, read"],
+   "test": [
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_each_negative_is_said_with_its_coverage_and_what_looked",
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_a_partial_negative_names_each_gap"
+   ],
+   "text_digest": "ce6be841645372c79cf4a9262cce79311c0363d2d0b17a0318568b18f67321b1"
+  },
+  {
+   "function": "malspark.analysis.coverage:_gap_phrase",
+   "condition": "one phrase per gap of a negative row, after \"Not covered:\", by the gap's kind (cited, narrowed, capped, not_declared_whole, no_capture with or without the provider's reason, input_mismatch, same_kind_no_answer, layer_never_examined, layer_not_read); a kind not known prints as a code span",
+   "basis": ["run_summary.coverage.negatives[].gaps[]: gap, entry, state, by, why, over, entries, path, from"],
+   "test": "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_a_partial_negative_names_each_gap",
+   "text_digest": "2439f46a683e0455663c2849d5e6f65cff70bf4595cda63c21f14158c10f697d"
+  },
+  {
+   "function": "malspark.analysis.coverage:_inputs_phrase",
+   "condition": "the inputs of a call or a not-established row joined, or \"no input it names\" when the list is empty",
+   "basis": ["the over list of the call or row"],
+   "test": [
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_what_could_not_be_established_is_said_row_by_row",
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_a_partial_negative_names_each_gap"
+   ],
+   "text_digest": "a2b3473460613fc63c6ec4e07d09a6b7ab0e70e4c4bbdde09a22eace470497e2"
+  },
+  {
+   "function": "malspark.analysis.coverage:_looked_line",
+   "condition": "one line per tools row of the record: the tool, its call count, the named inputs and the role values counted, the counts of each state other than answered, and the guard answers where there were any",
+   "basis": ["run_summary.coverage.tools[]: tool, kind, server, calls, over, roles, states, guard_answers"],
+   "test": "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_each_tool_is_said_with_its_calls_inputs_and_states",
+   "text_digest": "573f860ef9892504da6df73cf44740b75f348e5706e19d196d491f00a3f8764c"
+  },
+  {
+   "function": "malspark.analysis.coverage:_negative_line",
+   "condition": "one line per negatives row: the agent, the negative clause quoted (or the claim, marked as kept after the absence question, where no clause is held) and its coverage; for unknown coverage with nothing looked, that the clause cites no entry the ledger holds; else what looked, the sandbox report's incomplete record or an answer of no readable shape where the row's why says so, the gaps and the entries the ledger does not hold",
+   "basis": ["run_summary.coverage.negatives[]: agent, negative, claim, coverage, looked, why, gaps, not_in_ledger"],
+   "test": [
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_a_negative_citing_nothing_the_ledger_holds_says_so",
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_each_negative_is_said_with_its_coverage_and_what_looked",
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_a_partial_negative_names_each_gap"
+   ],
+   "text_digest": "f27c9eebc8631fbecd0e928fa2558a33613eb3f66366778c630cf4fac53b041a"
+  },
+  {
+   "function": "malspark.analysis.coverage:_not_established_line",
+   "condition": "one line per not_established row by its what: a call not answered (with the characters cut and the reason where held), a layer never examined, no sandbox report or no packet capture with the reason, a tool server not attached, the count of server rests, the count of unreadable ledger rows, an input shortened; a row of any other what prints nothing",
+   "basis": ["run_summary.coverage.not_established[]: what, tool, kind, server, state, over, entries, dropped, reason, path, from, from_tool, input, count"],
+   "test": "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_what_could_not_be_established_is_said_row_by_row",
+   "text_digest": "976a023ee977f42bd41e3602a9d3ed4ddb19d0f54cad4cd269af02c45d900b61"
+  },
+  {
+   "function": "malspark.analysis.coverage:coverage_lines",
+   "condition": "for a mapping holding \"v\": the sentence that the record may be incomplete, first in the could-not-establish block, when the record holds a partial_reason (a run stopped part-way), and the nothing-recorded line when that block has no other line; nothing for any other value",
+   "basis": ["run_summary.coverage.partial_reason", "run_summary.coverage.not_established", "the report's analyst record"],
+   "test": [
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_what_could_not_be_established_is_said_row_by_row",
+    "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_a_record_with_nothing_missing_says_so_and_no_record_says_nothing"
+   ],
+   "text_digest": "909d5487ce609b9618224c0b5476c6fb743e64cebdcdf6a50283f2a578f1cc2d"
+  },
+  {
+   "function": "malspark.analysis.coverage:input_phrase",
+   "condition": "one phrase per input label, by its input kind (the sample or the packet capture, marked where the platform filled it in; the sandbox report; a layer with its producing entry and tool; a file; a role; an undeclared input, marked where its server is handed the staged sample; an unnamed input; no input), and \"an input not recorded\" for any other",
+   "basis": ["the input label: input, filled, path, from, from_tool, role, server_reads_staged_sample"],
+   "test": "tests/unit/analysis/test_the_coverage_lines_say_each_row_in_whole_words.py::test_each_input_is_named_by_what_it_is",
+   "text_digest": "9e6856c1c4437423c45943c17fba5c972ab183ade8f3d3dd4e0308c56d814ba1"
+  }
+ ]
+}

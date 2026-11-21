@@ -1,0 +1,286 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.analysis.evidence_roots:BLOB_UNMATCHED",
+   "condition": "the reason of an emulated-strings row whose call site holds blobs the blob decoder read and none of them decodes to the row's text; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the row's called_at_rva and string", "the blob decoder rows' call sites and texts"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_a_call_site_whose_blobs_decode_to_other_text",
+   "text_digest": "8002e9a9d80cda41e022674de1d7c2fd3dea8cc058ce0f708a545685c0852e66"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:BY_NAME_ONLY",
+   "condition": "the reason of a cited entry of no reading of its own that gave no root and whose call names a function, name or symbol argument; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the call's name, function_name, function and symbol arguments"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_a_failed_call_a_reference_lookup_and_a_call_by_name",
+   "text_digest": "c8581105b332209c25744d241bb83e941bb624770404902ae5bc6c59c2646595"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:DEBUG_DIRECTORY",
+   "condition": "the root of a PE header answer that states a PDB path; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["pe_info pdb_path"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_the_tables_of_the_file_and_its_sections",
+   "text_digest": "5de0525d4d8aced7eb7208c755de5f52a23e0c7b3728298171ece5498f6621ee"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:DNS_ROOT",
+   "condition": "the root of a DNS row or a DNS query line, and of a DNS item whose row names the query; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["the DNS row's queried name"],
+   "test": [
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_a_process_a_flow_a_query_and_a_signature",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxItemThatGivesNoRootSaysWhy::test_a_process_flow_and_query_item_give_their_roots"
+   ],
+   "text_digest": "56c71d88f81abac6f99cc340582920e1f331b6fcadf1b8871bfb6469196d39c1"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:EXPORT_TABLE",
+   "condition": "the root of a PE header answer that lists exports, and of a disassembler's export listing; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["pe_info exports", "the entry's declared kind"],
+   "test": [
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_the_tables_of_the_file_and_its_sections",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_a_disassembler_s_import_and_export_listings_are_those_tables"
+   ],
+   "text_digest": "651324c0820a70244788d93e0c66a443ce52acf8876366f7190716a80a36c5e6"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:EXTERNAL_ASSESSMENT",
+   "condition": "the root of an entry declared a file reputation answer: a third party's assessment of the whole file; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["the entry's declared kind"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_the_whole_file_and_an_external_assessment_of_it",
+   "text_digest": "f4c5f7a6a62d09c8a08944c69104cd0ea39a14f271d692e0872503f73bd75c22"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:FAILED",
+   "condition": "the reason of a cited entry whose call failed (ok false); stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["LedgerEntry.ok"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_a_failed_call_a_reference_lookup_and_a_call_by_name",
+   "text_digest": "6c5afeb6fa6dee151321434fb452bd163757fa1b0ad9e3d3809fbf68ff5dfdaa"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:FILE_OFFSET_ROOT",
+   "condition": "the root of a file offset where the file states neither a section table nor an image base; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["the row's offset", "the file's section table and image base"],
+   "test": [
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_a_file_offset_no_section_table_places_is_written_as_one",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_a_root_of_another_file_names_that_file"
+   ],
+   "text_digest": "e60672ff71ae1f372ac61f92b0905da3ad4dec54f90f1536813a2c5929044bec"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:FILE_ROOT",
+   "condition": "any root of an entry about a file other than the sample, naming that file (its digest's leading digits or its quoted path); stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["the entry's path, carved_path or the server's last named program"],
+   "test": [
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_a_root_of_another_file_names_that_file",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_an_address_outside_the_program_the_server_last_named"
+   ],
+   "text_digest": "a859f29057d3bc144eaec5f4e641ae2a90d9110100cb71a796d45b1db5195a81"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:FILE_UNTOLD",
+   "condition": "the reason of a cited entry whose carved_path argument names no one file; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the call's carved_path argument"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_a_carved_path_naming_no_one_file",
+   "text_digest": "c9e7f6151f103fbf793221179c70bbf07360778151d0bbe4600adc161eac7c42"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:FLOW_ROOT",
+   "condition": "the root of a network connection row a sandbox or a capture states, or of a TCP or UDP item: protocol, destination host and port, one label for both directions; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["the flow row's proto, dst and dport", "the reverse row of the same connection"],
+   "test": [
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_a_process_a_flow_a_query_and_a_signature",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxItemThatGivesNoRootSaysWhy::test_a_process_flow_and_query_item_give_their_roots"
+   ],
+   "text_digest": "9ff480d98372cad0ae16f0569ea6b2c422fc1b45a57f8d32488cc7a5d537adac"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:IMPORT_TABLE",
+   "condition": "the root of a PE header answer that lists imports, and of a disassembler's import listing; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["pe_info imports", "the entry's declared kind"],
+   "test": [
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_the_tables_of_the_file_and_its_sections",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_a_disassembler_s_import_and_export_listings_are_those_tables"
+   ],
+   "text_digest": "337474f1d4861201f0e3979ace0d6a228c056c7da51398997e5fd37f09a8f788"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:INDICATOR_UNSETTLED",
+   "condition": "the reason of a sandbox signature indicator row that names a process or target the report's process list does not settle (an id no task lists, or one listed more than once); stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the indicator row's process and target", "the run's process identities"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxSignatureOrCommandLineThatGivesNoProcessSaysWhy::test_an_indicator_naming_a_process_the_list_does_not_settle",
+   "text_digest": "93aedabd4b20e04c5817e9490048b8b5101b420ce50043714bdba80f302a2ea8"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:ITEM_NO_PID",
+   "condition": "the reason of a cited process item whose id is positional (proc:p<n>), the form of a process the report states no pid for; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the process item id"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxItemThatGivesNoRootSaysWhy::test_each_item_that_gives_none_says_why",
+   "text_digest": "1d664c884075a7900eccb66e034ca7f7ac7ea05ca8d3e6f0bf988fc317ceb68f"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:ITEM_ROW_UNREAD",
+   "condition": "the reason of a cited network item the section index holds when no sandbox_items answer of the network section and no unpaged whole sandbox_network answer of the ledger holds its row; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the ledger's sandbox_items and sandbox_network answers", "the sandbox section index"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxItemThatGivesNoRootSaysWhy::test_each_item_that_gives_none_says_why",
+   "text_digest": "d4f8fb79ce42b2064386eaf9b3dad098673d5bd32222b5854ce1dfefd4d6559e"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:ITEM_UNPLACED",
+   "condition": "the reason, naming the item's section, of a cited item of a section other than processes, signatures and network, and of a network item whose row is no TCP, UDP or DNS row with a destination or a name; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the item id's prefix", "the network row's kind, dst, dport and name"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxItemThatGivesNoRootSaysWhy::test_each_item_that_gives_none_says_why",
+   "text_digest": "ef9cb65a4fe79010614f98f1054df934fccbb03dfbbf3a277f4234fae17ac381"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:ITEM_UNSETTLED",
+   "condition": "the reason of a cited process item whose repeat is no place (.0) or past the ledger's listing of that id, or whose place in that listing is a process its task lists twice; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the process item id", "the ledger's sandbox_processes listings"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxItemThatGivesNoRootSaysWhy::test_each_item_that_gives_none_says_why",
+   "text_digest": "dda677d3218fcc8f2f2bec4681d43313a41118c30278db32fab7b060716f51fb"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:MATCH_UNPLACED",
+   "condition": "the reason of an event-rule match or command-line match whose command line no process row of the ledger's sandbox_processes answers holds with an integer pid; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the match's CommandLine or command_lines", "the ledger's sandbox_processes rows' command_line and pid"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxSignatureOrCommandLineThatGivesNoProcessSaysWhy::test_a_command_line_of_no_recorded_process_and_of_several",
+   "text_digest": "e4ad6a7d9c90eabf4c25dd469a136d3ff3f6107d599ee7b383edb66d62d10173"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:NAMES_NO_ROW",
+   "condition": "the reason of a cited entry or signature item of several roots, or with a row that gives none, when the statement picks out none of them; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the entry's roots by address, value and name", "the statement's written numbers, quoted values and pids"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxSignatureOrCommandLineThatGivesNoProcessSaysWhy::test_a_statement_naming_none_of_an_entry_s_rows",
+   "text_digest": "6d0011c575571885f1e0492c40e4749064fe863f4865d2d7cb80268069767a1a"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:NOTHING_TO_PLACE",
+   "condition": "the reason, naming the tool, of a cited entry whose answer and arguments gave no root and no other reason, and of a capability-rule row with no address, for the techniques and the rule it names; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the entry's rows, places and address arguments", "the capability row's addresses"],
+   "test": [
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_an_answer_with_nothing_to_place",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_an_entry_naming_no_tool_says_the_tool",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_a_rule_row_with_no_address_says_so_for_its_technique"
+   ],
+   "text_digest": "7cbf9b108e482563a1937bdcda9177906a3db66a707d06dbf5acc4baf8d0f647"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:OFFSET_UNPLACED",
+   "condition": "the reason of a file offset in a file whose answers state an image base and no section table; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the row's offset", "the file's image base and section table"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_a_file_offset_against_a_base_with_no_section_table",
+   "text_digest": "e905e2044b05b571228017a2fb9541f6f790c1f751c3c3bc38b18578717baffe"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:OUTSIDE_PROGRAM",
+   "condition": "the reason of an address an entry placed by its server's last named program writes where that program cannot hold it; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the call's address", "the last program statement's image_base and size_of_image"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_an_address_outside_the_program_the_server_last_named",
+   "text_digest": "188759ec73778ed92160520ee02dec97eaa1d6a7b8068ff0f3c40347d0d13a9f"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:OVERLAY",
+   "condition": "the root of a PE header answer whose overlay is present; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["pe_info overlay.present"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_the_tables_of_the_file_and_its_sections",
+   "text_digest": "ace5c0a94816daf5b2c8c93991f3d37ad9b22fceae3b35be726bfe32bd93a6e6"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:PE_HEADER",
+   "condition": "the root every PE header answer gives; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["the entry's declared kind"],
+   "test": [
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_the_tables_of_the_file_and_its_sections",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_a_header_with_no_table_is_the_header_alone"
+   ],
+   "text_digest": "336ee10956e8bb0a1a8c5b2b2e1e6d66a23fb2c9e85c7ce8186c6c5831f6876d"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:PROCESS_ROOT",
+   "condition": "the root of a sandbox process, written with the process's id (and its task where another task lists the same id): a process listing's row, a command line one recorded process ran, an indicator's process, a process item; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["the process rows' pid and task", "the sandbox section index"],
+   "test": [
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_a_process_a_flow_a_query_and_a_signature",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxSignatureOrCommandLineThatGivesNoProcessSaysWhy::test_a_command_line_of_no_recorded_process_and_of_several",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxItemThatGivesNoRootSaysWhy::test_a_process_flow_and_query_item_give_their_roots"
+   ],
+   "text_digest": "444ee8d52b97ce7ab7d723975f1ab9e22c0fe79e37af9821af27fbe578b38c50"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:REFERENCE",
+   "condition": "the reason of a cited entry declared a reference lookup, naming its tool; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the entry's declared kind", "LedgerEntry.tool"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_a_failed_call_a_reference_lookup_and_a_call_by_name",
+   "text_digest": "7a23298aaadce713e367ff82b0cbdf7c9b8b3633d189f3c09e26a413ae5e87ca"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:REPEAT_LOOP",
+   "condition": "the reason of a cited entry that repeats an entry holding no answer; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["LedgerEntry.repeated_of"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_a_repeat_of_no_entry_holding_an_answer",
+   "text_digest": "2e887352535271cc7046df5b1ae5112714380c3cc4714aa03355d7c74a83a4c4"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:RESOURCE_TABLE",
+   "condition": "the root of a PE header answer that lists resources; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["pe_info resources"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_the_tables_of_the_file_and_its_sections",
+   "text_digest": "70f593e36d572db67bf13e36a99c793c1883d217c2d4b2703089c08d85628b5b"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:SHARED_COMMAND",
+   "condition": "the reason of an event-rule match or command-line match whose command line more than one recorded process holds; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the match's CommandLine or command_lines", "the ledger's sandbox_processes rows' command_line and pid"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxSignatureOrCommandLineThatGivesNoProcessSaysWhy::test_a_command_line_of_no_recorded_process_and_of_several",
+   "text_digest": "5691627f47b080e8d0f79afd4e37d80e3389e133fda43a325ccdcbaf040608a5"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:SIGNATURE_ROOT",
+   "condition": "the root of each named signature row of a sandbox signature answer, placed by its name; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["the signature row's name"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_a_process_a_flow_a_query_and_a_signature",
+   "text_digest": "05b45e5dfc2ad932720acb66fa1dc765c60a8a8ab6afd0c612c0a046d492c2a0"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:SIGNATURE_UNPLACED",
+   "condition": "the reason of a sandbox signature answer that gave no root and no row reason, of an indicator row naming no process, and of a cited signature item no answer of the ledger holds the indicators of or whose rows give none; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["the signature rows and indicator rows", "the ledger's sandbox_items answers of the signatures section"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxSignatureOrCommandLineThatGivesNoProcessSaysWhy::test_a_signature_naming_no_process_or_event",
+   "text_digest": "ade0f80d9c69180cd62b8f0ea69ada5554c07a98adfd12a5ee3e78b87741eb5c"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:WHOLE_FILE",
+   "condition": "the root of an entry declared a fact about the whole file (identity, signing), and of a signature-rule match that states no offset; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["the entry's declared kind", "the match rows' string offsets"],
+   "test": [
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_the_whole_file_and_an_external_assessment_of_it",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_a_rule_match_with_no_offset_is_the_whole_file"
+   ],
+   "text_digest": "3e4c02f92990e9b1d2937bc72305717a58b577e8058f7f256db032ca730bdc70"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:WHOLE_OTHER_FILE",
+   "condition": "the whole-file root of an entry about a file other than the sample, naming that file; stored in evidence_roots of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table names it where it is the row's one root",
+   "basis": ["the entry's path or carved_path", "the carving's sha256"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestEachRootIsWrittenByItsKind::test_a_root_of_another_file_names_that_file",
+   "text_digest": "900e981f7c9344ecb89ebaf99c0b17029faa6781a7954ca395fb33e52af8a5b6"
+  },
+  {
+   "function": "malspark.analysis.evidence_roots:_read_entry",
+   "condition": "hands out 'the tool' as the tool named in its no-root reason where the entry's tool name is empty once a server prefix is cut; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": ["LedgerEntry.tool"],
+   "test": "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestAnEntryThatGivesNoRootSaysWhy::test_an_entry_naming_no_tool_says_the_tool",
+   "text_digest": "e90224dfdafc572976caa9976fcc7b527329ff93c28f219318e750457215ed8b"
+  },
+  {
+   "function": "malspark.analysis.evidence_roots:roots_phrase",
+   "condition": "prints in an ATT&CK table row's corroboration words where the row holds roots or unread citations: one root named, several counted, the unread citations counted beside them or alone; nothing where it holds neither",
+   "basis": ["TTPMapping.evidence_roots", "TTPMapping.roots_not_read"],
+   "test": [
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestTheRowSaysHowManyRootsItHas::test_one_root_is_named_and_several_are_counted",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestTheRowSaysHowManyRootsItHas::test_the_citations_that_gave_none_are_counted_beside_them",
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestTheRowSaysHowManyRootsItHas::test_a_row_with_neither_says_nothing",
+    "tests/unit/analysis/test_corroboration_counts_evidence_roots.py::TestTheWords::test_the_report_row_carries_them_inside_its_corroboration_words"
+   ],
+   "text_digest": "149181599cc600ec813065ead35561215e2a6de2027adc00b7a85b316eec81a0"
+  }
+ ]
+}

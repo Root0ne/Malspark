@@ -1,0 +1,43 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.analysis.sample_integrity:_WHEN",
+   "condition": "the time of a reading in words: in the all-matched line for each of start and end the readings hold, and in each changed reading's line, where a time not in the table reads as not recorded",
+   "basis": ["run_summary.disclosure.isolation.sample_integrity.readings[].at"],
+   "test": [
+    "tests/unit/analysis/test_the_sample_integrity_lines_say_each_reading_in_whole_words.py::test_copies_that_all_read_the_intake_digest_are_said_in_one_line_and_none_in_none",
+    "tests/unit/analysis/test_the_sample_integrity_lines_say_each_reading_in_whole_words.py::test_each_copy_that_did_not_read_the_intake_digest_is_said_with_when_and_why"
+   ],
+   "text_digest": "c218eea61cad53bb8aa7bd67ae1d9eafc9c0f0e400c32496d3648c6a1cad4a70"
+  },
+  {
+   "function": "malspark.analysis.sample_integrity:_copy_name",
+   "condition": "the copy a changed reading is of, in its line: the mirror in its directory, a mirror where no directory is recorded, or the worker's copy",
+   "basis": ["run_summary.disclosure.isolation.sample_integrity.readings[]: copy, where"],
+   "test": "tests/unit/analysis/test_the_sample_integrity_lines_say_each_reading_in_whole_words.py::test_each_copy_that_did_not_read_the_intake_digest_is_said_with_when_and_why",
+   "text_digest": "869543a530ccfd0c93567a3ec8add8a6604090bc057f6251fb14e05cc6013342"
+  },
+  {
+   "function": "malspark.analysis.sample_integrity:integrity_lines",
+   "condition": "in the isolation part of the disclosure block of the run summary appendix, for a record with at least one reading: one line that every reading was the intake SHA-256 with the copies and times, or, where a reading did not match, the line that a copy did not read as it and one line per such reading, with what it read or why it was not hashed; nothing for a part without readings",
+   "basis": ["run_summary.disclosure.isolation.sample_integrity: expected_sha256, readings[].copy, where, at, sha256, error, seen_at"],
+   "test": [
+    "tests/unit/analysis/test_the_sample_integrity_lines_say_each_reading_in_whole_words.py::test_copies_that_all_read_the_intake_digest_are_said_in_one_line_and_none_in_none",
+    "tests/unit/analysis/test_the_sample_integrity_lines_say_each_reading_in_whole_words.py::test_each_copy_that_did_not_read_the_intake_digest_is_said_with_when_and_why",
+    "tests/unit/api/test_a_changed_sample_copy_is_recorded_not_failed.py::TestTheStoredRun::test_unchanged_copies_are_said_in_one_line",
+    "tests/unit/api/test_a_changed_sample_copy_is_recorded_not_failed.py::TestTheStoredRun::test_a_copy_that_could_not_be_read_says_why_and_when"
+   ],
+   "text_digest": "4301a5d82a50e3c0edabef64c10a1d58e73c980a52e05b91eeaadb835264f710"
+  },
+  {
+   "function": "malspark.analysis.sample_integrity:sandbox_target_lines",
+   "condition": "in the isolation part of the disclosure block, and in the sandbox status statement of a report marked with a target, when the record holds the intake digest and a target value or the invalid mark: one sentence by whether the target is another SHA-256, a value that is not one, or a value with no printable character, naming the sandbox and task where held",
+   "basis": ["run_summary.disclosure.isolation.sandbox_target: expected_sha256, sandbox_sha256, sandbox_sha256_valid, provider, task_id", "the sandbox report's target mark"],
+   "test": [
+    "tests/unit/analysis/test_the_sample_integrity_lines_say_each_reading_in_whole_words.py::test_a_sandbox_naming_another_target_is_said_by_what_it_named",
+    "tests/unit/api/test_a_sandbox_naming_another_target_is_recorded.py::TestTheRecord::test_the_record_is_said_in_one_line"
+   ],
+   "text_digest": "9072941b4e00b8dad07120adef5e8edd98053b11767ca63631aae19f97532d61"
+  }
+ ]
+}
