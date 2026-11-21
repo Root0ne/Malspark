@@ -61,12 +61,14 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # directory per folder is added to the observed-data, and the process and
 # report objects name the new ids; directory joined to name is each stored
 # name, and nothing else changed. The Markdown and HTML did not change.
+# The STIX re-pinned when the indicator of the sample's similarity digests came to be described
+# by the digests its pattern holds (T-785): its description is the only change.
 STORED_EXPORTS = {
-    "run7": "672aa1a28966d369",
-    "run5": "9922c9071270a637",
-    "run4": "85b101e3f00b64d3",
-    "local8": "7bce3356531611a6",
-    "haiku4": "9e4fc335ee49b2ef",
+    "run7": "3bf32fdc454f1a66",
+    "run5": "4990f01c0bc073fe",
+    "run4": "23b2f87656a16b6f",
+    "local8": "1554981a26b527a1",
+    "haiku4": "b332b6ef11056368",
 }
 # ``(markdown, html with the nonce "fixed", normalised STIX)`` for haiku4. The
 # Markdown and HTML were re-pinned when a sample's, a tool's or a finding's text
@@ -148,7 +150,9 @@ STORED_EXPORTS = {
 # stored file, with no reading of its flow rows, came to say the publish rule "counted flows to
 # it as made by" its processes, with no count of flows and no word of the other flows to it
 # (T-811): that row's answer and context cell are the only change; the STIX did not change.
-HAIKU4_RENDERS = ("6fe2d4d8cee337ac", "40947280fbb55747", "ff5607de575fb489")
+# The STIX re-pinned when the indicator of the sample's similarity digests came to be described
+# by the digests its pattern holds (T-785): its description is the only change.
+HAIKU4_RENDERS = ("6fe2d4d8cee337ac", "40947280fbb55747", "713fdef84ebda218")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

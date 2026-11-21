@@ -94,6 +94,10 @@ from malspark.reporting.technique_evidence import (
     technique_evidence_ids,
     technique_sandbox_items,
 )
+from malspark.schemas.isr_models import (
+    JUDGE_UNCONFIRMED_TECHNIQUE_MARKER,
+    is_judge_unconfirmed,
+)
 from malspark.schemas.judgement import indicator_type_for, publication_for
 from malspark.schemas.sandbox_report import (
     LINEAGE_FILE,
@@ -1194,10 +1198,7 @@ class ExtendedSTIXRenderer:
                 objects.append(
                     Indicator(
                         name=f"Files like the sample {sha256[:12]}",
-                        description=(
-                            "The sample's import-table and similarity digests; each also "
-                            "matches files that share its imports or most of its bytes."
-                        ),
+                        description=similarity_description(similar) or None,
                         pattern=_digests_pattern(similar),
                         pattern_type="stix",
                         indicator_types=[str(similar[0].indicator_type)],
@@ -2178,9 +2179,22 @@ def _attack_patterns_for(
     catalogue check rejected already out of it. A technique the judge already
     related to the sample gets no second relationship — the judge's own carries
     its confidence and this one would carry none — and neither does one in a
-    bundle with no malware object, which a Benign verdict publishes.
+    bundle with no malware object, which a Benign verdict publishes. The
+    relationship this export adds for a technique the judge was asked about and
+    did not confirm carries that status as its description, the words its
+    ATT&CK row prints (``isr_models.JUDGE_UNCONFIRMED_TECHNIQUE_MARKER``), so
+    it is not exported as an unqualified ``uses``; every other edge it adds
+    carries none.
     """
     already = linked or set()
+    # The matrix adds the marker as a row's last note where the judge gave no
+    # answer (``capability_matrix``): read as that last note, whole, under any
+    # tactic, so a reason the judge kept a technique with is never the status.
+    unconfirmed = {
+        str(cell.technique_id or "").strip().upper()
+        for cell in getattr(report, "capability_matrix", None) or []
+        if not cell.not_published and is_judge_unconfirmed(cell.note)
+    }
     out: list[tuple[AttackPattern, Relationship | None]] = []
     seen: set[str] = set()
     for mapping in report.ttp_mappings:
@@ -2209,6 +2223,9 @@ def _attack_patterns_for(
                     relationship_type="uses",
                     source_ref=malware_id,
                     target_ref=pattern.id,
+                    description=(
+                        JUDGE_UNCONFIRMED_TECHNIQUE_MARKER if tid in unconfirmed else None
+                    ),
                 ),
             )
         )
@@ -6416,6 +6433,39 @@ def _digests_pattern(rows: Sequence[Any]) -> str:
         if (comparison := hash_comparison(str(row.type or ""), str(row.value or "").strip()))
     ]
     return f"[{' OR '.join(comparisons)}]"
+
+
+def similarity_description(rows: Sequence[Any]) -> str:
+    """The description of the indicator of the sample's similarity digests, from the digests
+    its pattern compares (:func:`_digests_pattern`).
+
+    An import table's digest also matches files that share the sample's imports, a fuzzy
+    digest files that share most of its bytes; each kind is named only where the pattern
+    holds a digest of it. ``""`` where it holds none.
+    """
+    kinds = [
+        label
+        for row in rows
+        if hash_comparison(label := str(row.type or ""), str(row.value or "").strip())
+    ]
+    imports = [k for k in kinds if k.lower() == "imphash"]
+    fuzzy = [k for k in kinds if k.lower() != "imphash"]
+    named: list[str] = []
+    matches: list[str] = []
+    for held, what, shared in (
+        (imports, "import-table digest", "its imports"),
+        (fuzzy, "similarity digest", "most of its bytes"),
+    ):
+        if held:
+            plural = "s" if len(held) > 1 else ""
+            named.append(f"{what}{plural} ({', '.join(dict.fromkeys(held))})")
+            matches.append(shared)
+    if not named:
+        return ""
+    return (
+        f"The sample's {' and '.join(named)}; {'it' if len(kinds) == 1 else 'each'} also "
+        f"matches files that share {' or '.join(matches)}."
+    )
 
 
 def _host_row(row: Any) -> bool:

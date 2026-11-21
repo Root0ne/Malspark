@@ -1,0 +1,17 @@
+{
+ "entries": [
+  {
+   "function": "app.services.technique_descriptions:printed_words",
+   "condition": "returned as the reason the technique descriptions were not read, where the report is not a mapping, does not validate as the report model, or its analyst render raises; the store writes it into NOT_READ_REASON in the run summary's degradation_reasons and stores each description empty; /mitre and the enrichment write log it and keep the stored column as stored",
+   "basis": [
+    "the report document",
+    "the class name of the exception its validation or its render raised"
+   ],
+   "test": [
+    "tests/unit/reporting/test_mitre_json_describes_a_technique_as_the_attack_table_prints_it.py::test_a_render_that_raises_keeps_the_run_and_records_why",
+    "tests/unit/reporting/test_mitre_json_describes_a_technique_as_the_attack_table_prints_it.py::test_a_stored_report_that_does_not_validate_serves_its_column_as_stored"
+   ],
+   "text_digest": "a32198e07bf80313f8e729b99e4b5fe2b6a4f550f374198befd635b84e2e04c4"
+  }
+ ]
+}

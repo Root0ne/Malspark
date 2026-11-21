@@ -516,15 +516,17 @@ def amend(
     kind: str,
     key: ChainKey,
     at: datetime,
+    columns: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], Any, dict[str, Any] | None]:
     """The payload and run summary to write over a sealed report, with the amendment it needs.
 
     ``report`` is the stored row as read; ``payload`` and ``summary`` are what
     is about to replace its report payload and run summary (``summary``
-    ``None`` leaves the stored one). A report without a seal, or a change that
-    leaves the report digest as it was, is written as it is and needs no
-    amendment (``None``). Otherwise an amendment chained onto the last record
-    is appended to both documents.
+    ``None`` leaves the stored one); ``columns`` are the other digested
+    columns the same write replaces, by name. A report without a seal, or a
+    change that leaves the report digest as it was, is written as it is and
+    needs no amendment (``None``). Otherwise an amendment chained onto the
+    last record is appended to both documents.
     """
     if not isinstance(seal_record, Mapping) or not seal_record.get("digest"):
         return payload, summary, None
@@ -532,7 +534,9 @@ def amend(
     stored_payload = stored_payload if isinstance(stored_payload, Mapping) else {}
     next_summary = summary if summary is not None else _read(report, "run_summary")
     before = report_digest(report)
-    after = report_digest(report, {"malware_report": payload, "run_summary": next_summary})
+    after = report_digest(
+        report, {**(columns or {}), "malware_report": payload, "run_summary": next_summary}
+    )
     if before == after:
         return payload, summary, None
     held = stored_payload.get(AMENDMENTS_KEY)

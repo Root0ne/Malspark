@@ -327,8 +327,10 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # stored file, with no reading of its flow rows, came to say the publish rule "counted flows to
 # it as made by" its processes, with no count of flows and no word of the other flows to it
 # (T-811): that row's answer and context cell are the only change.
+# run7's Markdown and HTML re-pinned when the line under an analyst's table the report reads no
+# value of came to say so (T-780): that line is the only change.
 STORED_RENDERS = {
-    "run7": ("c4ae175f45f8c7a8", "e62618ce13a05d2e"),
+    "run7": ("05df01d163a3fc39", "28f9aefd57b6db32"),
     "run5": ("94143f0e9b75f230", "a50eee57a3b2250f"),
     "run4": ("63ed48679c51edcf", "2497a07295eb3770"),
     "local8": ("142eb3d0937a8e74", "0c9d8845fc7107b4"),

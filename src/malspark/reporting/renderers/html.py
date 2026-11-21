@@ -745,7 +745,7 @@ def _notes_in_the_document(
         html
         + "<h2>Notes</h2>\n"
         + f"<p>Each numbered note and the evidence entries it rests on, which {where} "
-        + "lists with every tool's output.</p>\n"
+        + "lists with the index of every tool call.</p>\n"
         + (f'<ol class="notes">{items}</ol>\n' if items else "")
         + left
     )

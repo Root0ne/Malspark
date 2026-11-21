@@ -659,11 +659,27 @@ class ReportService:
         report_id: uuid.UUID,
         user: User,
     ) -> list | None:
-        """Extract MITRE ATT&CK techniques from a report."""
+        """Extract MITRE ATT&CK techniques from a report.
+
+        Each description is the text the analyst report's ATT&CK table prints for the
+        technique, read off the stored report as the served report renders it, at every
+        request (``technique_descriptions.described``), on a worker thread. A report that
+        holds no published technique list serves the column as stored; one whose words
+        cannot be read (it does not validate, or its render raises) serves the column as
+        stored, and the log says why.
+        """
         report = await self.get_report(report_id, user)
         if not report:
             return None
-        return report.mitre_techniques
+        from app.services.technique_descriptions import described
+
+        rows, why = await asyncio.to_thread(
+            described, report.mitre_techniques, report.malware_report
+        )
+        if why is not None:
+            logger.warning("get_mitre_techniques: the descriptions are served as stored (%s).", why)
+        served: list | None = rows
+        return served
 
     async def get_malware_report(
         self,

@@ -159,11 +159,14 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # stored file, with no reading of its flow rows, came to say the publish rule "counted flows to
 # it as made by" its processes, with no count of flows and no word of the other flows to it
 # (T-811): that row's answer and context cell are the only change; the STIX did not change.
+# The STIX re-pinned when the indicator of the sample's similarity digests came to be described
+# by the digests its pattern holds (T-785), and run7's Markdown and HTML when the line under an
+# analyst's table the report reads no value of came to say so (T-780): the only changes.
 STORED_RENDERS = {
-    "run7": ("c4ae175f45f8c7a8", "e62618ce13a05d2e", "af1240b0f29bfd9c"),
-    "run5": ("94143f0e9b75f230", "a50eee57a3b2250f", "2e717357e24fbfe2"),
-    "run4": ("63ed48679c51edcf", "2497a07295eb3770", "0a90e4edd679e2be"),
-    "local8": ("142eb3d0937a8e74", "0c9d8845fc7107b4", "75d022862e3237de"),
+    "run7": ("05df01d163a3fc39", "28f9aefd57b6db32", "b15eda451166721a"),
+    "run5": ("94143f0e9b75f230", "a50eee57a3b2250f", "da124711a6423447"),
+    "run4": ("63ed48679c51edcf", "2497a07295eb3770", "c98bd74e8825a72a"),
+    "local8": ("142eb3d0937a8e74", "0c9d8845fc7107b4", "5ef0ca19f5e5ec42"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
