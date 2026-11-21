@@ -145,10 +145,35 @@ NO_ENTRY = "no: {entry} is not an entry of this run's ledger"
 NO_CITATION = "no: the statement cites no ledger entry"
 FAILED = "no: the call failed, so it read nothing"
 REFERENCE = "no: {tool} is a reference lookup and reads nothing of the sample"
-NOTHING_TO_PLACE = "no: {tool}'s answer carries no offset, address, section, event or flow to place"
-BY_NAME_ONLY = "no: the call names its function by name, not by address"
+# Each reason says what the reading did and what it gave, in its own voice:
+# never what an answer, a row or a statement holds or names.
+NOTHING_TO_PLACE = "no: reading {tool}'s answer gave no root"
+# A row of an entry that gives roots, picked out for a statement by its words
+# or for a technique the row names, in which the reading found nothing to
+# place. One wording for both: a technique's row counts each reason once.
+ROW_NOTHING_TO_PLACE = (
+    "no: the reading found nothing to place in a row of {tool}'s answer that the statement's "
+    "words or the technique pick out"
+)
+# A call of no reading of its own that gave no root and was given a name: with
+# no address argument, or with one not read as a number (one read as a number
+# that gave no root lies outside the named program: ``OUTSIDE_PROGRAM``).
+BY_NAME_ONLY = "no: the call is given a name and no address, and reading its answer gave no root"
+ADDRESS_NOT_NUMBER = (
+    "no: the call's address argument is not read as a number, and reading its answer gave no root"
+)
 REPEAT_LOOP = "no: {entry} repeats an entry that holds no answer"
-SIGNATURE_UNPLACED = "no: a sandbox signature names no process or event"
+# A signatures answer that gave no root: an indicator row the reading found no
+# process in; no signature row, or no named one, and no indicator row read.
+SIGNATURE_UNPLACED = "no: the reading found no process in a sandbox signature's indicator row"
+SIGNATURES_NONE = "no: the reading found no signature row and read no indicator row in the answer"
+SIGNATURE_NAMES_NONE = (
+    "no: the reading found no signature name and read no indicator row in the answer"
+)
+# A signature item whose indicator rows no answer the reading indexed gave it.
+SIGNATURE_ITEM_UNREAD = (
+    "no: the reading found no indicator row of the signature item in the answers it indexed"
+)
 # An indicator row whose processes the report's process list does not settle:
 # an id the task does not list, or lists more than once.
 INDICATOR_UNSETTLED = (
@@ -162,9 +187,21 @@ SIGNATURE_ROOT = "sandbox signature {name}"
 # emulator ran, a value every row holds), as a source a statement places by
 # writing that value (``RunRoots.sources_of_statement``).
 WHOLE_ANSWER_ROOT = "the whole answer of {entry}"
-MATCH_UNPLACED = "no: the match names no command line of a process the sandbox recorded"
+# A match the reading joined to no process by its command line: where a
+# process listing was read, and where none was.
+MATCH_UNPLACED = (
+    "no: the reading joined the match by command line to none of the process rows it indexed"
+)
+MATCH_NO_LISTING = (
+    "no: the reading joined the match by command line to no process, and it indexed no "
+    "listing of processes"
+)
 SHARED_COMMAND = "no: more than one process the sandbox recorded has this command line"
-NAMES_NO_ROW = "no: the statement names none of {entry}'s rows"
+NAMES_NO_ROW = "no: the statement's words, as read, pick out none of {entry}'s rows"
+# A signature item of several roots, read where no statement is.
+ROWS_UNCHOSEN = (
+    "no: reading {entry} gave more than one root, and which one is meant is not read here"
+)
 NO_ROW_NAMES_TECHNIQUE = "no: no row of {entry} that gives a root names the technique"
 FILE_UNTOLD = "no: the call's carved_path names no one file"
 OUTSIDE_PROGRAM = "no: the address lies outside the program the server last named"
@@ -173,13 +210,18 @@ OFFSET_UNPLACED = (
     "placed against its addresses"
 )
 NO_ITEM = "no: {item} is not an item of this run's sandbox report"
-ITEM_ROW_UNREAD = "no: no answer in this run's ledger holds the row of {item}"
+# A network item whose row no answer the reading indexed gave: an item
+# reader's network answer, or a network answer read whole.
+ITEM_ROW_UNREAD = "no: the reading found no row of {item} in the answers it indexed"
 ITEM_UNPLACED = "no: a sandbox `{section}` item names no process, flow or query to place"
 ITEM_NO_PID = "no: the report states no pid for this process"
-# A process item whose id the report's process list holds, but not as one
-# process at the item's place: an id a task lists twice, or a place the
-# listing does not hold (``proc:87.0``).
-ITEM_UNSETTLED = "no: {item} names no one process of the report's process list"
+# A process item whose id the indexed listings of processes hold, but not as one
+# process at the item's place: an id a task lists twice, or a repeat past the
+# ones listed; and a repeat part that is no place (``proc:87.0``).
+ITEM_UNSETTLED = (
+    "no: the reading found no single process at {item} in the listings of processes it indexed"
+)
+REPEAT_UNPLACED = "no: the reading takes no place from the repeat part of {item}"
 BLOB_UNMATCHED = (
     "no: the call site holds blobs the blob decoder read, and none of them decodes to this text"
 )
@@ -555,16 +597,25 @@ class EntryRoots:
             self.by_technique.setdefault(tid, set()).add(root)
 
     def unplace(
-        self, reason: str, *, values: Iterable[Any] = (), techniques: Iterable[str] = ()
+        self,
+        reason: str,
+        *,
+        values: Iterable[Any] = (),
+        techniques: Iterable[str] = (),
+        alone: str = "",
     ) -> None:
-        """A row that gives no root: its values and techniques say why when named."""
+        """A row that gives no root: its values and techniques say why when named.
+
+        ``alone`` is the entry's reason where no row of it gives a root, when
+        it is not the row's own.
+        """
         for value in values:
             folded = _fold(value)
             if folded:
                 self.unplaced_values.setdefault(folded, reason)
         for tid in techniques:
             self.unplaced.setdefault(tid, reason)
-        self.first_reason = self.first_reason or reason
+        self.first_reason = self.first_reason or alone or reason
 
 
 def _structured(entry: Any) -> Any:
@@ -963,6 +1014,8 @@ class _Joins:
     listed: dict[str, list[ProcessKey]] = field(default_factory=dict)
     # A sandbox signature item's id to its indicator rows, as an answer holds them.
     signature_items: dict[str, list[Any]] = field(default_factory=dict)
+    # Whether the run read a process listing a command line is joined against.
+    listing_read: bool = False
 
 
 def _flow_key(
@@ -1027,6 +1080,7 @@ def _joins(entries: Iterable[Any], files: _Files) -> _Joins:
                     found.blob_calls.add((file, call))
                     found.blob_of.setdefault((file, call, _fold(row.get("text"))), blob)
         elif kind == "sandbox_processes":
+            found.listing_read = True
             rows = _rows(data, "processes")
             for row in rows:
                 command = str(row.get("command_line") or "").strip()
@@ -1155,7 +1209,7 @@ def _item_root(item: str, joins: _Joins) -> tuple[str, str]:
             return "", ITEM_NO_PID
         if dot and not (repeat.isdigit() and int(repeat) >= 1):
             # A repeat is counted from 2 (``proc:87.2``); ``.0`` is no place.
-            return "", ITEM_UNSETTLED.format(item=item)
+            return "", REPEAT_UNPLACED.format(item=item)
         order = joins.listed.get(pid_of(pid)) or []
         if not order:
             # No listing in the ledger holds the id: the item's own number.
@@ -1168,9 +1222,9 @@ def _item_root(item: str, joins: _Joins) -> tuple[str, str]:
         roots = _signature_item_roots(item, joins)
         if roots is not None and len(roots.roots) > 1:
             # Which of its processes a statement read is the statement's to say.
-            return "", NAMES_NO_ROW.format(entry=item)
+            return "", ROWS_UNCHOSEN.format(entry=item)
         if roots is None or not roots.roots or roots.unplaced_values:
-            return "", (roots.first_reason if roots is not None else "") or SIGNATURE_UNPLACED
+            return "", (roots.first_reason if roots is not None else "") or SIGNATURE_ITEM_UNREAD
         return roots.roots[0], ""
     if section != "network":
         return "", ITEM_UNPLACED.format(section=section)
@@ -1225,6 +1279,19 @@ def _flow_of(row: Mapping[str, Any], joins: _Joins) -> str | None:
     if row.get("dst") and row.get("dport") not in (None, ""):
         return _flow(row.get("proto"), row["dst"], row["dport"])
     return None
+
+
+def _address_list(value: Any) -> list[Any]:
+    """The addresses a list argument gives: its items, or a string's comma-separated parts."""
+    return list(value) if isinstance(value, list | tuple) else str(value or "").split(",")
+
+
+def _addresses_given(entry: Any, args: Mapping[str, Any]) -> list[Any]:
+    """The address values a call was given, as ``_read_entry`` tries them, empty ones left out."""
+    given = [args[key] for key in entry_address_arguments(entry) if args.get(key) not in (None, "")]
+    for key in _ADDRESS_LIST_ARGS:
+        given += [i for i in _address_list(args.get(key)) if i is not None and str(i).strip()]
+    return given
 
 
 def _place(found: EntryRoots, rva: int, **kwargs: Any) -> None:
@@ -1378,7 +1445,11 @@ def _command_root(
     elif pids:
         found.unplace(SHARED_COMMAND, values=(command,), techniques=techniques)
     else:
-        found.unplace(MATCH_UNPLACED, values=(command,), techniques=techniques)
+        found.unplace(
+            MATCH_UNPLACED if joins.listing_read else MATCH_NO_LISTING,
+            values=(command,),
+            techniques=techniques,
+        )
 
 
 # The declared places a row's root is read from, by the coordinate each states
@@ -1439,7 +1510,12 @@ def _read_declared_rows(found: EntryRoots, facts: Any, data: Any, tool: str, joi
                     _command_root(found, value.strip(), joins, tids)
                     placed = True
         if not placed:
-            found.unplace(NOTHING_TO_PLACE.format(tool=tool), values=values, techniques=tids)
+            found.unplace(
+                ROW_NOTHING_TO_PLACE.format(tool=tool),
+                values=values,
+                techniques=tids,
+                alone=NOTHING_TO_PLACE.format(tool=tool),
+            )
 
 
 # The readings ``_read_entry`` gives an entry, in the order they are tried:
@@ -1618,7 +1694,12 @@ def _read_entry(entry: Any, found: EntryRoots, joins: _Joins) -> EntryRoots:
                 if _address_root(found, address, values=rule, techniques=tids):
                     placed = True
             if not placed:
-                found.unplace(NOTHING_TO_PLACE.format(tool=tool), values=rule, techniques=tids)
+                found.unplace(
+                    ROW_NOTHING_TO_PLACE.format(tool=tool),
+                    values=rule,
+                    techniques=tids,
+                    alone=NOTHING_TO_PLACE.format(tool=tool),
+                )
     elif branch == "function_table":
         _read_function_index(found, data)
     elif branch == "byte_transform":
@@ -1675,7 +1756,9 @@ def _read_entry(entry: Any, found: EntryRoots, joins: _Joins) -> EntryRoots:
         for path in _indicator_paths(entry):
             _indicator_roots(found, held_at_path(data, path), joins)
         if not found.roots:
-            found.reason = found.first_reason or SIGNATURE_UNPLACED
+            found.reason = found.first_reason or (
+                SIGNATURE_NAMES_NONE if _rows(data, "signatures") else SIGNATURES_NONE
+            )
     elif branch == "report_items":
         for row in _rows(data, "items"):
             item = str(row.get("id") or "").lower()
@@ -1721,14 +1804,20 @@ def _read_entry(entry: Any, found: EntryRoots, joins: _Joins) -> EntryRoots:
                 break
         if not placed:
             for key in _ADDRESS_LIST_ARGS:
-                items = args.get(key)
-                items = items if isinstance(items, list | tuple) else str(items or "").split(",")
-                for item in items:
+                for item in _address_list(args.get(key)):
                     placed = _address_root(found, item) or placed
                 if placed:
                     break
         if not placed and any(args.get(key) for key in _NAME_ARGS):
-            found.reason = BY_NAME_ONLY
+            # Every address given was tried above: one read as a number gave
+            # no root only by lying outside the named program.
+            given = _addresses_given(entry, args)
+            if not given:
+                found.reason = BY_NAME_ONLY
+            elif any(_hex(value) is not None for value in given):
+                found.reason = OUTSIDE_PROGRAM
+            else:
+                found.reason = ADDRESS_NOT_NUMBER
             return found
     if not found.roots and not found.reason:
         found.reason = found.first_reason or NOTHING_TO_PLACE.format(tool=tool or "the tool")

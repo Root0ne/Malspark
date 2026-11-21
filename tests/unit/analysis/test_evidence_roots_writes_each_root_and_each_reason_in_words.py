@@ -7,16 +7,21 @@ ATT&CK table names a single root and counts the rest (``roots_phrase``). Each
 root is written by its kind: a table of the file, the whole file, an external
 assessment, a sandbox process, a network flow, a DNS query, a sandbox
 signature, a file offset no section table places, and a place or the whole of
-another file named by that file. Each reason says what the entry, item or
-statement lacks: a failed call, a reference lookup, an answer with nothing to
-place, a call naming its function by name, a repeat of nothing, a carved path
+another file named by that file. Each reason says what the reading did and
+gave: a failed call, a reference lookup, an answer whose reading gave no root
+or a row of one it found nothing to place in, a call given a name and no
+address or an address not read as a number, a repeat of nothing, a carved path
 naming no one file, an address outside the named program, a file offset no
 section table places against a stated base, a call site whose blobs decode to
-other text, a signature naming no process, an indicator the process list does
-not settle, a command line no recorded process or several share, a statement
-naming none of an entry's rows, and a sandbox item whose row is unread, names
-nothing to place, states no pid or names no one process. Each wording is
-pinned whole here under the condition that writes it (T-770).
+other text, a signatures answer in which the reading found no process, no
+signature row or no named one, an indicator the process list does not settle,
+a match joined to no process by its command line, with a listing indexed or
+none, a command line several processes share, a statement whose words pick out
+none of an entry's rows, a signature item of several roots read where no
+statement is, and a sandbox item whose row the reading found in no indexed
+answer, that names nothing to place, states no pid, or that the reading places
+at no single process or at no place. Each wording is pinned whole here under
+the condition that writes it (T-770, T-816).
 
 Every value is synthetic.
 """
@@ -191,7 +196,8 @@ class TestAnEntryThatGivesNoRootSaysWhy:
             [
                 "ev_0030: no: the call failed, so it read nothing",
                 "ev_0031: no: get_ip_report is a reference lookup and reads nothing of the sample",
-                "ev_0032: no: the call names its function by name, not by address",
+                "ev_0032: no: the call is given a name and no address, and reading its answer "
+                "gave no root",
             ],
         )
 
@@ -200,10 +206,7 @@ class TestAnEntryThatGivesNoRootSaysWhy:
 
         assert _said(ledger, "ev_0033") == (
             [],
-            [
-                "ev_0033: no: decompile_function's answer carries no offset, address, section, "
-                "event or flow to place"
-            ],
+            ["ev_0033: no: reading decompile_function's answer gave no root"],
         )
 
     def test_an_entry_naming_no_tool_says_the_tool(self) -> None:
@@ -211,10 +214,7 @@ class TestAnEntryThatGivesNoRootSaysWhy:
 
         assert _said(ledger, "ev_0033") == (
             [],
-            [
-                "ev_0033: no: the tool's answer carries no offset, address, section, event or "
-                "flow to place"
-            ],
+            ["ev_0033: no: reading the tool's answer gave no root"],
         )
 
     def test_a_rule_row_with_no_address_says_so_for_its_technique(self) -> None:
@@ -234,8 +234,8 @@ class TestAnEntryThatGivesNoRootSaysWhy:
         assert roots.of_assertion("ev_0034", "T1140") == (
             [],
             [
-                "ev_0034: no: capa's answer carries no offset, address, section, event or "
-                "flow to place"
+                "ev_0034: no: the reading found nothing to place in a row of capa's answer that "
+                "the statement's words or the technique pick out"
             ],
         )
 
@@ -319,12 +319,15 @@ class TestAnEntryThatGivesNoRootSaysWhy:
 
 
 class TestASandboxSignatureOrCommandLineThatGivesNoProcessSaysWhy:
-    def test_a_signature_naming_no_process_or_event(self) -> None:
+    def test_a_signatures_answer_with_no_signature_row_and_no_indicator_row_read(self) -> None:
         ledger = [_entry("ev_0050", "sandbox_signatures", {"indicators": [], "matched": 0})]
 
         assert _said(ledger, "ev_0050") == (
             [],
-            ["ev_0050: no: a sandbox signature names no process or event"],
+            [
+                "ev_0050: no: the reading found no signature row and read no indicator row in "
+                "the answer"
+            ],
         )
 
     def test_an_indicator_naming_a_process_the_list_does_not_settle(self) -> None:
@@ -375,17 +378,18 @@ class TestASandboxSignatureOrCommandLineThatGivesNoProcessSaysWhy:
         assert _said(ledger, "ev_0053", "ev_0054", "ev_0055") == (
             ["sandbox process 84"],
             [
-                "ev_0054: no: the match names no command line of a process the sandbox recorded",
+                "ev_0054: no: the reading joined the match by command line to none of the "
+                "process rows it indexed",
                 "ev_0055: no: more than one process the sandbox recorded has this command line",
             ],
         )
 
-    def test_a_statement_naming_none_of_an_entry_s_rows(self) -> None:
+    def test_a_statement_whose_words_pick_out_none_of_an_entry_s_rows(self) -> None:
         ledger = [_entry("ev_0056", "sandbox_processes", {"processes": [{"pid": 84}, {"pid": 85}]})]
 
         assert _said(ledger, "ev_0056") == (
             [],
-            ["ev_0056: no: the statement names none of ev_0056's rows"],
+            ["ev_0056: no: the statement's words, as read, pick out none of ev_0056's rows"],
         )
         assert run_roots(ledger).of_statement("pid 85 ran", ["ev_0056"]) == (
             ["sandbox process 85"],
@@ -441,9 +445,10 @@ class TestASandboxItemThatGivesNoRootSaysWhy:
             [
                 "net:3: no: a sandbox `network` item names no process, flow or query to place",
                 "file:1: no: a sandbox `files` item names no process, flow or query to place",
-                "net:4: no: no answer in this run's ledger holds the row of net:4",
+                "net:4: no: the reading found no row of net:4 in the answers it indexed",
                 "proc:p3: no: the report states no pid for this process",
-                "proc:84.2: no: proc:84.2 names no one process of the report's process list",
+                "proc:84.2: no: the reading found no single process at proc:84.2 in the "
+                "listings of processes it indexed",
             ],
         )
 
