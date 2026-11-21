@@ -62,7 +62,10 @@ class _Report:
 
 
 class _Service:
-    """The service is not consulted at all; the rows answer for themselves."""
+    """The service hands out the document it serves; the rows answer for their numbers."""
+
+    async def served_document(self, report: Any) -> Any:
+        return report.malware_report
 
 
 def _legacy() -> list[_Row]:
@@ -148,9 +151,30 @@ async def test_the_answer_outlives_the_feed_it_used_to_be_read_from() -> None:
     assert "job_events" not in code
     assert "JobEvent" not in code
     assert "transcript_is_numbered" not in code
-    # And no round trip of any kind to decide it.
+    # And no round trip of any kind to decide it: the one thing awaited is the
+    # document the report serves, which no numbering reads.
     assert not inspect.iscoroutinefunction(reports._is_numbered)
-    assert "await" not in code
+    assert "await" not in inspect.getsource(reports._is_numbered)
+    awaited = [
+        ast.unparse(node.value)
+        for node in ast.walk(ast.parse(inspect.getsource(reports._detail)))
+        if isinstance(node, ast.Await)
+    ]
+    assert awaited == ["svc.served_document(report)"]
+    detail_tree = ast.parse(inspect.getsource(reports._detail))
+    waits = (ast.AsyncFor, ast.AsyncWith)
+    assert not [node for node in ast.walk(detail_tree) if isinstance(node, waits)]
+    assert not [
+        node
+        for node in ast.walk(detail_tree)
+        if isinstance(node, ast.comprehension) and node.is_async
+    ]
+    # Nor does the served document read the feed.
+    from app.services.report_service import ReportService
+
+    served = inspect.getsource(ReportService.served_document)
+    assert "job_events" not in served
+    assert "JobEvent" not in served
 
 
 @pytest.mark.asyncio

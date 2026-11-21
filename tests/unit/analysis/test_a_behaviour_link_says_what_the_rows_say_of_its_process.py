@@ -44,6 +44,8 @@ UNLISTED_AND_NONE = (
 )
 # Every flow to the address named by a process the report does not list.
 UNLISTED_ONLY = "the publish rule found a flow to it made by " + UNLISTED_WORDS
+# A row that carries no reading of its flow rows: the rule states no count of them.
+UNLISTED_COUNTED = "the publish rule counted its flows as made by " + UNLISTED_WORDS
 
 
 def _network(**kinds: Any) -> dict[str, Any]:
@@ -331,21 +333,21 @@ class TestThePublishRuleIsUnchanged:
             ({"sample_process_tree": None}, sr.FLOW_NOT_PLACED),
             (
                 {"sample_process_tree": False},
-                "the publish rule found a flow to it made by a process outside the sample's "
+                "the publish rule counted its flows as made by a process outside the sample's "
                 "process tree",
             ),
             (
                 {"sample_process_tree": False, "outside_processes": ["x.exe (procid 7)"]},
-                "the publish rule found a flow to it made by a process outside the sample's "
+                "the publish rule counted its flows as made by a process outside the sample's "
                 "process tree (x.exe (procid 7))",
             ),
             (
                 {"sample_process_tree": None, "unlisted_processes": ["procid 46"]},
-                UNLISTED_ONLY,
+                UNLISTED_COUNTED,
             ),
             (
                 {"sample_process_tree": False, "unlisted_processes": ["procid 46"]},
-                "the publish rule found a flow to it made by a process outside the sample's "
+                "the publish rule counted its flows as made by a process outside the sample's "
                 "process tree",
             ),
             (
@@ -358,8 +360,8 @@ class TestThePublishRuleIsUnchanged:
             ),
             (
                 {"sample_process_tree": None, "launcher_unsettled_processes": ["w.exe"]},
-                "the publish rule found a flow to it made by a script host naming the launcher, "
-                "whose attribution is not established (w.exe)",
+                "the publish rule counted its flows as made by a script host naming the "
+                "launcher, whose attribution is not established (w.exe)",
             ),
             (
                 {
@@ -367,7 +369,7 @@ class TestThePublishRuleIsUnchanged:
                     "launcher_unsettled_processes": ["w.exe"],
                     "unlisted_processes": ["procid 46"],
                 },
-                UNLISTED_ONLY,
+                UNLISTED_COUNTED,
             ),
         ],
     )
