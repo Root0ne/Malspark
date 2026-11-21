@@ -5,7 +5,7 @@ the deciding function gives (``network_extractor.host_failure``, ``url_failure``
 ``stix_renderer.email_failure``), under the family's one subject, the publish
 rule; no renderer words a host reason of its own, and the decision is that
 function. Every quoted span is the reason writer's, so the answer holds no ";" and
-no raw quote or control character, and its first clause is the whole answer.
+no raw quote or control character, and its first ";" clause is the whole answer.
 Every value is synthetic.
 """
 
@@ -74,7 +74,16 @@ def test_the_answer_is_the_test_s_reason(kind: str, value: str, reason: str) -> 
 
 @pytest.mark.parametrize(
     "value",
-    ["http://a;b.com/x", "x;y", 'a"b.com', "a‮b.com", "a​b.com", "a`b.com", "\\\\.\\pipe\\x"],
+    [
+        "http://a;b.com/x",
+        "x;y",
+        'a"b.com',
+        "a‮b.com",
+        "a​b.com",
+        "a`b.com",
+        "\\\\.\\pipe\\x",
+        "a" + ";" * 70 + ".com",
+    ],
 )
 def test_a_hostile_value_is_answered_on_one_line_with_no_mark_of_its_own(value: str) -> None:
     kind = "url" if "://" in value else "domain"
@@ -82,7 +91,7 @@ def test_a_hostile_value_is_answered_on_one_line_with_no_mark_of_its_own(value: 
 
     assert answer.startswith(FOUND)
     assert ";" not in answer and answer.isprintable()
-    assert len(answer) <= 240
+    assert len(answer) <= 200
     # A writer restating the answer in brackets restates it.
     assert _states_publish_state(
         f" ({answer[4:]}) was read.", publish_answer(kind, value, "strings", None)

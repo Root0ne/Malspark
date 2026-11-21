@@ -99,3 +99,38 @@ def test_a_refusal_longer_than_the_bound_is_asked_whole() -> None:
     (found,) = unattributed_indicator_violations(bundle, facts)
 
     assert f" and {said}. " in found.message
+
+
+def test_a_host_row_s_refusal_longer_than_the_bound_is_asked_whole() -> None:
+    long = (
+        "the publish rule could not place the process that wrote it ("
+        + " and ".join(
+            f"could not decide whether pid {n} of task 7 is a listed process since the process "
+            "list it read does not state a guest pid for every process"
+            for n in range(3)
+        )
+        + ")"
+    )
+    assert len(long) > FINDING_VALUE_LIMIT
+    digest = "a" * 64
+    bundle = Bundle.model_validate(
+        {
+            "type": "bundle",
+            "objects": [
+                {
+                    "type": "indicator",
+                    "id": "indicator--0f1e2d3c-4b5a-4968-8776-655443332212",
+                    "name": "judge indicator",
+                    "pattern": f"[file:hashes.'SHA-256' = '{digest}']",
+                    "pattern_type": "stix",
+                    "indicator_types": ["malicious-activity"],
+                    "valid_from": "2026-01-01T00:00:00Z",
+                }
+            ],
+        }
+    )
+
+    (found,) = unattributed_indicator_violations(bundle, lambda kind, value: long)
+
+    assert found.subject.startswith("hash:")
+    assert f" and {long}. Keep the indicator " in found.message
