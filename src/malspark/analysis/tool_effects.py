@@ -49,15 +49,18 @@ The platform's own in-process tools (no source and no server, or a question to
 the team) are left out by the rule the disclosure uses
 (:func:`is_platform_internal`).
 
-**Said in the voice of where it came from.** A line says a declared effect as
-declared ("Declared to …", with the declared ``when`` and offline condition),
-the cautious answer as taken ("Taken as …", ``network_from``), and a server's
-own declaration or hint as its own; never as an event. Sent bytes the
-declaration itself states are declared, ``discloses_sample`` alone (which may
-come from a reading of the tool's schema) taken (``third_party_from``). A tool
-whose declared work is running the sample's code "Ran" it only where a counted
-call of it completed under no declared condition. A row stored before these
-fields says "Declared" only where its own fields hold the declared value.
+**Said in the voice of where it came from.** A line says an effect a
+declaration states as declared ("Declared to …", with the declared ``when``
+and offline condition); an effect the platform read of the tool's listing or
+program (``core.declared_reading.platform_read``) and the cautious answer as
+taken ("Taken as …"); and a server's own declaration or hint as its own; never
+as an event. Each row keeps where each answer came from (``network_from``,
+``third_party_from``, ``executes_from``, ``why_from``). Sent bytes a
+declaration itself states are declared, ``discloses_sample`` alone taken. A
+tool whose declared work is running the sample's code "Ran" it only where a
+counted call of it completed under no declared condition. A row stored before
+these fields cannot tell a declaration from a reading: it says a network, a
+sent hash and sent bytes as taken.
 
 **One source of truth with the disclosure.** Where the sample's bytes were
 read is the isolation part (``analysis.isolation``): a tool that ran the
@@ -114,12 +117,15 @@ FROM_DECLARED = "declared"
 FROM_SENDS = "sends"
 FROM_SERVER = "server"
 FROM_HINT = "hint"
-# What a row stored before ``network_from`` holds of a network it cannot tell
-# declared from taken: a network that carries a sent hash or file.
+# An answer the platform read of the tool's listing or program, laid under the
+# declarations (``core.declared_reading.platform_read``): taken, never declared.
+# Also where a row's sent hash or bytes, its run and its reason came from.
+FROM_READ = "read"
+# What a row that does not record where its answer came from is said as: taken.
 _FROM_TAKEN = "taken"
 # Where a row's sent bytes came from (``third_party_from``): the declaration's own
 # ``effects.third_party`` of ``bytes``, or ``discloses_sample`` alone, the cautious
-# reading (which may come from a reading of the tool's schema).
+# reading.
 FROM_DISCLOSES = "discloses"
 
 INTRO_SENTENCE = (
@@ -147,31 +153,50 @@ _DECLARED_TO_RUN = {
     EXECUTES_NATIVE: "Declared to run the sample's code natively",
     EXECUTES_EMULATION: "Declared to run the sample's code under emulation",
 }
-# The lead of each line that names the tools reaching a network in a named way,
-# each mode always a declaration's.
+# The same tools where running the sample's code is the platform's reading of them.
+_TAKEN_TO_RUN = {
+    EXECUTES_NATIVE: "Taken as running the sample's code natively",
+    EXECUTES_EMULATION: "Taken as running the sample's code under emulation",
+}
+# The lead of each line that names the tools reaching a network in a named way, as
+# declared; and the same where the platform read the mode (``network_from``).
 _REACHED = {
     NETWORK_OPERATOR_SANDBOX: "Declared to reach the sandbox service its server fronts",
-    NETWORK_CASE_STORE: (
-        "Declared to reach the configured case-memory store, which the disclosure's "
-        "case-memory row places"
-    ),
+    NETWORK_CASE_STORE: "Declared to reach the configured case-memory store",
     NETWORK_ON_REFRESH: (
         "Declared to reach the network only to fetch or refresh reference data they keep, "
         "sending nothing of the sample"
     ),
 }
+_TAKEN_REACHED = {
+    NETWORK_OPERATOR_SANDBOX: "Taken as reaching the sandbox service its server fronts",
+    NETWORK_CASE_STORE: "Taken as reaching the configured case-memory store",
+    NETWORK_ON_REFRESH: (
+        "Taken as reaching the network only to fetch or refresh reference data they keep, "
+        "sending nothing of the sample"
+    ),
+}
+# Where the case-memory store such a tool reaches is, as the disclosure's case-memory
+# row places it (``stores``): placed with a host, listed and not placed, or not listed.
+_STORE_PLACED = "which the disclosure's case-memory row places"
+_STORE_UNPLACED = "of which the disclosure's case-memory row cannot tell where it runs"
+_STORE_NONE = "which the disclosure records as kept in the process or not configured"
 # The lead of each line that names the tools reaching the network, by where the
-# answer came from (``network_from``), a sent hash and a sent file apart.
+# answer came from (``network_from``), a sent hash and a sent file apart, each by
+# where the sent hash or file came from.
 _REACHES = {
     FROM_DECLARED: "Declared to reach the network",
-    (FROM_SENDS, THIRD_PARTY_HASH): (
+    (FROM_SENDS, THIRD_PARTY_HASH, FROM_DECLARED): (
         "Taken as reaching the network, as a tool declared to send the sample's hash out"
+    ),
+    (FROM_SENDS, THIRD_PARTY_HASH, _FROM_TAKEN): (
+        "Taken as reaching the network, as a tool taken to send the sample's hash out"
     ),
     (FROM_SENDS, THIRD_PARTY_BYTES, FROM_DECLARED): (
         "Taken as reaching the network, as a tool declared to send the sample's bytes to a third "
         "party"
     ),
-    (FROM_SENDS, THIRD_PARTY_BYTES, FROM_DISCLOSES): (
+    (FROM_SENDS, THIRD_PARTY_BYTES, _FROM_TAKEN): (
         "Taken as reaching the network, as a tool taken to send the sample's file out"
     ),
     _FROM_TAKEN: "Taken as reaching the network",
@@ -195,6 +220,8 @@ class Effects:
     network_from: str = ""
     offline_without_credentials: bool | None = None
     third_party_from: str = ""
+    executes_from: str = ""
+    why_from: str = ""
 
 
 # How a call ended, as a row counts it.
@@ -230,11 +257,14 @@ def entry_effects(entry: Any) -> Effects:
 
     A declaration that says the tool sends the sample or its hash to a third
     party says it reaches the network too, whatever else it says: the
-    cautious answer is kept, and ``network_from`` says it was taken so.
+    cautious answer is kept, and ``network_from`` says it was taken so. Each
+    answer the platform read of the tool's listing or program, rather than a
+    declaration stated, is kept as read (:data:`FROM_READ`).
     """
     from malspark.core.declared_reading import (
         declared_only,
         kind_free_facts,
+        platform_read,
         recorded,
         served_statement,
         server_hints,
@@ -242,15 +272,22 @@ def entry_effects(entry: Any) -> Effects:
 
     if not recorded(entry):
         return Effects()
+    read = platform_read(entry)
+
+    def origin(dotted: str, value: Any) -> str:
+        if value in ("", None):
+            return ""
+        return FROM_READ if dotted in read else FROM_DECLARED
+
     facts = kind_free_facts(declared_only(entry))
     declared = facts.effects
     executes = declared.executes if declared is not None else ""
     network = declared.network if declared is not None else None
     third_party = declared.third_party if declared is not None else ""
-    third_party_from = FROM_DECLARED if third_party else ""
+    third_party_from = origin("effects.third_party", third_party)
     if sends_sample_bytes(facts) and third_party != THIRD_PARTY_BYTES:
         third_party, third_party_from = THIRD_PARTY_BYTES, FROM_DISCLOSES
-    network_from = FROM_DECLARED if network is not None else ""
+    network_from = origin("effects.network", network)
     if third_party in (THIRD_PARTY_HASH, THIRD_PARTY_BYTES) and network not in (
         True,
         NETWORK_OPERATOR_SANDBOX,
@@ -278,6 +315,8 @@ def entry_effects(entry: Any) -> Effects:
         network_from,
         offline,
         third_party_from,
+        origin("effects.executes", executes),
+        origin("effects.why_undeclared", why),
     )
 
 
@@ -405,9 +444,13 @@ def effects_part(
                 # condition: said by the lines, read by no count and no placement.
                 "network_from": effects.network_from,
                 "offline_without_credentials": effects.offline_without_credentials,
-                # Where the sent hash or bytes came from: the declaration, or the cautious
-                # reading of ``discloses_sample``; said by the lines only.
+                # Where the sent hash or bytes came from: the declaration, the platform's
+                # reading, or the cautious reading of ``discloses_sample``; and where the
+                # run of the sample's code and the reason it cannot be declared came from:
+                # said by the lines only.
                 "third_party_from": effects.third_party_from,
+                "executes_from": effects.executes_from,
+                "why_from": effects.why_from,
                 "hints": server_hints(entry),
                 **dict.fromkeys(OUTCOMES, 0),
             }
@@ -541,10 +584,9 @@ def _named(
 def network_from(row: Mapping[str, Any]) -> str:
     """Where a row's network answer came from, as its line says it.
 
-    A row built with ``network_from`` says it. A row stored before it says
-    "declared" only where its own stored fields hold the declared value: a
-    named mode, or a network a sent hash or file did not force; a network
-    beside a sent hash or file may have been forced, and is taken.
+    A row built with ``network_from`` says it. A row stored before it cannot tell a
+    declaration from the platform's reading: a network is taken; a named mode, which only
+    a declaration gives, and a closed network stay as stored.
     """
     if "network_from" in row:
         return str(row.get("network_from") or "")
@@ -555,37 +597,50 @@ def network_from(row: Mapping[str, Any]) -> str:
         return FROM_HINT
     if by != DECLARED:
         return ""
-    if row.get("network") is True and row.get("third_party") in (
-        THIRD_PARTY_HASH,
-        THIRD_PARTY_BYTES,
-    ):
-        return _FROM_TAKEN
-    return FROM_DECLARED
+    return _FROM_TAKEN if row.get("network") is True else FROM_DECLARED
 
 
 def _reaches_key(row: Mapping[str, Any]) -> Any:
-    """Which lead a row reaching the network is said under; one that records no origin is
-    taken."""
-    held = network_from(row) or _FROM_TAKEN
-    if held != FROM_SENDS:
-        return held
-    sent = row.get("third_party")
-    return (held, sent, third_party_from(row)) if sent == THIRD_PARTY_BYTES else (held, sent)
+    """Which lead a row reaching the network is said under; one whose origin is not recorded,
+    or not known here, is taken."""
+    held: Any = network_from(row) or _FROM_TAKEN
+    if held == FROM_SENDS:
+        voice = FROM_DECLARED if third_party_from(row) == FROM_DECLARED else _FROM_TAKEN
+        held = (held, row.get("third_party"), voice)
+    return held if held in _REACHES else _FROM_TAKEN
 
 
 def third_party_from(row: Mapping[str, Any]) -> str:
     """Where a row's sent hash or bytes came from, as its line says it.
 
-    A row built with ``third_party_from`` says it. A row stored before it: a hash is
-    only ever a declaration's ``third_party``; sent bytes may be ``discloses_sample``
-    alone, which the row does not tell from a declared third party, so they are taken.
+    A row built with ``third_party_from`` says it. A row stored before it cannot tell a
+    declaration from the platform's reading: a sent hash is taken, and sent bytes may be
+    ``discloses_sample`` alone, so they are taken too.
     """
     if "third_party_from" in row:
         return str(row.get("third_party_from") or "")
     sent = row.get("third_party")
     if sent == THIRD_PARTY_BYTES:
         return FROM_DISCLOSES
+    if sent == THIRD_PARTY_HASH:
+        return _FROM_TAKEN
     return FROM_DECLARED if sent else ""
+
+
+def executes_from(row: Mapping[str, Any]) -> str:
+    """Where a row's answer of running the sample's code came from; a row stored before it
+    says it as stored."""
+    if "executes_from" in row:
+        return str(row.get("executes_from") or "")
+    return FROM_DECLARED if row.get("executes") else ""
+
+
+def why_from(row: Mapping[str, Any]) -> str:
+    """Where a row's reason its effects cannot be declared came from; a row stored before it
+    says it as stored."""
+    if "why_from" in row:
+        return str(row.get("why_from") or "")
+    return FROM_DECLARED if row.get("why_undeclared") else ""
 
 
 def _ran(row: Mapping[str, Any]) -> bool:
@@ -663,12 +718,21 @@ def _missing(row: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def _closed(row: Mapping[str, Any]) -> bool:
-    """Whether the row's tool is declared to do none of the three."""
+    """Whether the row's tool is declared or taken to do none of the three."""
     return (
         row.get("network") is False
         and row.get("network_by") == DECLARED
         and row.get("executes") == EXECUTES_NO
         and row.get("third_party") == THIRD_PARTY_NO
+    )
+
+
+def _declared_closed(row: Mapping[str, Any]) -> bool:
+    """Whether a declaration states each of the three answers of a row doing none of them."""
+    return (
+        network_from(row) == FROM_DECLARED
+        and executes_from(row) == FROM_DECLARED
+        and third_party_from(row) == FROM_DECLARED
     )
 
 
@@ -696,11 +760,32 @@ _ENDED = {
 }
 
 
-def effects_lines(part: Any, code: Callable[[str], str] = _code) -> list[str]:
+def _store_where(stores: Any) -> str:
+    """Where the configured case-memory store is, as the disclosure's case-memory row says."""
+    from malspark.core.host_locality import LOCAL, REMOTE
+
+    rows = [row for row in stores or [] if isinstance(row, Mapping)]
+    if any(row.get("where") in (LOCAL, REMOTE) and row.get("host") for row in rows):
+        return _STORE_PLACED
+    return _STORE_UNPLACED if rows else _STORE_NONE
+
+
+def _split(
+    rows: list[Mapping[str, Any]], declared: Callable[[Mapping[str, Any]], bool]
+) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]]]:
+    """``rows`` whose answer a declaration states, and the rest, which are taken."""
+    return [row for row in rows if declared(row)], [row for row in rows if not declared(row)]
+
+
+def effects_lines(
+    part: Any, code: Callable[[str], str] = _code, *, stores: Any = None
+) -> list[str]:
     """The part's sentences, one per line; ``[]`` for a record without the part.
 
     An effect is said for the tools with a completed call only; a tool whose
-    calls failed, were not run or were refused is said as such.
+    calls failed, were not run or were refused is said as such. ``stores`` are
+    the disclosure's case-memory rows, which place the store a tool is declared
+    to reach.
     """
     if not isinstance(part, Mapping) or "tools" not in part:
         return []
@@ -724,27 +809,45 @@ def effects_lines(part: Any, code: Callable[[str], str] = _code) -> list[str]:
     if not every:
         lines.append("This run recorded no tool call, so no tool's effects are said.")
         return lines
+
+    def ran_declared(row: Mapping[str, Any]) -> bool:
+        return executes_from(row) == FROM_DECLARED
+
     for mode in (EXECUTES_NATIVE, EXECUTES_EMULATION):
-        held = [row for row in rows if row.get("executes") == mode]
-        ran = [row for row in held if _ran(row)]
+        stated, taken = _split([row for row in rows if row.get("executes") == mode], ran_declared)
+        ran = [row for row in stated if _ran(row)]
         if ran:
             lines.append(f"{_RAN[mode]}: {_named(ran, code, _with_when(_read_note))}.")
-        declared_only = [row for row in held if not _ran(row)]
+        declared_only = [row for row in stated if not _ran(row)]
         if declared_only:
             lines.append(
                 f"{_DECLARED_TO_RUN[mode]}: {_named(declared_only, code, _with_when(_read_note))}."
             )
+        if taken:
+            lines.append(f"{_TAKEN_TO_RUN[mode]}: {_named(taken, code, _with_when(_read_note))}.")
     place = _sandbox_place(code)
+
+    def sandbox_declared(row: Mapping[str, Any]) -> bool:
+        return ran_declared(row) and (
+            row.get("network") != NETWORK_OPERATOR_SANDBOX or network_from(row) == FROM_DECLARED
+        )
+
     own = [
         row
         for row in rows
         if row.get("executes") == EXECUTES_SANDBOX
         and row.get("network") == NETWORK_OPERATOR_SANDBOX
     ]
-    if own:
+    stated, taken = _split(own, sandbox_declared)
+    if stated:
         lines.append(
             f"Declared to have the sample run in the sandbox service its server fronts: "
-            f"{_named(own, code, _with_when(place))}."
+            f"{_named(stated, code, _with_when(place))}."
+        )
+    if taken:
+        lines.append(
+            f"Taken as having the sample run in the sandbox service its server fronts: "
+            f"{_named(taken, code, _with_when(place))}."
         )
     theirs = [
         row
@@ -752,10 +855,16 @@ def effects_lines(part: Any, code: Callable[[str], str] = _code) -> list[str]:
         if row.get("executes") == EXECUTES_SANDBOX
         and row.get("network") != NETWORK_OPERATOR_SANDBOX
     ]
-    if theirs:
+    stated, taken = _split(theirs, ran_declared)
+    if stated:
         lines.append(
             f"Declared to run the sample in a sandbox its server does not front, which may be a "
-            f"third party's: {_named(theirs, code, _when)}."
+            f"third party's: {_named(stated, code, _when)}."
+        )
+    if taken:
+        lines.append(
+            f"Taken as running the sample in a sandbox its server does not front, which may be a "
+            f"third party's: {_named(taken, code, _when)}."
         )
     reached = [row for row in rows if row.get("network") is True]
     for key, lead in _REACHES.items():
@@ -763,22 +872,34 @@ def effects_lines(part: Any, code: Callable[[str], str] = _code) -> list[str]:
         if held:
             lines.append(f"{lead}: {_named(held, code, _with_when(_offline, _hint_closed))}.")
     for mode, lead in _REACHED.items():
-        held = [row for row in rows if row.get("network") == mode]
-        if held:
-            notes = (place,) if mode == NETWORK_OPERATOR_SANDBOX else ()
-            lines.append(f"{lead}: {_named(held, code, _with_when(*notes))}.")
-    hashed = [row for row in rows if row.get("third_party") == THIRD_PARTY_HASH]
-    if hashed:
-        # A sent hash is only ever a declaration's ``third_party``, stored as declared.
+        stated, taken = _split(
+            [row for row in rows if row.get("network") == mode],
+            lambda row: network_from(row) == FROM_DECLARED,
+        )
+        notes = (place,) if mode == NETWORK_OPERATOR_SANDBOX else ()
+        where = f", {_store_where(stores)}" if mode == NETWORK_CASE_STORE else ""
+        for held, said in ((stated, lead), (taken, _TAKEN_REACHED[mode])):
+            if held:
+                lines.append(f"{said}{where}: {_named(held, code, _with_when(*notes))}.")
+    stated, taken = _split(
+        [row for row in rows if row.get("third_party") == THIRD_PARTY_HASH],
+        lambda row: third_party_from(row) == FROM_DECLARED,
+    )
+    if stated:
         lines.append(
             "Declared to send the sample's hash to a third party: "
-            f"{_named(hashed, code, _with_when(_offline))}."
+            f"{_named(stated, code, _with_when(_offline))}."
+        )
+    if taken:
+        lines.append(
+            "Taken as sending the sample's hash to a third party: "
+            f"{_named(taken, code, _with_when(_offline))}."
         )
     sent = [row for row in rows if row.get("third_party") == THIRD_PARTY_BYTES]
     handed = [row for row in sent if row.get("network") == NETWORK_OPERATOR_SANDBOX]
     out = [row for row in sent if row.get("network") != NETWORK_OPERATOR_SANDBOX]
-    # Sent bytes the declaration itself states are declared; ``discloses_sample`` alone
-    # is the cautious reading, taken, with what the upload rows know of where it went.
+    # Sent bytes a declaration itself states are declared; ``discloses_sample`` alone and
+    # the platform's reading are taken, with what the upload rows know of where it went.
     stated = [row for row in handed if third_party_from(row) == FROM_DECLARED]
     if stated:
         lines.append(
@@ -807,13 +928,17 @@ def effects_lines(part: Any, code: Callable[[str], str] = _code) -> list[str]:
             f"{_named(taken, code, _with_when())}; the upload rows of the disclosure above say "
             "what is known of where each call sent it."
         )
-    declared = [row for row in every if _closed(row)]
-    if declared:
-        places = list(dict.fromkeys(_label(row, code) for row in declared))
-        lines.append(
-            f"Declared to do none of these: {len(declared)} "
-            f"{'tool' if len(declared) == 1 else 'tools'}, on {_joined(places)}."
-        )
+    stated, taken = _split([row for row in every if _closed(row)], _declared_closed)
+    for held, lead in (
+        (stated, "Declared to do none of these"),
+        (taken, "Taken as doing none of these"),
+    ):
+        if held:
+            places = list(dict.fromkeys(_label(row, code) for row in held))
+            lines.append(
+                f"{lead}: {len(held)} {'tool' if len(held) == 1 else 'tools'}, on "
+                f"{_joined(places)}."
+            )
     hinted = [
         row for row in rows if row.get("network") is False and row.get("network_by") == SERVER_HINT
     ]
@@ -832,16 +957,22 @@ def effects_lines(part: Any, code: Callable[[str], str] = _code) -> list[str]:
         held = [row for row in every if int(row.get(state) or 0) and not _closed(row)]
         if held:
             lines.append(f"{lead}: {_named(held, code, _of_calls(state))}.")
-    groups: dict[tuple[tuple[str, ...], str], list[Mapping[str, Any]]] = {}
+    groups: dict[tuple[tuple[str, ...], str, str], list[Mapping[str, Any]]] = {}
     for row in every:
         made = int(row.get(COMPLETED, row.get("calls")) or 0) + int(row.get(FAILED) or 0)
         missing = _missing(row)
         if missing and made:
             why = str(row.get("why_undeclared") or "")
-            groups.setdefault((missing, why), []).append(row)
-    for (missing, why), held in groups.items():
+            # The reason as its declaration states it, or as the platform read it.
+            said = (
+                "its declaration"
+                if why_from(row) == FROM_DECLARED
+                else "the platform's reading of its listing"
+            )
+            groups.setdefault((missing, why, said), []).append(row)
+    for (missing, why, said), held in groups.items():
         lines.append(
             f"Undeclared whether it may {_joined(list(missing), 'or')}, so not taken as safe: "
-            f"{_named(held, code)}" + (f"; its declaration says why: {why}" if why else "") + "."
+            f"{_named(held, code)}" + (f"; {said} says why: {why}" if why else "") + "."
         )
     return lines

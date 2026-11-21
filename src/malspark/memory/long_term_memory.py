@@ -754,8 +754,9 @@ def similar_cases_shown(cases: Iterable[StoredCase], shown: str) -> Any:
 # thing, and read only when the disclosure is built (``analysis.disclosure``):
 # no model and no decision reads them.
 
-# How the judge's one read of similar cases of other samples ended
-# (``ServiceContainer.similar_case_read``): cases shown in its verdict prompt,
+# How the read of similar cases of other samples for the judge's last verdict
+# prompt ended (``ServiceContainer.similar_case_read``, noted on each prompt
+# build): cases given in that prompt,
 # a read that showed none, a read that raised, a store that could not be
 # opened, no analyst claim to search with; and, for a job that never got to
 # the read, not reached.

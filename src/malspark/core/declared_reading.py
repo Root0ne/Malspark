@@ -129,6 +129,11 @@ SERVED_KEY = "served"
 # or reaches outside, ``core.served_declarations``): said as the server's,
 # never read as declared.
 SERVED_CLAIMS_KEY = "served_claims"
+# The key of the stored record that names, dotted, the fields of the tool's effects
+# that the platform's own reading of its listing or program gave, not a declaration
+# (``Declared.read_fields``): in force as any other, and read only by the tool-effects
+# part's lines, which say each such field as taken (:func:`platform_read`).
+READ_KEY = "platform_read"
 # The MCP tool annotations a server may give, each a yes or no.
 SERVER_HINTS: tuple[str, ...] = (
     "readOnlyHint",
@@ -330,20 +335,40 @@ def _with_served(
 ) -> dict[str, Any]:
     """``record`` naming the stored fields only the tool's server said (:data:`SERVED_KEY`).
 
-    And what that server claims that nothing put in force (:data:`SERVED_CLAIMS_KEY`).
+    And what that server claims that nothing put in force (:data:`SERVED_CLAIMS_KEY`),
+    and the fields of its effects the platform read rather than a declaration stated
+    (:data:`READ_KEY`).
     """
     said: tuple[str, ...] = ()
     claims: Mapping[str, Any] = {}
+    read: tuple[str, ...] = ()
     for name in names:
         said = said or held.served_fields_for(source, name)
         claims = claims or held.served_claims_for(source, name)
+        read = read or held.read_fields_for(source, name)
     stored = [name for name in said if name.partition(".")[0] in STORED_FACT_FIELDS]
     out = dict(record)
     if stored:
         out[SERVED_KEY] = stored
     if claims:
         out[SERVED_CLAIMS_KEY] = dict(claims)
+    taken = [name for name in read if name.partition(".")[0] in record]
+    if taken:
+        out[READ_KEY] = taken
     return out
+
+
+def platform_read(entry: Any) -> frozenset[str]:
+    """The fields of the entry's stored effects the platform read, not a declaration stated.
+
+    Dotted (``effects.network``), as the entry stored them (:data:`READ_KEY`); empty for
+    a record that names none.
+    """
+    held = _field(entry, "facts")
+    read = held.get(READ_KEY) if isinstance(held, Mapping) else None
+    if not isinstance(read, list | tuple):
+        return frozenset()
+    return frozenset(str(name) for name in read if isinstance(name, str))
 
 
 def served_fields(entry: Any) -> frozenset[str]:
@@ -391,7 +416,9 @@ def _declared_record(held: Mapping[str, Any]) -> dict[str, Any]:
         else []
     )
     record = {
-        key: value for key, value in held.items() if key not in (SERVED_KEY, SERVED_CLAIMS_KEY)
+        key: value
+        for key, value in held.items()
+        if key not in (SERVED_KEY, SERVED_CLAIMS_KEY, READ_KEY)
     }
     for name in names:
         top, _, sub = name.partition(".")

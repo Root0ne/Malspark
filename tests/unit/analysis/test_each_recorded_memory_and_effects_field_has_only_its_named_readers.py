@@ -3,10 +3,14 @@
 The store row's ``case``, ``case_why``, ``similar_read`` and ``similar_shown`` are noted on
 the job's container where the platform decides or does the thing, and laid on the record
 when the disclosure is built, after the report node's last model call; each effects row's
-``network_from``, ``third_party_from`` and ``offline_without_credentials`` are written with
-the effects part, built at the same time. No model and no decision reads them: the only
+``network_from``, ``third_party_from``, ``executes_from``, ``why_from`` and
+``offline_without_credentials`` are written with the effects part, built at the same time.
+Which fields of a tool's effects the platform read rather than a declaration stated is
+recorded where the reading is laid (``Declared.read_fields``) and stored with each entry
+(``READ_KEY``), read only by the effects part. No model and no decision reads them: the only
 code that names them is listed here, by a search of the whole source tree, the web console
-included, so a new reader is a changed test (T-815, T-820).
+included, whether a field is read by its key in either quote or as an attribute, so a new
+reader is a changed test (T-815, T-820).
 """
 
 from __future__ import annotations
@@ -32,6 +36,30 @@ def _naming(pattern: str, trees: tuple[str, ...] = TREES) -> set[str]:
     return found
 
 
+def _key(field: str) -> str:
+    """A read of ``field`` by its key, in either quote, or as an attribute."""
+    return rf"[\"']{field}[\"']|\.{field}\b"
+
+
+def test_a_read_by_either_quote_or_by_attribute_is_seen() -> None:
+    for field in ("case_why", "network_from", "executes_from"):
+        pattern = _key(field)
+        for reader in (
+            f'row.get("{field}")',
+            f"row.get('{field}')",
+            f'row["{field}"]',
+            f"row['{field}']",
+            f"row.{field}",
+        ):
+            assert re.search(pattern, reader), (field, reader)
+        assert not re.search(pattern, f"{field}_count = 1")
+    for reader in ('get("case")', "get('case')", '["case"]', "['case']", "row.case"):
+        assert re.search(CASE, reader), reader
+
+
+# ``case`` by its key in either quote, or as an attribute of a row or a record.
+CASE = r"get\([\"']case[\"']\)|\[[\"']case[\"']\]|\.case\b"
+
 DISCLOSURE = "src/malspark/analysis/disclosure.py"
 MEMORY = "src/malspark/memory/long_term_memory.py"
 
@@ -39,10 +67,10 @@ MEMORY = "src/malspark/memory/long_term_memory.py"
 def test_the_case_memory_fields_are_read_only_by_the_case_memory_line() -> None:
     # Written by memory_facts and read by the case-memory line, both in the disclosure.
     for field in ("case_why", "similar_read", "similar_shown"):
-        assert _naming(rf"[\"']{field}[\"']") == {DISCLOSURE}, field
+        assert _naming(_key(field)) == {DISCLOSURE}, field
     # ``case`` is read by its key in the disclosure alone, in the platform's code and its
     # console (the scripts' own manifests carry a ``case`` of their own).
-    assert _naming(r"get\(\"case\"\)|\[\"case\"\]", TREES[:3]) == {DISCLOSURE}
+    assert _naming(CASE, TREES[:3]) == {DISCLOSURE}
     # Noted on the container where the platform decides or does it.
     assert _naming(r"\bmemory_case\b") == {
         DISCLOSURE,
@@ -65,13 +93,34 @@ EFFECTS = "src/malspark/analysis/tool_effects.py"
 def test_a_network_origin_and_the_offline_condition_are_read_only_by_the_lines() -> None:
     # Written by the effects part and read by its lines, in the one module: the
     # disclosure places calls by ``network`` and ``network_by``, which stay as they were.
-    assert _naming(r"[\"']network_from[\"']|\.network_from\b") == {EFFECTS}
-    assert _naming(r"[\"']third_party_from[\"']|\.third_party_from\b") == {EFFECTS}
+    for field in ("network_from", "third_party_from", "executes_from", "why_from"):
+        assert _naming(_key(field)) == {EFFECTS}, field
     # The row's offline flag; the declaration's own field is read by the declarations,
-    # the proposals and the offline rehearsal, as before.
+    # the proposals and the offline rehearsal, as before, as an attribute.
     assert _naming(
-        r"get\(\"offline_without_credentials\"\)|\[\"offline_without_credentials\"\]"
+        r"get\([\"']offline_without_credentials[\"']\)|\[[\"']offline_without_credentials[\"']\]"
     ) == {EFFECTS}
+
+
+def test_which_fields_the_platform_read_is_kept_apart_and_read_only_by_the_effects_part() -> None:
+    core = "src/malspark/core"
+    # Recorded where the reading is laid, kept on the source's declaration, and stored with
+    # each entry beside the tools in force, never in them.
+    assert _naming(r"\bread_fields\b") == {
+        f"{core}/served_declarations.py",
+        f"{core}/tool_declarations.py",
+        f"{core}/declared_reading.py",
+    }
+    assert _naming(r"\bread_fields_for\b") == {
+        f"{core}/tool_declarations.py",
+        f"{core}/declared_reading.py",
+    }
+    # The stored key, by its name or its text, and its one reader.
+    assert _naming(r"\bREAD_KEY\b|[\"']platform_read[\"']") == {f"{core}/declared_reading.py"}
+    assert _naming(r"\bplatform_read\(") == {
+        f"{core}/declared_reading.py",
+        EFFECTS,
+    }
 
 
 def test_no_form_or_condition_names_a_tool_a_server_or_a_source() -> None:
@@ -103,6 +152,10 @@ def test_no_form_or_condition_names_a_tool_a_server_or_a_source() -> None:
         tool_effects.entry_effects,
         tool_effects.network_from,
         tool_effects.third_party_from,
+        tool_effects.executes_from,
+        tool_effects.why_from,
+        tool_effects._store_where,
+        disclosure._by_origin,
         tool_effects._ran,
         tool_effects._reaches_key,
         tool_effects._hint_closed,
@@ -125,6 +178,12 @@ def test_no_form_or_condition_names_a_tool_a_server_or_a_source() -> None:
         tool_effects._REACHES,
         tool_effects._REACHED,
         tool_effects._DECLARED_TO_RUN,
+        tool_effects._TAKEN_TO_RUN,
+        tool_effects._TAKEN_REACHED,
+        {"": tool_effects._STORE_PLACED},
+        {"": tool_effects._STORE_UNPLACED},
+        {"": tool_effects._STORE_NONE},
+        {"": disclosure._REFRESH_TAKEN},
         disclosure._SIMILAR_READ,
         {"": disclosure._REFRESH_DECLARED},
     ):

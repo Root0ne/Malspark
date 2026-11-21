@@ -2714,7 +2714,8 @@ class JudgeAgent(BudgetMeter):
         # prompt showed (``stix_models.SimilarCases``), or ``None``; the judge
         # node records it on the bundle.
         self.similar_cases_shown: Any = None
-        # How this judge's read of similar cases ended (``long_term_memory.similar_case_read``).
+        # How the read of similar cases for this judge's last verdict prompt ended
+        # (``long_term_memory.similar_case_read``).
         self.similar_case_read: Any = None
         # The judge calls tools too — threat intel on a disputed indicator, an
         # ATT&CK or family lookup — and a verdict that cites one has to be
@@ -4701,9 +4702,11 @@ class JudgeAgent(BudgetMeter):
             # it decides nothing (``long_term_memory.similar_cases_shown``).
             self.similar_cases_shown = similar_cases_shown(cases or [], fitted["long-term memory"])
         if memory_store is not None:
-            # How the read ended, as the disclosure's case-memory row says it; noted on the
-            # job's container, where no model and no decision reads it. Without a store the
-            # node notes why (``long_term_memory.SIMILAR_NOT_OPENED``).
+            # How the read for this verdict prompt ended, as the disclosure's case-memory row
+            # says it: noted on each build, so the record holds the last verdict prompt's,
+            # whether or not its model call then answered. On the job's container, where no
+            # model and no decision reads it. Without a store the node notes why
+            # (``long_term_memory.SIMILAR_NOT_OPENED``).
             self.similar_case_read = similar_case_read(
                 cases,
                 searched=bool(isr_reports) and bool(self._similar_case_query(isr_reports).strip()),

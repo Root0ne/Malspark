@@ -119,7 +119,10 @@ def test_an_in_process_tool_declared_to_read_the_case_store_is_said_so_where_it_
     (row,) = [row for row in record["effects"]["tools"] if row["tool"] == "function_matches"]
     assert row["network"] == "case_store"
     # No line places that call without its declaration.
-    lines = [*disclosure_lines(record), *effects_lines(record["effects"])]
+    lines = [
+        *disclosure_lines(record),
+        *effects_lines(record["effects"], stores=record["stores"]),
+    ]
     assert [line for line in lines if "function_matches" in line] == [
         "Tool calls made on this machine: 2 calls (the platform's in-process source `pack` 2); "
         "of the tools called through these sources, `function_matches` on the platform's "
@@ -132,7 +135,7 @@ def test_an_in_process_tool_declared_to_read_the_case_store_is_said_so_where_it_
 
 def test_the_calls_made_here_name_each_named_mode_and_the_store_s_place() -> None:
     rows = [{"source": "mcp:refs", "made": 2, "served": 0, "not_run": 0}]
-    tool = {"source": "mcp:refs", "server": "", "calls": 2}
+    tool = {"source": "mcp:refs", "server": "", "calls": 2, "network_by": "declared"}
     both = {
         "effects": {
             "tools": [
@@ -172,7 +175,14 @@ def test_nothing_left_names_a_refreshing_tool_only_when_one_was_called_here() ->
         "stayed": [{"source": "pack", "made": 1, "served": 0, "not_run": 0}],
         "effects": {
             "tools": [
-                {"source": "pack", "server": "", "tool": "t", "calls": 1, "network": "on_refresh"}
+                {
+                    "source": "pack",
+                    "server": "",
+                    "tool": "t",
+                    "calls": 1,
+                    "network": "on_refresh",
+                    "network_by": "declared",
+                }
             ]
         },
     }
@@ -283,8 +293,8 @@ def test_a_store_holding_a_case_of_another_sample_that_shares_a_technique_says_i
     container.pending_memory_case = _case(SHA, ["T1055"])
     assert _store_line_of(_built(container)) == (
         f"{CONFIGURED} The run held its case to file there once the job completes; whether it "
-        "was filed is not recorded in this report. The judge was shown 1 similar case of "
-        "another sample read from it."
+        "was filed is not recorded in this report. The judge's last verdict prompt was given 1 "
+        "similar case of another sample read from it."
     )
 
 
@@ -310,7 +320,7 @@ def test_a_store_that_holds_no_other_case_or_was_down_says_how_the_read_ended(
     assert down.similar_case_read == {"read": "failed", "shown": 0}
     assert _store_line_of(_built(down)).endswith(
         " The run held no case to file there. The judge's read of similar cases from it "
-        "failed, so it was shown none."
+        "failed, so the judge's last verdict prompt was given none."
     )
 
 
@@ -379,7 +389,7 @@ def test_a_store_that_could_not_be_opened_is_noted_where_the_judge_node_opens_it
     assert _store_line_of(_built(container)) == (  # type: ignore[arg-type]
         f"{CONFIGURED} The run held no case to file there (the store could not be opened when "
         "the judge ran). The store could not be opened when the judge was to read similar cases "
-        "from it, so it was shown none."
+        "from it, so the judge's last verdict prompt was given none."
     )
 
 
@@ -404,7 +414,7 @@ def test_a_case_withheld_where_the_report_node_decides_says_why() -> None:
     assert _store_line_of(_built(container)) == (
         f"{CONFIGURED} The run held no case to file there (its published evidence was too thin "
         "to keep: 0 corroborated techniques, 0 published techniques). The judge read it for "
-        "similar cases of other samples and was shown none."
+        "similar cases of other samples, and its last verdict prompt was given none."
     )
 
 
@@ -416,7 +426,8 @@ def test_a_cancelled_run_files_no_case_and_says_whether_its_judge_was_reached() 
     container.similar_case_read = {"read": "shown", "shown": 2}
     assert _store_line_of(_built(container, partial_reason=STOPPED_PART_WAY)) == (
         f"{CONFIGURED} The run stopped part-way, and a job that does not complete files no "
-        "case. The judge was shown 2 similar cases of other samples read from it."
+        "case. The judge's last verdict prompt was given 2 similar cases of other samples read "
+        "from it."
     )
     early = _Container()
     assert _store_line_of(_built(early, partial_reason=STOPPED_PART_WAY)) == (

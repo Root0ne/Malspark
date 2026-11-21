@@ -1989,6 +1989,23 @@ _REFRESH_DECLARED = (
 )
 
 
+# The same where the platform read that network of the tool, not a declaration.
+_REFRESH_TAKEN = (
+    "taken as reaching the network only to fetch or refresh reference data, sending nothing "
+    "of the sample (whether a call did is not recorded in this report)"
+)
+
+
+def _by_origin(
+    rows: list[Mapping[str, Any]],
+) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]]]:
+    """The rows whose named network a declaration states, and those the platform read."""
+    from malspark.analysis.tool_effects import FROM_DECLARED, network_from
+
+    stated = [row for row in rows if network_from(row) == FROM_DECLARED]
+    return stated, [row for row in rows if network_from(row) != FROM_DECLARED]
+
+
 def _declared_tools(rows: list[Mapping[str, Any]], code: Callable[[str], str], what: str) -> str:
     """``<tool> on <source> is <what>``, each source named as the stayed line names it and the
     verb by how many tools are named."""
@@ -2027,18 +2044,32 @@ def _stayed_line(
     store = _named_modes(held, sources, NETWORK_CASE_STORE)
     if not refresh and not store:
         return f"Tool calls that stayed on this machine: {calls} ({by_source})."
-    declared = [_declared_tools(refresh, code, _REFRESH_DECLARED)] if refresh else []
+    declared: list[str] = []
+    stated, taken = _by_origin(refresh)
+    if stated:
+        declared.append(_declared_tools(stated, code, _REFRESH_DECLARED))
+    if taken:
+        declared.append(_declared_tools(taken, code, _REFRESH_TAKEN))
     if store:
-        # The store is placed by the case-memory line where the record lists one; with
-        # none, it is kept in the process or not configured (:func:`_stores`).
-        where = (
-            "which the case-memory line places"
-            if any(isinstance(row, Mapping) for row in held.get("stores") or [])
-            else "which is kept in the process or not configured"
-        )
-        declared.append(
-            _declared_tools(store, code, f"declared to read the case-memory store, {where}")
-        )
+        # The case-memory line places the store only where its row is placed with a host;
+        # a listed store it does not place, it says cannot be told; with none listed, the
+        # store is kept in the process or not configured (:func:`_stores`).
+        rows = [row for row in held.get("stores") or [] if isinstance(row, Mapping)]
+        if any(_placed(row) and row.get("host") for row in rows):
+            where = "which the case-memory line places"
+        elif rows:
+            where = "of which the case-memory line cannot tell where it runs"
+        else:
+            where = "which is kept in the process or not configured"
+        stated, taken = _by_origin(store)
+        if stated:
+            declared.append(
+                _declared_tools(stated, code, f"declared to read the case-memory store, {where}")
+            )
+        if taken:
+            declared.append(
+                _declared_tools(taken, code, f"taken as reading the case-memory store, {where}")
+            )
     return (
         f"Tool calls made on this machine: {calls} ({by_source}); of the tools called through "
         f"these sources, {'; '.join(declared)}."
@@ -2061,15 +2092,24 @@ _NOT_RECORDED_EITHER = (
 )
 # What it says of the judge's read of similar cases, by how the read ended
 # (``long_term_memory.SIMILAR_READS``); a shown count is said apart.
+# Each is of the read made for the judge's last verdict prompt, which is what the record
+# notes: a model call that fails after the prompt was built leaves the prompt as said.
 _SIMILAR_READ = {
-    SIMILAR_NONE_SHOWN: "The judge read it for similar cases of other samples and was shown none.",
-    SIMILAR_FAILED: "The judge's read of similar cases from it failed, so it was shown none.",
+    SIMILAR_NONE_SHOWN: (
+        "The judge read it for similar cases of other samples, and its last verdict prompt was "
+        "given none."
+    ),
+    SIMILAR_FAILED: (
+        "The judge's read of similar cases from it failed, so the judge's last verdict prompt "
+        "was given none."
+    ),
     SIMILAR_NOT_OPENED: (
-        "The store could not be opened when the judge was to read similar cases from it, so it "
-        "was shown none."
+        "The store could not be opened when the judge was to read similar cases from it, so the "
+        "judge's last verdict prompt was given none."
     ),
     SIMILAR_NOTHING_TO_SEARCH: (
-        "The judge had no analyst claim to search it with, so it read no similar case from it."
+        "The judge had no analyst claim to search it with when its last verdict prompt was "
+        "built, so that prompt was given no similar case from it."
     ),
     SIMILAR_NOT_REACHED: "The run did not reach the judge's read of similar cases from it.",
 }
@@ -2085,7 +2125,7 @@ def _similar_sentence(row: Mapping[str, Any]) -> str:
             if count == 1
             else f"{count} similar cases of other samples"
         )
-        return f"The judge was shown {cases} read from it."
+        return f"The judge's last verdict prompt was given {cases} read from it."
     return _SIMILAR_READ.get(read, _NOT_RECORDED_READ)
 
 
@@ -2268,8 +2308,11 @@ def _nothing_sentence(record: Mapping[str, Any], code: Callable[[str], str]) -> 
     # data: the declarations count nothing of the sample in it, and it is said.
     on_machine = [*local_servers, *(row.get("source") for row in stayed)]
     refresh = _named_modes(record, [str(s or "") for s in on_machine], NETWORK_ON_REFRESH)
-    if refresh:
-        parts.append(_declared_tools(refresh, code, _REFRESH_DECLARED))
+    stated, taken = _by_origin(refresh)
+    if stated:
+        parts.append(_declared_tools(stated, code, _REFRESH_DECLARED))
+    if taken:
+        parts.append(_declared_tools(taken, code, _REFRESH_TAKEN))
     stores = [row for row in record.get("stores") or [] if isinstance(row, Mapping)]
     if stores:
         parts.append("the case-memory store is at a local address")

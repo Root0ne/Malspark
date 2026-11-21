@@ -2715,10 +2715,14 @@ class MarkdownRenderer:
                 lines.extend(["", ISOLATION_INTRO, ""])
                 lines.extend(_item(line) for line in isolated)
             # What each tool the run called is declared to do beyond answering
-            # (``analysis.tool_effects``); a record stored before the part
-            # existed shows none.
+            # (``analysis.tool_effects``), the case-memory store a tool reaches
+            # placed as the record's case-memory row places it; a record stored
+            # before the part existed shows none.
             effects = held.get("effects") if isinstance(held, dict) else None
-            effected = spoken(lambda word: effects_lines(effects, word), code, effects)
+            stores = held.get("stores") if isinstance(held, dict) else None
+            effected = spoken(
+                lambda word: effects_lines(effects, word, stores=stores), code, effects
+            )
             if effected:
                 lines.extend(["", EFFECTS_INTRO, ""])
                 lines.extend(_item(line) for line in effected)

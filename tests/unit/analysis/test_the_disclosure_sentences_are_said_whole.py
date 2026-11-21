@@ -449,31 +449,33 @@ def test_the_store_unreadable_rows_and_tracing_are_said_whole() -> None:
     shown = {**store, "case": "held", "case_why": "", "similar_read": "shown", "similar_shown": 2}
     assert _store_line(shown, _code) == (
         f"{configured} The run held its case to file there once the job completes; whether it "
-        "was filed is not recorded in this report. The judge was shown 2 similar cases of other "
-        "samples read from it."
+        "was filed is not recorded in this report. The judge's last verdict prompt was given 2 "
+        "similar cases of other samples read from it."
     )
     assert _store_line({**shown, "similar_shown": 1}, _code).endswith(
-        " The judge was shown 1 similar case of another sample read from it."
+        " The judge's last verdict prompt was given 1 similar case of another sample read from it."
     )
     withheld = {**shown, "case": "withheld", "case_why": "no negotiation round completed"}
     assert _store_line({**withheld, "similar_read": "none_shown"}, _code) == (
         f"{configured} The run held no case to file there (no negotiation round completed). "
-        "The judge read it for similar cases of other samples and was shown none."
+        "The judge read it for similar cases of other samples, and its last verdict prompt was "
+        "given none."
     )
     assert _store_line(
         {**withheld, **NAMED_UNPLACED, "case": "none", "case_why": "", "similar_read": "failed"},
         _code,
     ) == (
         f"{unplaced} The run held no case to file there. The judge's read of similar cases from "
-        "it failed, so it was shown none."
+        "it failed, so the judge's last verdict prompt was given none."
     )
     assert _store_line({**shown, "similar_read": "not_opened"}, _code, partial="stopped") == (
         f"{configured} The run stopped part-way, and a job that does not complete files no "
         "case. The store could not be opened when the judge was to read similar cases from it, "
-        "so it was shown none."
+        "so the judge's last verdict prompt was given none."
     )
     assert _store_line({**shown, "similar_read": "nothing_to_search"}, _code).endswith(
-        " The judge had no analyst claim to search it with, so it read no similar case from it."
+        " The judge had no analyst claim to search it with when its last verdict prompt was "
+        "built, so that prompt was given no similar case from it."
     )
     assert _store_line({**shown, "similar_read": "not_reached"}, _code).endswith(
         " The run did not reach the judge's read of similar cases from it."

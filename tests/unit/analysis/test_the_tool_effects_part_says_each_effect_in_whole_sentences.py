@@ -105,19 +105,18 @@ def test_where_a_tool_that_ran_the_sample_read_it_is_said_as_isolation_placed_it
 def test_a_network_answer_is_said_in_the_voice_of_where_it_came_from() -> None:
     network_from = tool_effects.network_from
     # A row built with the field says it.
-    for held in ("declared", "sends", "server", "hint", ""):
+    for held in ("declared", "sends", "server", "hint", "read", ""):
         assert network_from({"network_from": held, "network_by": DECLARED}) == held
-    # A row stored before it: declared only where its own fields hold the declared value.
+    # A row stored before it cannot tell a declaration from the platform's reading: a
+    # network is taken, whatever is sent beside it; a named mode and a closed network stay.
     assert network_from({"network_by": SERVER_STATED, "network": True}) == "server"
     assert network_from({"network_by": SERVER_HINT, "network": True}) == "hint"
-    assert network_from({"network_by": DECLARED, "network": True, "third_party": "no"}) == (
-        "declared"
-    )
-    assert network_from({"network_by": DECLARED, "network": "case_store"}) == "declared"
-    for sent in ("hash", "bytes"):
+    for sent in ("no", "hash", "bytes"):
         assert network_from({"network_by": DECLARED, "network": True, "third_party": sent}) == (
             "taken"
         )
+    assert network_from({"network_by": DECLARED, "network": "case_store"}) == "declared"
+    assert network_from({"network_by": DECLARED, "network": False}) == "declared"
     assert network_from({"network_by": ""}) == ""
     assert tool_effects._hint_closed({"hints": {"openWorldHint": False}}) == (
         "though its server's own hint says it does not reach outside its server"
@@ -239,11 +238,12 @@ def test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it() -> 
         _tool("mcp:analysis", "again", calls=0, completed=0, served=2),
     ]
     part = {"partial_reason": "the job was stopped part way", "tools": rows}
+    placed = [{"backend": "qdrant", "host": "127.0.0.1", "where": "local"}]
     fronted = (
         "`submit` on tool server `detonator`, at `127.0.0.1:8000`, which the disclosure places "
         "on this machine, so the operator's own and not a third party"
     )
-    assert effects_lines(part) == [
+    assert effects_lines(part, stores=placed) == [
         "This part may be incomplete: the job was stopped part way, and a call made in the step "
         "it stopped in may not be recorded.",
         "Ran the sample's code natively: `emu` on tool server `analysis`, read in a process the "
@@ -255,7 +255,7 @@ def test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it() -> 
         f"Declared to have the sample run in the sandbox service its server fronts: {fronted}.",
         "Declared to run the sample in a sandbox its server does not front, which may be a "
         "third party's: `detonate` on the `remote` provider's tool server.",
-        # Rows stored before ``network_from``: a network beside a sent hash or file is taken.
+        # Rows stored before ``network_from``: a network is taken.
         "Taken as reaching the network: `detonate` on the `remote` provider's tool server; "
         "`lookup` on tool server `intel`.",
         "Stated by its own server, in a declaration its block does not trust, to reach the "
@@ -267,7 +267,8 @@ def test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it() -> 
         "row places: `recall` on tool server `memory`.",
         "Declared to reach the network only to fetch or refresh reference data they keep, "
         "sending nothing of the sample: `techniques` on tool server `knowledge`.",
-        "Declared to send the sample's hash to a third party: `lookup` on tool server `intel`.",
+        # A row stored before ``third_party_from``: a sent hash is taken.
+        "Taken as sending the sample's hash to a third party: `lookup` on tool server `intel`.",
         f"Taken as handing the sample's file to the sandbox service its server fronts: "
         f"{fronted}; the upload rows of the disclosure above say what is known of where each "
         "call sent it.",
@@ -348,7 +349,14 @@ def test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whol
         return _tool(
             source,
             tool,
-            **{"network_from": "declared", "offline_without_credentials": None, **over},
+            **{
+                "network_from": "declared",
+                "third_party_from": "declared",
+                "executes_from": "declared",
+                "why_from": "",
+                "offline_without_credentials": None,
+                **over,
+            },
         )
 
     sandbox = {"placed_where": "local", "placed_host": "127.0.0.1:8000", "placed_why": ""}
@@ -370,6 +378,7 @@ def test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whol
             network=True,
             third_party="bytes",
             network_from="sends",
+            third_party_from="discloses",
             hints={"openWorldHint": False},
         ),
         built("mcp:other", "pull", network=True, network_by=SERVER_STATED, network_from="server"),
@@ -380,6 +389,7 @@ def test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whol
             executes="sandbox",
             network="operator_sandbox",
             third_party="bytes",
+            third_party_from="discloses",
             when="at analysis level 3",
             **sandbox,
         ),
@@ -392,7 +402,8 @@ def test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whol
         "at `127.0.0.1:8000`, which the disclosure places on this machine, so the operator's own "
         "and not a third party"
     )
-    assert effects_lines({"tools": rows}) == [
+    placed = [{"backend": "qdrant", "host": "127.0.0.1", "where": "local"}]
+    assert effects_lines({"tools": rows}, stores=placed) == [
         f"Declared to have the sample run in the sandbox service its server fronts: `submit` on "
         f"tool server `detonator`, at analysis level 3, {at}.",
         "Declared to run the sample in a sandbox its server does not front, which may be a third "
@@ -547,7 +558,8 @@ def test_bytes_a_declaration_states_are_declared_and_bytes_read_cautiously_are_t
             line.startswith("Taken as sending the sample's file out of the deployment: ")
             for line in effects_lines({"tools": [stored]})
         )
-    assert tool_effects.third_party_from({"third_party": "hash"}) == "declared"
+    # A sent hash of a row stored before the field is taken too; a closed third party stays.
+    assert tool_effects.third_party_from({"third_party": "hash"}) == "taken"
     assert tool_effects.third_party_from({"third_party": "no"}) == "declared"
     assert tool_effects.third_party_from({}) == ""
 

@@ -548,12 +548,14 @@ def test_without_acceptance_the_tool_stays_undeclared(installed: Any) -> None:
     # No proposal is applied: the tool keeps no kind and no reading of its
     # answer. What is read of every listed tool is whether it sends the file:
     # it takes a path and its server does not mark it closed, so it does
-    # (``core.derived_declarations``), whatever is proposed or accepted.
+    # (``core.derived_declarations``), whatever is proposed or accepted. The record names
+    # that field as the platform's reading, never a declaration (``platform_read``).
     assert before.facts == after.facts
     assert after.facts == {
         "v": 1,
         "kind": "",
         "discloses_sample": True,
+        "platform_read": ["discloses_sample"],
         "hints": {"readOnlyHint": True},
     }
     assert asserted_techniques(after) == set()
