@@ -1,0 +1,110 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.analysis.isolation:INTRO_SENTENCE",
+   "condition": "printed in the served report's Appendix B as the lead of the isolation block, inside the disclosure block, when the disclosure record holds an isolation part (a mapping with rows) and isolation_lines gives a line; a record stored without the part prints none",
+   "basis": ["run_summary.disclosure.isolation (whether the part is stored)"],
+   "test": "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_the_report_heads_the_part_with_its_lead_sentence_inside_the_disclosure",
+   "text_digest": "bf10e99c7d533c9304cdf8e78b466a2986bdb8ded542147b06defd4a9410b93c"
+  },
+  {
+   "function": "malspark.analysis.isolation:_capabilities",
+   "condition": "inside a measured started process's line: the capability sets measured as held (cap_*_zero false), else the sets that could not be read (null), else that it held none of the three",
+   "basis": ["isolation row cap_eff_zero, cap_prm_zero, cap_amb_zero"],
+   "test": [
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_the_three_capability_sets_are_said_together",
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_a_started_process_kept_on_every_count_is_said_check_by_check"
+   ],
+   "text_digest": "d0be022fe2eaaffd1d2db38bab28406701fcf19bd6d42f494876838ae4d31cf6"
+  },
+  {
+   "function": "malspark.analysis.isolation:_child_line",
+   "condition": "one line per isolation row placed child (a stdio server the worker started): where measured_by is not worker, that it read the sample in a started process, with why_not_measured, and that its isolation cannot be told; otherwise each check as held, failed or unread, how many starts it was measured at, the tree sentence (with or without a declared launcher), the verdict (isolated, isolated by its block's declaration, not isolated), whether its block declares it needs the network, and why_not_measured where set",
+   "basis": ["isolation row measured_by, attaches, uid, same_uid_as_worker, shares_group_with_worker, own_pid_namespace, own_mount_namespace, own_net_namespace, cap_eff_zero, cap_prm_zero, cap_amb_zero, no_new_privs, platform_names_in_env", "isolation row isolated, isolated_by, needs_network, launcher_depth, why_not_measured"],
+   "test": [
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_a_started_process_with_no_measurement_is_said_untold",
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_a_started_process_kept_on_every_count_is_said_check_by_check",
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_a_started_process_sharing_the_worker_is_said_check_by_check",
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_a_started_process_read_on_no_count_is_said_unread_check_by_check",
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_a_row_kept_by_a_declared_launcher_says_it_rests_on_the_declaration",
+    "tests/unit/analysis/test_the_run_says_where_the_sample_was_read_and_how_it_was_kept.py::test_the_report_prints_the_part_inside_the_disclosure_block"
+   ],
+   "text_digest": "7a0833e2b0643bacb466d1e897b72a3f01c3fbd4ee4425c2825608b06c38d57a"
+  },
+  {
+   "function": "malspark.analysis.isolation:_env_clause",
+   "condition": "inside a measured started process's line: that its environment could not be read (null), held none of the platform's own variables (empty), or held the ones named",
+   "basis": ["isolation row platform_names_in_env"],
+   "test": "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_an_environment_is_said_as_read_empty_or_holding_names",
+   "text_digest": "dcaa0f5b6a3dd8bf3dfdb84861ecaf4239699169d7614bea0afb430bc75a53a5"
+  },
+  {
+   "function": "malspark.analysis.isolation:_in_process_line",
+   "condition": "one line per isolation row placed in_process (a source the platform declares in-process, or a read the worker noted in itself): that it read the sample in the worker process and is not isolated",
+   "basis": ["isolation row where, source, label"],
+   "test": [
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_a_read_in_the_worker_is_said_not_isolated_and_why",
+    "tests/unit/analysis/test_the_run_says_where_the_sample_was_read_and_how_it_was_kept.py::test_the_report_prints_the_part_inside_the_disclosure_block"
+   ],
+   "text_digest": "2b7014546e3a9cf0b4aa924326a2498c1d3a96b42c8640d26d4ce1d31c0fe8dc"
+  },
+  {
+   "function": "malspark.analysis.isolation:_launcher_sentence",
+   "condition": "inside a started process's line whose block declares a launcher (launcher_depth above 0): the declaration of the top level or levels, then that the descendants were not judged (with why), that no process under the launcher was measured, or how many under it were measured and how many of the tree did not pass",
+   "basis": ["isolation row launcher_depth, descendants_judged, descendants_why, under_launcher, descendants_failing"],
+   "test": [
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_the_tree_under_a_declared_launcher_is_said_by_what_was_measured_under_it",
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_a_row_kept_by_a_declared_launcher_says_it_rests_on_the_declaration"
+   ],
+   "text_digest": "8c0a86fd537a699231dfb1da979fc09fd4f60e7912c3818a634d6e4776bbef49"
+  },
+  {
+   "function": "malspark.analysis.isolation:_service_line",
+   "condition": "one line per isolation row placed at a local address, outside this machine or nowhere: the transport (or that none was recorded), the host where recorded, why it was not measured, and that it is not verified by this run, that this run cannot tell its isolation, or that its isolation cannot be told",
+   "basis": ["isolation row where, source, transport, host, why_not_measured"],
+   "test": "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_a_server_reached_at_an_address_is_said_by_where_it_runs",
+   "text_digest": "8e17ea2b04ee71daaa7cba1cf413b661d8236f5115782bc49b956ac5ccbd5e05"
+  },
+  {
+   "function": "malspark.analysis.isolation:_tree_sentence",
+   "condition": "inside a started process's line with no declared launcher: that its descendants were not judged (with why), that it had none when measured, or how many were measured and how many did not pass every check",
+   "basis": ["isolation row descendants_judged, descendants_why, descendants, descendants_failing"],
+   "test": "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_the_tree_under_a_started_process_is_said_by_what_was_judged",
+   "text_digest": "22c20d621be43666076a0f088d893dee7a4f3c792b8818da0309969aa5d0c697"
+  },
+  {
+   "function": "malspark.analysis.isolation:_user",
+   "condition": "inside a measured started process's line: its user id, or that it could not be read (null), and whether one of its four user ids is the worker's, none is, or they could not all be read",
+   "basis": ["isolation row uid, same_uid_as_worker"],
+   "test": "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_a_user_is_said_with_whether_any_of_its_ids_is_the_workers",
+   "text_digest": "339d674d6e44592a60555d736166087907e00a2dae2ef06ce5c0edd050b4318f"
+  },
+  {
+   "function": "malspark.analysis.isolation:_who",
+   "condition": "names the source at the head of each in-process, started-process and service line, and in the headline over rows isolated by a declaration: an in-process source by its label and key (or as the in-process source), a tool server by its key, a provider's tool server by its key, any other by the source",
+   "basis": ["isolation row source, label, where"],
+   "test": "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_each_kind_of_source_is_named_by_its_kind",
+   "text_digest": "54703700d9f54bea30fc26f0bdd8f2fd7ac0e1f8624659a05b9d69ca4b76bb76"
+  },
+  {
+   "function": "malspark.analysis.isolation:_worker_line",
+   "condition": "printed second in the isolation block when the part holds a worker record and at least one row: the worker's user (or that it could not be read, with the reason where facts are unavailable) and whether its environment holds the platform's own variables",
+   "basis": ["disclosure.isolation.worker uid, unavailable, platform_names_in_env"],
+   "test": [
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_the_worker_is_said_with_its_user_and_its_environment",
+    "tests/unit/analysis/test_the_run_says_where_the_sample_was_read_and_how_it_was_kept.py::test_the_report_prints_the_part_inside_the_disclosure_block"
+   ],
+   "text_digest": "501fc5b5d99136026bd67c27f71ef701ab6219b655726f4714055f00035f6429"
+  },
+  {
+   "function": "malspark.analysis.isolation:isolation_lines",
+   "condition": "the isolation block of the served report's Appendix B, inside the disclosure block, for a disclosure record whose isolation part holds rows: a headline (no read recorded; every source kept as measured; kept but resting on a declared launcher for the sources named; not every source kept), the worker line where there are rows, one line per row by where it read, one line for the reads with no source, then the sample integrity and sandbox target lines; [] for a record without the part",
+   "basis": ["disclosure.isolation rows, unsourced_reads, isolated, isolated_by, worker"],
+   "test": [
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_the_part_heads_its_rows_with_what_holds_of_all_of_them",
+    "tests/unit/analysis/test_the_isolation_part_says_each_reader_in_whole_sentences.py::test_a_part_not_isolated_lists_every_reader_and_each_read_with_no_source"
+   ],
+   "text_digest": "8d35199d0aea855505df46e2a1fe6c018be4c1031624f1f83444589de8b60acb"
+  }
+ ]
+}
