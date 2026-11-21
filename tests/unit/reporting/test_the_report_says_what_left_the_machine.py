@@ -301,8 +301,10 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # address the publish rule places in no tree states the sentence of the row's own publish answer
 # (T-811); the reputation header cell names each count the lookup's record holds and states no
 # fraction (T-781). Those are the only changes.
+# run7's Markdown and HTML re-pinned when the line under an analyst's table the report reads no
+# value of came to say so (T-780): that line is the only change.
 STORED_RENDERS = {
-    "run7": ("21eba17850b8a933", "3d218ceb646bafbe"),
+    "run7": ("218384a3a5222598", "00db5bd44b95049b"),
     "run5": ("996b7821dc72c2a4", "622734e18cd2d733"),
     "run4": ("64a1ebdddbc77ec1", "9ac5b154dffb12e8"),
     "local8": ("82372dac6755e55d", "d11614eee2c447fb"),

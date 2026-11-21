@@ -39,6 +39,8 @@ from malspark.reporting.models import (
     ProcessNode,
     SampleIdentity,
     SandboxSignature,
+    StaticAnalysis,
+    StringIOC,
     TechnicalAnalysis,
     TechnicalSubsection,
     TechniqueProcedure,
@@ -231,12 +233,34 @@ def test_values_shown_under_another_source_or_not_at_all_are_counted() -> None:
     assert f"The value it types as an indicator is in {where} under another source." in one
 
 
-def _listed(*rows: list[str], **fields: object) -> str:
+def test_a_table_the_report_reads_no_value_of_says_so() -> None:
+    note = analyst_list_note(["static"], "iocs", (0, 0, 0))
+
+    assert "it types as an indicator" not in note
+    assert "The report reads no value of it as an indicator." in note
+
+
+def test_a_label_column_naming_no_indicator_kind_gives_no_value_and_says_so() -> None:
+    # The value is in the indicator section, under the file's strings and not as
+    # the analyst's: the line names no place for it.
+    line = _listed(
+        ["Email in signer subject", "cert@signer.example"],
+        columns=["Label", "Value"],
+        static=StaticAnalysis(
+            interesting_strings=[StringIOC(kind="email", value="cert@signer.example")]
+        ),
+    )
+
+    assert "as the analyst's" not in line
+    assert "The report reads no value of it as an indicator." in line
+
+
+def _listed(*rows: list[str], columns: list[str] | None = None, **fields: object) -> str:
     section = EvidenceSection(
         key="artifact_iocs",
         title="IOCs",
         kind="table",
-        columns=["type", "value"],
+        columns=columns or ["type", "value"],
         rows=list(rows),
         source="artifact:static",
     )

@@ -67,6 +67,7 @@ from malspark.reporting.renderers.markdown import (
     _code_span,
     _degraded_sentence,
     _divider,
+    _dropped_left_out,
     _emphasis_escaped,
     _encryption_table,
     _encrypts_files,
@@ -681,6 +682,37 @@ def analyst_sections(
     return sections, list(layout.notes.notes)
 
 
+def printed_procedures(report: MalwareReport) -> dict[str, str]:
+    """The text the analyst report's ATT&CK table prints as each published technique's
+    procedure, by the technique id its row prints, as the last writing of that section prints
+    it; ``""`` where the row prints ``-``, and none where the section did not return.
+
+    Plain text as the cell holds it: the sentences the cell keeps after the agreement
+    question's left-out step and the flagged-statement gate, without the note markers its
+    citations become, before the defang and the Markdown escapes the page applies, and with
+    each pack spelling of a recorded text read as the text (``prose_forms.unspelled``). No
+    consumer may render it as Markdown or HTML. Where the page's defang pass leaves the
+    cell with a spelling it no longer matches (a host inside a path), these words hold the
+    recorded text and are the truer of the two. So too where the cell shortens the clause on
+    a routine with no listed code to its first callers and a count: these words list every
+    caller; and where the cell prints a group of bare entry ids as a note marker: these words
+    keep the group as written. Read off a render of a copy of the report,
+    as :func:`verbatim_texts` is, so nothing of the report changes (T-727)."""
+    from malspark.reporting.renderers.layout import ANALYST
+    from malspark.reporting.renderers.markdown import MarkdownRenderer
+    from malspark.reporting.renderers.prose_forms import unspelled
+
+    read: list[_Analyst] = []
+    token = _READING.set(read)
+    try:
+        MarkdownRenderer(layout=ANALYST).render(report.model_copy(deep=True))
+    finally:
+        _READING.reset(token)
+    if not read:
+        return {}
+    return {tid: unspelled(words, report) for tid, words in read[-1].procedure_words.items()}
+
+
 # What a closing section says when every sentence the report model wrote of it
 # was left out (T-555).
 _LEFT_OUT_WHOLE = (
@@ -1146,6 +1178,11 @@ class _Analyst:
         # The texts printed in their writer's own words, by section, then by id, as each
         # section last wrote them (:meth:`_as_said`).
         self.shown: dict[str, dict[str, VerbatimText]] = {}
+        # The words each published technique's procedure cell prints, by its id, as the
+        # ATT&CK table last wrote them; set only when that writing returned
+        # (:func:`printed_procedures`).
+        self.procedure_words: dict[str, str] = {}
+        self._words_writing: dict[str, str] = {}
 
     # -- shared writing ---------------------------------------------------
 
@@ -1913,7 +1950,7 @@ class _Analyst:
                 )
             )
         lines.extend(_left_out(len(carved), 10, "carved payloads"))
-        lines.extend(_left_out(len(dropped), 20, "dropped files"))
+        lines.extend(_dropped_left_out(dropped, 20))
         notes = [r for r in (static.embedded_resources if static else []) if is_carve_note(r)]
         if notes:
             lines.extend(
@@ -2532,6 +2569,9 @@ class _Analyst:
         report = self.report
         lines = [_heading(10, "MITRE ATT&CK mapping"), ""]
         self._prints("procedures")
+        # A writing that does not return leaves no procedure words.
+        self.procedure_words = {}
+        self._words_writing = {}
         mappings = {m.technique_id: m for m in report.ttp_mappings}
         # The composer's one sentence per technique, where it wrote one.
         self._procedures = {
@@ -2611,7 +2651,9 @@ class _Analyst:
         noted = judge_cut_note(self.shortened, report)
         if noted:
             lines.extend(["", noted])
-        return "\n".join([*lines, "", _behind("attack", self.ctx.keep)])
+        section = "\n".join([*lines, "", _behind("attack", self.ctx.keep)])
+        self.procedure_words = self._words_writing
+        return section
 
     def _held(self, cell: Any) -> str:
         """A technique named and not published, with the status the single-file report gives it."""
@@ -2729,7 +2771,26 @@ class _Analyst:
         return f" _({'; '.join(said)})_" if said else ""
 
     def _procedure(self, claim: str, ids: list[str], technique_id: str = "") -> str:
-        """The composer's procedure for the technique, else its first claim's first sentence."""
+        """The composer's procedure for the technique, else its first claim's first sentence;
+        the words the cell prints recorded by the technique's id, ``""`` where it prints
+        ``-`` (:func:`printed_procedures`)."""
+        words: list[str] = []
+        cell = self._procedure_cell(claim, ids, technique_id, words)
+        self._words_writing[technique_id] = words[0] if words else ""
+        return cell
+
+    def _procedure_line(self, text: Any, ids: Iterable[Any], words: list[str]) -> str:
+        """:meth:`_line` for a procedure cell, the words it keeps put in ``words``: its
+        sentences left standing, without their citations, white space folded."""
+        kept = self._unflagged(_one_line(text))
+        if not kept.strip():
+            return "-"
+        words.append(" ".join(_CITATION_RUN.sub("", kept).split()))
+        return _one_line(self.notes.moved(self.ctx.plain(kept), ids))
+
+    def _procedure_cell(
+        self, claim: str, ids: list[str], technique_id: str, words: list[str]
+    ) -> str:
         written = self._procedures.get(technique_id.strip().upper())
         if technique_id.strip().upper() in self._procedures_left:
             return "-"
@@ -2738,12 +2799,12 @@ class _Analyst:
         # procedure stands, or nothing (T-555).
         if self._flagged_whole(_first_sentence(claim)) or self._flagged_whole(sentence):
             if written is not None:
-                return self._line(written.procedure, written.evidence_refs)
+                return self._procedure_line(written.procedure, written.evidence_refs, words)
             return "-"
         # A first sentence naming a value printed nowhere else stays in place
         # of the written procedure.
         if written is not None and not self._keeps(sentence):
-            return self._line(written.procedure, written.evidence_refs)
+            return self._procedure_line(written.procedure, written.evidence_refs, words)
         if not sentence:
             return "-" + self.notes.marker(ids)
         said, cut = self._as_said(
@@ -2762,9 +2823,9 @@ class _Analyst:
             # and the sentence is counted (T-613).
             self.left += cut
             if written is not None:
-                return self._line(written.procedure, written.evidence_refs)
+                return self._procedure_line(written.procedure, written.evidence_refs, words)
             return "-"
-        return self._line(said, ids)
+        return self._procedure_line(said, ids, words)
 
     # -- 11. limitations ---------------------------------------------------
 
@@ -3118,6 +3179,15 @@ class _Analyst:
                 lines.append(_item(f"[{self.ctx.value(ref.source, pipes=True)}]({target}){note}"))
             lines.append("")
         bundle = self.ctx.keep(f"[{BUNDLE_HTML}]({BUNDLE_HTML}) and [{BUNDLE_JSON}]({BUNDLE_JSON})")
+        # The bundle's index lists the calls, not their answers; the sentence
+        # says what its rows mark (``Trimmed``), never that an answer is whole:
+        # an entry can be served without a part and still not be marked trimmed.
+        trimmed = sum(1 for row in report.evidence_index if row.truncated)
+        marked = f"{trimmed:,}" if trimmed else "none"
+        served = (
+            "The evidence endpoint serves each answer as the ledger holds it; the index marks "
+            f"{marked} of them trimmed."
+        )
         lines.extend(
             [
                 "### Evidence bundle",
@@ -3126,9 +3196,10 @@ class _Analyst:
                     "What this report does not print is in the evidence bundle beside it ("
                     + bundle
                     + "): the observed behaviour and the static properties, the full ATT&CK and "
-                    "indicator tables, the analysts' statements, every tool call with its output, "
-                    "the run's limitations and its summary. Each numbered note above links to the "
-                    "evidence entries it rests on there."
+                    "indicator tables, the analysts' statements, every tool call in its index with "
+                    "the parts of the answers the report reads, the run's limitations and its "
+                    f"summary. {served} Each numbered note above links to the evidence entries it "
+                    "rests on there."
                 ),
             ]
         )

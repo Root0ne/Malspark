@@ -1,0 +1,27 @@
+{
+ "entries": [
+  {
+   "function": "malspark.reporting.renderers.analyst:_Analyst._procedure_cell",
+   "condition": "the label 'ATT&CK table, the claim sentence printed for <technique id>' of the verbatim text a procedure cell records where it prints the claim's first sentence; the agreement question is shown it as the passage's place, and the bundle names it beside a sentence of that passage left out",
+   "basis": [
+    "the technique id the row prints",
+    "the claim's first sentence"
+   ],
+   "test": "tests/unit/reporting/test_one_verbatim_text_is_one_passage_wherever_it_prints.py::test_one_text_at_two_places_is_one_passage_naming_both",
+   "text_digest": "f7a38e0de61f06adefee4ecdc3bfaa64ee31d48322e7340391ea380962c7e606"
+  },
+  {
+   "function": "malspark.reporting.renderers.analyst:_Analyst.attack",
+   "condition": "section 10 of the analyst report: 'No ATT&CK technique is published in this run.' where no row is published, and the line counting the techniques named and not published, before their list, where any is",
+   "basis": [
+    "the capability matrix's published and not-published cells",
+    "the published technique list"
+   ],
+   "test": [
+    "tests/unit/reporting/test_the_analyst_report_prints_the_findings_and_the_bundle_the_rest.py::TestTheAnalystReport::test_the_attack_table_is_compact_and_prints_published_techniques",
+    "tests/unit/reporting/test_mitre_json_describes_a_technique_as_the_attack_table_prints_it.py::test_a_report_that_publishes_no_technique_says_so_and_describes_none"
+   ],
+   "text_digest": "0a8238bcec341a550dd93cf87a10a4ec14a53b8dd5edfe91afba3672b7cac47d"
+  }
+ ]
+}
