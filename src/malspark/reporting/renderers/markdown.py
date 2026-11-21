@@ -5231,26 +5231,35 @@ _NETWORK_COUNTS = ("malicious", "suspicious", "harmless", "undetected")
 
 
 def _held_count(value: Any) -> int | None:
-    """``value`` as the whole number the record holds, or ``None`` where it holds none."""
-    if isinstance(value, bool) or value is None:
+    """``value`` as the whole number the record holds, or ``None`` where it holds none.
+
+    A count is an ``int`` (not a bool) or a string of digits that converts;
+    any other value, a digit string too long to convert among them, is no
+    count. Reading a value never raises.
+    """
+    if isinstance(value, bool):
         return None
     if isinstance(value, int):
         return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
     if isinstance(value, str) and re.fullmatch(r"\s*-?\d+\s*", value):
-        return int(value)
+        try:
+            return int(value)
+        except ValueError:
+            return None
     return None
 
 
 def _network_counts(rep: dict[str, Any]) -> str:
-    """The counts one enrichment record holds, as the header cell prints a record's counts.
+    """The counts an enrichment record holds under ``malicious``, ``suspicious``,
+    ``harmless``, ``undetected`` (:data:`_NETWORK_COUNTS`) and ``engines``, as
+    the header cell prints a record's counts.
 
     Written by :func:`counts_line`, the one wording of a reputation record's
     counts: the flagged count, each count the record holds under
     :data:`_NETWORK_COUNTS` that is not zero, under the record's own name for
     it and in the record's order, and the engine count the service gave
-    (``engines``). No denominator is summed and no "of" is written. The
+    (``engines``). A count the record holds under any other name is not
+    printed. No denominator is summed and no "of" is written. The
     record's ``total`` is never printed: in a server source's record
     (``enrichment.declared.read_reputation_record``) it is, where the answer's
     declaration names no total and its text states none, the sum of the
@@ -5285,9 +5294,12 @@ def _network_counts(rep: dict[str, Any]) -> str:
 def _reputations(report: MalwareReport) -> dict[str, str]:
     """A short reputation cell per network value the enrichment answered for.
 
-    The counts each record holds (:func:`_network_counts`); a report stored
-    before the lookups' records (``reputation`` is ``None``) prints its cell
-    as it was printed then (``core.legacy_reputation``).
+    The counts each record holds (:func:`_network_counts`). A report stored
+    before the lookups' records (``reputation`` is ``None``) prints a cell as
+    it was printed then (``core.legacy_reputation``) only where the value's
+    record holds all of :data:`_NETWORK_COUNTS` as whole numbers, the record
+    every such cell was printed from; any other record of such a report, one
+    a later enrichment wrote among them, is printed by its counts.
     """
     out: dict[str, str] = {}
     net = report.network
@@ -5299,18 +5311,15 @@ def _reputations(report: MalwareReport) -> dict[str, str]:
     for value, rep in rows:
         if not isinstance(rep, dict) or "malicious" not in rep:
             continue
-        if report.reputation is not None:
+        held = [_held_count(rep.get(k)) for k in _NETWORK_COUNTS]
+        if report.reputation is None and all(count is not None for count in held):
+            # The service's name is its answer's text, by the inline rule.
+            name = _inline_safe(rep.get("source"), pipes=False) or "reputation"
+            total = sum(count for count in held if count is not None)
+            said = f"{name}: {held[0]} of {total} engines flag it as malicious"
+        else:
             said = _network_counts(rep)
             if not said:
-                continue
-        else:
-            try:
-                total = sum(int(rep.get(k) or 0) for k in _NETWORK_COUNTS)
-                # The service's name is its answer's text, by the inline rule.
-                name = _inline_safe(rep.get("source"), pipes=False) or "reputation"
-                flagged = int(rep.get("malicious") or 0)
-                said = f"{name}: {flagged} of {total} engines flag it as malicious"
-            except (TypeError, ValueError):
                 continue
         stamp = rep.get("last_analysis_date_unix")
         if isinstance(stamp, int) and stamp > 0:

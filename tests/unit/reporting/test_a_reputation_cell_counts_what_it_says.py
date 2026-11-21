@@ -7,8 +7,11 @@ count, each other count the record holds that is not zero, under the name the
 record holds it under, and the engine count the service gave. It sums no
 denominator and writes no "of": a category the record holds no count of is
 not named, and a total is not printed, since a server record's total may be
-the sum of the members its reader kept. A report stored before the records
-keeps its cell as it was printed.
+the sum of the members its reader kept. A value that is no whole number, a
+digit string too long to convert among them, is no count, and reading it never
+stops the render. A report stored before the records keeps its cell as it was
+printed where the value's record holds all four counts as whole numbers; any
+other record of such a report is printed by its counts.
 """
 
 from __future__ import annotations
@@ -163,8 +166,15 @@ def test_the_cell_keeps_the_analysis_date_and_an_address_is_read_as_a_domain_is(
             "VirusTotal: 0 of 75 engines flag it as malicious",
         ),
         (
-            {"source": "intel", "malicious": 2, "suspicious": 1, "total": 75, "engines": 75},
-            "intel: 2 of 3 engines flag it as malicious",
+            {
+                "source": "VirusTotal",
+                "malicious": 19,
+                "suspicious": 0,
+                "harmless": 41,
+                "undetected": 31,
+                "last_analysis_date_unix": 1758672000,
+            },
+            "VirusTotal: 19 of 91 engines flag it as malicious (analysed 2025-09-24)",
         ),
     ],
 )
@@ -172,3 +182,54 @@ def test_a_report_stored_before_the_records_keeps_its_cell(
     record: dict[str, Any], said: str
 ) -> None:
     assert _cell(record, stored=True) == said
+
+
+# A digit string too long to convert is no count, as any value that is no whole number.
+LONG = "9" * 5000
+
+
+@pytest.mark.parametrize(
+    ("record", "said"),
+    [
+        ({"source": "acme", "malicious": 1, "engines": LONG}, f"acme, {FRAME}: malicious 1"),
+        (
+            {"source": "acme", "malicious": LONG, "harmless": 9},
+            f"acme, {FRAME}: malicious not counted, harmless 9",
+        ),
+        ({"source": "acme", "malicious": 1, "harmless": LONG}, f"acme, {FRAME}: malicious 1"),
+        ({"source": "acme", "malicious": 1, "harmless": 4.0}, f"acme, {FRAME}: malicious 1"),
+    ],
+)
+def test_a_value_that_is_no_whole_number_is_no_count_and_the_whole_report_renders(
+    record: dict[str, Any], said: str
+) -> None:
+    from malspark.reporting.renderers import HtmlRenderer, MarkdownRenderer
+
+    # Read back as the stored report.json holds it.
+    report = MalwareReport.model_validate_json(_report(record).model_dump_json())
+
+    assert _reputations(report)["one.example.org"] == said
+    for layout in ("analyst", "bundle", "full"):
+        rendered = MarkdownRenderer(layout=layout).render(report)
+        assert "rendering failed" not in rendered, layout
+    assert said in MarkdownRenderer(layout="full").render(report)
+    for layout in ("bundle", "full"):
+        assert FRAME in HtmlRenderer(layout=layout).render(report, embed_figures=False), layout
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"source": "intel", "malicious": 2, "suspicious": 1, "total": 75, "engines": 75},
+        {"source": "acme", "malicious": 4, "harmless": 10},
+        {"source": "acme", "malicious": 1, "suspicious": 0, "harmless": 3, "undetected": LONG},
+    ],
+)
+def test_a_stored_report_enriched_by_a_source_keeping_some_counts_prints_no_summed_total(
+    record: dict[str, Any],
+) -> None:
+    cell = _cell(record, stored=True)
+
+    assert cell is not None and cell.startswith(f"{record['source']}, {FRAME}: ")
+    assert not re.search(r"\d+ of \d+|/", cell)
+    assert "total" not in cell
