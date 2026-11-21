@@ -11,7 +11,7 @@
 # with src/malspark/tools/emulated_strings.py and scripts/install_floss.sh.
 ARG TARGETARCH
 
-FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS floss-amd64
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS floss-amd64
 ARG FLOSS_VERSION=3.1.1
 ARG FLOSS_ZIP_SHA256=40c05a869f34f7e2417b17ca290cc54bd3671ee1f0a2d9bd5103284c01a54666
 ARG FLOSS_BINARY_SHA256=d71b9ea4fe3b2de974dc1ae3c5d0f67569921bc118dcb02ed72e905a662411cb
@@ -37,7 +37,7 @@ RUN python3 -c "import sys, urllib.request; urllib.request.urlretrieve(sys.argv[
 # its sha256 is the one emulated_strings.py pins, and it checks the environment
 # against its own pins before FLOSS is imported. The build stops unless the
 # launcher answers --version with the pinned release.
-FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS floss-arm64
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS floss-arm64
 ARG FLOSS_VERSION=3.1.1
 WORKDIR /build
 COPY scripts/floss/ scripts/floss/
@@ -63,7 +63,7 @@ FROM floss-${TARGETARCH} AS floss
 # flare-capa's own sdist on PyPI, checked against the sha256 uv.lock records
 # for that sdist. Both keep their licence file. Keep the three values in step
 # with uv.lock and scripts/dev/malspark_dev.py; a test holds them together.
-FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS capa-data
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS capa-data
 ARG CAPA_VERSION=9.4.0
 ARG CAPA_RULES_SHA256=273591b11737181b3bdaac18964f23627cf10c21c2b143fc9be88e4a33217669
 ARG CAPA_SDIST_SHA256=c4f421abac566e23657241e4ddc66119beb0caf5f082ee42d68b7c879ebb7fc6
@@ -86,7 +86,7 @@ RUN python3 -c "import sys, urllib.request; urllib.request.urlretrieve(sys.argv[
 # an image and a workstation load the same rules. Without it every Sigma scan
 # in an image that bind-mounts no data/ would not run and degrade the run.
 # Keep SIGMA_REF in step with malspark_dev.py; a test holds them together.
-FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS sigma-data
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS sigma-data
 ARG SIGMA_REF=r2026-07-01
 ARG SIGMA_ARCHIVE_SHA256=c9be92eecb216941f681504eb5cf917598377bee665b344a0456e90093f8023d
 WORKDIR /opt/sigma
@@ -96,7 +96,7 @@ RUN python3 -c "import sys, urllib.request; urllib.request.urlretrieve(sys.argv[
     tar -xzf /tmp/sigma.tar.gz -C /opt/sigma --strip-components=1 && \
     rm /tmp/sigma.tar.gz
 
-FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS base
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS base
 
 WORKDIR /app
 
