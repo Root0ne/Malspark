@@ -627,7 +627,8 @@ class LedgerEntry(BaseModel):
             "A reputation lookup's answer as its declaration read it when the entry was "
             "written (core.reputation.ReputationRecord): {'v': 1, 'service', and where the "
             "answer gave them 'malicious', 'suspicious', 'total', 'engines', 'stats', "
-            "'labels', 'detections', 'first_seen', 'last_seen', 'link', 'summary'}. None for "
+            "'labels', 'detections', 'first_seen', 'last_seen', 'link', 'summary', and the "
+            "keys the counts were read under 'names', 'unread', 'not_whole'}. None for "
             "any other tool, a call that did not answer and an entry written before records "
             "were. Read later from here, never from the reading process's settings."
         ),

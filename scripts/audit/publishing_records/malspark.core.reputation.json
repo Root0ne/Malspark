@@ -1,0 +1,37 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.core.reputation:NOT_WHOLE",
+   "condition": "said of a count field whose key held a value that is no whole number (2.5, a boolean, a digit string that does not convert): in the header cell and the indicator table's reputation cell in place of the flagged count's 'malicious not counted' where the record holds such a value, and in the pack's reputation line under the key it was read under (_read_under_keys); printed only where the line has a count to state",
+   "basis": ["reputation record not_whole", "enrichment record malicious (held, no whole number)", "reputation record names"],
+   "test": [
+    "tests/unit/reporting/test_a_reputation_cell_counts_what_it_says.py::test_the_cell_prints_each_count_under_the_record_s_name_and_no_fraction",
+    "tests/unit/pipeline/test_a_reputation_pack_line_names_each_count_it_prints.py::test_a_count_whose_key_holds_no_whole_number_is_said_to_be_one"
+   ],
+   "text_digest": "c0a790136ae412fa659188c36a1aa7cef0cf263c0eab39de6e241e138a7fbf60"
+  },
+  {
+   "function": "malspark.core.reputation:_read_under_keys",
+   "condition": "the pack's reputation line (every_member) for a record that stores the key of every count it holds (_keyed): the flagged count under its keys or 'no flagged count read', the engine count, a suspicious count and a total read under keys of their own, the pack's labels and detection labels, then every member of the counts object under 'counts read from <its keys>', then how many of its members were not read; a record written before keys were stored is said by counts_line under the record's own names",
+   "basis": ["reputation record names", "reputation record unread", "reputation record not_whole", "reputation record malicious, suspicious, engines, total, stats"],
+   "test": [
+    "tests/unit/pipeline/test_a_reputation_pack_line_names_each_count_it_prints.py::test_a_record_written_now_stores_the_keys_its_counts_were_read_under",
+    "tests/unit/pipeline/test_a_reputation_pack_line_names_each_count_it_prints.py::test_each_count_is_said_under_the_keys_it_was_read_under",
+    "tests/unit/pipeline/test_a_reputation_pack_line_names_each_count_it_prints.py::test_the_members_not_read_are_counted",
+    "tests/unit/pipeline/test_a_reputation_pack_line_names_each_count_it_prints.py::test_a_declared_total_alone_says_no_flagged_count_was_read"
+   ],
+   "text_digest": "b9e4c05d465eaca7692c94a40513781b11b3bc478b34ffc3dd98578b3cf3c07c"
+  },
+  {
+   "function": "malspark.core.reputation:counts_line",
+   "condition": "the report's header cell and the indicator table's reputation cell (lean: the flagged count, members not zero, then engines and a total that is no sum) and, with every_member, the pack's and the run-state block's reputation line for a record that stores no keys (the flagged count and the engine count first, then a total that is no sum, the pack's labels and detection labels, then every member, zeros too, last, so the run-state cut loses members first), each said to be the lookup's record's; '' where the record holds no count",
+   "basis": ["reputation record malicious, suspicious, engines, total, stats, service", "reputation record not_whole", "enrichment record malicious, suspicious, harmless, undetected, engines, source"],
+   "test": [
+    "tests/unit/reporting/test_a_reputation_header_cell_names_each_count_it_prints.py::test_the_cell_prints_the_flagged_count_the_members_not_zero_and_the_engines_by_name",
+    "tests/unit/pipeline/test_a_reputation_pack_line_names_each_count_it_prints.py::test_a_record_storing_no_keys_is_said_under_its_own_names_with_every_member",
+    "tests/unit/pipeline/test_a_reputation_pack_line_names_each_count_it_prints.py::test_counts_read_from_prose_keep_their_line_and_are_the_record_s_when_the_text_is_gone"
+   ],
+   "text_digest": "24177c8014d517b3bbb44bfcdb477bde9dd2d12f4c0213f7a2c826d3854ffaa1"
+  }
+ ]
+}

@@ -88,6 +88,15 @@ CELLS = [
         f"acme, {FRAME}: malicious not counted, harmless 5",
     ),
     ({"source": "acme", "malicious": 1, "harmless": "many"}, f"acme, {FRAME}: malicious 1"),
+    # A flagged count the record holds as no whole number is said to be one.
+    (
+        {"source": "acme", "malicious": True, "harmless": 5},
+        f"acme, {FRAME}: malicious not read as a whole number, harmless 5",
+    ),
+    (
+        {"source": "acme", "malicious": 2.5, "harmless": 5},
+        f"acme, {FRAME}: malicious not read as a whole number, harmless 5",
+    ),
 ]
 
 
@@ -196,7 +205,8 @@ LONG = "9" * 5000
         ({"source": "acme", "malicious": 1, "engines": LONG}, f"acme, {FRAME}: malicious 1"),
         (
             {"source": "acme", "malicious": LONG, "harmless": 9},
-            f"acme, {FRAME}: malicious not counted, harmless 9",
+            # Held, and no whole number the record can read: said to be one.
+            f"acme, {FRAME}: malicious not read as a whole number, harmless 9",
         ),
         ({"source": "acme", "malicious": 1, "harmless": LONG}, f"acme, {FRAME}: malicious 1"),
         (
@@ -349,7 +359,7 @@ def test_a_float_that_is_no_whole_number_is_no_count_and_the_report_renders(
     said = _reputations(report).get("one.example.org")
     kept = [f"{k} {v}" for k, v in counts.items() if k != name and k != "engines"]
     if name == "malicious":
-        assert said == f"acme, {FRAME}: malicious not counted, harmless 2"
+        assert said == f"acme, {FRAME}: malicious not read as a whole number, harmless 2"
     else:
         assert said == f"acme, {FRAME}: " + ", ".join(kept)
     _renders_whole(report)

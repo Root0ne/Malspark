@@ -5767,20 +5767,25 @@ def _network_counts(rep: dict[str, Any]) -> str:
     enrichment record holds the fields its source declares and stores no count
     of the members it left, so the cell says "counts in the lookup's record",
     claims no tally is whole, and says nothing of a category the record holds
-    no count of; it never prints a number the record does not hold. ``""``
-    where the record holds no count.
+    no count of; it never prints a number the record does not hold. A flagged
+    count the record holds as a value that is no whole number is said to be
+    one, never "not counted". ``""`` where the record holds no count.
     """
     stats = {
         name: held
         for name, value in rep.items()
         if name in _NETWORK_COUNTS and (held := _held_count(value)) is not None
     }
+    # A flagged count the record holds as no whole number (2.5, a boolean, a
+    # digit string that does not convert) is said to be one, not "not counted".
+    held = rep.get("malicious")
     record = ReputationRecord(
         service=_service_name(rep).strip(),
         malicious=stats.get("malicious"),
         suspicious=stats.get("suspicious"),
         engines=_held_count(rep.get("engines")),
         stats=stats,
+        not_whole=["malicious"] if held is not None and _held_count(held) is None else [],
     )
     # The service's name is its answer's text, by the inline rule; the row
     # escapes the table separator itself (:func:`_cell`).

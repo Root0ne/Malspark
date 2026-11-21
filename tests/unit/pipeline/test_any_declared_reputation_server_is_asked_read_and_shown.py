@@ -200,6 +200,8 @@ class TestThePackAsksIt:
             "first_seen": "2023-11-14T22:13:20Z",
             "last_seen": "2026-01-02T03:04:05Z",
             "link": "https://rep.invalid/s/abc",
+            # The keys its counts were read under, stored beside them.
+            "names": {"malicious": "verdict.flagged", "total": "verdict.scanners"},
         }
         assert result.facts.reputation_malicious == 9
         assert "reputation" not in result.failed
@@ -325,8 +327,8 @@ class TestEveryReaderReadsIt:
         entry = _lookup_entry()
         block = render_run_state({"evidence_ledger": [entry.model_dump()]})
         assert (
-            "[ev_0001] reputation: HashRep: 9 of 40 engines flag it as malicious, "
-            "labels Stealer, Loader"
+            "[ev_0001] reputation: HashRep, read from the lookup's answer: verdict.flagged 9; "
+            "verdict.scanners 40; labels Stealer, Loader"
         ) in block
 
     def test_the_report_shows_it_and_a_re_render_without_its_settings_reads_the_same(
