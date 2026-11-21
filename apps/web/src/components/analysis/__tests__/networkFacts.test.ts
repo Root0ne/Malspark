@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { NetworkDomain, NetworkIP } from "@/types/malware-report";
-import { domainFacts, ipFacts } from "../networkFacts";
+import type { MalwareReport, NetworkDomain, NetworkIOCs, NetworkIP } from "@/types/malware-report";
+import { relatedFindings } from "../iocList";
+import { domainFacts, endpointCounts, formValues, ipFacts, networkCounts, valueKey } from "../networkFacts";
+import { hostLabel, hostReading, hostRows, hostSuspicious } from "../networkView";
 
 function ip(over: Partial<NetworkIP> = {}): NetworkIP {
   return {
@@ -78,5 +80,110 @@ describe("what a domain row says", () => {
   it("says a name only the capture's TLS names recorded", () => {
     expect(domainFacts(domain({ capture_only: true }))[0]).toMatch(/only in the capture's TLS names/);
     expect(domainFacts(domain())).toEqual([]);
+  });
+});
+
+describe("a row of the sample's strings the API serves as its form (T-778)", () => {
+  // The IOC table serves a strings row nothing in the run reads as its kind
+  // under its form: `dotted_name`, `name_at_domain_text`, ... never `domain`.
+  const report = {
+    consolidated_iocs: [
+      { type: "Dotted name", kind: "dotted_name", value: "Abi.Name", source: "strings" },
+      { type: "Name@domain text", kind: "name_at_domain_text", value: "aes128-gcm@openssh.com", source: "strings" },
+      { type: "Domain", kind: "domain", value: "c2.example", source: "sandbox" },
+    ],
+    network: {
+      domains: [
+        domain({ fqdn: "abi.name", source: "strings", is_suspicious: true, reason: "DGA-like (score 0.82)" }),
+        domain({ fqdn: "c2.example", is_suspicious: true, reason: "DGA-like (score 0.71)" }),
+      ],
+      ips: [],
+      urls: [],
+    },
+    static: {
+      interesting_strings: [
+        { kind: "domain", value: "abi.name", notes: null },
+        { kind: "domain", value: "seen.example", notes: null },
+      ],
+    },
+  } as unknown as MalwareReport;
+
+  it("reads each form row's value with the form it is served as", () => {
+    expect([...formValues(report)]).toEqual([
+      ["abi.name", "Dotted name"],
+      ["aes128-gcm@openssh.com", "Name@domain text"],
+    ]);
+    expect(formValues(null).size).toBe(0);
+  });
+
+  it("counts no form row as a domain and none as suspicious", () => {
+    expect(networkCounts(report)).toEqual({ domains: 2, ips: 0, urls: 0, suspicious: 1 });
+  });
+
+  it("labels a host the table serves as its form by that form, and never flags it", () => {
+    const rows = hostRows(report.network as unknown as NetworkIOCs, formValues(report));
+    expect(rows.map((r) => [r.host, hostLabel(r), hostSuspicious(r)])).toEqual([
+      ["abi.name", "Dotted name", false],
+      ["c2.example", "Domain", true],
+    ]);
+    const plain = hostRows(report.network as unknown as NetworkIOCs);
+    expect(plain.map((r) => [hostLabel(r), hostSuspicious(r)])).toEqual([
+      ["Domain", true],
+      ["Domain", true],
+    ]);
+  });
+
+  it("counts every domain as before where the table serves no form row", () => {
+    const plain = { ...report, consolidated_iocs: [] } as unknown as MalwareReport;
+    expect(networkCounts(plain)).toEqual({ domains: 3, ips: 0, urls: 0, suspicious: 2 });
+    expect(endpointCounts(report.network, report.static?.interesting_strings)).toEqual({
+      domains: 3,
+      ips: 0,
+      urls: 0,
+    });
+  });
+
+  it("says why a host stands out and its generated-name score only on a row that is no form row", () => {
+    const rows = hostRows(report.network as unknown as NetworkIOCs, formValues(report));
+    expect(rows.map((r) => [r.host, hostReading(r)])).toEqual([
+      ["abi.name", { reason: "", score: null }],
+      ["c2.example", { reason: "DGA-like (score 0.71)", score: null }],
+    ]);
+    const scored = hostRows({
+      domains: [
+        domain({ fqdn: "abi.name", source: "strings", reason: "DGA-like (score 0.82)", dga_score: 0.82 }),
+        domain({ fqdn: "c2.example", reason: "DGA-like (score 0.71)", dga_score: 0.71 }),
+        domain({ fqdn: "plain.example", dga_score: 0 }),
+      ],
+      ips: [ip()],
+      urls: [],
+    } as unknown as NetworkIOCs, formValues(report));
+    expect(scored.map((r) => hostReading(r))).toEqual([
+      { reason: "", score: null },
+      { reason: "DGA-like (score 0.71)", score: 0.71 },
+      { reason: "", score: null },
+      { reason: "", score: null },
+    ]);
+  });
+
+  it("lists a form row's name alone among the related findings, and a host with its reason", () => {
+    const hosts = (value: string) => relatedFindings(report, value).filter((f) => f.where === "Network host");
+    expect(hosts("Abi.Name")).toEqual([{ where: "Network host", text: "abi.name" }]);
+    expect(hosts("c2.example")).toEqual([{ where: "Network host", text: "c2.example: DGA-like (score 0.71)" }]);
+  });
+
+  it("finds a form row's value written with a trailing dot, as the report keys a name", () => {
+    expect(valueKey(" Abi.Name. ")).toBe("abi.name");
+    const dotted = {
+      ...report,
+      consolidated_iocs: [{ type: "Dotted name", kind: "dotted_name", value: "abi.name.", source: "strings" }],
+    } as unknown as MalwareReport;
+    expect([...formValues(dotted)]).toEqual([["abi.name", "Dotted name"]]);
+    const rows = hostRows(dotted.network as unknown as NetworkIOCs, formValues(dotted));
+    expect(rows.map((r) => [hostLabel(r), hostSuspicious(r)])).toEqual([
+      ["Dotted name", false],
+      ["Domain", true],
+    ]);
+    expect(networkCounts(dotted)).toEqual({ domains: 2, ips: 0, urls: 0, suspicious: 1 });
   });
 });

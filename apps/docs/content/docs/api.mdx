@@ -569,7 +569,20 @@ narrows to one of `hash`, `domain`, `ip`, `url`, `user_agent`, `ja3`, `ja3s`,
 and, for a value the exported STIX bundle carries from the judge's own
 indicators, `email`, `path`, `registry`, `mutex` or `command`; for a host value
 the analysis states, `path`, `folder`, `registry`, `registry_value`, `mutex`,
-`scheduled_task`, `service`, `named_pipe` or `ads` (an alternate data stream).
+`scheduled_task`, `service`, `named_pipe` or `ads` (an alternate data stream);
+and, for a row of the file's strings that nothing in the run reads as its kind
+(it is not published, no row of another source and no judge indicator holds it
+under that kind, no URL row has it as its host, no recovering tool spelled it
+as a host), the form it is served as: `name_at_domain_text`, `dotted_name`,
+`text_not_a_plain_host_name`, or, for a path or registry key the extractor
+recorded taking out of a longer string, `path_shaped_text` or
+`registry_key_shaped_text`. Such a row is never served under `email`, `domain`,
+`path` or `registry`, carries the type the report's IOC table prints as its
+`type` (`Dotted name`), and carries no suspicion flag or note. The stored
+`report.json` (the job package's `run/`) holds the IOC table as the run
+recorded it, and its `kind` is the table's key, so a form row stands there
+under `email`, `domain`, `path` or `registry`; the served indicator exports
+(`iocs`, `full`, the report detail's `consolidated_iocs`) give it under its form.
 `include` decides what is returned:
 
 | `include` | what comes back |

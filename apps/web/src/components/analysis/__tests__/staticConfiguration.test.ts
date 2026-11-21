@@ -55,3 +55,14 @@ describe("the configuration's citation state, in plain words", () => {
     expect(html).toContain("Copy configuration value Mutex");
   });
 });
+
+describe("the strings table's kind column (T-778)", () => {
+  // The extractor types a token by its form; the column says whose typing it is.
+  const html = draw({});
+
+  it("is headed as the string sweep's own typing", () => {
+    expect(html).toContain(">Kind (as the string sweep typed it)</th>");
+    expect(html).not.toContain(">Kind</th>");
+    expect(html).toContain("cdn.example-update.net");
+  });
+});

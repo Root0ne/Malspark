@@ -19,6 +19,8 @@
 
 import type { MalwareReport, ObservedIn, ProcessNode } from "@/types/malware-report";
 import { decisionOf, type Decision } from "./indicators";
+import { formValues } from "./networkFacts";
+import { hostReading, hostRows } from "./networkView";
 
 /** How many rows the browser draws before offering more. */
 export const IOC_ROWS_STEP = 10;
@@ -179,16 +181,24 @@ function mentions(haystack: string | null | undefined, needle: string): boolean 
   return n.length >= 3 && String(haystack ?? "").toLowerCase().includes(n);
 }
 
-/** What else the report says about one value, field by field. */
+/**
+ * What else the report says about one value, field by field. A network host
+ * carries why the network block flags it only where the IOC table does not
+ * serve the name as its form (`networkView.hostReading`); a form row's name
+ * stands alone.
+ */
 export function relatedFindings(mr: MalwareReport | null | undefined, value: string): RelatedFinding[] {
   if (!mr || !value.trim()) return [];
   const out: RelatedFinding[] = [];
   const push = (where: string, text: string) => {
     if (!out.some((f) => f.where === where && f.text === text)) out.push({ where, text });
   };
-  for (const d of mr.network?.domains ?? []) {
+  for (const row of hostRows(mr.network, formValues(mr))) {
+    if (row.kind !== "domain") continue;
+    const d = row.domain;
     if (same(d.fqdn, value) || d.resolved_ips.some((ip) => same(ip, value))) {
-      push("Network host", d.reason ? `${d.fqdn}: ${d.reason}` : d.fqdn);
+      const { reason } = hostReading(row);
+      push("Network host", reason ? `${d.fqdn}: ${reason}` : d.fqdn);
     }
   }
   for (const ip of mr.network?.ips ?? []) {
