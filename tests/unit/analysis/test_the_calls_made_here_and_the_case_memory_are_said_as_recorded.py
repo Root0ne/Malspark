@@ -125,8 +125,8 @@ def test_an_in_process_tool_declared_to_read_the_case_store_is_said_so_where_it_
         "of the tools called through these sources, `function_matches` on the platform's "
         "in-process source `pack` is declared to read the case-memory store, which the "
         "case-memory line places.",
-        "Reached the configured case-memory store, which the disclosure's case-memory row "
-        "places: `function_matches` on Triage pack (`pack`).",
+        "Declared to reach the configured case-memory store, which the disclosure's case-memory "
+        "row places: `function_matches` on Triage pack (`pack`).",
     ]
 
 

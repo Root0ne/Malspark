@@ -179,9 +179,10 @@ def test_a_threat_intel_lookup_is_declared_to_reach_the_network_and_send_the_has
         ("check_hash", True, "hash"),
     ]
     assert effects_lines(part) == [
-        "Reached the network: `check_domain_reputation` and `check_hash` on tool server "
+        "Declared to reach the network: `check_domain_reputation` and `check_hash` on tool "
+        "server `threatintel`.",
+        "Declared to send the sample's hash to a third party: `check_hash` on tool server "
         "`threatintel`.",
-        "Sent the sample's hash to a third party: `check_hash` on tool server `threatintel`.",
     ]
 
 
@@ -305,16 +306,17 @@ def test_a_submission_to_the_sidecar_s_sandbox_is_told_where_the_disclosure_plac
     ]
     lines = effects_lines(part)
     assert lines[:2] == [
-        "Had the sample run in the sandbox service its server fronts: `submit_file` on the "
-        "`cape2` provider's tool server, where it went cannot be told: the disclosure does not "
-        "place it.",
-        "Handed the sample to a third party's sandbox, which may run it: `submit_file` on tool "
-        "server `virustotal`.",
+        "Declared to have the sample run in the sandbox service its server fronts: "
+        "`submit_file` on the `cape2` provider's tool server, where it went cannot be told: the "
+        "disclosure does not place it.",
+        "Declared to run the sample in a sandbox its server does not front, which may be a "
+        "third party's: `submit_file` on tool server `virustotal`.",
     ]
     assert not any("not a third party" in line for line in lines)
     assert (
-        "Sent the sample's bytes to a third party: `submit_file` on tool server `virustotal`; "
-        "where each call sent them is in the upload rows of the disclosure above."
+        "Taken as sending the sample's file out of the deployment: `submit_file` on tool server "
+        "`virustotal`; the upload rows of the disclosure above say what is known of where each "
+        "call sent it."
     ) in lines
 
 
@@ -378,8 +380,8 @@ def test_reference_refreshes_and_the_case_store_are_named(shipped: ToolDeclarati
         ]
     )
     assert effects_lines(part) == [
-        "Reached the configured case-memory store, which the disclosure's case-memory row "
-        "places: `function_matches` on Triage pack (`pack`).",
+        "Declared to reach the configured case-memory store, which the disclosure's case-memory "
+        "row places: `function_matches` on Triage pack (`pack`).",
         "Reach the network only to fetch or refresh reference data they keep, sending nothing "
         "of the sample: `attck_lookup` on tool server `knowledge`.",
     ]
@@ -448,7 +450,8 @@ def test_an_open_world_hint_says_the_tool_reaches_the_network_by_its_server_s_wo
     )
     assert row["hints"] == {"readOnlyHint": True, "openWorldHint": True}
     assert effects_lines(part) == [
-        "Reached the network: `lookup` on tool server `intel`, by its server's own hint.",
+        "Said by its server's own hint to reach outside its server: `lookup` on tool server "
+        "`intel`.",
         "Undeclared whether it may run the sample's code or send the sample's hash or bytes to "
         "a third party, so not taken as safe: `lookup` on tool server `intel`.",
     ]
@@ -571,9 +574,9 @@ def test_the_bytes_sent_agree_with_the_disclosure_s_upload_rows(
     assert _row(record["effects"], "push")["network"] is True
     lines = effects_lines(record["effects"])
     assert (
-        "Sent the sample's bytes to a third party: `push` on tool server `acme`; `submit_file` "
-        "on tool server `virustotal`; where each call sent them is in the upload rows of the "
-        "disclosure above."
+        "Taken as sending the sample's file out of the deployment: `push` on tool server `acme`; "
+        "`submit_file` on tool server `virustotal`; the upload rows of the disclosure above say "
+        "what is known of where each call sent it."
     ) in lines
     assert any(
         line.startswith("Sample upload: tool server `acme`") for line in disclosure_lines(record)
@@ -764,7 +767,8 @@ def test_each_way_a_call_ended_is_counted_and_said_apart(shipped: ToolDeclaratio
         "Failed, so whether its declared effects happened cannot be told: `get_file_report` on "
         "tool server `virustotal`.",
     ]
-    assert not any(line.startswith(("Ran ", "Sent ", "Handed ", "Reached ")) for line in lines)
+    effects = ("Ran ", "Declared to ", "Taken as ", "Stated by ", "Said by its server's own hint")
+    assert not any(line.startswith(effects) for line in lines)
 
 
 def test_a_tool_with_calls_that_ended_both_ways_is_counted_both_ways(
@@ -778,7 +782,7 @@ def test_a_tool_with_calls_that_ended_both_ways_is_counted_both_ways(
         ]
     )
     lines = effects_lines(part)
-    assert "Reached the network: `get_file_report` on tool server `virustotal`." in lines
+    assert "Declared to reach the network: `get_file_report` on tool server `virustotal`." in lines
     assert (
         "Failed, so whether its declared effects happened cannot be told: `get_file_report` on "
         "tool server `virustotal`, 1 of 2 calls."

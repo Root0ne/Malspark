@@ -49,6 +49,14 @@ The platform's own in-process tools (no source and no server, or a question to
 the team) are left out by the rule the disclosure uses
 (:func:`is_platform_internal`).
 
+**Said in the voice of where it came from.** A line says a declared effect as
+declared ("Declared to …", with the declared ``when`` and offline condition),
+the cautious answer as taken ("Taken as …", ``network_from``), and a server's
+own declaration or hint as its own; never as an event. A row stored before
+``network_from`` says "Declared" only where its own fields hold the declared
+value. A sent file is taken: the row does not tell a declared third party
+from ``discloses_sample``, which may come from a reading of the tool's schema.
+
 **One source of truth with the disclosure.** Where the sample's bytes were
 read is the isolation part (``analysis.isolation``): a tool that ran the
 sample's code natively or under emulation is told with the isolation row of
@@ -95,6 +103,18 @@ SERVER_HINT = "server_hint"
 SERVER_STATED = "server_stated"
 # The MCP hint that answers whether a tool reaches the network.
 OPEN_WORLD_HINT = "openWorldHint"
+# Where a row's network answer came from, in the voice its line says it in
+# (``network_from``): an effects block that states it; the cautious answer
+# for a tool declared or taken to send the sample or its hash out, which
+# reaches the network whatever its block says of it; the server's own
+# declaration its block does not trust; the server's own hint.
+FROM_DECLARED = "declared"
+FROM_SENDS = "sends"
+FROM_SERVER = "server"
+FROM_HINT = "hint"
+# What a row stored before ``network_from`` holds of a network it cannot tell
+# declared from taken: a network that carries a sent hash or file.
+_FROM_TAKEN = "taken"
 
 INTRO_SENTENCE = (
     "**Tool effects:** what each tool this run called is declared to do beyond answering: run "
@@ -114,16 +134,34 @@ _RAN = {
     EXECUTES_NATIVE: "Ran the sample's code natively",
     EXECUTES_EMULATION: "Ran the sample's code under emulation",
 }
-# The lead of each line that names the tools reaching a network in a named way.
+# The lead of each line that names the tools reaching a network in a named way,
+# each mode always a declaration's.
 _REACHED = {
-    NETWORK_OPERATOR_SANDBOX: "Reached the sandbox service its server fronts",
+    NETWORK_OPERATOR_SANDBOX: "Declared to reach the sandbox service its server fronts",
     NETWORK_CASE_STORE: (
-        "Reached the configured case-memory store, which the disclosure's case-memory row places"
+        "Declared to reach the configured case-memory store, which the disclosure's "
+        "case-memory row places"
     ),
     NETWORK_ON_REFRESH: (
         "Reach the network only to fetch or refresh reference data they keep, sending nothing "
         "of the sample"
     ),
+}
+# The lead of each line that names the tools reaching the network, by where the
+# answer came from (``network_from``), a sent hash and a sent file apart.
+_REACHES = {
+    FROM_DECLARED: "Declared to reach the network",
+    (FROM_SENDS, THIRD_PARTY_HASH): (
+        "Taken as reaching the network, as a tool declared to send the sample's hash out"
+    ),
+    (FROM_SENDS, THIRD_PARTY_BYTES): (
+        "Taken as reaching the network, as a tool taken to send the sample's file out"
+    ),
+    _FROM_TAKEN: "Taken as reaching the network",
+    FROM_SERVER: (
+        "Stated by its own server, in a declaration its block does not trust, to reach the network"
+    ),
+    FROM_HINT: "Said by its server's own hint to reach outside its server",
 }
 
 
@@ -137,6 +175,8 @@ class Effects:
     network_by: str = ""
     why_undeclared: str = ""
     when: str = ""
+    network_from: str = ""
+    offline_without_credentials: bool | None = None
 
 
 # How a call ended, as a row counts it.
@@ -172,7 +212,7 @@ def entry_effects(entry: Any) -> Effects:
 
     A declaration that says the tool sends the sample or its hash to a third
     party says it reaches the network too, whatever else it says: the
-    cautious answer is kept.
+    cautious answer is kept, and ``network_from`` says it was taken so.
     """
     from malspark.core.declared_reading import (
         declared_only,
@@ -191,23 +231,25 @@ def entry_effects(entry: Any) -> Effects:
     third_party = declared.third_party if declared is not None else ""
     if sends_sample_bytes(facts):
         third_party = THIRD_PARTY_BYTES
+    network_from = FROM_DECLARED if network is not None else ""
     if third_party in (THIRD_PARTY_HASH, THIRD_PARTY_BYTES) and network not in (
         True,
         NETWORK_OPERATOR_SANDBOX,
     ):
-        network = True
+        network, network_from = True, FROM_SENDS
     network_by = DECLARED if network is not None else ""
     if network is None and served_statement(entry).get("effects.network") is True:
         # What the server itself declared of its tool, where no declaration
         # the operator trusts says: only that it reaches the network.
-        network, network_by = True, SERVER_STATED
+        network, network_by, network_from = True, SERVER_STATED, FROM_SERVER
     if network is None:
         hint = server_hints(entry).get(OPEN_WORLD_HINT)
         if hint is not None:
-            network, network_by = hint, SERVER_HINT
+            network, network_by, network_from = hint, SERVER_HINT, FROM_HINT
     why = declared.why_undeclared if declared is not None else ""
     when = declared.when if declared is not None else ""
-    return Effects(executes, network, third_party, network_by, why, when)
+    offline = declared.offline_without_credentials if declared is not None else None
+    return Effects(executes, network, third_party, network_by, why, when, network_from, offline)
 
 
 def is_platform_internal(entry: Any) -> bool:
@@ -330,6 +372,10 @@ def effects_part(
                 "third_party": effects.third_party,
                 "why_undeclared": effects.why_undeclared,
                 "when": effects.when,
+                # Where the network answer came from, and the declared offline
+                # condition: said by the lines, read by no count and no placement.
+                "network_from": effects.network_from,
+                "offline_without_credentials": effects.offline_without_credentials,
                 "hints": server_hints(entry),
                 **dict.fromkeys(OUTCOMES, 0),
             }
@@ -460,10 +506,51 @@ def _named(
     return "; ".join(parts)
 
 
-def _by_hint_only(row: Mapping[str, Any]) -> str:
-    if row.get("network_by") == SERVER_STATED:
-        return "by its server's own declaration, which its block does not trust"
-    return "by its server's own hint" if row.get("network_by") == SERVER_HINT else ""
+def network_from(row: Mapping[str, Any]) -> str:
+    """Where a row's network answer came from, as its line says it.
+
+    A row built with ``network_from`` says it. A row stored before it says
+    "declared" only where its own stored fields hold the declared value: a
+    named mode, or a network a sent hash or file did not force; a network
+    beside a sent hash or file may have been forced, and is taken.
+    """
+    if "network_from" in row:
+        return str(row.get("network_from") or "")
+    by = row.get("network_by")
+    if by == SERVER_STATED:
+        return FROM_SERVER
+    if by == SERVER_HINT:
+        return FROM_HINT
+    if by != DECLARED:
+        return ""
+    if row.get("network") is True and row.get("third_party") in (
+        THIRD_PARTY_HASH,
+        THIRD_PARTY_BYTES,
+    ):
+        return _FROM_TAKEN
+    return FROM_DECLARED
+
+
+def _reaches_key(row: Mapping[str, Any]) -> Any:
+    """Which lead a row reaching the network is said under; one that records no origin is
+    taken."""
+    held = network_from(row) or _FROM_TAKEN
+    return (held, row.get("third_party")) if held == FROM_SENDS else held
+
+
+def _hint_closed(row: Mapping[str, Any]) -> str:
+    """Where a tool taken to reach the network has a server whose own hint says it does not."""
+    hints = row.get("hints")
+    if isinstance(hints, Mapping) and hints.get(OPEN_WORLD_HINT) is False:
+        return "though its server's own hint says it does not reach outside its server"
+    return ""
+
+
+def _offline(row: Mapping[str, Any]) -> str:
+    """The declared condition under which the tool answers from this machine, as declared."""
+    if row.get("offline_without_credentials") is True:
+        return "declared to answer offline when it is given no credentials"
+    return ""
 
 
 def _server_states(row: Mapping[str, Any]) -> str:
@@ -477,9 +564,11 @@ def _when(row: Mapping[str, Any]) -> str:
     return str(row.get("when") or "")
 
 
-def _with_when(note: Callable[[Mapping[str, Any]], str]) -> Callable[[Mapping[str, Any]], str]:
+def _with_when(*notes: Callable[[Mapping[str, Any]], str]) -> Callable[[Mapping[str, Any]], str]:
+    """The declared ``when`` first, then each note that says something, joined."""
+
     def _both(row: Mapping[str, Any]) -> str:
-        return ", ".join(part for part in (_when(row), note(row)) if part)
+        return ", ".join(part for part in (_when(row), *(note(row) for note in notes)) if part)
 
     return _both
 
@@ -592,8 +681,8 @@ def effects_lines(part: Any, code: Callable[[str], str] = _code) -> list[str]:
     ]
     if own:
         lines.append(
-            f"Had the sample run in the sandbox service its server fronts: "
-            f"{_named(own, code, place)}."
+            f"Declared to have the sample run in the sandbox service its server fronts: "
+            f"{_named(own, code, _with_when(place))}."
         )
     theirs = [
         row
@@ -603,33 +692,42 @@ def effects_lines(part: Any, code: Callable[[str], str] = _code) -> list[str]:
     ]
     if theirs:
         lines.append(
-            f"Handed the sample to a third party's sandbox, which may run it: "
-            f"{_named(theirs, code, _when)}."
+            f"Declared to run the sample in a sandbox its server does not front, which may be a "
+            f"third party's: {_named(theirs, code, _when)}."
         )
     reached = [row for row in rows if row.get("network") is True]
-    if reached:
-        lines.append(f"Reached the network: {_named(reached, code, _by_hint_only)}.")
+    for key, lead in _REACHES.items():
+        held = [row for row in reached if _reaches_key(row) == key]
+        if held:
+            lines.append(f"{lead}: {_named(held, code, _with_when(_offline, _hint_closed))}.")
     for mode, lead in _REACHED.items():
         held = [row for row in rows if row.get("network") == mode]
         if held:
-            note = place if mode == NETWORK_OPERATOR_SANDBOX else None
-            lines.append(f"{lead}: {_named(held, code, note)}.")
+            notes = (place,) if mode == NETWORK_OPERATOR_SANDBOX else ()
+            lines.append(f"{lead}: {_named(held, code, _with_when(*notes))}.")
     hashed = [row for row in rows if row.get("third_party") == THIRD_PARTY_HASH]
     if hashed:
-        lines.append(f"Sent the sample's hash to a third party: {_named(hashed, code)}.")
+        # A sent hash is only ever a declaration's ``third_party``, stored as declared.
+        lines.append(
+            "Declared to send the sample's hash to a third party: "
+            f"{_named(hashed, code, _with_when(_offline))}."
+        )
     sent = [row for row in rows if row.get("third_party") == THIRD_PARTY_BYTES]
     handed = [row for row in sent if row.get("network") == NETWORK_OPERATOR_SANDBOX]
     out = [row for row in sent if row.get("network") != NETWORK_OPERATOR_SANDBOX]
+    # A sent file is a declaration's ``third_party`` or ``discloses_sample``, which the
+    # row does not tell apart: taken, with what the upload rows know of where it went.
     if handed:
         lines.append(
-            f"Handed the sample's bytes to the sandbox service its server fronts: "
-            f"{_named(handed, code, place)}; where each call sent them is in the upload rows "
-            "of the disclosure above."
+            f"Taken as handing the sample's file to the sandbox service its server fronts: "
+            f"{_named(handed, code, _with_when(place))}; the upload rows of the disclosure "
+            "above say what is known of where each call sent it."
         )
     if out:
         lines.append(
-            f"Sent the sample's bytes to a third party: {_named(out, code)}; where each "
-            "call sent them is in the upload rows of the disclosure above."
+            f"Taken as sending the sample's file out of the deployment: "
+            f"{_named(out, code, _with_when())}; the upload rows of the disclosure above say "
+            "what is known of where each call sent it."
         )
     declared = [row for row in every if _closed(row)]
     if declared:

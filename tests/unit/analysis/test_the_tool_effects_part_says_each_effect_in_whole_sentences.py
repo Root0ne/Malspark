@@ -102,12 +102,33 @@ def test_where_a_tool_that_ran_the_sample_read_it_is_said_as_isolation_placed_it
     assert note({"read_where": UNPLACED}) == "where it read the sample cannot be told"
 
 
-def test_a_network_answered_by_the_server_s_own_word_says_whose_word_it_is() -> None:
-    assert tool_effects._by_hint_only({"network_by": SERVER_STATED}) == (
-        "by its server's own declaration, which its block does not trust"
+def test_a_network_answer_is_said_in_the_voice_of_where_it_came_from() -> None:
+    network_from = tool_effects.network_from
+    # A row built with the field says it.
+    for held in ("declared", "sends", "server", "hint", ""):
+        assert network_from({"network_from": held, "network_by": DECLARED}) == held
+    # A row stored before it: declared only where its own fields hold the declared value.
+    assert network_from({"network_by": SERVER_STATED, "network": True}) == "server"
+    assert network_from({"network_by": SERVER_HINT, "network": True}) == "hint"
+    assert network_from({"network_by": DECLARED, "network": True, "third_party": "no"}) == (
+        "declared"
     )
-    assert tool_effects._by_hint_only({"network_by": SERVER_HINT}) == "by its server's own hint"
-    assert tool_effects._by_hint_only({"network_by": DECLARED}) == ""
+    assert network_from({"network_by": DECLARED, "network": "case_store"}) == "declared"
+    for sent in ("hash", "bytes"):
+        assert network_from({"network_by": DECLARED, "network": True, "third_party": sent}) == (
+            "taken"
+        )
+    assert network_from({"network_by": ""}) == ""
+    assert tool_effects._hint_closed({"hints": {"openWorldHint": False}}) == (
+        "though its server's own hint says it does not reach outside its server"
+    )
+    assert tool_effects._hint_closed({"hints": {"openWorldHint": True}}) == ""
+    assert tool_effects._hint_closed({}) == ""
+    assert tool_effects._offline({"offline_without_credentials": True}) == (
+        "declared to answer offline when it is given no credentials"
+    )
+    assert tool_effects._offline({"offline_without_credentials": False}) == ""
+    assert tool_effects._offline({}) == ""
 
 
 def test_a_call_to_the_sandbox_a_server_fronts_is_said_where_the_disclosure_placed_it() -> None:
@@ -230,22 +251,28 @@ def test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it() -> 
         "Ran the sample's code under emulation: `emulate_function` on tool server `analysis`, at "
         "analysis level 2 and above, the isolation part records no read of the sample by its "
         "source.",
-        f"Had the sample run in the sandbox service its server fronts: {fronted}.",
-        "Handed the sample to a third party's sandbox, which may run it: `detonate` on the "
-        "`remote` provider's tool server.",
-        "Reached the network: `detonate` on the `remote` provider's tool server; `lookup` on tool "
-        "server `intel`; `fetch` on tool server `other`, by its server's own hint; `pull` on "
-        "tool server `other`, by its server's own declaration, which its block does not trust.",
-        f"Reached the sandbox service its server fronts: {fronted}.",
-        "Reached the configured case-memory store, which the disclosure's case-memory row "
-        "places: `recall` on tool server `memory`.",
+        f"Declared to have the sample run in the sandbox service its server fronts: {fronted}.",
+        "Declared to run the sample in a sandbox its server does not front, which may be a "
+        "third party's: `detonate` on the `remote` provider's tool server.",
+        # Rows stored before ``network_from``: a network beside a sent hash or file is taken.
+        "Taken as reaching the network: `detonate` on the `remote` provider's tool server; "
+        "`lookup` on tool server `intel`.",
+        "Stated by its own server, in a declaration its block does not trust, to reach the "
+        "network: `pull` on tool server `other`.",
+        "Said by its server's own hint to reach outside its server: `fetch` on tool server "
+        "`other`.",
+        f"Declared to reach the sandbox service its server fronts: {fronted}.",
+        "Declared to reach the configured case-memory store, which the disclosure's case-memory "
+        "row places: `recall` on tool server `memory`.",
         "Reach the network only to fetch or refresh reference data they keep, sending nothing "
         "of the sample: `techniques` on tool server `knowledge`.",
-        "Sent the sample's hash to a third party: `lookup` on tool server `intel`.",
-        f"Handed the sample's bytes to the sandbox service its server fronts: {fronted}; where "
-        "each call sent them is in the upload rows of the disclosure above.",
-        "Sent the sample's bytes to a third party: `detonate` on the `remote` provider's tool "
-        "server; where each call sent them is in the upload rows of the disclosure above.",
+        "Declared to send the sample's hash to a third party: `lookup` on tool server `intel`.",
+        f"Taken as handing the sample's file to the sandbox service its server fronts: "
+        f"{fronted}; the upload rows of the disclosure above say what is known of where each "
+        "call sent it.",
+        "Taken as sending the sample's file out of the deployment: `detonate` on the `remote` "
+        "provider's tool server; the upload rows of the disclosure above say what is known of "
+        "where each call sent it.",
         "Declared to do none of these: 2 tools, on tool server `analysis` and Triage pack "
         "(`pack`).",
         "Said not to reach the network by its server's own hint (openWorldHint false), which no "
@@ -313,3 +340,156 @@ def test_the_report_heads_the_part_with_its_lead_sentence_after_the_isolation_pa
     # A record stored before the part existed prints no lead sentence.
     old = {key: value for key, value in record.items() if key != "effects"}
     assert "**Tool effects:**" not in rendered(old)
+
+
+def test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whole() -> None:
+    def built(source: str, tool: str, **over: Any) -> dict[str, Any]:
+        return _tool(
+            source,
+            tool,
+            **{"network_from": "declared", "offline_without_credentials": None, **over},
+        )
+
+    sandbox = {"placed_where": "local", "placed_host": "127.0.0.1:8000", "placed_why": ""}
+    rows = [
+        built(
+            "mcp:intel",
+            "lookup",
+            network=True,
+            third_party="hash",
+            when="only at analysis level 2",
+            offline_without_credentials=True,
+        ),
+        built("mcp:intel", "whois", network=True, third_party="no", when="on a domain only"),
+        # Declared to send the hash, its network not declared: taken as reaching it.
+        built("mcp:rep", "hash_only", network=True, third_party="hash", network_from="sends"),
+        built(
+            "mcp:analysis",
+            "unpack",
+            network=True,
+            third_party="bytes",
+            network_from="sends",
+            hints={"openWorldHint": False},
+        ),
+        built("mcp:other", "pull", network=True, network_by=SERVER_STATED, network_from="server"),
+        built("mcp:other", "fetch", network=True, network_by=SERVER_HINT, network_from="hint"),
+        built(
+            "mcp:detonator",
+            "submit",
+            executes="sandbox",
+            network="operator_sandbox",
+            third_party="bytes",
+            when="at analysis level 3",
+            **sandbox,
+        ),
+        built("mcp:detonator", "status", network="operator_sandbox", when="hourly", **sandbox),
+        built("mcp:memory", "recall", network="case_store", when="when memory is on"),
+        built("mcp:knowledge", "techniques", network="on_refresh", when="once a day"),
+        built("provider:remote", "detonate", executes="sandbox", network=True, when="on request"),
+    ]
+    at = (
+        "at `127.0.0.1:8000`, which the disclosure places on this machine, so the operator's own "
+        "and not a third party"
+    )
+    assert effects_lines({"tools": rows}) == [
+        f"Declared to have the sample run in the sandbox service its server fronts: `submit` on "
+        f"tool server `detonator`, at analysis level 3, {at}.",
+        "Declared to run the sample in a sandbox its server does not front, which may be a third "
+        "party's: `detonate` on the `remote` provider's tool server, on request.",
+        "Declared to reach the network: `lookup` on tool server `intel`, only at analysis level "
+        "2, declared to answer offline when it is given no credentials; `whois` on tool server "
+        "`intel`, on a domain only; `detonate` on the `remote` provider's tool server, on "
+        "request.",
+        "Taken as reaching the network, as a tool declared to send the sample's hash out: "
+        "`hash_only` on tool server `rep`.",
+        "Taken as reaching the network, as a tool taken to send the sample's file out: `unpack` "
+        "on tool server `analysis`, though its server's own hint says it does not reach outside "
+        "its server.",
+        "Stated by its own server, in a declaration its block does not trust, to reach the "
+        "network: `pull` on tool server `other`.",
+        "Said by its server's own hint to reach outside its server: `fetch` on tool server "
+        "`other`.",
+        f"Declared to reach the sandbox service its server fronts: `submit` on tool server "
+        f"`detonator`, at analysis level 3, {at}; `status` on tool server `detonator`, hourly, "
+        f"{at}.",
+        "Declared to reach the configured case-memory store, which the disclosure's case-memory "
+        "row places: `recall` on tool server `memory`, when memory is on.",
+        "Reach the network only to fetch or refresh reference data they keep, sending nothing "
+        "of the sample: `techniques` on tool server `knowledge`, once a day.",
+        "Declared to send the sample's hash to a third party: `lookup` on tool server `intel`, "
+        "only at analysis level 2, declared to answer offline when it is given no credentials; "
+        "`hash_only` on tool server `rep`.",
+        f"Taken as handing the sample's file to the sandbox service its server fronts: `submit` "
+        f"on tool server `detonator`, at analysis level 3, {at}; the upload rows of the "
+        "disclosure above say what is known of where each call sent it.",
+        "Taken as sending the sample's file out of the deployment: `unpack` on tool server "
+        "`analysis`; the upload rows of the disclosure above say what is known of where each "
+        "call sent it.",
+    ]
+    # A row taken to reach the network is never said to have reached it, nor declared to.
+    taken = [line for line in effects_lines({"tools": rows}) if "`unpack`" in line]
+    assert not any(line.startswith(("Declared", "Reached")) for line in taken)
+
+
+def test_a_row_reaching_the_network_with_no_recorded_origin_is_taken() -> None:
+    row = _tool("mcp:old", "t", network=True, network_by="", third_party="")
+    assert tool_effects.network_from(row) == ""
+    assert (
+        effects_lines({"tools": [row]})[0]
+        == "Taken as reaching the network: `t` on tool server `old`."
+    )
+
+
+def test_where_a_network_answer_came_from_and_the_offline_condition_are_built_from_the_entry() -> (
+    None
+):
+    from malspark.analysis.tool_effects import effects_part, entry_effects
+    from malspark.schemas.evidence import LedgerEntry
+
+    def entry(tool: str, facts: dict[str, Any]) -> LedgerEntry:
+        return LedgerEntry(
+            id="ev_0001",
+            tool=tool,
+            source="mcp:svc",
+            server="svc",
+            agent="static",
+            facts={"v": 1, "kind": "", **facts},
+        )
+
+    # A hash-only third party with no network declared: taken as reaching it, as a tool
+    # declared to send the hash out, never "declared to reach the network".
+    hashed = entry("hash_only", {"effects": {"executes": "no", "third_party": "hash"}})
+    assert (entry_effects(hashed).network, entry_effects(hashed).network_from) == (True, "sends")
+    offline = entry(
+        "lookup",
+        {
+            "effects": {
+                "executes": "no",
+                "network": True,
+                "third_party": "hash",
+                "offline_without_credentials": True,
+            }
+        },
+    )
+    effects = entry_effects(offline)
+    assert (effects.network_from, effects.offline_without_credentials) == ("declared", True)
+    sent = entry("push", {"discloses_sample": True})
+    assert (entry_effects(sent).third_party, entry_effects(sent).network_from) == ("bytes", "sends")
+    part = effects_part([hashed, offline, sent])
+    assert [
+        (row["tool"], row["network_from"], row["offline_without_credentials"])
+        for row in part["tools"]
+    ] == [
+        ("hash_only", "sends", None),
+        ("lookup", "declared", True),
+        ("push", "sends", None),
+    ]
+    lines = effects_lines(part)
+    assert lines[:3] == [
+        "Declared to reach the network: `lookup` on tool server `svc`, declared to answer "
+        "offline when it is given no credentials.",
+        "Taken as reaching the network, as a tool declared to send the sample's hash out: "
+        "`hash_only` on tool server `svc`.",
+        "Taken as reaching the network, as a tool taken to send the sample's file out: `push` "
+        "on tool server `svc`.",
+    ]

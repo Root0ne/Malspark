@@ -1046,7 +1046,7 @@ PLACING_CALLERS = {
     "generation": "Generation rate of ",
     "disclosure": "Model prompts: ",
     "isolation": "Not every source that read the sample's bytes was kept from the worker",
-    "effects": "Reached the network: ",
+    "effects": "Taken as reaching the network: ",
     "efficiency": "Run fingerprint: ",
     "coverage": ": coverage unknown: ",
     "analyst report's line": LEFT_THE_MACHINE_RECORD,

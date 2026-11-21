@@ -257,8 +257,11 @@ def test_a_cautious_claim_is_stored_as_the_server_s_and_moves_no_row() -> None:
     assert effects["server_states"]["kind"] == "submission"
     lines = effects_lines(part)
     assert any(line.startswith("Said of itself by its own server") for line in lines)
-    assert any("by its server's own declaration" in line for line in lines)
-    assert not any("Sent the sample's bytes" in line for line in lines)
+    assert any(
+        line.startswith("Stated by its own server, in a declaration its block does not trust")
+        for line in lines
+    )
+    assert not any("sample's file" in line or "sample's bytes" in line for line in lines)
 
 
 def test_an_untrusted_kind_changes_no_reader_but_the_reuse_veto(

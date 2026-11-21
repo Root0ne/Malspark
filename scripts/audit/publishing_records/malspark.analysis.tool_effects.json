@@ -23,10 +23,25 @@
   },
   {
    "constant": "malspark.analysis.tool_effects:_REACHED",
-   "condition": "the lead of the lines naming the tools with a completed call declared to reach only the sandbox service their server fronts, the configured case-memory store, or reference data they refresh",
-   "basis": ["effects row network, completed"],
-   "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
-   "text_digest": "c2f6cb7b3d9ef6c3463cc446bbb5123fd14f4d432c75c2ae6892983fcf3f8595"
+   "condition": "the lead of the lines naming the tools with a completed call declared to reach only the sandbox service their server fronts or the configured case-memory store (each said as declared, a named mode being only ever a declaration's), or reference data they refresh; each tool with its declared when",
+   "basis": ["effects row network, when, completed"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whole"
+   ],
+   "text_digest": "ce3edd7a71607fd4dca82566943b520630c33423f5054ab893aa55b11d51f88f"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_REACHES",
+   "condition": "the lead of the lines naming the tools with a completed call that reach the network (network true), one line per origin as network_from records it, or as a row stored before it holds it (network_from): declared; taken, as a tool declared to send the hash out or taken to send the file out (built rows the cautious answer forced); taken (a stored row whose network sits beside a sent hash or file, or that records no origin); stated by its server's own declaration its block does not trust; said by its server's own hint",
+   "basis": ["effects row network, network_from, network_by, third_party, completed"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whole",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_row_reaching_the_network_with_no_recorded_origin_is_taken",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_where_a_network_answer_came_from_and_the_offline_condition_are_built_from_the_entry"
+   ],
+   "text_digest": "cfbc1df3986c1dea8ed0a437d04cc4cdd784eedba76bdc2ac9f10acb6da8f014"
   },
   {
    "constant": "malspark.analysis.tool_effects:_UNDECLARED_EXECUTES",
@@ -50,14 +65,14 @@
    "text_digest": "29c9b2bd37fdfa31a7c2e29b76b9f996b0dc09399994caf2f1820de113efef24"
   },
   {
-   "function": "malspark.analysis.tool_effects:_by_hint_only",
-   "condition": "beside a tool in the reached-the-network line when its network answer is its server's own declaration its block does not trust, or its server's openWorldHint; nothing for a declared answer",
-   "basis": ["effects row network_by"],
+   "function": "malspark.analysis.tool_effects:_hint_closed",
+   "condition": "beside a tool in a line on reaching the network whose server's own openWorldHint is false: that the hint says it does not reach outside its server; nothing otherwise",
+   "basis": ["effects row hints.openWorldHint"],
    "test": [
-    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_network_answered_by_the_server_s_own_word_says_whose_word_it_is",
-    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it"
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_network_answer_is_said_in_the_voice_of_where_it_came_from",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whole"
    ],
-   "text_digest": "1cff3ac229f25bb31f901b77afb0d5bbe3c50b2bf58fdd4f27d35729dd31407c"
+   "text_digest": "7016f4738dc9e3dbb94ef4921c6972b71f24491a95202d5e22a7644429cceec0"
   },
   {
    "function": "malspark.analysis.tool_effects:_label",
@@ -78,6 +93,17 @@
     "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it"
    ],
    "text_digest": "222dffb3b2014c6c1d40e2e814a489cac9c03e0172969ca3f66682ee6cce032a"
+  },
+  {
+   "function": "malspark.analysis.tool_effects:_offline",
+   "condition": "beside a tool in a line on reaching the network or on sending the hash whose declaration says it answers offline when given no credentials: that declaration, as declared; nothing otherwise",
+   "basis": ["effects row offline_without_credentials"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_network_answer_is_said_in_the_voice_of_where_it_came_from",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whole",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_where_a_network_answer_came_from_and_the_offline_condition_are_built_from_the_entry"
+   ],
+   "text_digest": "8e878d9708f90639e76ab52c117220111ed5623e92ef9d18ab62d734ca48ee29"
   },
   {
    "function": "malspark.analysis.tool_effects:_read_note",
@@ -101,14 +127,17 @@
   },
   {
    "function": "malspark.analysis.tool_effects:effects_lines",
-   "condition": "the tool effects block of the served report's Appendix B for a disclosure record with an effects part: the line that the part may be incomplete where a partial reason is recorded; that no tool call was recorded; or, for tools with a completed call, the lines on running the sample's code, sandboxes, the network, the hash and the bytes sent, then the tools declared to do none, server hints and statements, the calls that did not complete, and the questions a declaration leaves open; [] for a record without the part",
-   "basis": ["disclosure.effects partial_reason, tools (each row's counts and declared answers)"],
+   "condition": "the tool effects block of the served report's Appendix B for a disclosure record with an effects part: the line that the part may be incomplete where a partial reason is recorded; that no tool call was recorded; or, for tools with a completed call, the lines on running the sample's code, the sandboxes declared, the network by where each answer came from (_REACHES) and in a named mode (_REACHED), the hash declared sent, the file taken as handed to the sandbox a server fronts or sent out of the deployment, each tool with its declared when and offline condition, then the tools declared to do none, server hints and statements, the calls that did not complete, and the questions a declaration leaves open; [] for a record without the part",
+   "basis": [
+    "disclosure.effects partial_reason, tools (each row's counts, declared answers, network_from, when, offline_without_credentials, hints)"
+   ],
    "test": [
     "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whole",
     "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_part_with_no_call_says_so_and_a_record_without_the_part_says_nothing",
     "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_one_tool_declared_to_do_none_is_counted_in_the_singular"
    ],
-   "text_digest": "566cf67744e9f525b8a12e5964e75071532e62dfc64be59a2343f7c2d1b2fc67"
+   "text_digest": "020a40cfc57fdcb781cae3c39be4b2f63186bbb6822ae54470f60bc8033e9ada"
   }
  ]
 }
