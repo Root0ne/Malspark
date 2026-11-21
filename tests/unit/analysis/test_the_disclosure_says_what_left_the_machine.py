@@ -835,8 +835,10 @@ def test_a_backend_that_declares_neither_an_address_nor_the_process_cannot_be_pl
         "the plugin backend declares neither an address nor that it runs in the process",
     )
     assert (
-        "Case memory: the `plugin` case-memory store; the plugin backend declares neither an "
-        "address nor that it runs in the process, so where its cases went cannot be told."
+        "Case memory: the `plugin` case-memory store, configured as this job's case memory; the "
+        "plugin backend declares neither an address nor that it runs in the process, so where "
+        "it runs cannot be told. This record does not say whether the judge read similar cases "
+        "from it or whether the job filed its case in it."
     ) in disclosure_lines(record)
 
 

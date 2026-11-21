@@ -140,7 +140,8 @@ def test_a_hostile_listing_stays_undeclared() -> None:
     assert d.declaration_for(("mcp:evil", "upload_to_cloud")) is None
     assert d.declaration_for(("mcp:evil", "fake_run")) is None
     record = facts_record("mcp:evil", "upload_to_cloud", declared=d)
-    assert record == {"v": 1}
+    # Nothing declared and nothing read; the record says it read nothing.
+    assert record == {"v": 1, "platform_read": []}
 
 
 def test_a_hostile_listing_is_not_counted_as_observed_nor_declared_safe() -> None:
@@ -257,8 +258,11 @@ def test_a_cautious_claim_is_stored_as_the_server_s_and_moves_no_row() -> None:
     assert effects["server_states"]["kind"] == "submission"
     lines = effects_lines(part)
     assert any(line.startswith("Said of itself by its own server") for line in lines)
-    assert any("by its server's own declaration" in line for line in lines)
-    assert not any("Sent the sample's bytes" in line for line in lines)
+    assert any(
+        line.startswith("Stated by its own server, in a declaration its block does not trust")
+        for line in lines
+    )
+    assert not any("sample's file" in line or "sample's bytes" in line for line in lines)
 
 
 def test_an_untrusted_kind_changes_no_reader_but_the_reuse_veto(

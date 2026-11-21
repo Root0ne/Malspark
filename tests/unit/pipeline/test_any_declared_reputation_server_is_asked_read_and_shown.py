@@ -399,7 +399,7 @@ class TestANamesakeGetsNothing:
     def test_a_server_that_declares_nothing_for_it_gets_nothing(self, installed: Any) -> None:
         installed(_settings(bare={"command": "bare", "enabled": True}))
         entry = _lookup_entry(tool="get_file_report", server="bare", source="mcp:bare")
-        assert entry.facts == {"v": 1}
+        assert entry.facts == {"v": 1, "platform_read": []}
         assert entry.reputation is None and not is_lookup_entry(entry)
 
 
