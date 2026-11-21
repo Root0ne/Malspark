@@ -1035,10 +1035,28 @@ def generation_lines(
         lines.append(
             f"Timeout of {span(call)}: {applied:.0f}s — {larger_of}"
             f"{int(row.get('max_tokens') or 0)} tokens at "
-            f"{float(row.get('tokens_per_second') or 0.0):.2f} tokens/s (prompt read included) "
-            f"× {margin} = {float(row['derived_s']):.0f}s"
+            f"{float(row.get('tokens_per_second') or 0.0):.2f} tokens/s "
+            f"{_prompt_read(generation, row)} × {margin} = {float(row['derived_s']):.0f}s"
         )
     return lines
+
+
+def _prompt_read(generation: Mapping[str, Any], row: Mapping[str, Any]) -> str:
+    """Whether a timeout's single rate takes in the prompt read, as far as the record says.
+
+    The rate a timeout used is not recorded by source; its model's recorded
+    sources are. Where every one of them is the call's wall clock, every
+    answer of the model was timed by it, and so was any rate the timeout
+    could have used. Any other source, or none recorded, cannot tell.
+    """
+    from malspark.llm.generation_rate import WALL_CLOCK_SOURCE
+
+    models = generation.get("models")
+    held = models.get(str(row.get("model") or "")) if isinstance(models, Mapping) else None
+    sources = held.get("sources") if isinstance(held, Mapping) else None
+    if isinstance(sources, list) and sources and all(s == WALL_CLOCK_SOURCE for s in sources):
+        return "(prompt read included)"
+    return "(whether this rate includes the prompt read is not recorded)"
 
 
 def spend_lines(spend: Any) -> list[str]:

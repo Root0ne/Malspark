@@ -1,10 +1,10 @@
-"""The coverage and isolation sentences rest on no tool, server or model by name.
+"""The coverage, isolation and run-summary sentences rest on no tool, server or model by name.
 
 Each sentence of these parts says what the platform read and what that reading
 gave, under a condition read from the record's own fields. Neither the words
 nor the conditions that choose them, nor the record entries that state those
 conditions, name a tool server, a provider or a model family; and no code of
-the modules reads an entry's tool by a tool's name (T-817, T-818).
+the modules reads an entry's tool by a tool's name (T-817, T-818, T-819).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from tests.tool_name_reads import findings
 
-from malspark.analysis import coverage, isolation
+from malspark.analysis import coverage, isolation, run_summary
 from malspark.core.builtin_declarations import builtin_server_names, provider_names
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -55,6 +55,7 @@ PARTS = {
             "isolation_lines",
         ],
     ),
+    "run_summary": (run_summary, [], ["generation_lines", "_prompt_read"]),
 }
 
 
