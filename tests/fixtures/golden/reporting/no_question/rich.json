@@ -798,6 +798,11 @@
      "address": "185.220.101.5",
      "asn": null,
      "file_only_processes": [],
+     "flow_reading": {
+      "part_views": [],
+      "processes": [],
+      "unnamed": 0
+     },
      "geo": null,
      "is_suspicious": false,
      "kept_by": [],

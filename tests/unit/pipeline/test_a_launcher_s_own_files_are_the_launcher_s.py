@@ -566,7 +566,7 @@ class TestNoHostAboveTheSampleSProcess:
         report = _report(_one_task(task))
         answer = _answer(report, "ip", ADDRESS)
         assert answer.startswith(
-            "no: the sandbox report says it was made by a script host naming the launcher, "
+            "no: the publish rule found a flow to it made by a script host naming the launcher, "
             "whose attribution is not established (powershell.exe (procid 84))"
         )
         # The decision is the one the address had without the host named: no
@@ -576,10 +576,10 @@ class TestNoHostAboveTheSampleSProcess:
         assert row.launcher_unsettled_processes == ["powershell.exe (procid 84)"]
         row.launcher_unsettled_processes = []
         unnamed = _answer(report, "ip", ADDRESS)
-        assert unnamed.startswith("no: the sandbox report does not say which process made")
+        assert unnamed.startswith("no: the publish rule found a flow to it made by")
         assert not publishes(answer) and not publishes(unnamed)
 
-    def test_an_address_another_process_also_reached_names_no_host(self) -> None:
+    def test_an_address_another_process_also_reached_is_not_put_on_the_host(self) -> None:
         from tests.unit.reporting.test_traffic_another_process_made_is_not_the_sample_s import (
             _answer,
             _report,
@@ -595,7 +595,12 @@ class TestNoHostAboveTheSampleSProcess:
         report = _report(_one_task(task))
         (row,) = [ip for ip in report.network.ips if ip.address == ADDRESS]
         assert row.launcher_unsettled_processes == []
-        assert "script host naming the launcher" not in _answer(report, "ip", ADDRESS)
+        # What the rule read in each flow is said; the other flow keeps its number.
+        assert _answer(report, "ip", ADDRESS) == (
+            "no: the publish rule found flows to it made by a process the report does not list "
+            "(procid 36) and by a script host naming the launcher, whose attribution is not "
+            "established (powershell.exe procid 84), and no model kept it as an indicator"
+        )
 
     def test_a_page_of_the_view_names_no_host(self) -> None:
         import json

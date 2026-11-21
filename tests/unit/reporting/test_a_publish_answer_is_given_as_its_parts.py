@@ -162,8 +162,8 @@ FORMS: list[tuple[str, str, str, str, dict[str, Any], tuple[str, ...], tuple[str
         "ip",
         "172.217.76.94",
         "sandbox",
-        {"unattributed": S.UNATTRIBUTED_FLOW, "listed_by": LISTER},
-        (S.UNATTRIBUTED_FLOW, S.JUDGE_DID_NOT_KEEP),
+        {"unattributed": S.FLOW_NOT_PLACED, "listed_by": LISTER},
+        (S.FLOW_NOT_PLACED, S.JUDGE_DID_NOT_KEEP),
         (LISTING,),
     ),
     (
@@ -171,8 +171,8 @@ FORMS: list[tuple[str, str, str, str, dict[str, Any], tuple[str, ...], tuple[str
         "ip",
         "172.217.76.95",
         "sandbox",
-        {"unattributed": S.UNATTRIBUTED_FLOW, "mentioned_by": MENTIONERS},
-        (S.UNATTRIBUTED_FLOW, S.NO_MODEL_KEPT),
+        {"unattributed": S.FLOW_NOT_PLACED, "mentioned_by": MENTIONERS},
+        (S.FLOW_NOT_PLACED, S.NO_MODEL_KEPT),
         (f"{MENTIONERS} mentions it and does not keep it",),
     ),
     (
@@ -180,8 +180,8 @@ FORMS: list[tuple[str, str, str, str, dict[str, Any], tuple[str, ...], tuple[str
         "ip",
         "45.77.10.18",
         "sandbox",
-        {"unattributed": S.UNATTRIBUTED_FLOW, "untold": NOT_ASKED_IN_TIME, "listed_by": LISTER},
-        (S.UNATTRIBUTED_FLOW, NOT_ASKED_IN_TIME),
+        {"unattributed": S.FLOW_NOT_PLACED, "untold": NOT_ASKED_IN_TIME, "listed_by": LISTER},
+        (S.FLOW_NOT_PLACED, NOT_ASKED_IN_TIME),
         (f"{LISTER} lists it",),
     ),
     (
@@ -190,13 +190,13 @@ FORMS: list[tuple[str, str, str, str, dict[str, Any], tuple[str, ...], tuple[str
         "45.77.10.20",
         "sandbox",
         {
-            "unattributed": S.UNATTRIBUTED_FLOW,
+            "unattributed": S.FLOW_NOT_PLACED,
             "untold": NOT_ASKED_IN_TIME,
             "recovered": TWO_PLACES,
             "verdict": "Benign",
             "listed_by": LISTER,
         },
-        (S.UNATTRIBUTED_FLOW, NOT_ASKED_IN_TIME, f"{TWO_PLACES}{BENIGN}"),
+        (S.FLOW_NOT_PLACED, NOT_ASKED_IN_TIME, f"{TWO_PLACES}{BENIGN}"),
         (f"{LISTER} lists it",),
     ),
     (
@@ -205,12 +205,12 @@ FORMS: list[tuple[str, str, str, str, dict[str, Any], tuple[str, ...], tuple[str
         "45.77.10.21",
         "sandbox",
         {
-            "unattributed": S.UNATTRIBUTED_FLOW,
+            "unattributed": S.FLOW_NOT_PLACED,
             "recovered": TWO_PLACES,
             "verdict": "Benign",
             "listed_by": LISTER,
         },
-        (S.UNATTRIBUTED_FLOW, S.JUDGE_DID_NOT_KEEP, f"{TWO_PLACES}{BENIGN}"),
+        (S.FLOW_NOT_PLACED, S.JUDGE_DID_NOT_KEEP, f"{TWO_PLACES}{BENIGN}"),
         (LISTING,),
     ),
     (
@@ -219,12 +219,12 @@ FORMS: list[tuple[str, str, str, str, dict[str, Any], tuple[str, ...], tuple[str
         "45.77.10.22",
         "sandbox",
         {
-            "unattributed": S.UNATTRIBUTED_FLOW,
+            "unattributed": S.FLOW_NOT_PLACED,
             "recovered": TWO_PLACES,
             "verdict": "Benign",
             "mentioned_by": MENTIONERS,
         },
-        (S.UNATTRIBUTED_FLOW, S.NO_MODEL_KEPT, f"{TWO_PLACES}{BENIGN}"),
+        (S.FLOW_NOT_PLACED, S.NO_MODEL_KEPT, f"{TWO_PLACES}{BENIGN}"),
         (f"{MENTIONERS} mentions it and does not keep it",),
     ),
     (
@@ -242,7 +242,7 @@ FORMS: list[tuple[str, str, str, str, dict[str, Any], tuple[str, ...], tuple[str
         "www.google.com",
         "sandbox",
         {
-            "unattributed": S.UNATTRIBUTED_FLOW,
+            "unattributed": S.FLOW_NOT_PLACED,
             "in_published_url": "https://www.google.com/a;jsessionid=1,2",
             "listed_by": LISTER,
         },
@@ -291,7 +291,7 @@ def _combinations() -> list[tuple[str, Any]]:
     each why among them, and the one-part forms of the other branches."""
     out: list[tuple[str, Any]] = []
     whys = {
-        "flow": S.UNATTRIBUTED_FLOW,
+        "flow": S.FLOW_NOT_PLACED,
         "long": LONG_WHY,
         "lineage": LINEAGE,
         "three": THREE_LEVELS,
@@ -440,18 +440,18 @@ class TestTheWriterGivesParts:
         )
 
     def test_the_listing_form_states_the_judge_s_test_with_its_why(self) -> None:
-        answer = S.not_kept_reason(S.UNATTRIBUTED_FLOW, "", LISTER)
+        answer = S.not_kept_reason(S.FLOW_NOT_PLACED, "", LISTER)
 
-        assert answer == f"no: {S.UNATTRIBUTED_FLOW}, and {S.JUDGE_DID_NOT_KEEP}; {LISTING}"
+        assert answer == f"no: {S.FLOW_NOT_PLACED}, and {S.JUDGE_DID_NOT_KEEP}; {LISTING}"
 
     def test_an_unlisted_row_keeps_its_mentioners_bracket_after_its_keep_test(self) -> None:
-        answer = S.not_kept_reason(S.UNATTRIBUTED_FLOW, MENTIONERS)
+        answer = S.not_kept_reason(S.FLOW_NOT_PLACED, MENTIONERS)
 
         assert answer == (
-            f"no: {S.UNATTRIBUTED_FLOW}, and no model kept it as an indicator "
+            f"no: {S.FLOW_NOT_PLACED}, and no model kept it as an indicator "
             f"({MENTIONERS} mentions it and does not keep it)"
         )
-        assert answer_state(answer) == f"no: {S.UNATTRIBUTED_FLOW}, and {S.NO_MODEL_KEPT}"
+        assert answer_state(answer) == f"no: {S.FLOW_NOT_PLACED}, and {S.NO_MODEL_KEPT}"
 
     def test_the_withheld_form_keeps_the_verdict_first_and_the_evidence_as_a_fact(self) -> None:
         answer = S.publish_answer("domain", "c2.example.com", "sandbox", verdict="Benign")
@@ -701,8 +701,8 @@ class TestTheRestatement:
         assert not _states_publish_state(f" (publish state: {FACT}) then.".lower(), answer)
 
     def test_two_refusing_parts_restated_in_another_order_pass(self) -> None:
-        answer = S.not_kept_reason(S.UNATTRIBUTED_FLOW, "", LISTER)
-        written = f" ({S.JUDGE_DID_NOT_KEEP}; {S.UNATTRIBUTED_FLOW}) during the run."
+        answer = S.not_kept_reason(S.FLOW_NOT_PLACED, "", LISTER)
+        written = f" ({S.JUDGE_DID_NOT_KEEP}; {S.FLOW_NOT_PLACED}) during the run."
 
         assert _states_publish_state(written.lower(), answer)
 

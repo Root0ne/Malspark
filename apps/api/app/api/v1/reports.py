@@ -111,7 +111,7 @@ async def _detail(svc: ReportService, report: Any) -> ReportDetailResponse:
     reading = (report.run_summary or {}).get("verdict_reading")
     if isinstance(reading, str) and reading:
         detail = detail.model_copy(update={"verdict_reading": reading})
-    served = with_source_servers(report.malware_report)
+    served = with_source_servers(await svc.served_document(report))
     # The IOC table the console draws is the one /iocs serves, rebuilt by the
     # current rule; a report stored before its MISP attributes were built has
     # them built, and is told its STIX bundle is the one stored.

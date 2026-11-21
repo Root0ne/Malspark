@@ -5883,7 +5883,16 @@ is assembled from what the run gathered rather than recomputed beside it:
   to it names a process the report does not list), and the `no:` names it
   ("made by a process the report does not list", "made by the launcher's
   process", …); the row stays in the sandbox document and the ledger as
-  recorded. A disputed
+  recorded. An address none of whose flows the rule placed in the sample's
+  tree says what the rule read in the flow rows to it (`flow_reading`, set by
+  the projection, absent on a report stored before it): no flow row, flow
+  rows it read no process id from, the processes it found the flows made by
+  and the ones the other flows name by id that it did not place, each number
+  under the field its row holds it in, a flow read in two views said once, a
+  view read as a part said so. A report stored without the reading takes the
+  words from its job's stored network entries when served, its decisions as
+  stored; with no entries at hand it says "the publish rule placed no flow
+  to it inside the sample's process tree". A disputed
   row, like any unattributed one, is published only when the judge keeps it
   after being asked once with the sandbox's fact: the verdict's own question
   names each judge indicator on such a value with the fact beside it
@@ -5979,16 +5988,18 @@ is assembled from what the run gathered rather than recomputed beside it:
   the capture's renderer (`ledger_projection.address_flow_facts`): the view
   projected as the report's network block is, the address looked up in its
   flow rows (`FLOW_ROWS`), and said as the publish rule says it
-  (`stix_renderer.address_flow_reason`: the processes it names, those the
-  report does not list, or that it does not say which process made the
-  flows), as a flow of the sample's process tree, or as "no flow row of the
-  sandbox's network view holds it", whatever a DNS answer or the host list
-  holds. A view not read whole (a page, a bounded or shortened answer, a
+  (`stix_renderer.address_flow_reason`: what the rule read in the flow rows
+  to it, `NetworkIP.flow_reading`), as a flow of the sample's process tree,
+  or as "no flow row of the sandbox's network view holds it", whatever a DNS
+  answer or the host list holds. A view not read whole (a page, a bounded or shortened answer, a
   truncated entry, or any of several answers being one) says nothing of any
   address; a value that does not parse as an address gets no words. The
   conversations shown are chosen as without the words, by their own sizes;
-  the words are then added conversation by conversation, in order, while the
-  room lasts. A bounded pack is laid out at the sizes its lines have without
+  the words are then added in two passes while the room lasts: first,
+  conversation by conversation in order, the words that hold no list of
+  processes; then, in order, each list of the processes the rule read
+  (`stix_renderer.address_flow_words`), so a longer list never takes a
+  later conversation's words. A bounded pack is laid out at the sizes its lines have without
   such words (the capture line's, the behaviour links' words on a value's
   process, said there as `process not attributed`, and on the start path):
   the entries shown, the trailer's count and every cut are that layout's at

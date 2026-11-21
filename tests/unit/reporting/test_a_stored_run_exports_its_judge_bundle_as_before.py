@@ -138,7 +138,13 @@ STORED_EXPORTS = {
 # The Markdown and HTML re-pinned when a host row no record of which the publish rule could
 # place came to say what the rule found (T-782d): each such digest row in §9's table is the
 # only change; the STIX did not change.
-HAIKU4_RENDERS = ("64a6d2dbc8cc5192", "0b089fe43342fed0", "ff5607de575fb489")
+# The Markdown and HTML re-pinned when a sandbox address row's refusal came to say what the
+# publish rule read in the flow rows to it, under one subject for every network row (T-811):
+# read from its stored file, each such row with no reading prints "the publish rule placed no
+# flow to it inside the sample's process tree" and each disputed one "the publish rule found a
+# flow to it made by …", wherever the row's answer or its context cell prints. Those are the
+# only changes; the STIX did not change.
+HAIKU4_RENDERS = ("f88ced7497602dba", "67103871f33ceba0", "ff5607de575fb489")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

@@ -34,6 +34,7 @@ from malspark.reporting.models import (
     SampleIdentity,
 )
 from malspark.reporting.renderers.stix_renderer import (
+    FLOW_NOT_PLACED,
     JUDGE_KEPT_WHEN_TOLD,
     JUDGE_NOT_ASKED_IN_TIME,
     JUDGE_QUESTION_NOT_RECORDED,
@@ -92,7 +93,10 @@ class TestTheQuestion:
 
         assert found.code == UNATTRIBUTED_INDICATOR_CODE
         assert GUEST in found.message
-        assert "does not say which process made the flows to it" in found.message
+        assert FLOW_NOT_PLACED in found.message
+        assert "The publish rule does not count it as the sample's own observation." in (
+            found.message
+        )
         assert found.subject == f"ip:{GUEST}"
 
     def test_an_address_the_sample_reached_is_not_asked_about(self) -> None:
@@ -390,7 +394,7 @@ class TestThePipelineReadsTheFacts:
         facts = judge_sandbox_facts([entry], None, None)
 
         assert facts is not None
-        assert "does not say which process made the flows to it" in facts("ip", GUEST)
+        assert facts("ip", GUEST) == "the publish rule read no process id from the flow to it"
         assert facts("domain", NAME) == ""
 
     def test_no_network_record_asks_nothing(self) -> None:

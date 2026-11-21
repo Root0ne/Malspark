@@ -23,7 +23,6 @@ import pytest
 
 from malspark.pipeline import triage_pack
 from malspark.reporting import ledger_projection
-from malspark.reporting.renderers.stix_renderer import UNATTRIBUTED_FLOW, made_by_reason
 from malspark.schemas.evidence import build_entry
 from malspark.tools import pcap
 
@@ -34,6 +33,11 @@ SILENT = "198.51.100.4"
 ADDRESSES = (TREE, UNLISTED, NO_ROW, SILENT)
 # A flow row naming a process the task does not list, as the reader writes one.
 UNLISTED_ROW = {"platform_process": "46", "process_not_listed": True}
+# What the publish rule says of each, by what it read in the flow rows to it.
+UNLISTED_WORDS = (
+    "the publish rule found a flow to it made by a process the report does not list (procid 46)"
+)
+SILENT_WORDS = "the publish rule read no process id from the flow to it"
 
 
 def _capture(*addresses: str) -> dict[str, Any]:
@@ -107,11 +111,10 @@ class TestEachConversation:
         assert said.endswith(f"; {ledger_projection.SAMPLE_TREE_FLOW}")
 
     def test_a_process_the_report_does_not_list_is_named_as_the_rows_name_it(self) -> None:
-        said = made_by_reason({"unlisted": ["procid 46"]})
-        assert _rows(_capture_line(_view()))[UNLISTED].endswith(f"; {said}")
+        assert _rows(_capture_line(_view()))[UNLISTED].endswith(f"; {UNLISTED_WORDS}")
 
-    def test_a_flow_row_naming_no_process_says_the_report_does_not_say(self) -> None:
-        assert _rows(_capture_line(_view()))[SILENT].endswith(f"; {UNATTRIBUTED_FLOW}")
+    def test_a_flow_row_naming_no_process_says_what_the_rule_read(self) -> None:
+        assert _rows(_capture_line(_view()))[SILENT].endswith(f"; {SILENT_WORDS}")
 
 
 class TestTheWordsSayWhatWasRead:
@@ -132,7 +135,10 @@ class TestTheWordsSayWhatWasRead:
         self,
     ) -> None:
         network = {"tcp": [{"dst": UNLISTED, **UNLISTED_ROW}, {"dst": UNLISTED}]}
-        assert _rows(_capture_line(_view(network)))[UNLISTED].endswith(f"; {UNATTRIBUTED_FLOW}")
+        assert _rows(_capture_line(_view(network)))[UNLISTED].endswith(
+            "; the publish rule found a flow to it made by a process the report does not list "
+            "(platform_process 46) and read no process id from its other flow"
+        )
 
     @pytest.mark.parametrize("value", ["c2.example.test", "12345", f"{NO_ROW}:53", "not an ip"])
     def test_a_value_that_does_not_parse_as_an_address_gets_no_words(self, value: str) -> None:

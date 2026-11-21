@@ -98,4 +98,4 @@ def test_a_refusal_longer_than_the_bound_is_asked_whole() -> None:
 
     (found,) = unattributed_indicator_violations(bundle, facts)
 
-    assert f" and {said}: " in found.message
+    assert f" and {said}. " in found.message

@@ -224,7 +224,7 @@ class TestTheBackgroundAddresses:
         assert str(resolver.published).startswith(
             "no: a public DNS resolver, which this run never publishes, whoever names it"
         )
-        assert "; the sandbox report does not say" in str(resolver.published)
+        assert "; the publish rule read no process id from" in str(resolver.published)
         # The two claims that called it noise are named, and keep nothing.
         assert "a claim by the network analyst" in str(resolver.published)
         assert "a claim by the static_qu1cksc0pe analyst" in str(resolver.published)

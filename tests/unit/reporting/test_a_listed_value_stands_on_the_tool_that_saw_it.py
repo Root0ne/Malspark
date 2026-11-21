@@ -109,7 +109,9 @@ class TestTheCaptureIsASandboxView:
         assert report.network is not None
         (ip,) = report.network.ips
         assert (ip.address, ip.source, ip.sample_process_tree) == (CAPTURED, "sandbox", None)
-        assert _published(report, CAPTURED).startswith("no: the sandbox report does not say")
+        assert _published(report, CAPTURED).startswith(
+            "no: the publish rule found no flow row to it"
+        )
 
     def test_a_tls_name_is_a_name_the_sandbox_saw(self) -> None:
         report = _build([_capture()], {})
@@ -122,8 +124,8 @@ class TestTheCaptureIsASandboxView:
 
         # The judge's test refuses it beside the sandbox's fact; the listing is a fact (T-782b).
         assert answer.startswith(
-            "no: the sandbox report does not say which process made the flows to it, and the "
-            "judge did not keep it as an indicator; an artifact of the network analyst lists it"
+            "no: the publish rule found no flow row to it, and the judge did not keep it as an "
+            "indicator; an artifact of the network analyst lists it"
         )
         assert "named only" not in answer
 

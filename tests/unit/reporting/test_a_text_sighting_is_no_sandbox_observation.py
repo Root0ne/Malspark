@@ -256,7 +256,7 @@ class TestAStoredReportsCaptureHeldValue:
 
         # The judge's test refuses it beside the sandbox's fact; the listing is a fact (T-782b).
         assert answer.startswith(
-            "no: the sandbox report does not say which process made the flows to it, and the "
+            "no: the publish rule placed no flow to it inside the sample's process tree, and the "
             "judge did not keep it as an indicator; an artifact of the network analyst lists it"
         )
 

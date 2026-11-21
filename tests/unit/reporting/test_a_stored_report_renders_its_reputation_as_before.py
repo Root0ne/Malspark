@@ -149,11 +149,17 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # The Markdown and HTML re-pinned when every clause of a strings refusal came to name its
 # finding as the publish rule's and its row by what the row records (T-782c): the one such
 # path row, in the strings table and in §9's table, is the only change. The STIX did not change.
+# The Markdown and HTML re-pinned when a sandbox address row's refusal came to say what the
+# publish rule read in the flow rows to it, under one subject for every network row (T-811):
+# read from its stored file, each such row with no reading prints "the publish rule placed no
+# flow to it inside the sample's process tree" and each disputed one "the publish rule found a
+# flow to it made by …", wherever the row's answer or its context cell prints. Those are the
+# only changes; the STIX did not change.
 STORED_RENDERS = {
-    "run7": ("d369c9b6dd6637e8", "fcfdb48e546dd330", "af1240b0f29bfd9c"),
-    "run5": ("3553ba8ab6266a80", "636abe4bd0e8350d", "2e717357e24fbfe2"),
-    "run4": ("46f38f2d9beec731", "3ab7961426fc665b", "0a90e4edd679e2be"),
-    "local8": ("0f7fadddc744670f", "ca68f7add4579ed4", "75d022862e3237de"),
+    "run7": ("c4ae175f45f8c7a8", "e62618ce13a05d2e", "af1240b0f29bfd9c"),
+    "run5": ("94143f0e9b75f230", "a50eee57a3b2250f", "2e717357e24fbfe2"),
+    "run4": ("63ed48679c51edcf", "2497a07295eb3770", "0a90e4edd679e2be"),
+    "local8": ("e717bf445cf99451", "c8d40b000da0aa2c", "75d022862e3237de"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

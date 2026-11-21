@@ -9549,9 +9549,10 @@ def flow_voice_violations(
     cites no sandbox entry; one that also cites an entry that is not a sandbox
     observation (``tools`` names the tool behind each id), since every
     statement of an observed step is one the sandbox watched; and one that
-    names an address or a host the sandbox attributes no flow of the sample
-    to (``flow_fact``, :func:`reporting.evidence_bundles.sample_flow_fact`),
-    since a network step is observed for its own value. ``observed_item``
+    names an address or a host the sandbox has a fact about (``flow_fact``,
+    :func:`reporting.evidence_bundles.sample_flow_fact`), since a network
+    step is observed for its own value: the message carries each fact and
+    the rule for a network step, and asserts nothing of its own. ``observed_item``
     says whether a cited sandbox item id is an observation
     (``evidence_bundles.sandbox_item_observation``): an item is cited as the
     sandbox answer holding it is.
@@ -9594,16 +9595,19 @@ def flow_voice_violations(
                     f"{safe_finding_value(value)}: {safe_finding_value(said)}"
                     for value, said in unreached
                 )
+                named = (
+                    "a network value with this fact"
+                    if len(unreached) == 1
+                    else "network values with these facts"
+                )
                 out.append(
                     Violation(
                         code=FLOW_VOICE_CODE,
                         message=(
-                            f"step {safe_finding_value(order)} is marked observed and names a "
-                            "network value the "
-                            f"sandbox attributes no flow of the sample to ({facts}). A network "
-                            "step is observed only for a value the sample's own process tree "
-                            "reached. Mark the step assessed, or leave the value out of the "
-                            "observed step."
+                            f"step {safe_finding_value(order)} is marked observed and names "
+                            f"{named} ({facts}). A network step is observed only for a value the "
+                            "sample's own process tree reached. Mark the step assessed, or leave "
+                            "the value out of the observed step."
                         ),
                         path=f"steps.{index}.voice",
                     )
@@ -18065,7 +18069,7 @@ UNATTRIBUTED_INDICATOR_CODE = "stix.indicator_unattributed_flow"
 def unattributed_indicator_violations(
     bundle: Any, facts: Callable[[str, str], str] | None
 ) -> list[Violation]:
-    """Indicators that name a value the sandbox attributes no flow of the sample to.
+    """Indicators that name a value the publish rule does not count as the sample's observation.
 
     ``facts`` is ``(kind, value) -> the sandbox's fact`` for a value the
     sandbox recorded and did not attribute to the sample's process tree, and
@@ -18137,12 +18141,10 @@ def unattributed_indicator_violations(
                     message=(
                         f"the indicator {name!r} names {safe_finding_value(value.value)!r}"
                         + (f", its host {safe_finding_value(host)!r}," if host else "")
-                        + f" and {safe_finding_value(said, whole=True)}: the publish rule found "
-                        "no flow of the sample's tree to it, and without one it is the analysis "
-                        "machine's own "
-                        "traffic. Keep the indicator only if this run's evidence shows the "
-                        "sample itself reached it, and cite that entry in the indicator's "
-                        "description; otherwise remove the indicator."
+                        + f" and {safe_finding_value(said, whole=True)}. The publish rule does not "
+                        "count it as the sample's own observation. Keep the indicator only if "
+                        "this run's evidence shows the sample itself reached it, and cite that "
+                        "entry in the indicator's description; otherwise remove the indicator."
                     ),
                     path=f"objects.{subject}",
                     subject=subject,

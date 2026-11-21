@@ -37,6 +37,13 @@ HOST = "crl.example.test"
 # A flow row naming a process the task does not list, as the reader writes one.
 UNLISTED_ROW = {"platform_process": "46", "process_not_listed": True}
 UNLISTED_WORDS = "a process the report does not list (procid 46)"
+# What the rule read in an unlisted flow beside one naming no process.
+UNLISTED_AND_NONE = (
+    "the publish rule found a flow to it made by a process the report does not list "
+    "(platform_process 46) and read no process id from its other flow"
+)
+# Every flow to the address named by a process the report does not list.
+UNLISTED_ONLY = "the publish rule found a flow to it made by " + UNLISTED_WORDS
 
 
 def _network(**kinds: Any) -> dict[str, Any]:
@@ -139,7 +146,7 @@ def _capture_words(report: dict[str, Any], address: str) -> str:
     entry = _entry("sandbox_network", view, 3)
     facts = ledger_projection.address_flow_facts([entry], normalised_by=None)
     assert facts is not None
-    return facts(address)
+    return facts(address)[1]
 
 
 class TestOneDecisionWithThePublishRule:
@@ -149,10 +156,10 @@ class TestOneDecisionWithThePublishRule:
         report = _network(tcp=[{"dst": ADDRESS, **UNLISTED_ROW}, {"dst": ADDRESS}])
         answer = bc.link_behaviour_to_code(report, None, _strings_of(ADDRESS))
         assert _link(answer, ADDRESS)["attribution"] == bc.NOT_ATTRIBUTED
-        assert _publish_rule(report, ADDRESS) == sr.UNATTRIBUTED_FLOW
-        assert _capture_words(report, ADDRESS) == sr.UNATTRIBUTED_FLOW
+        assert _publish_rule(report, ADDRESS) == UNLISTED_AND_NONE
+        assert _capture_words(report, ADDRESS) == UNLISTED_AND_NONE
         line, _cells = _line_and_cells(answer)
-        assert UNLISTED_WORDS not in line
+        assert UNLISTED_AND_NONE not in line
 
     def test_an_unlisted_row_beside_one_of_a_listed_process_is_not_called_unlisted(
         self,
@@ -162,13 +169,16 @@ class TestOneDecisionWithThePublishRule:
         )
         answer = bc.link_behaviour_to_code(report, None, _strings_of(ADDRESS))
         assert _link(answer, ADDRESS)["attribution"] == bc.NOT_ATTRIBUTED
-        assert _publish_rule(report, ADDRESS) == sr.UNATTRIBUTED_FLOW
+        assert _publish_rule(report, ADDRESS) == (
+            "the publish rule found flows to it made by a process outside the sample's process "
+            "tree and by a process the report does not list (platform_process 46)"
+        )
 
     def test_every_row_unlisted_is_worded_as_the_publish_rule_on_both_lines(self) -> None:
         report = _network(tcp=[{"dst": ADDRESS, **UNLISTED_ROW}])
         answer = bc.link_behaviour_to_code(report, None, _strings_of(ADDRESS))
         said = _publish_rule(report, ADDRESS)
-        assert said == sr.made_by_reason({"unlisted": ["procid 46"]})
+        assert said == UNLISTED_ONLY
         assert _link(answer, ADDRESS)["attribution"] == said
         assert _capture_words(report, ADDRESS) == said
 
@@ -224,8 +234,8 @@ class TestAValueAtAnAddressTakesTheAddressRow:
             tcp=[{"dst": ADDRESS, **UNLISTED_ROW}, {"dst": ADDRESS}],
         )
         answer = bc.link_behaviour_to_code(report, None, _strings_of(value, ADDRESS))
-        assert _publish_rule_of_the_url(report) == sr.UNATTRIBUTED_FLOW
-        assert _capture_words(report, ADDRESS) == sr.UNATTRIBUTED_FLOW
+        assert _publish_rule_of_the_url(report) == UNLISTED_AND_NONE
+        assert _capture_words(report, ADDRESS) == UNLISTED_AND_NONE
         assert _link(answer, value)["attribution"] == bc.NOT_ATTRIBUTED
         assert _link(answer, ADDRESS)["attribution"] == bc.NOT_ATTRIBUTED
         line, _cells = _line_and_cells(answer)
@@ -244,7 +254,7 @@ class TestAValueAtAnAddressTakesTheAddressRow:
         )
         answer = bc.link_behaviour_to_code(report, None, _strings_of(value, ADDRESS))
         said = _publish_rule_of_the_url(report)
-        assert said == sr.made_by_reason({"unlisted": ["procid 46"]})
+        assert said == UNLISTED_ONLY
         assert _capture_words(report, ADDRESS) == said
         assert _link(answer, value)["attribution"] == said
         assert _link(answer, ADDRESS)["attribution"] == said
@@ -272,8 +282,7 @@ class TestAValueAtAnAddressTakesTheAddressRow:
         )
         answer = bc.link_behaviour_to_code(report, None, _strings_of(URL, ADDRESS))
         assert all(row["value"] != URL for row in answer["links"])
-        said = sr.made_by_reason({"unlisted": ["procid 46"]})
-        assert _link(answer, ADDRESS)["attribution"] == said
+        assert _link(answer, ADDRESS)["attribution"] == UNLISTED_ONLY
 
     def test_an_address_written_with_a_port_takes_its_address_row(self) -> None:
         written = f"{ADDRESS}:8080"
@@ -282,7 +291,7 @@ class TestAValueAtAnAddressTakesTheAddressRow:
             tcp=[{"dst": ADDRESS, **UNLISTED_ROW}],
         )
         answer = bc.link_behaviour_to_code(report, None, _strings_of(written, PATH, "Agent/9.9"))
-        said = sr.made_by_reason({"unlisted": ["procid 46"]})
+        said = UNLISTED_ONLY
         assert _capture_words(report, ADDRESS) == said
         for value in (written, PATH, "Agent/9.9"):
             assert _link(answer, value)["attribution"] == said, value
@@ -319,19 +328,25 @@ class TestThePublishRuleIsUnchanged:
     @pytest.mark.parametrize(
         ("row", "said"),
         [
-            ({"sample_process_tree": None}, sr.UNATTRIBUTED_FLOW),
-            ({"sample_process_tree": False}, sr.FLOW_OUTSIDE_THE_TREE),
+            ({"sample_process_tree": None}, sr.FLOW_NOT_PLACED),
+            (
+                {"sample_process_tree": False},
+                "the publish rule found a flow to it made by a process outside the sample's "
+                "process tree",
+            ),
             (
                 {"sample_process_tree": False, "outside_processes": ["x.exe (procid 7)"]},
-                f"{sr.FLOW_OUTSIDE_THE_TREE} (x.exe (procid 7))",
+                "the publish rule found a flow to it made by a process outside the sample's "
+                "process tree (x.exe (procid 7))",
             ),
             (
                 {"sample_process_tree": None, "unlisted_processes": ["procid 46"]},
-                sr.made_by_reason({"unlisted": ["procid 46"]}),
+                UNLISTED_ONLY,
             ),
             (
                 {"sample_process_tree": False, "unlisted_processes": ["procid 46"]},
-                sr.FLOW_OUTSIDE_THE_TREE,
+                "the publish rule found a flow to it made by a process outside the sample's "
+                "process tree",
             ),
             (
                 {
@@ -343,7 +358,8 @@ class TestThePublishRuleIsUnchanged:
             ),
             (
                 {"sample_process_tree": None, "launcher_unsettled_processes": ["w.exe"]},
-                sr.made_by_reason({"launcher_unsettled": ["w.exe"]}),
+                "the publish rule found a flow to it made by a script host naming the launcher, "
+                "whose attribution is not established (w.exe)",
             ),
             (
                 {
@@ -351,7 +367,7 @@ class TestThePublishRuleIsUnchanged:
                     "launcher_unsettled_processes": ["w.exe"],
                     "unlisted_processes": ["procid 46"],
                 },
-                sr.made_by_reason({"unlisted": ["procid 46"]}),
+                UNLISTED_ONLY,
             ),
         ],
     )

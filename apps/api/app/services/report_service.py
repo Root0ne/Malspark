@@ -624,7 +624,7 @@ class ReportService:
         report_id: uuid.UUID,
         user: User,
     ) -> dict | None:
-        """Return the full ``MalwareReport`` JSON document.
+        """Return the full ``MalwareReport`` JSON document, as served (:meth:`served_document`).
 
         Returns ``None`` when the row exists but predates the feature (the
         column is ``NULL``); the caller distinguishes that from a missing
@@ -633,7 +633,55 @@ class ReportService:
         report = await self.get_report(report_id, user)
         if not report:
             return None
-        return report.malware_report
+        served: dict | None = await self.served_document(report)
+        return served
+
+    async def served_document(self, report: Any) -> Any:
+        """A report row's stored document, its address rows given what the rule read in the flows.
+
+        A document stored before an address row recorded what the publish rule
+        read in the flow rows to it (``NetworkIP.flow_reading``) takes the
+        words of the rule's sentence from the job's stored network entries
+        (``ledger_projection.with_flow_readings``), as the pack's capture line
+        does; every decision stays the stored row's, and nothing stored
+        changes. Where the job's entries cannot be read the document is served
+        as stored, and each such row says what is true without them.
+        """
+        from malspark.reporting.ledger_projection import lacks_flow_readings
+
+        mr = report.malware_report
+        if not lacks_flow_readings(mr):
+            return mr
+        from malspark.reporting.follow_up import stored_ledger
+        from malspark.reporting.ledger_projection import with_flow_readings
+
+        from app.models.evidence import EvidenceEntry
+        from app.schemas.evidence import EvidenceEntryResponse
+
+        try:
+            found = await self.db.execute(
+                select(EvidenceEntry)
+                .where(EvidenceEntry.job_id == report.job_id)
+                .order_by(EvidenceEntry.seq)
+            )
+            orm_rows = list(found.scalars().all())
+        except Exception as exc:  # noqa: BLE001 — the stored document is served as stored
+            logger.warning(
+                "the job's evidence entries could not be read; the report is served as stored "
+                "(%s: %s)",
+                type(exc).__name__,
+                log_safe(exc),
+            )
+            return mr
+
+        def _derive() -> Any:
+            rows = [
+                EvidenceEntryResponse.model_validate(row).model_dump(mode="json", exclude_none=True)
+                for row in orm_rows
+            ]
+            return with_flow_readings(mr, stored_ledger(rows)[0])
+
+        return await asyncio.to_thread(_derive)
 
     async def get_malware_report_markdown(
         self,
@@ -812,7 +860,7 @@ class ReportService:
         report = await self.get_report(report_id, user)
         if report is None or not isinstance(report.malware_report, dict):
             return None
-        mr = report.malware_report
+        mr = await self.served_document(report)
         typed = _typed_report(mr)
         if typed is None:
             return None

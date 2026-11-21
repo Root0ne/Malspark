@@ -328,7 +328,7 @@ from malspark.reporting.renderers.stix_renderer import (
     DECODED_FROM_THE_BYTES_TEMPLATE,
     DECODER_PARTIAL,
     EMULATOR_PARTIAL,
-    FLOW_OUTSIDE_THE_TREE,
+    FLOW_NOT_PLACED,
     JUDGE_KEPT_WHEN_TOLD,
     JUDGE_KEPT_WHEN_TOLD_OF_ITS_HOST,
     JUDGE_NOT_ASKED_IN_TIME,
@@ -337,7 +337,8 @@ from malspark.reporting.renderers.stix_renderer import (
     RECOVERED_BY_EMULATION,
     SEARCHED_THE_REPORT,
     SWEEP_PARTIAL,
-    UNATTRIBUTED_FLOW,
+    UNATTRIBUTED_CAPTURE_VALUE,
+    address_flow_reason,
     disputed_flow_reason,
     judge_not_told,
     judge_only_reason,
@@ -2514,13 +2515,42 @@ PROMPTS: dict[str, str] = {
     ),
     "publish rule reasons for a sandbox row": " ".join(
         [
-            UNATTRIBUTED_FLOW,
-            FLOW_OUTSIDE_THE_TREE,
+            FLOW_NOT_PLACED,
+            UNATTRIBUTED_CAPTURE_VALUE,
+            *(
+                address_flow_reason(row)
+                for row in (
+                    {"sample_process_tree": None, "flow_reading": {}},
+                    {
+                        "sample_process_tree": None,
+                        "flow_reading": {
+                            "processes": [
+                                {"ids": [["procid", "91"], ["pid", "4976"]]},
+                                {
+                                    "ids": [["procid", "12"]],
+                                    "image": "svchost.exe",
+                                    "kind": "outside",
+                                },
+                            ],
+                            "unnamed": 2,
+                            "part_views": [{"detonation": "d2"}, {"cut": True}],
+                        },
+                    },
+                    {"sample_process_tree": None, "flow_reading": {"unnamed": 1}},
+                    {"sample_process_tree": None, "unlisted_processes": ["procid 46"]},
+                    {"sample_process_tree": False, "outside_processes": ["x.exe (procid 7)"]},
+                )
+            ),
             BENIGN_NAME_RESOLVED,
             BENIGN_NAME_IN_A_URL,
             not_kept_reason("x", "a claim by the network analyst"),
             not_kept_reason(
-                f"{FLOW_OUTSIDE_THE_TREE} (SearchHost.exe (procid 104))",
+                address_flow_reason(
+                    {
+                        "sample_process_tree": False,
+                        "outside_processes": ["SearchHost.exe (procid 104)"],
+                    }
+                ),
                 "a claim by the dynamic analyst",
             ),
             disputed_flow_reason(["SearchHost.exe (procid 104)"], ["cmd.exe (procid 7)"]),
@@ -2534,7 +2564,7 @@ PROMPTS: dict[str, str] = {
             RECOVERED_BY_EMULATION,
             not_kept_reason("x", "", "an artifact of the network analyst"),
             public_resolver_reason(
-                UNATTRIBUTED_FLOW, "an artifact of the network analyst", "a claim by the x analyst"
+                FLOW_NOT_PLACED, "an artifact of the network analyst", "a claim by the x analyst"
             ),
             named_only_reason("an artifact of the network analyst"),
             named_only_reason(),

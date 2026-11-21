@@ -317,12 +317,18 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # The Markdown and HTML re-pinned when every clause of a strings refusal came to name its
 # finding as the publish rule's and its row by what the row records (T-782c): the one such
 # path row, in the strings table and in §9's table, is the only change.
+# The Markdown and HTML re-pinned when a sandbox address row's refusal came to say what the
+# publish rule read in the flow rows to it, under one subject for every network row (T-811):
+# read from its stored file, each such row with no reading prints "the publish rule placed no
+# flow to it inside the sample's process tree" and each disputed one "the publish rule found a
+# flow to it made by …", wherever the row's answer or its context cell prints. Those are the
+# only changes.
 STORED_RENDERS = {
-    "run7": ("d369c9b6dd6637e8", "fcfdb48e546dd330"),
-    "run5": ("3553ba8ab6266a80", "636abe4bd0e8350d"),
-    "run4": ("46f38f2d9beec731", "3ab7961426fc665b"),
-    "local8": ("0f7fadddc744670f", "ca68f7add4579ed4"),
-    "haiku4": ("64a6d2dbc8cc5192", "0b089fe43342fed0"),
+    "run7": ("c4ae175f45f8c7a8", "e62618ce13a05d2e"),
+    "run5": ("94143f0e9b75f230", "a50eee57a3b2250f"),
+    "run4": ("63ed48679c51edcf", "2497a07295eb3770"),
+    "local8": ("e717bf445cf99451", "c8d40b000da0aa2c"),
+    "haiku4": ("f88ced7497602dba", "67103871f33ceba0"),
 }
 
 

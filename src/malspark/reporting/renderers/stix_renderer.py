@@ -3524,15 +3524,17 @@ def _section_sightings(report: Any, key: str) -> list[tuple[str, str]]:
     return found
 
 
-def _stored_network_record(report: Any, kind: str, key: str) -> str:
+def _stored_network_record(report: Any, kind: str, key: str, row: Any = None) -> str:
     """The unattributed reason a stored report's network record gives a listed value, or ``""``.
 
     A report stored before the build searched every answer answers such a
     value the way a fresh build does: a capture conversation's or a flow
-    table's address is an unattributed sandbox row, and a name only the
-    capture's TLS list holds is a capture-only name. Only such a report is
-    read here, and it was stored before entries recorded their source, so its
-    sections are read by their tools' names, as an entry with no source is.
+    table's address is an unattributed sandbox row, said by what the rule
+    read in the flow rows to it where ``row`` carries that reading
+    (:func:`unplaced_flow_reason`), and a name only the capture's TLS list
+    holds is a capture-only name. Only such a report is read here, and it was
+    stored before entries recorded their source, so its sections are read by
+    their tools' names, as an entry with no source is.
     """
     if _field(report, "tool_sightings") is not None:
         return ""
@@ -3544,7 +3546,7 @@ def _stored_network_record(report: Any, kind: str, key: str) -> str:
     if kind == "ip" and any(
         tool_kinds.is_of(held, "evidence_bundles._NETWORK_SANDBOX_TOOLS") for held in sighted
     ):
-        return UNATTRIBUTED_FLOW
+        return unplaced_flow_reason(row)
     if kind == "domain" and any(tool_kinds.is_kind(held, "pcap") for held in sighted):
         return CAPTURE_TLS_NAME
     return ""
@@ -3553,7 +3555,7 @@ def _stored_network_record(report: Any, kind: str, key: str) -> str:
 def _listing_kwargs(report: Any, kind: str, key: str, row: Any) -> dict[str, str]:
     """Who listed a row, whether the judge kept it, and where the run's tools saw it."""
     said = kept_kwargs(report, kind, key, row)
-    recorded = _stored_network_record(report, kind, key)
+    recorded = _stored_network_record(report, kind, key, row)
     if recorded:
         said["unattributed"] = recorded
         return _the_judge_s_keep(report, kind, key, said)
@@ -3588,8 +3590,26 @@ TENANT_NAME_IN_A_URL = (
 )
 
 
-# Why a sandbox row is not the sample's own observation, as the rule reports it.
-UNATTRIBUTED_FLOW = "the sandbox report does not say which process made the flows to it"
+# Why a sandbox address row none of whose flows the rule placed in the
+# sample's process tree is not the sample's own observation, by what the rule
+# read in the flow rows to it (``NetworkIP.flow_reading``,
+# :func:`unplaced_flow_reason`). One subject, the publish rule; no "," or ";"
+# outside brackets, so a reader of the clause after a value reads it whole.
+# A row read from a report stored before the reading was recorded, with no
+# network entry of its job at hand, is said by the decision alone. A word for
+# word restatement of each form passes the restatement check (no two words it
+# reads stand more than its gap apart).
+FLOW_NOT_PLACED = "the publish rule placed no flow to it inside the sample's process tree"
+FLOW_RULE = "the publish rule "
+FLOW_NO_ROW = "found no flow row to it"
+FLOW_NO_ID = "read no process id from {flows} to it"
+FLOW_MADE_BY = "found {flows} to it made by {whose}"
+FLOW_MADE_BY_KIND = "{whose} ({processes})"
+FLOW_UNPLACED = "did not place the {processes} {flows} to it {name} by id ({ids})"
+FLOW_OTHER_NO_ID = "read no process id from its other {flows}"
+# Before any of them where a view the rule read is not whole.
+FLOW_PART_READ = "read only part of {views} and "
+FLOW_READ_AS_PART = "read {views} as a part and "
 # A file, a digest, a key or a mutex the sandbox recorded is the sample's own
 # observation when the record names a process of the sample's tree; one that
 # names none, or a process outside it, is the guest's as much as the sample's.
@@ -3639,7 +3659,7 @@ HOST_ROW_OF_THE_TREE = "the sandbox recorded it from the sample's process tree"
 # traffic as much as the sample's, refused the way an unattributed flow is.
 # None is published on its own record, and STIX has no object for one.
 UNATTRIBUTED_CAPTURE_VALUE = (
-    "the sandbox report does not say which process made the traffic it was read from"
+    "the publish rule does not ask which process made the traffic it was read from"
 )
 # The kinds only a capture records.
 CAPTURE_KINDS = frozenset({"user_agent", "ja3", "ja3s"})
@@ -3892,9 +3912,6 @@ def sandbox_host_kwargs(report: Any, kind: str, value: str) -> dict[str, str]:
     return _the_judge_s_keep(report, kind, key, said)
 
 
-FLOW_OUTSIDE_THE_TREE = (
-    "the sandbox report attributes its flows to a process outside the sample's process tree"
-)
 # Whose traffic a name, a URL or an address is where the sandbox names the
 # process that made it and that process is of another lineage than the
 # sample's (``reporting.models.TrafficMakers``): one rule for the three kinds.
@@ -4015,13 +4032,24 @@ FILE_ONLY_PROCESS = FILE_ONLY_PROCESS_TEMPLATE.format(sandbox=LINEAGE_STORED_MAR
 
 
 def disputed_flow_reason(
-    marked_only: list[str], file_only: list[str], marked_by: str | None = None
+    marked_only: list[str],
+    file_only: list[str],
+    marked_by: str | None = None,
+    reading: Any = None,
+    word: Callable[[str], str] = str,
+    *,
+    clause: bool = True,
 ) -> str:
     """Why a row the lineage facts disagree about is not the sample's, both facts said.
 
     ``marked_by`` names the sandbox whose mark the first fact is, as its report
     format declares it; a row stored without it names the one sandbox whose
-    mark such a row could be.
+    mark such a row could be. ``reading`` is what the rule read in the flow
+    rows to the address (``NetworkIP.flow_reading``): with it, the flows the
+    disputed processes made are counted from it, and the other flows to the
+    address are said as :func:`unplaced_flow_reason` says them; without it
+    (a row read from a report stored before the reading), the processes
+    named are counted, one flow each. ``clause`` false leaves the other flows unsaid.
     """
     sandbox = str(marked_by or "").strip() or LINEAGE_STORED_MARKED_BY
     parts = []
@@ -4033,7 +4061,151 @@ def disputed_flow_reason(
         parts.append(
             f"{', '.join(file_only)}, {FILE_ONLY_PROCESS_TEMPLATE.format(sandbox=sandbox)}"
         )
-    return "the sandbox report attributes its flows to " + "; and to ".join(parts)
+    processes = [p for p in _field(reading, "processes") or []] if reading is not None else []
+    disputed = [p for p in processes if _field(p, "kind") == "disputed"]
+    flows = sum(_flows_of(p) for p in disputed) or len(marked_only) + len(file_only)
+    lead = FLOW_RULE + (_part_read(reading) if reading is not None else "")
+    said = lead + FLOW_MADE_BY.format(flows=_flows_word(flows), whose="; and by ".join(parts))
+    if reading is None or not clause:
+        return said
+    rest = _reading_clauses(
+        [p for p in processes if _field(p, "kind") != "disputed"],
+        int(_field(reading, "unnamed") or 0),
+        processes,
+        word,
+        other=True,
+    )
+    return f"{said}, and {' and '.join(rest)}" if rest else said
+
+
+def unplaced_flow_reason(row: Any, word: Callable[[str], str] = str) -> str:
+    """Why the rule placed no flow to a sandbox address row in the sample's tree, by what it read.
+
+    From the row's ``flow_reading``: no flow row to it; flow rows from which
+    it read no process id; the processes it found the flows made by, under
+    each kind (:data:`MADE_BY_WHOM`); the processes the other flows name by
+    id that it did not place; and the flows of which it read no id. Each
+    process by its image (written by ``word``), each number under the field
+    the row holds it under, the task where the flows name more than one, the
+    detonation where the platform's reading names more than the job's own.
+    A row with no reading (one read from a report stored before it was
+    recorded) is said by the decision alone (:data:`FLOW_NOT_PLACED`).
+    """
+    reading = _field(row, "flow_reading")
+    if reading is None:
+        return FLOW_NOT_PLACED
+    processes = list(_field(reading, "processes") or [])
+    unnamed = int(_field(reading, "unnamed") or 0)
+    lead = FLOW_RULE + _part_read(reading)
+    if not processes and not unnamed:
+        return lead + FLOW_NO_ROW
+    if not processes:
+        return lead + FLOW_NO_ID.format(flows=f"the {_flows_noun(unnamed)}")
+    return lead + " and ".join(_reading_clauses(processes, unnamed, processes, word, other=False))
+
+
+def _reading_clauses(
+    said: list[Any], unnamed: int, every: list[Any], word: Callable[[str], str], *, other: bool
+) -> list[str]:
+    """The made-by clause, the not-placed clause and the no-id clause of ``said`` processes.
+
+    ``every`` is each process of the reading, which decides whether tasks and
+    detonations are named; ``other`` that the clauses follow flows already
+    said, so the not-placed processes are the other flows'.
+    """
+    placed = [p for p in said if _field(p, "kind") in MADE_BY_WHOM]
+    unplaced = [p for p in said if _field(p, "kind") not in MADE_BY_WHOM]
+    clauses = []
+    if placed:
+        kinds = []
+        for kind, whose in MADE_BY_WHOM.items():
+            held = [p for p in placed if _field(p, "kind") == kind]
+            names = [n for n in (_flow_process(p, every, word) for p in held) if n]
+            if names:
+                kinds.append(FLOW_MADE_BY_KIND.format(whose=whose, processes=" and ".join(names)))
+            elif held:
+                # Rows the rule placed under the kind that name no process.
+                kinds.append(whose)
+        clauses.append(
+            FLOW_MADE_BY.format(
+                flows=_flows_word(sum(_flows_of(p) for p in placed)), whose=" and by ".join(kinds)
+            )
+        )
+    if unplaced:
+        flows = sum(_flows_of(p) for p in unplaced)
+        if other or placed:
+            whose = "the other flow" if flows == 1 else "the other flows"
+        else:
+            whose = "a flow" if flows == 1 else "the flows"
+        clauses.append(
+            FLOW_UNPLACED.format(
+                processes="processes" if len(unplaced) > 1 else "process",
+                flows=whose,
+                name="names" if flows == 1 else "name",
+                ids=" and ".join(_flow_process(p, every, word) for p in unplaced),
+            )
+        )
+    if unnamed:
+        clauses.append(FLOW_OTHER_NO_ID.format(flows=_flows_noun(unnamed)))
+    return clauses
+
+
+def _flows_of(process: Any) -> int:
+    try:
+        return max(1, int(_field(process, "flows") or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _flows_word(flows: int) -> str:
+    """``a flow`` for one flow, ``flows`` for more: no count is printed."""
+    return "a flow" if flows == 1 else "flows"
+
+
+def _flows_noun(flows: int) -> str:
+    return "flow" if flows == 1 else "flows"
+
+
+def _flow_process(process: Any, every: list[Any], word: Callable[[str], str]) -> str:
+    """One process as the flow rows name it: image, each number by its field, task, detonation."""
+    from malspark.reporting.ledger_projection import FIRST_DETONATION
+
+    said = [f"{name} {number}" for name, number in _field(process, "ids") or []]
+    image = str(_field(process, "image") or "")
+    if image:
+        said.insert(0, word(image))
+    text = " ".join(said)
+    tasks = {str(_field(p, "task") or "") for p in every if _field(p, "ids")}
+    task = str(_field(process, "task") or "")
+    if task and len(tasks) > 1:
+        text += f" of task {word(task)}"
+    detonations = {str(_field(p, "detonation") or "") for p in every} - {""}
+    detonation = str(_field(process, "detonation") or "")
+    if detonation and (len(detonations) > 1 or detonations - {FIRST_DETONATION}):
+        text += f" in detonation {word(detonation)}"
+    return text
+
+
+def _part_read(reading: Any) -> str:
+    """``read only part of … and `` / ``read … as a part and `` for the views read as a part."""
+    views = list(_field(reading, "part_views") or [])
+    said = ""
+    for cut, form in ((False, FLOW_PART_READ), (True, FLOW_READ_AS_PART)):
+        held = [v for v in views if bool(_field(v, "cut")) is cut]
+        if held:
+            said += form.format(views=_views_named(held))
+    return said
+
+
+def _views_named(views: list[Any]) -> str:
+    named = list(dict.fromkeys(str(_field(v, "detonation") or "") for v in views))
+    if named == [""]:
+        return "the network view"
+    if "" in named:
+        return "the network views"
+    if len(named) == 1:
+        return f"detonation {named[0]}'s network view"
+    return f"the network views of detonations {' and '.join(named)}"
 
 
 def _a_tree_flow_reaches(report: Any, row: Any) -> bool:
@@ -4097,7 +4269,7 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
             return said
         if row is None or _field(row, "source") != "sandbox":
             return {}
-        why = made_by_reason(_field(row, "made_by"))
+        why = url_made_by_reason(_field(row, "made_by"))
         if not why or _field(row, "sample_process_tree") is True:
             return {}
     elif kind == "ip":
@@ -4137,29 +4309,55 @@ def address_flow_reason(row: Any, word: Callable[[str], str] = str) -> str:
     The one sentence of what the sandbox's records say of the process behind
     an address none of whose flows the tree made: the processes outside the
     tree it names, the processes its two lineage facts dispute, those the
-    report does not list, a script host naming the launcher, or that it does
-    not say which process made them. The AS fact is the caller's. ``word``
-    writes each process and sandbox name (the IOC table's context cell,
-    ``builder._process_tree_words``, states this same sentence).
+    report does not list, a script host naming the launcher, or what the
+    publish rule read in the flow rows to it (:func:`unplaced_flow_reason`).
+    The AS fact is the caller's. ``word`` writes each process and sandbox
+    name (the IOC table's context cell, ``builder._process_tree_words``,
+    states this same sentence).
     """
     return _address_flow(row, word)[1]
 
 
-def _address_flow(row: Any, word: Callable[[str], str] = str) -> tuple[str, str]:
+def address_flow_words(row: Any) -> tuple[str, str]:
+    """:func:`address_flow_reason` in two passes: its words without the reading's lists, and whole.
+
+    The first is the sentence with no list of the processes the rule read in
+    the flow rows to the address (``NetworkIP.flow_reading``): ``""`` where
+    the sentence is such a list, the disputed sentence without its clause on
+    the other flows, and the whole sentence otherwise. A reader with little
+    room words every value's first part before any value's list
+    (``pipeline.triage_pack._pcap``).
+    """
+    decided, whole = _address_flow(row)
+    reading = _field(row, "flow_reading")
+    if reading is None or _field(row, "sample_process_tree") is not None:
+        return whole, whole
+    if decided == "disputed":
+        return _address_flow(row, clause=False)[1], whole
+    if not decided and _field(reading, "processes"):
+        return "", whole
+    return whole, whole
+
+
+def _address_flow(
+    row: Any, word: Callable[[str], str] = str, *, clause: bool = True
+) -> tuple[str, str]:
     """:func:`address_flow_reason`'s decision, as the ``MADE_BY_WHOM`` kind it names, and sentence.
 
     The kind is ``""`` where the sentence names no process of
-    :data:`MADE_BY_WHOM`'s (the flows' process unsaid, or outside the tree).
+    :data:`MADE_BY_WHOM`'s (no flow placed under a kind, or outside the
+    tree). ``clause`` false leaves out the disputed sentence's clause on the
+    other flows.
     """
     decided = ""
-    why = (
-        FLOW_OUTSIDE_THE_TREE if _field(row, "sample_process_tree") is False else UNATTRIBUTED_FLOW
-    )
     # The process the report says made the flows, by name: the reason a
     # reader can check against the process table.
     made_by = [str(p) for p in (_field(row, "outside_processes") or []) if str(p)]
-    if made_by and _field(row, "sample_process_tree") is False:
-        why += f" ({', '.join(map(word, made_by))})"
+    why = (
+        _address_made_by(row, "outside", made_by, word)
+        if _field(row, "sample_process_tree") is False
+        else unplaced_flow_reason(row, word)
+    )
     marked_only = [str(p) for p in (_field(row, "marked_only_processes") or []) if str(p)]
     file_only = [str(p) for p in (_field(row, "file_only_processes") or []) if str(p)]
     if _field(row, "sample_process_tree") is None and (marked_only or file_only):
@@ -4168,12 +4366,17 @@ def _address_flow(row: Any, word: Callable[[str], str] = str) -> tuple[str, str]
         decided, why = (
             "disputed",
             disputed_flow_reason(
-                [word(name) for name in marked_only], [word(name) for name in file_only], sandbox
+                [word(name) for name in marked_only],
+                [word(name) for name in file_only],
+                sandbox,
+                _field(row, "flow_reading"),
+                word,
+                clause=clause,
             ),
         )
     unlisted = [str(p) for p in (_field(row, "unlisted_processes") or []) if str(p)]
     if _field(row, "sample_process_tree") is None and unlisted and not (marked_only or file_only):
-        decided, why = "unlisted", made_by_reason({"unlisted": unlisted}, word)
+        decided, why = "unlisted", _address_made_by(row, "unlisted", unlisted, word)
     # The report names the process: a script host naming the launcher
     # whose attribution it does not establish. The decision is the
     # unattributed one; the reason names the host.
@@ -4185,9 +4388,49 @@ def _address_flow(row: Any, word: Callable[[str], str] = str) -> tuple[str, str]
     ):
         decided, why = (
             "launcher_unsettled",
-            made_by_reason({"launcher_unsettled": unsettled}, word),
+            _address_made_by(row, "launcher_unsettled", unsettled, word),
         )
     return decided, why
+
+
+def _address_made_by(row: Any, kind: str, names: list[str], word: Callable[[str], str]) -> str:
+    """Why an address whose flows the rule put on one other lineage is not the sample's.
+
+    In the words of the rule's other address sentences: the flows it found
+    made by the ``kind`` of process (:data:`MADE_BY_WHOM`), with the processes
+    the row names (``names``, each written by ``word``). The flows are counted
+    from the row's reading (``NetworkIP.flow_reading``); a row with none counts
+    the processes named, one flow each.
+    """
+    reading = _field(row, "flow_reading")
+    held = [
+        p
+        for p in (_field(reading, "processes") or [] if reading is not None else [])
+        if _field(p, "kind") == kind
+    ]
+    flows = sum(_flows_of(p) for p in held) or max(1, len(names))
+    whose = MADE_BY_WHOM[kind] + (f" ({', '.join(map(word, names))})" if names else "")
+    lead = FLOW_RULE + (_part_read(reading) if reading is not None else "")
+    return lead + FLOW_MADE_BY.format(flows=_flows_word(flows), whose=whose)
+
+
+def url_made_by_reason(makers: Any, word: Callable[[str], str] = str) -> str:
+    """Why a request URL's traffic is not the sample's: its requests, with the processes they name.
+
+    Said as a name's requests are (:func:`name_made_by_reason`), one subject
+    for a name and the URL on it; ``""`` where the records name none.
+    """
+    parts = []
+    for kind, whose in MADE_BY_WHOM.items():
+        named = [str(p) for p in (_field(makers, kind) or []) if str(p)]
+        if named:
+            parts.append(f"{whose} ({', '.join(map(word, named))})")
+    if not parts:
+        return ""
+    more = NAME_MORE if _field(makers, "more") else ""
+    return NAME_COUNTED.format(
+        sources=NAME_SOURCE.format(what=NAME_REQUESTS, whose=" and by ".join(parts)) + more
+    )
 
 
 def unlisted_reasons(network: Any) -> dict[tuple[str, str], str]:
@@ -4249,7 +4492,7 @@ def unlisted_reason(kind: str, row: Any) -> str:
         and _field(made, "unlisted")
         and not any(_field(made, other) for other in others)
     ):
-        return name_made_by_reason(made) if kind == "domain" else made_by_reason(made)
+        return name_made_by_reason(made) if kind == "domain" else url_made_by_reason(made)
     return ""
 
 

@@ -325,6 +325,9 @@ CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
     ("pipeline/validation.py", "cited_id_violations"): frozenset({"said"}),
     # The table's own noun for a row, from the check's constant pairs.
     ("pipeline/validation.py", "start_path_value_violations"): frozenset({"what"}),
+    # The check's own noun for one network value or several, around facts each
+    # wrapped in the helper where the list is built.
+    ("pipeline/validation.py", "flow_voice_violations"): frozenset({"named"}),
     # The command table's row numbers and counts, and the values the platform
     # read from the code as whole numbers, around the code's place, its
     # expression and each row's id, each wrapped in the helper where written.

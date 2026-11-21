@@ -592,6 +592,63 @@ class NetworkDomain(BaseModel):
         return dumped
 
 
+class FlowProcess(BaseModel):
+    """One process the flow rows to an address name, as the publish rule read those rows.
+
+    ``ids`` are the numbers the rows give it, each under the field the row
+    holds it under (``[field, number]``), in the readers' declared order;
+    ``image`` its name where the rows give one as text; ``task`` the task the
+    rows state (``PROCESS_TASK_KEY``). ``detonation`` names the detonation
+    only where the platform's own reading of the view gives it (``d1`` for the
+    job's own, ``d2``… for a further one), else ``""``. ``kind`` is the
+    ``TrafficMakers`` kind the rule placed it under, ``""`` where it placed it
+    under none; ``flows`` how many flow rows name it within one view (the most
+    any one view holds, never a sum over views).
+    """
+
+    model_config = _STRICT_CONFIG
+
+    ids: list[tuple[str, str]] = Field(default_factory=list)
+    image: str = ""
+    task: str = ""
+    detonation: str = ""
+    kind: str = ""
+    flows: int = 1
+
+
+class FlowPartView(BaseModel):
+    """A network view the publish rule read as a part (``FlowReading.part_views``).
+
+    ``detonation`` as in :class:`FlowProcess`; ``cut`` is ``True`` where the
+    entry kept a prefix of its text (``entry_reading.CUT_AS_TEXT``) and the rule
+    read every row the answer holds as a part's, ``False`` where the view itself
+    is a page or a shortened answer.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    detonation: str = ""
+    cut: bool = False
+
+
+class FlowReading(BaseModel):
+    """What the publish rule read in the flow rows to one address (``NetworkIP.flow_reading``).
+
+    ``processes`` each process the rows name by a number or that the rule
+    placed under a kind, once each (one flow read again in another view or a
+    page is one process); ``unnamed`` how many rows name no process id and are
+    placed under no kind, counted within one view of each detonation;
+    ``part_views`` the views of the run the rule read as a part. No process
+    and no unnamed row: no flow row to the address was read.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    processes: list[FlowProcess] = Field(default_factory=list)
+    unnamed: int = 0
+    part_views: list[FlowPartView] = Field(default_factory=list)
+
+
 class NetworkIP(BaseModel):
     """Observed IPv4 / IPv6 endpoint."""
 
@@ -643,6 +700,12 @@ class NetworkIP(BaseModel):
     launcher_unsettled_processes: list[str] = Field(
         default_factory=list, exclude_if=lambda value: not value
     )
+    # What the publish rule read in the flow rows to it (``FlowReading``): set
+    # (possibly empty) by the projection that built the row, ``None`` on a row
+    # read from a report stored before it was recorded, and then left out of
+    # the dump. The words of the rule's sentence come from it; no decision
+    # reads it.
+    flow_reading: FlowReading | None = Field(default=None, exclude_if=lambda value: value is None)
     # Whether the address is a public DNS resolver's, which a sandbox guest
     # reaches whatever the sample does.
     public_resolver: bool = False
