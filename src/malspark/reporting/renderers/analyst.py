@@ -724,15 +724,16 @@ def _subheading(number: str, title: str) -> str:
     return f"### {number} {_one_line(title)}"
 
 
-def _behind(key: str, *, absent: tuple[str, ...] = ()) -> str:
+def _behind(key: str, keep: Callable[[str], str], *, absent: tuple[str, ...] = ()) -> str:
     """The line a section ends with: the bundle's sections behind it, linked.
 
     Each title is one the bundle always prints (a numbered section or
     subsection prints a line when it has nothing); ``absent`` names one it
-    does not print for this report.
+    does not print for this report. Each link is set aside from the closing
+    pass by ``keep``, as a note marker is.
     """
     links = ", ".join(
-        f"[{title}]({BUNDLE_HTML}#{bundle_anchor(title)})"
+        keep(f"[{title}]({BUNDLE_HTML}#{bundle_anchor(title)})")
         for title in _BEHIND.get(key, ())
         if title not in absent
     )
@@ -1508,9 +1509,10 @@ class _Analyst:
         lines.append(" · ".join(facts) + "  ")
         if self._category() and ctx.category_mark:
             where = _VERDICT_SECTION
+            link = ctx.keep(f"[{where}]({BUNDLE_HTML}#{bundle_anchor(where)})")
             lines.append(
                 "_The STIX export's malware types differ from this category; the evidence "
-                f"bundle states both ([{where}]({BUNDLE_HTML}#{bundle_anchor(where)}))._  "
+                f"bundle states both ({link})._  "
             )
         ident = report.identity
         lines.append(
@@ -1616,7 +1618,7 @@ class _Analyst:
                 lines.append(_item(said))
         # The questions section is printed only for a run asked some.
         absent = () if answers else ("Questions asked of this run",)
-        return "\n".join([*lines, "", _behind("summary", absent=absent)])
+        return "\n".join([*lines, "", _behind("summary", self.ctx.keep, absent=absent)])
 
     # -- 2. introduction and scope -----------------------------------------
 
@@ -1653,7 +1655,7 @@ class _Analyst:
         background = report.intro_background.strip()
         if background:
             lines.extend(["", "### Context", "", self._prose(background)])
-        return "\n".join([*lines, "", _behind("scope")])
+        return "\n".join([*lines, "", _behind("scope", self.ctx.keep)])
 
     # -- 3. sample metadata ------------------------------------------------
 
@@ -1703,7 +1705,7 @@ class _Analyst:
         listed = [*self._sections(), *self._imports(), *self._exports()]
         if listed:
             lines.extend(["", *listed])
-        return "\n".join([*lines, "", _behind("metadata")])
+        return "\n".join([*lines, "", _behind("metadata", self.ctx.keep)])
 
     def _sections(self) -> list[str]:
         """The file's sections on one line, each with its entropy; the table is the bundle's."""
@@ -1790,7 +1792,7 @@ class _Analyst:
             mark = "observed" if observed else "assessed"
             said = f"{self._line(step.action, step.evidence_refs)} _({mark})_"
             lines.append(_prose_step(index, said))
-        return "\n".join([*lines, "", _behind("flow")])
+        return "\n".join([*lines, "", _behind("flow", self.ctx.keep)])
 
     # -- 5. functionality --------------------------------------------------
 
@@ -1854,7 +1856,7 @@ class _Analyst:
                 blocks.extend([_subheading(numbered(), title), self.notes.moved(rest), ""])
         lines = [_heading(5, "Functionality"), ""]
         lines.extend(blocks or ["The report model described no capability in this run.", ""])
-        return "\n".join([*lines, _behind("functionality")])
+        return "\n".join([*lines, _behind("functionality", self.ctx.keep)])
 
     def _encryption(self, enc: Any) -> Callable[[], list[str]] | None:
         """The scheme's table, written when its place is reached (:meth:`_subsection`), or
@@ -2042,7 +2044,7 @@ class _Analyst:
                 "",
             ]
         )
-        return "\n".join([*lines, _behind("c2")])
+        return "\n".join([*lines, _behind("c2", self.ctx.keep)])
 
     def _channels(self) -> list[str]:
         channels = self.report.c2_channels
@@ -2197,7 +2199,7 @@ class _Analyst:
                 lines.extend([f"Sophistication: {_one_line(stored.sophistication_rating)}.", ""])
             if self.ctx.verdict_findings:
                 lines.extend([*self._findings(self.ctx.verdict_findings), ""])
-            return "\n".join([*lines, _behind("conclusion")])
+            return "\n".join([*lines, _behind("conclusion", self.ctx.keep)])
         if severity is not None and severity.business_impact.strip():
             impact = self._judge_said("business_impact", severity.business_impact)
             if impact.strip():
@@ -2214,7 +2216,7 @@ class _Analyst:
                 lines.extend(["", self._prose(text)])
         if self.ctx.verdict_findings:
             lines.extend(["", *self._findings(self.ctx.verdict_findings)])
-        return "\n".join([*lines, "", _behind("conclusion")])
+        return "\n".join([*lines, "", _behind("conclusion", self.ctx.keep)])
 
     # The judge's texts section 7 prints, by field, as the agreement round labels them, and
     # the field's own name, which a text of it stands under.
@@ -2294,7 +2296,7 @@ class _Analyst:
             fenced = _fenced("\n".join(query), "text")
             fenced[1] = self.ctx.keep(fenced[1])
             lines.extend([*fenced, ""])
-        return "\n".join([*lines, _behind("detection")])
+        return "\n".join([*lines, _behind("detection", self.ctx.keep)])
 
     def _indicators(self) -> list[str]:
         """The indicator table: every row of the IOC table but an unexported observation.
@@ -2545,7 +2547,7 @@ class _Analyst:
                         rec.technique_id or "-",
                     )
                 )
-        return "\n".join([*lines, "", _behind("recommendations")])
+        return "\n".join([*lines, "", _behind("recommendations", self.ctx.keep)])
 
     # -- 10. ATT&CK --------------------------------------------------------
 
@@ -2634,7 +2636,7 @@ class _Analyst:
         noted = judge_cut_note(self.shortened, report)
         if noted:
             lines.extend(["", noted])
-        return "\n".join([*lines, "", _behind("attack")])
+        return "\n".join([*lines, "", _behind("attack", self.ctx.keep)])
 
     def _held(self, cell: Any) -> str:
         """A technique named and not published, with the status the single-file report gives it."""
@@ -2837,11 +2839,11 @@ class _Analyst:
             if kept:
                 paragraph += " " + _paragraph_line(" ".join(kept))
             lines = [_heading(11, ANALYST_LIMITATIONS_TITLE), "", paragraph]
-            return "\n".join([*lines, "", _behind("limitations")])
+            return "\n".join([*lines, "", _behind("limitations", self.ctx.keep)])
         if not said:
             said.append("The run recorded no limitation.")
         lines = [_heading(11, ANALYST_LIMITATIONS_TITLE), "", _paragraph_line(" ".join(said))]
-        return "\n".join([*lines, "", _behind("limitations")])
+        return "\n".join([*lines, "", _behind("limitations", self.ctx.keep)])
 
     def _left_the_machine(self) -> str:
         """What left this machine, as the run's disclosure record states it, in the bundle
@@ -2905,7 +2907,7 @@ class _Analyst:
             paragraph = "The run recorded no limitation."
         if paragraph:
             lines.extend([paragraph, ""])
-        return "\n".join([*lines, _behind("limitations")])
+        return "\n".join([*lines, _behind("limitations", self.ctx.keep)])
 
     # -- appendix ----------------------------------------------------------
 

@@ -30,7 +30,9 @@ cleanly on terminals, PDFs and ticket systems alike.
 
 from __future__ import annotations
 
+import bisect
 import ipaddress
+import math
 import re
 import secrets
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
@@ -74,7 +76,7 @@ from malspark.analysis.tool_effects import INTRO_SENTENCE as EFFECTS_INTRO
 from malspark.analysis.tool_effects import effects_lines
 from malspark.core.confidence_words import confidence_word
 from malspark.core.logger import logger
-from malspark.core.reputation import counts_line
+from malspark.core.reputation import ReputationRecord, counts_line
 from malspark.core.rule_matches import is_rule_fact
 from malspark.core.undeclared_tools import (
     CODE_LISTING_KINDS,
@@ -141,7 +143,7 @@ from malspark.reporting.prose_decisions import (
 )
 from malspark.reporting.publish_words import NETWORK_INDICATOR_KINDS, PUBLISHED_NETWORK_LABEL
 from malspark.reporting.redone_calls import ENTRY_ID
-from malspark.reporting.renderers.layout import ANALYST, BUNDLE, FULL, checked
+from malspark.reporting.renderers.layout import ANALYST, BUNDLE, BUNDLE_FILES, FULL, checked
 from malspark.reporting.renderers.prose_forms import (
     end_references,
     finished,
@@ -426,7 +428,7 @@ class MarkdownRenderer:
                 text = "\n".join(tidied(written, report, analyst=True))
                 cited = set(marker_numbers(own.kept_in(text)))
                 sections = bundle_sections(self, report, ctx, sections, notes, cited)
-        sections = finished(sections, report, analyst=self._layout == ANALYST)
+        sections = finished(sections, report, analyst=self._layout == ANALYST, keep=ctx.keep)
         if self._layout == ANALYST:
             cited = set(marker_numbers(ctx.kept_in("\n".join(sections))))
         return self._closed(sections, ctx), notes, cited
@@ -475,7 +477,12 @@ class MarkdownRenderer:
         # unread. A character reference ("&#58;", "&colon;") is escaped in the
         # same pass: a viewer decodes one after the defanger has read the text,
         # so "https&#58;//evil&#46;example" would become a live link there.
-        defanged = [_defanged_text(text, ctx.run_values) for text in sections]
+        # A link into the evidence bundle or to a note's anchor the renderer did not set
+        # aside prints as its characters: only the platform cites (T-814).
+        defanged = [
+            _hand_links_unlinked(_defanged_text(text, ctx.run_values), ctx.keep)
+            for text in sections
+        ]
         # Code is read only where no line may open an HTML block, anywhere in
         # the render; the fences are followed across the sections in order.
         looked = _ReferenceScan()
@@ -3409,10 +3416,34 @@ class _Context:
         return [self._kept[token] for token in _KEPT_TOKEN_RE.findall(text) if token in self._kept]
 
     def restore(self, text: str) -> str:
-        """``text`` with every token :meth:`keep` handed out replaced by what it stands for."""
+        """``text`` with every token :meth:`keep` handed out replaced by what it stands for.
+
+        A link set aside stays the platform's link whatever stands before it: a ``!``
+        there, which would make it an image, or a backslash that would escape its
+        opening bracket, is escaped and prints as itself.
+        """
         if not self._kept or "\x00" not in text:
             return text
-        return _KEPT_TOKEN_RE.sub(lambda m: self._kept.get(m.group(0), m.group(0)), text)
+        out: list[str] = []
+        at = 0
+        for found in _KEPT_TOKEN_RE.finditer(text):
+            held = self._kept.get(found.group(0))
+            if held is None:
+                continue
+            start = found.start()
+            if (
+                held.startswith("[")
+                and start > at
+                and text[start - 1] in "!\\"
+                and not _escaped_at(text, start - 1)
+            ):
+                out += [text[at : start - 1], "\\", text[start - 1]]
+            else:
+                out.append(text[at:start])
+            out.append(held)
+            at = found.end()
+        out.append(text[at:])
+        return "".join(out)
 
     def endpoint_kept(self, model: str) -> str:
         """A model's recorded name, its endpoint set aside where it is a configured one.
@@ -4305,6 +4336,369 @@ def _write_block(block: list[str], out: list[str]) -> None:
             out += [_every_reference_escaped(line[at:start]), line[start:end]]
             at = end
         out.append(_every_reference_escaped(line[at:]))
+
+
+# What follows the "]" that closes a link's text or a reference definition's label, up to
+# where its target starts: "(" or ":", white space with at most one line ending (and the
+# block quote marks the next line opens with), an optional "<".
+_AFTER_LINK_TEXT = re.compile(r"\]([(:])[ \t]*+(?:\r?\n[ \t>]*+)?(<?)")
+# A tag as a browser reads it (:class:`_TagReader`): where one opens, a "<" and a letter;
+# what ends its name; the white space and slashes between its attributes; white space;
+# what ends an attribute's name; what ends a value written without quotes.
+_TAG_START = re.compile(r"<[A-Za-z]")
+_TAG_NAME_END = re.compile(r"[\t\n\f\r />]")
+_TAG_GAP = re.compile(r"[\t\n\f\r /]*+")
+_TAG_SPACE = re.compile(r"[\t\n\f\r ]*+")
+_ATTRIBUTE_NAME_END = re.compile(r"[\t\n\f\r />=]")
+_UNQUOTED_VALUE_END = re.compile(r"[\t\n\f\r >]")
+# The tags that change where the platform's own links lead, by name: a base that names a
+# target for every relative link, and a meta element carrying an http-equiv, whatever its
+# value (one of them refreshes the page to another address).
+_RETARGETING_TAG = "base"
+_EQUIV_TAG = "meta"
+# A closing tag.
+_TAG_CLOSING = re.compile(r"</([A-Za-z][A-Za-z0-9-]*)\s*>")
+# How far a link's target is read: one longer is taken to reach the bundle, so its
+# bracket is escaped outside code and it prints as its characters, a long link to
+# anywhere else included (a model's links are defanged in any case).
+_TARGET_REACH = 512
+_TARGET_RUN = re.compile(rf"\S{{0,{_TARGET_REACH + 1}}}")
+_BRACKETED_TARGET_RUN = re.compile(rf"[^<>\n]{{0,{_TARGET_REACH + 1}}}")
+# A backslash escape as Markdown reads one inside a link's target.
+_MARKDOWN_ESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")
+# What starts a link target's fragment.
+_FRAGMENT_MARK = chr(35)
+# The anchors of the notes: ``cite-N`` in the evidence bundle, ``note-N`` in the
+# self-contained report.
+_NOTE_ANCHORS = ("cite-", "note-")
+# The code a reader takes no link from, by markdown-it's token types.
+_CODE_TOKENS = frozenset({"code_inline", "code_block", "fence"})
+_LINK_READERS: list[Any] = []
+# A line indented as code, the one kind of code a text holding no backtick or tilde fence
+# can hold.
+_INDENTED_LINE = re.compile(r"(?m)^(?: {4}" + _PIPE + r"[ ]{0,3}\t)")
+
+
+def _into_the_bundle(target: str) -> bool:
+    """Whether a link target reaches the evidence bundle or a note's anchor.
+
+    Read as a viewer resolves it: Markdown escapes and character references
+    decoded, percent-encoding decoded repeatedly, white space and control
+    characters dropped, in any case, a backslash as a slash. A target whose last
+    path segment names one of the bundle's files (``./evidence-bundle.html#…``),
+    or one naming no file whose fragment is a note's anchor (``#cite-1``,
+    ``#note-1``), does.
+    """
+    from html import unescape
+    from urllib.parse import unquote
+
+    read = unescape(_MARKDOWN_ESCAPE.sub(r"\1", target))
+    for _ in range(4):
+        decoded = unquote(read)
+        if decoded == read:
+            break
+        read = decoded
+    read = re.sub(r"[\x00-\x20\x7f]", "", read).lower().replace("\\", "/")
+    path, _, fragment = read.partition(_FRAGMENT_MARK)
+    path = path.partition("?")[0]
+    if path.rsplit("/", 1)[-1] in BUNDLE_FILES:
+        return True
+    return all(part in ("", ".") for part in path.split("/")) and fragment.startswith(_NOTE_ANCHORS)
+
+
+def _link_target_at(text: str, start: int, bracketed: bool) -> str | None:
+    """The link target that starts at ``start``: to the ``>`` where it opened with ``<``,
+    else to white space or a parenthesis that closes more than it opened; ``None`` where it
+    runs past :data:`_TARGET_REACH`."""
+    run = (_BRACKETED_TARGET_RUN if bracketed else _TARGET_RUN).match(text, start)
+    held = run.group(0) if run is not None else ""
+    if len(held) > _TARGET_REACH:
+        return None
+    if bracketed or ")" not in held:
+        return held
+    if "(" not in held:
+        return held[: held.index(")")]
+    depth = 0
+    at = 0
+    while at < len(held):
+        char = held[at]
+        if char == "\\":
+            at += 2
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            if not depth:
+                break
+            depth -= 1
+        at += 1
+    return held[:at]
+
+
+def _run_end(run: re.Pattern[str], text: str, at: int) -> int:
+    """Where ``run``, a pattern that matches the empty text too, ends from ``at``."""
+    found = run.match(text, at)
+    return found.end() if found is not None else at
+
+
+class _TagReader:
+    """Every tag of one text read as a browser reads it, in time linear in the text's length.
+
+    A tag opens at a ``<`` and a letter and its name runs to white space, ``/`` or ``>``;
+    a quote opens a value only after ``=``, and a ``<`` or a ``>`` inside a quoted value is
+    the value's; the tag ends at the first ``>`` outside one. Each opening is read on its
+    own (a Markdown reader takes a tag inside another's attributes where it does not take
+    the outer one). The reader has no bound on a tag's length: what ends each name, value
+    and quote is looked up in positions found once for the whole text, and where a
+    reading reaches a place between two attributes that an earlier one has read from, it
+    takes that reading's result, so no part of the text is read twice in one state. A tag
+    the text ends in inside a quoted value is not read safely: what ends it lies past the
+    text, so its ``<`` is written as text (:func:`_hand_links`). The values it compares are
+    read as a browser decodes them (:func:`_into_the_bundle`). ``steps`` counts its work:
+    each tag and each place it reads from, and each character of a run of white space or
+    of a value it reads.
+    """
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.size = len(text)
+        self._ends = {
+            key: [found.start() for found in pattern.finditer(text)]
+            for key, pattern in (
+                ("name", _TAG_NAME_END),
+                ("attribute", _ATTRIBUTE_NAME_END),
+                ("unquoted", _UNQUOTED_VALUE_END),
+                ('"', re.compile('"')),
+                ("'", re.compile("'")),
+            )
+        }
+        # From a place between two attributes: where the tag ends, whether it ends inside
+        # a quoted value, whether a value after the place reaches the bundle or a note's
+        # anchor, whether an attribute after it is an ``http-equiv``, and whether one is an
+        # ``href``.
+        self._from: dict[int, tuple[int, bool, bool, bool, bool]] = {}
+        self.steps = 0
+
+    def _run(self, run: re.Pattern[str], at: int) -> int:
+        """Where ``run`` ends from ``at`` (:func:`_run_end`), its characters counted."""
+        end = _run_end(run, self.text, at)
+        self.steps += end - at
+        return end
+
+    def _reaches(self, value: str) -> bool:
+        """Whether ``value`` reaches the bundle or a note's anchor, its characters counted."""
+        self.steps += len(value)
+        return _into_the_bundle(value)
+
+    def _next(self, key: str, at: int) -> int:
+        """The first place at or after ``at`` where ``key``'s character stands, else the end."""
+        places = self._ends[key]
+        index = bisect.bisect_left(places, at)
+        return places[index] if index < len(places) else self.size
+
+    def read(self, start: int) -> tuple[str, int, bool, bool]:
+        """The tag that opens at ``start``: its name in lower case (``""`` for a long one),
+        where it ends, whether it is read safely, and whether it can lead a link into the
+        bundle or to a note's anchor: a value that reaches one, or a tag that changes
+        where the platform's links lead."""
+        text, size = self.text, self.size
+        self.steps += 1
+        at = self._next("name", start + 1)
+        name = text[start + 1 : at].lower() if at - start <= 64 else ""
+        passed: list[list[Any]] = []
+        tail: tuple[int, bool, bool, bool, bool]
+        while True:
+            known = self._from.get(at)
+            if known is not None:
+                tail = known
+                break
+            self.steps += 1
+            passed.append([at, False, False, False])
+            at = self._run(_TAG_GAP, at)
+            if at >= size:
+                tail = (size, False, False, False, False)
+                break
+            if text[at] == ">":
+                tail = (at + 1, False, False, False, False)
+                break
+            first = at
+            at = self._next("attribute", at + 1)
+            attribute = text[first:at].lower() if at - first in (4, 10) else ""
+            passed[-1][2] = passed[-1][2] or attribute == "http-equiv"
+            passed[-1][3] = passed[-1][3] or attribute == "href"
+            equals = self._run(_TAG_SPACE, at)
+            if equals >= size or text[equals] != "=":
+                at = equals
+                continue
+            at = self._run(_TAG_SPACE, equals + 1)
+            if at < size and text[at] in "\"'":
+                close = self._next(text[at], at + 1)
+                value = text[at + 1 : close]
+                passed[-1][1] = self._reaches(value) or passed[-1][1]
+                if close >= size:
+                    tail = (size, True, False, False, False)
+                    break
+                at = close + 1
+            else:
+                end = self._next("unquoted", at)
+                value = text[at:end]
+                passed[-1][1] = self._reaches(value) or passed[-1][1]
+                at = end
+        end, open_quote, reaches, equiv, href = tail
+        for place, reached, carried, named in reversed(passed):
+            reaches, equiv, href = reaches or reached, equiv or carried, href or named
+            self._from[place] = (end, open_quote, reaches, equiv, href)
+        leads = reaches or (name == _RETARGETING_TAG and href) or (name == _EQUIV_TAG and equiv)
+        return name, end, not open_quote, leads
+
+
+def _escaped_at(text: str, index: int) -> bool:
+    """Whether the character at ``index`` stands after an odd run of backslashes."""
+    before = index
+    while before > 0 and text[before - 1] == "\\":
+        before -= 1
+    return (index - before) % 2 == 1
+
+
+def _hand_links(text: str) -> list[int]:
+    """Where ``text`` opens a link into the bundle or to a note's anchor: the ``]`` before
+    such a target, and the ``<`` of a tag (:class:`_TagReader`) one of whose values holds
+    one or that changes where the platform's links lead (a base with an ``href``, a meta
+    with an ``http-equiv``), escaped by a backslash or not: a block another text left open
+    makes a backslash escape nothing there, which no text can know. A tag not read safely
+    and holding none counts too, if it is escaped only inside an HTML block of its own
+    text. With it, the first closing tag of its name after it, which a reader of raw HTML
+    would take too."""
+    places: list[int] = []
+    at = text.find("]")
+    while at != -1:
+        found = _AFTER_LINK_TEXT.match(text, at)
+        if found is not None and not _escaped_at(text, at):
+            target = _link_target_at(text, found.end(), bool(found.group(2)))
+            if target is None or _into_the_bundle(target):
+                places.append(at)
+        at = text.find("]", at + 1)
+    closings: dict[str, list[int]] | None = None
+    in_block: Callable[[int], bool] | None = None
+    reader: _TagReader | None = None
+    for opening in _TAG_START.finditer(text):
+        reader = reader or _TagReader(text)
+        name, end, safe, leads = reader.read(opening.start())
+        if not leads:
+            if safe:
+                continue
+            if _escaped_at(text, opening.start()):
+                # An escaped tag merely not read safely is text wherever a backslash
+                # escapes: outside an HTML block of this text.
+                in_block = in_block or _html_block_reader(text)
+                if not in_block(opening.start()):
+                    continue
+        places.append(opening.start())
+        if closings is None:
+            closings = {}
+            for closing in _TAG_CLOSING.finditer(text):
+                if not _escaped_at(text, closing.start()):
+                    closings.setdefault(closing.group(1).lower(), []).append(closing.start())
+        ends = closings.get(name, [])
+        after = bisect.bisect_left(ends, end)
+        if after < len(ends):
+            places.append(ends[after])
+    return sorted(set(places))
+
+
+def _link_readers() -> list[Any]:
+    """markdown-it's readers: the HTML report's, then one that reads raw HTML."""
+    from markdown_it import MarkdownIt
+
+    if not _LINK_READERS:
+        _LINK_READERS.extend(
+            MarkdownIt("commonmark", {"html": raw}).enable("table").enable("strikethrough")
+            for raw in (False, True)
+        )
+    return _LINK_READERS
+
+
+def _html_block_reader(text: str) -> Callable[[int], bool]:
+    """Whether a place of ``text`` lies inside an HTML block, as a reader of raw HTML
+    reads the whole text: one it passes through as written."""
+    lines: list[tuple[int, int]] = []
+    tokens = list(_link_readers()[1].parse(text))
+    while tokens:
+        token = tokens.pop()
+        tokens.extend(token.children or ())
+        if token.type == "html_block" and token.map:
+            lines.append((token.map[0], token.map[1]))
+    starts = [0, *(found.end() for found in re.finditer(r"\n", text))]
+
+    def inside(place: int) -> bool:
+        line = bisect.bisect_right(starts, place) - 1
+        return any(first <= line < last for first, last in lines)
+
+    return inside
+
+
+def _in_code(text: str, places: list[int]) -> set[int]:
+    """Those of ``places`` every reader takes as code: the HTML report's reader and one
+    that reads raw HTML, both markdown-it's, each over the whole text with a word of its
+    own at each place."""
+    if "`" not in text and "~~~" not in text and _INDENTED_LINE.search(text) is None:
+        return set()
+    mark = secrets.token_hex(8)
+    probe = list(text)
+    for index, place in enumerate(places):
+        probe[place] = f"z{mark}{index}z"
+    joined = "".join(probe)
+    word = re.compile(rf"z{mark}(\d+)z")
+    coded: set[int] | None = None
+    for reader in _link_readers():
+        found: set[int] = set()
+        tokens = list(reader.parse(joined))
+        while tokens:
+            token = tokens.pop()
+            tokens.extend(token.children or ())
+            if token.type in _CODE_TOKENS:
+                found.update(int(m.group(1)) for m in word.finditer(token.content + token.info))
+        coded = found if coded is None else coded & found
+    return {places[index] for index in coded or ()}
+
+
+def _hand_links_unlinked(text: str, keep: Callable[[str], str] = str) -> str:
+    """``text`` with every link into the evidence bundle or to a note's anchor printed as
+    its characters (T-814).
+
+    The platform's own note markers and links into the bundle are set aside from the
+    closing pass (``_Context.keep``), so a link of that kind still in the text was
+    written by a model, a sample, a tool or the operator: the ``]`` that closes its text
+    or a reference definition's label is escaped. The ``<`` of a tag that holds one is
+    written as ``&lt;``, set aside by ``keep`` from the reference escape: text in a
+    paragraph, a table cell and an HTML block alike, where a viewer that passes raw HTML
+    through would read a backslash before it as a character and the tag as a tag; inside
+    an HTML block a backslash before the ``<``, which escapes nothing there, gives way to
+    it. A target longer than :data:`_TARGET_REACH` is taken to reach the bundle and prints
+    as its characters too.
+    What a reader takes as code is left byte for byte, and nothing else of the text
+    changes.
+    """
+    if "]" not in text and "<" not in text:
+        return text
+    places = _hand_links(text)
+    if not places:
+        return text
+    coded = _in_code(text, places)
+    out: list[str] = []
+    at = 0
+    for place in places:
+        if place in coded:
+            continue
+        if text[place] == "]":
+            out += [text[at:place], "\\"]
+            at = place
+            continue
+        cut = place - 1 if _escaped_at(text, place) else place
+        out += [text[at:cut], keep("&lt;")]
+        at = place + 1
+    out.append(text[at:])
+    return "".join(out)
 
 
 def _reference_spans(text: str) -> list[tuple[int, int]]:
@@ -5315,8 +5709,108 @@ def _indicator_rows(
         return None
 
 
+# The counts an enrichment record holds under these names are a reputation
+# cell's counts (a source's declared ``record``, ``enrichment.builtin_sources``).
+_NETWORK_COUNTS = ("malicious", "suspicious", "harmless", "undetected")
+
+
+def _held_count(value: Any) -> int | None:
+    """``value`` as the whole number the record holds, or ``None`` where it holds none.
+
+    A count is a whole number however the record holds it: an ``int`` (not a
+    bool), a finite ``float`` with no fraction (``19.0`` is 19), or a string
+    of digits that converts; any other value, a digit string too long to
+    convert among them, is no count. Reading a value never raises.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if math.isfinite(value) and value.is_integer() else None
+    if isinstance(value, str) and re.fullmatch(r"\s*-?\d+\s*", value):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _service_name(rep: dict[str, Any]) -> str:
+    """The record's ``source`` where it is text; a value of another type names no service."""
+    source = rep.get("source")
+    return source if isinstance(source, str) else ""
+
+
+def _network_counts(rep: dict[str, Any]) -> str:
+    """The counts an enrichment record holds under ``malicious``, ``suspicious``,
+    ``harmless``, ``undetected`` (:data:`_NETWORK_COUNTS`) and ``engines``, as
+    the header cell prints a record's counts.
+
+    Written by :func:`counts_line`, the one wording of a reputation record's
+    counts: the flagged count, each count the record holds under
+    :data:`_NETWORK_COUNTS` that is not zero, under the record's own name for
+    it and in the record's order, and the engine count the service gave
+    (``engines``). A count the record holds under any other name is not
+    printed. No denominator is summed and no "of" is written. The
+    record's ``total`` is never printed: in a server source's record
+    (``enrichment.declared.read_reputation_record``) it is, where the answer's
+    declaration names no total and its text states none, the sum of the
+    members its reader kept (``core.reputation.read_answer``), and the record
+    does not say which it is, so it cannot be printed as the answer's figure.
+    The cell does not owe the count of members its reader did not keep: an
+    enrichment record holds the fields its source declares and stores no count
+    of the members it left, so the cell says "counts in the lookup's record",
+    claims no tally is whole, and says nothing of a category the record holds
+    no count of; it never prints a number the record does not hold. ``""``
+    where the record holds no count.
+    """
+    stats = {
+        name: held
+        for name, value in rep.items()
+        if name in _NETWORK_COUNTS and (held := _held_count(value)) is not None
+    }
+    record = ReputationRecord(
+        service=_service_name(rep).strip(),
+        malicious=stats.get("malicious"),
+        suspicious=stats.get("suspicious"),
+        engines=_held_count(rep.get("engines")),
+        stats=stats,
+    )
+    # The service's name is its answer's text, by the inline rule; the row
+    # escapes the table separator itself (:func:`_cell`).
+    return counts_line(
+        record, unnamed="reputation", written=lambda text: _inline_safe(text, pipes=False)
+    )
+
+
+def _analysed(stamp: Any) -> str:
+    """The date clause of a record's analysis time, or ``""`` where it converts to no date.
+
+    A date is a positive whole number of seconds (not a bool) that converts;
+    one too large for the platform is no date, and reading it never raises.
+    """
+    if isinstance(stamp, bool) or not isinstance(stamp, int) or stamp <= 0:
+        return ""
+    from datetime import UTC, datetime
+
+    try:
+        day = datetime.fromtimestamp(stamp, tz=UTC).date()
+    except (OverflowError, OSError, ValueError, TypeError):
+        return ""
+    return f" (analysed {day.isoformat()})"
+
+
 def _reputations(report: MalwareReport) -> dict[str, str]:
-    """A short reputation cell per network value the enrichment answered for."""
+    """A short reputation cell per network value the enrichment answered for.
+
+    The counts each record holds (:func:`_network_counts`). A report stored
+    before the lookups' records (``reputation`` is ``None``) prints a cell as
+    it was printed then (``core.legacy_reputation``) only where the value's
+    record holds all of :data:`_NETWORK_COUNTS` as whole numbers, the record
+    every such cell was printed from; any other record of such a report, one
+    a later enrichment wrote among them, is printed by its counts.
+    """
     out: dict[str, str] = {}
     net = report.network
     if net is None:
@@ -5327,22 +5821,17 @@ def _reputations(report: MalwareReport) -> dict[str, str]:
     for value, rep in rows:
         if not isinstance(rep, dict) or "malicious" not in rep:
             continue
-        try:
-            total = sum(
-                int(rep.get(k) or 0) for k in ("malicious", "suspicious", "harmless", "undetected")
-            )
+        held = [_held_count(rep.get(k)) for k in _NETWORK_COUNTS]
+        if report.reputation is None and all(count is not None for count in held):
             # The service's name is its answer's text, by the inline rule.
-            name = _inline_safe(rep.get("source"), pipes=False) or "reputation"
-            said = (
-                f"{name}: {int(rep.get('malicious') or 0)} of {total} engines flag it as malicious"
-            )
-        except (TypeError, ValueError):
-            continue
-        stamp = rep.get("last_analysis_date_unix")
-        if isinstance(stamp, int) and stamp > 0:
-            from datetime import UTC, datetime
-
-            said += f" (analysed {datetime.fromtimestamp(stamp, tz=UTC).date().isoformat()})"
+            name = _inline_safe(_service_name(rep), pipes=False) or "reputation"
+            total = sum(count for count in held if count is not None)
+            said = f"{name}: {held[0]} of {total} engines flag it as malicious"
+        else:
+            said = _network_counts(rep)
+            if not said:
+                continue
+        said += _analysed(rep.get("last_analysis_date_unix"))
         out[value.strip().lower().rstrip(".")] = said
     return out
 
