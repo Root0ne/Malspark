@@ -80,6 +80,7 @@ from malspark.core.host_locality import (
     normal_host,
     taken_as_service_name,
 )
+from malspark.core.tool_declarations import NETWORK_CASE_STORE, NETWORK_ON_REFRESH
 
 # The version of the stored record's shape. Version 2 adds the isolation part
 # (``analysis.isolation``), version 3 the effects part (``analysis.tool_effects``),
@@ -1909,8 +1910,58 @@ def _stayed_count(row: Mapping[str, Any], label: Callable[[int], str]) -> str:
     return label(made) + (f" (+{', '.join(apart)})" if apart else "")
 
 
-def _stayed_line(rows: list[Mapping[str, Any]], code: Callable[[str], str]) -> str:
-    """The calls no row above counts, all on this machine: so the lines sum to every call."""
+def _named_modes(
+    record: Mapping[str, Any], sources: Iterable[str], mode: str
+) -> list[Mapping[str, Any]]:
+    """The effects part's rows of a tool called through one of ``sources`` whose declared
+    network is the named ``mode`` (``on_refresh``, ``case_store``), each with a call made.
+
+    Read from the two stored parts by the source each records, never by a tool's name.
+    """
+    wanted = set(sources)
+    effects = record.get("effects")
+    rows = effects.get("tools") if isinstance(effects, Mapping) else None
+    return [
+        row
+        for row in rows or []
+        if isinstance(row, Mapping)
+        and row.get("network") == mode
+        and int(row.get("calls") or 0)
+        and str(row.get("source") or row.get("server") or "") in wanted
+    ]
+
+
+# What a tool declared to reach the network only for its reference data is declared to do.
+_REFRESH_DECLARED = (
+    "declared to reach the network only to fetch or refresh reference data, sending nothing "
+    "of the sample (whether a call did is not recorded in this report)"
+)
+
+
+def _declared_tools(rows: list[Mapping[str, Any]], code: Callable[[str], str], what: str) -> str:
+    """``<tool> on <source> is <what>``, each source named as the stayed line names it and the
+    verb by how many tools are named."""
+    by_source: dict[str, list[str]] = {}
+    for row in rows:
+        source = str(row.get("source") or row.get("server") or "")
+        by_source.setdefault(source, []).append(code(str(row.get("tool") or "")))
+    named = "; ".join(
+        f"{_joined(tools)} on {_stayed_name(source, code)}" for source, tools in by_source.items()
+    )
+    return f"{named} {'is' if len(rows) == 1 else 'are'} {what}"
+
+
+def _stayed_line(
+    rows: list[Mapping[str, Any]],
+    code: Callable[[str], str],
+    record: Mapping[str, Any] | None = None,
+) -> str:
+    """The calls no row above counts, all made on this machine: so the lines sum to every call.
+
+    Where a tool called through one of their sources is declared to reach the network only
+    in a named way (``record``'s effects part), the line says that declaration, and says the
+    calls were made on this machine rather than that they stayed on it.
+    """
     total = {
         key: sum(int(row.get(key) or 0) for row in rows) for key in ("made", "served", "not_run")
     }
@@ -1919,7 +1970,28 @@ def _stayed_line(rows: list[Mapping[str, Any]], code: Callable[[str], str]) -> s
         for row in rows
     )
     calls = _stayed_count(total, lambda count: count_label(count, "call"))
-    return f"Tool calls that stayed on this machine: {calls} ({by_source})."
+    sources = [str(row.get("source") or "") for row in rows]
+    held = record if isinstance(record, Mapping) else {}
+    refresh = _named_modes(held, sources, NETWORK_ON_REFRESH)
+    store = _named_modes(held, sources, NETWORK_CASE_STORE)
+    if not refresh and not store:
+        return f"Tool calls that stayed on this machine: {calls} ({by_source})."
+    declared = [_declared_tools(refresh, code, _REFRESH_DECLARED)] if refresh else []
+    if store:
+        # The store is placed by the case-memory line where the record lists one; with
+        # none, it is kept in the process or not configured (:func:`_stores`).
+        where = (
+            "which the case-memory line places"
+            if any(isinstance(row, Mapping) for row in held.get("stores") or [])
+            else "which is kept in the process or not configured"
+        )
+        declared.append(
+            _declared_tools(store, code, f"declared to read the case-memory store, {where}")
+        )
+    return (
+        f"Tool calls made on this machine: {calls} ({by_source}); of the tools called through "
+        f"these sources, {'; '.join(declared)}."
+    )
 
 
 def _store_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: bool = False) -> str:
@@ -2043,8 +2115,14 @@ def _enrichment_state_lines(held: Mapping[str, Any], code: Callable[[str], str])
 
 
 def _nothing_sentence(record: Mapping[str, Any], code: Callable[[str], str]) -> str:
-    """ "Nothing left this machine", with what it rests on."""
+    """ "Nothing left this machine", with what it rests on.
+
+    Where a tool called on this machine is declared to reach the network only to fetch or
+    refresh reference data, the headline says the declarations count it, and the tool is
+    named among what it rests on.
+    """
     parts: list[str] = []
+    stayed = [row for row in record.get("stayed") or [] if isinstance(row, Mapping)]
     models = [row for row in record.get("models") or [] if isinstance(row, Mapping)]
     if models:
         named = ", ".join(f"{code(str(row.get('host')))} ({row.get('runtime')})" for row in models)
@@ -2059,6 +2137,12 @@ def _nothing_sentence(record: Mapping[str, Any], code: Callable[[str], str]) -> 
             f"the local tool servers called ({servers}) were taken as local by their tools' "
             "declarations"
         )
+    # A tool called on this machine and declared to reach the network for its reference
+    # data: the declarations count nothing of the sample in it, and it is said.
+    on_machine = [*local_servers, *(row.get("source") for row in stayed)]
+    refresh = _named_modes(record, [str(s or "") for s in on_machine], NETWORK_ON_REFRESH)
+    if refresh:
+        parts.append(_declared_tools(refresh, code, _REFRESH_DECLARED))
     stores = [row for row in record.get("stores") or [] if isinstance(row, Mapping)]
     if stores:
         parts.append("the case-memory store is at a local address")
@@ -2068,7 +2152,12 @@ def _nothing_sentence(record: Mapping[str, Any], code: Callable[[str], str]) -> 
     if uploads:
         parts.append("the sample went only to local addresses")
     parts.append("no lookup was asked, and tracing is off")
-    return "Nothing left this machine. This rests on: " + "; ".join(parts) + "."
+    head = (
+        "Nothing of the sample left this machine, as the declarations count it."
+        if refresh
+        else "Nothing left this machine."
+    )
+    return f"{head} This rests on: " + "; ".join(parts) + "."
 
 
 # What the analyst report's limitations say after what left this machine (T-719).
@@ -2181,7 +2270,7 @@ def disclosure_lines(record: Any, code: Callable[[str], str] = _code) -> list[st
         lines.append(_undeclared_line(undeclared, code))
     stayed = [row for row in record.get("stayed") or [] if isinstance(row, Mapping)]
     if stayed:
-        lines.append(_stayed_line(stayed, code))
+        lines.append(_stayed_line(stayed, code, record))
     unreadable = int(record.get("unreadable_entries") or 0)
     if unreadable:
         lines.append(_unreadable_line(unreadable))
