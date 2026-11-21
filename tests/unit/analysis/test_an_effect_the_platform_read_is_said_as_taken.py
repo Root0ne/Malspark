@@ -185,7 +185,8 @@ def test_what_the_block_declares_stays_declared_over_a_reading(nothing_kept: Non
         svc={**SERVICE, "tool_facts": {"lookup_hash": declared}, "listing": [LOOKUP]}
     )
     (entry,) = _entries(held, ("svc", "lookup_hash"))
-    assert READ_KEY not in entry["facts"]
+    # Recorded, and empty: nothing of it is the platform's reading.
+    assert entry["facts"][READ_KEY] == []
     assert effects_lines(effects_part([entry])) == [
         "Declared to reach the network: `lookup_hash` on tool server `svc`.",
         "Declared to send the sample's hash to a third party: `lookup_hash` on tool server `svc`.",
@@ -238,6 +239,13 @@ def test_every_rendering_of_a_declaration_a_model_reads_is_the_same_without_the_
         assert categories_of(kept.tools) == categories_of(bare.tools)
     called = (("svc", "lookup_hash"), ("svc", "removed_upload"), ("dis", "send_program"))
     marked = _entries(with_record, *called)
+    # And a tool its block declares, whose marker is recorded empty.
+    monkeypatch.undo()
+    effects = {"executes": "no", "network": True, "third_party": "hash"}
+    owned = {"lookup_hash": {"effects": effects}}
+    declared = _declarations(own={**SERVICE, "tool_facts": owned, "listing": [LOOKUP]})
+    marked += _entries(declared, ("own", "lookup_hash"))
+    assert marked[-1]["facts"][READ_KEY] == []
     plain = [
         {**entry, "facts": {k: v for k, v in entry["facts"].items() if k != READ_KEY}}
         for entry in marked
@@ -270,6 +278,7 @@ def test_every_rendering_of_a_declaration_a_model_reads_is_the_same_without_the_
 
 
 def _row(**over: Any) -> dict[str, Any]:
+    """An effects row stored before it recorded where its answers came from."""
     row: dict[str, Any] = {
         "source": "mcp:svc",
         "server": "",
@@ -313,7 +322,7 @@ def test_an_origin_this_code_does_not_know_is_taken() -> None:
 
 
 def test_the_case_store_a_tool_reaches_is_placed_only_where_the_case_memory_row_places_it() -> None:
-    reach = {"tools": [_row(tool="recall", network="case_store")]}
+    reach = {"tools": [_row(tool="recall", network="case_store", network_from="declared")]}
     lead = "Declared to reach the configured case-memory store"
     placed = [{"backend": "qdrant", "host": "127.0.0.1", "where": "local"}]
     unplaced = [{"backend": "qdrant", "host": "", "where": "unknown", "why": "no address"}]
@@ -330,16 +339,17 @@ def test_the_case_store_a_tool_reaches_is_placed_only_where_the_case_memory_row_
         f"{lead}, which the disclosure records as kept in the process or not configured: "
         "`recall` on tool server `svc`."
     ]
-    read = {"tools": [_row(tool="recall", network="case_store", network_from="read")]}
-    assert effects_lines(read, stores=placed) == [
-        "Taken as reaching the configured case-memory store, which the disclosure's case-memory "
-        "row places: `recall` on tool server `svc`."
-    ]
+    for origin in ({"network_from": "read"}, {}):
+        taken = {"tools": [_row(tool="recall", network="case_store", **origin)]}
+        assert effects_lines(taken, stores=placed) == [
+            "Taken as reaching the configured case-memory store, which the disclosure's "
+            "case-memory row places: `recall` on tool server `svc`."
+        ]
 
 
 def test_the_calls_made_here_place_the_store_only_where_the_case_memory_line_does() -> None:
     stayed = [{"source": "mcp:svc", "made": 1, "served": 0, "not_run": 0}]
-    effects = {"tools": [_row(tool="recall", network="case_store")]}
+    effects = {"tools": [_row(tool="recall", network="case_store", network_from="declared")]}
     head = (
         "Tool calls made on this machine: 1 call (tool server `svc` 1); of the tools called "
         "through these sources, `recall` on tool server `svc` is declared to read the "
@@ -361,10 +371,50 @@ def test_the_calls_made_here_place_the_store_only_where_the_case_memory_line_doe
 
 def test_an_effects_row_with_no_source_is_joined_to_its_stayed_row_by_its_server() -> None:
     stayed = [{"source": "refs", "made": 1, "served": 0, "not_run": 0}]
-    row = _row(source="", server="refs", tool="refresh", network="on_refresh")
+    row = _row(
+        source="", server="refs", tool="refresh", network="on_refresh", network_from="declared"
+    )
     assert _stayed_line(stayed, CODE, {"effects": {"tools": [row]}}) == (
         "Tool calls made on this machine: 1 call (tool server `refs` 1); of the tools called "
         "through these sources, `refresh` on tool server `refs` is declared to reach the "
         "network only to fetch or refresh reference data, sending nothing of the sample "
         "(whether a call did is not recorded in this report)."
     )
+
+
+def test_an_entry_written_before_the_record_and_rebuilt_is_never_said_as_declared() -> None:
+    """An old ledger re-derived by this code (the replay's build mode, a rebuilt summary)."""
+    sent = {"executes": "emulation", "network": True, "third_party": "bytes"}
+    closed = {"executes": "no", "network": False, "third_party": "no"}
+    hashed = {"executes": "no", "network": True, "third_party": "hash"}
+    old = [
+        {
+            "id": f"ev_000{n}",
+            "source": "mcp:old",
+            "server": "old",
+            "tool": tool,
+            "ok": True,
+            "facts": {"v": 1, "kind": "", "effects": effects},
+        }
+        for n, (tool, effects) in enumerate((("emu", sent), ("pe", closed), ("rep", hashed)), 1)
+    ]
+    part = effects_part(old)
+    assert {row["network_from"] for row in part["tools"]} == {"unrecorded"}
+    lines = effects_lines(part)
+    assert lines == [
+        "Taken as running the sample's code under emulation: `emu` on tool server `old`, the "
+        "isolation part records no read of the sample by its source.",
+        "Taken as reaching the network: `emu` and `rep` on tool server `old`.",
+        "Taken as sending the sample's hash to a third party: `rep` on tool server `old`.",
+        "Taken as sending the sample's file out of the deployment: `emu` on tool server `old`; "
+        "the upload rows of the disclosure above say what is known of where each call sent it.",
+        "Taken as doing none of these: 1 tool, on tool server `old`.",
+    ]
+    assert not any(line.startswith(("Ran ", "Declared ")) for line in lines)
+    # The same records with the marker recorded empty are a declaration's.
+    marked = [{**entry, "facts": {**entry["facts"], READ_KEY: []}} for entry in old]
+    assert effects_lines(effects_part(marked))[:2] == [
+        "Ran the sample's code under emulation: `emu` on tool server `old`, the isolation part "
+        "records no read of the sample by its source.",
+        "Declared to reach the network: `emu` and `rep` on tool server `old`.",
+    ]

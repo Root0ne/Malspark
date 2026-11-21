@@ -5,11 +5,11 @@
    "condition": "printed in the served report's Appendix B as the lead of the tool effects block, after the isolation block inside the disclosure block, when the disclosure record holds an effects part and effects_lines gives a line; a record stored without the part prints none",
    "basis": ["run_summary.disclosure.effects (whether the part is stored)"],
    "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_the_report_heads_the_part_with_its_lead_sentence_after_the_isolation_part",
-   "text_digest": "1e929812fba008889109a23a2ed5a27112cbfb93ed92bfe1e3cedc8fc513f3c2"
+   "text_digest": "2cdf5c582462929a32c5e6198a69ff9b6bc9981be546f9c4012a88284b52bdd4"
   },
   {
    "constant": "malspark.analysis.tool_effects:_DECLARED_TO_RUN",
-   "condition": "the lead of the line naming the tools a declaration states run the sample's code natively, and of the line for under emulation (executes_from declared, or a row stored before it), whose record does not hold the run: a declared when, or a row stored before calls were counted by how they ended (no completed field), with a call taken as completed",
+   "condition": "the lead of the line naming the tools whose row records that a declaration states they run the sample's code natively, and of the line for under emulation (executes_from declared), whose record does not hold the run: a declared when, or no completed field, with a call taken as completed",
    "basis": ["effects row executes, executes_from, completed, when, calls"],
    "test": [
     "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
@@ -20,14 +20,14 @@
   },
   {
    "constant": "malspark.analysis.tool_effects:_ENDED",
-   "condition": "the lead of the line naming the tools, other than those declared to do none of the three, with a call not run, refused or failed, one line for each of the three in that order",
+   "condition": "the lead of the line naming the tools, other than those declared or taken to do none of the three, with a call not run, refused or failed, one line for each of the three in that order, said of the effects listed for it whatever their origin",
    "basis": ["effects row not_run, refused, failed"],
    "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
-   "text_digest": "cc030ba0d051182279547f2b66e3bddc02c9903ab0789976da63f07fc48a4323"
+   "text_digest": "88205a27a4933718316135e442cbd04e2e7ab01899e53b622c23d6bf9066d1a3"
   },
   {
    "constant": "malspark.analysis.tool_effects:_RAN",
-   "condition": "the lead of the line naming the tools a declaration states run the sample's code natively, and of the line for under emulation (executes_from declared, or a row stored before it), each with a counted completed call (the row's completed) and no declared when: a completed call of a tool whose declared work is running the code is that run",
+   "condition": "the lead of the line naming the tools whose row records that a declaration states they run the sample's code natively, and of the line for under emulation (executes_from declared), each with a counted completed call (the row's completed) and no declared when: a completed call of a tool whose declared work is running the code is that run",
    "basis": ["effects row executes, executes_from, completed, when"],
    "test": [
     "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
@@ -37,7 +37,7 @@
   },
   {
    "constant": "malspark.analysis.tool_effects:_REACHED",
-   "condition": "the lead of the lines naming the tools with a completed call a declaration states reach only the sandbox service their server fronts, the configured case-memory store, or the network only to fetch or refresh reference data they keep (network_from declared, or a row stored before it: a named mode is only ever a declaration's); the case-memory store with where the disclosure's case-memory row places it (_STORE_PLACED, _STORE_UNPLACED, _STORE_NONE); each tool with its declared when",
+   "condition": "the lead of the lines naming the tools with a completed call whose row records that a declaration states they reach only the sandbox service their server fronts, the configured case-memory store, or the network only to fetch or refresh reference data they keep (network_from declared); the case-memory store with where the disclosure's case-memory row places it (_STORE_PLACED, _STORE_UNPLACED, _STORE_NONE); each tool with its declared when",
    "basis": ["effects row network, network_from, network_by, when, completed", "disclosure.stores"],
    "test": [
     "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
@@ -49,7 +49,7 @@
   },
   {
    "constant": "malspark.analysis.tool_effects:_REACHES",
-   "condition": "the lead of the lines naming the tools with a completed call that reach the network (network true), one line per origin as network_from records it: declared (a declaration states it); taken, as a tool declared or taken to send the hash out, declared to send the bytes to a third party, or taken to send the file out (rows the cautious answer forced, the hash and bytes by third_party_from); taken (the platform read it, a row stored before network_from, or an origin this code does not know); stated by its server's own declaration its block does not trust; said by its server's own hint",
+   "condition": "the lead of the lines naming the tools with a completed call that reach the network (network true), one line per origin as network_from records it: declared (a declaration states it); taken, as a tool declared or taken to send the hash out, declared to send the bytes to a third party, or taken to send the file out (rows the cautious answer forced, the hash and bytes by third_party_from); taken (the platform read it, the entry's record does not record the origin, a row stored before network_from, or an origin this code does not know); stated by its server's own declaration its block does not trust; said by its server's own hint",
    "basis": ["effects row network, network_from, network_by, third_party, third_party_from, completed"],
    "test": [
     "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
@@ -92,20 +92,23 @@
   },
   {
    "constant": "malspark.analysis.tool_effects:_TAKEN_REACHED",
-   "condition": "the lead of the lines naming the tools with a completed call whose named network (the sandbox service their server fronts, the configured case-memory store, the network only for reference data) the platform read rather than a declaration stated (network_from any value but declared); the case-memory store with where the disclosure's case-memory row places it; each tool with its declared when",
+   "condition": "the lead of the lines naming the tools with a completed call whose named network (the sandbox service their server fronts, the configured case-memory store, the network only for reference data) no declaration is recorded to state: read by the platform, of unrecorded origin, or a row stored before network_from (any value but declared); the case-memory store with where the disclosure's case-memory row places it; each tool with its declared when",
    "basis": ["effects row network, network_from, when, completed", "disclosure.stores"],
    "test": [
-    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_the_case_store_a_tool_reaches_is_placed_only_where_the_case_memory_row_places_it"
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_the_case_store_a_tool_reaches_is_placed_only_where_the_case_memory_row_places_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it"
    ],
    "text_digest": "2981cf523c63179458f8eef057d22676aca8492f95a8148595988c1a819a5bdc"
   },
   {
    "constant": "malspark.analysis.tool_effects:_TAKEN_TO_RUN",
-   "condition": "the lead of the line naming the tools with a completed call whose running of the sample's code natively, or under emulation, the platform read of the tool's listing or program (executes_from read, or any value but declared), never said as a run; each tool with its declared when and where its source read the sample",
+   "condition": "the lead of the line naming the tools with a completed call whose running of the sample's code natively, or under emulation, no declaration is recorded to state: the platform read it, the entry's record does not record the origin, or the row is stored before executes_from (any value but declared); never said as a run; each tool with its declared when and where its source read the sample",
    "basis": ["effects row executes, executes_from, completed, when"],
    "test": [
     "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_a_program_reading_is_taken",
-    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_the_block_s_statement_of_its_tools_as_a_whole_is_declared"
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_the_block_s_statement_of_its_tools_as_a_whole_is_declared",
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_an_entry_written_before_the_record_and_rebuilt_is_never_said_as_declared",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it"
    ],
    "text_digest": "1c81a862b5f1fd66f7e37c15c548f2e4c93cab69fa77586cd5056a879c5b9f25"
   },
@@ -193,7 +196,7 @@
   },
   {
    "function": "malspark.analysis.tool_effects:effects_lines",
-   "condition": "the tool effects block of the served report's Appendix B for a disclosure record with an effects part: the line that the part may be incomplete where a partial reason is recorded; that no tool call was recorded; or, for tools with a completed call, each effect in the voice of where it came from: running the sample's code (ran where a declaration states it and a counted call completed under no declared when, declared to run otherwise, taken as running where the platform read it, executes_from), the sandbox leads declared or taken, the network by where each answer came from (_REACHES) and in a named mode (_REACHED, _TAKEN_REACHED, the case-memory store placed only where a store row of the record is placed with a host), the hash declared or taken as sent (third_party_from declared, else taken: read, stored before the field, unknown), the bytes declared sent or handed to the sandbox a server fronts where a declaration states them, else the file taken as handed or sent out of the deployment, each tool with its declared when and offline condition, then the tools declared or taken to do none, server hints and statements, the calls that did not complete, and the questions left open with the reason its declaration or the platform's reading of its listing gives (why_from); [] for a record without the part",
+   "condition": "the tool effects block of the served report's Appendix B for a disclosure record with an effects part: the line that the part may be incomplete where a partial reason is recorded; that no tool call was recorded; or, for tools with a completed call, each effect in the voice of where it came from, declared only where the row records that a declaration states it, taken otherwise (read by the platform, of unrecorded origin, a row stored before the origin fields): running the sample's code (ran where declared and a counted call completed under no declared when, declared to run otherwise, taken as running), the sandbox leads, the network by where each answer came from (_REACHES) and in a named mode (_REACHED, _TAKEN_REACHED, the case-memory store placed only where a store row of the record is placed with a host), the hash, the bytes or file sent or handed to the sandbox a server fronts, each tool with its declared when and offline condition, then the tools declared or taken to do none, server hints and statements, the calls that did not complete, and the questions left open with the reason its declaration or the platform's reading of its listing gives (why_from); [] for a record without the part",
    "basis": [
     "disclosure.effects partial_reason, tools (each row's counts, answers, network_from, third_party_from, executes_from, why_from, when, offline_without_credentials, hints)",
     "disclosure.stores"
@@ -210,7 +213,7 @@
     "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_what_the_block_declares_stays_declared_over_a_reading",
     "tests/unit/analysis/test_each_tool_s_effects_are_declared_and_reported.py::test_a_tool_that_runs_any_script_it_is_given_is_left_undeclared"
    ],
-   "text_digest": "9a03cb4529cbb1df7d25e6c6d9ef7e0c52f25cb2d7e8696abd01eec6f1dd0049"
+   "text_digest": "ee78b6e9952f32b7da4adddec2aa6af05190bb53c611d4819191b0bd2babb9be"
   }
  ]
 }

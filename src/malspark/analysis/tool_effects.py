@@ -59,8 +59,8 @@ as an event. Each row keeps where each answer came from (``network_from``,
 declaration itself states are declared, ``discloses_sample`` alone taken. A
 tool whose declared work is running the sample's code "Ran" it only where a
 counted call of it completed under no declared condition. A row stored before
-these fields cannot tell a declaration from a reading: it says a network, a
-sent hash and sent bytes as taken.
+these fields, and an entry whose record does not record where its answers came
+from, cannot tell a declaration from a reading: every effect of it is taken.
 
 **One source of truth with the disclosure.** Where the sample's bytes were
 read is the isolation part (``analysis.isolation``): a tool that ran the
@@ -123,17 +123,21 @@ FROM_HINT = "hint"
 FROM_READ = "read"
 # What a row that does not record where its answer came from is said as: taken.
 _FROM_TAKEN = "taken"
+# An answer of an entry whose stored record does not record where its answers came from
+# (written before ``core.declared_reading.platform_read`` existed): taken, never declared.
+FROM_UNRECORDED = "unrecorded"
 # Where a row's sent bytes came from (``third_party_from``): the declaration's own
 # ``effects.third_party`` of ``bytes``, or ``discloses_sample`` alone, the cautious
 # reading.
 FROM_DISCLOSES = "discloses"
 
 INTRO_SENTENCE = (
-    "**Tool effects:** what each tool this run called is declared to do beyond answering: run "
-    "the sample's code, reach the network, or send the sample's hash or bytes to a third party. "
-    "Where the sample's bytes were read is the isolation part above, and where they were sent "
-    "the upload rows of the disclosure; a tool whose declaration does not say is listed as "
-    "undeclared, and is not taken as safe."
+    "**Tool effects:** what is listed of each tool this run called beyond answering: whether it "
+    "runs the sample's code, reaches the network, or sends the sample's hash or bytes to a third "
+    "party, each said as declared or as taken by where it came from. Where the sample's bytes "
+    "were read is the isolation part above, and where they were sent the upload rows of the "
+    "disclosure; an answer nothing gives is listed as undeclared for that tool, and is not taken "
+    "as safe."
 )
 
 # What a missing answer is, as the undeclared line says it.
@@ -277,6 +281,8 @@ def entry_effects(entry: Any) -> Effects:
     def origin(dotted: str, value: Any) -> str:
         if value in ("", None):
             return ""
+        if read is None:
+            return FROM_UNRECORDED
         return FROM_READ if dotted in read else FROM_DECLARED
 
     facts = kind_free_facts(declared_only(entry))
@@ -585,8 +591,8 @@ def network_from(row: Mapping[str, Any]) -> str:
     """Where a row's network answer came from, as its line says it.
 
     A row built with ``network_from`` says it. A row stored before it cannot tell a
-    declaration from the platform's reading: a network is taken; a named mode, which only
-    a declaration gives, and a closed network stay as stored.
+    declaration from the platform's reading: its network, a named mode and a closed one
+    alike, is taken; a server's own declaration or hint stays its own.
     """
     if "network_from" in row:
         return str(row.get("network_from") or "")
@@ -597,7 +603,7 @@ def network_from(row: Mapping[str, Any]) -> str:
         return FROM_HINT
     if by != DECLARED:
         return ""
-    return _FROM_TAKEN if row.get("network") is True else FROM_DECLARED
+    return _FROM_TAKEN
 
 
 def _reaches_key(row: Mapping[str, Any]) -> Any:
@@ -614,30 +620,28 @@ def third_party_from(row: Mapping[str, Any]) -> str:
     """Where a row's sent hash or bytes came from, as its line says it.
 
     A row built with ``third_party_from`` says it. A row stored before it cannot tell a
-    declaration from the platform's reading: a sent hash is taken, and sent bytes may be
-    ``discloses_sample`` alone, so they are taken too.
+    declaration from the platform's reading: what it sends, or that it sends nothing, is
+    taken, and sent bytes may be ``discloses_sample`` alone, so they are taken too.
     """
     if "third_party_from" in row:
         return str(row.get("third_party_from") or "")
     sent = row.get("third_party")
     if sent == THIRD_PARTY_BYTES:
         return FROM_DISCLOSES
-    if sent == THIRD_PARTY_HASH:
-        return _FROM_TAKEN
-    return FROM_DECLARED if sent else ""
+    return _FROM_TAKEN if sent else ""
 
 
 def executes_from(row: Mapping[str, Any]) -> str:
     """Where a row's answer of running the sample's code came from; a row stored before it
-    says it as stored."""
+    cannot tell a declaration from a reading, and its answer is taken."""
     if "executes_from" in row:
         return str(row.get("executes_from") or "")
-    return FROM_DECLARED if row.get("executes") else ""
+    return _FROM_TAKEN if row.get("executes") else ""
 
 
 def why_from(row: Mapping[str, Any]) -> str:
     """Where a row's reason its effects cannot be declared came from; a row stored before it
-    says it as stored."""
+    says it as stored (the sentence has two forms only, by this)."""
     if "why_from" in row:
         return str(row.get("why_from") or "")
     return FROM_DECLARED if row.get("why_undeclared") else ""
@@ -754,9 +758,9 @@ def _of_calls(state: str) -> Callable[[Mapping[str, Any]], str]:
 
 # What a call that did not complete is said to be, by how it ended.
 _ENDED = {
-    NOT_RUN: "Was not run, so none of its declared effects happened",
+    NOT_RUN: "Was not run, so none of the effects listed for it happened",
     REFUSED: "Was refused, so nothing was sent",
-    FAILED: "Failed, so whether its declared effects happened cannot be told",
+    FAILED: "Failed, so whether the effects listed for it happened cannot be told",
 }
 
 
@@ -965,9 +969,9 @@ def effects_lines(
             why = str(row.get("why_undeclared") or "")
             # The reason as its declaration states it, or as the platform read it.
             said = (
-                "its declaration"
-                if why_from(row) == FROM_DECLARED
-                else "the platform's reading of its listing"
+                "the platform's reading of its listing"
+                if why_from(row) == FROM_READ
+                else "its declaration"
             )
             groups.setdefault((missing, why, said), []).append(row)
     for (missing, why, said), held in groups.items():

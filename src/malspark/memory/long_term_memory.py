@@ -805,11 +805,17 @@ def similar_case_read(cases: Sequence[StoredCase] | None, *, searched: bool, sho
 
 
 def note_on(container: Any, name: str, value: Any) -> None:
-    """Set ``name`` on the job's container where it can hold it; never raises."""
+    """Set the note ``name`` on the job's container where it can hold it; never raises.
+
+    Only the two notes the disclosure's case-memory row reads, each by its own name.
+    """
     if container is None:
         return
     try:
-        setattr(container, name, value)
+        if name == "memory_case":
+            container.memory_case = value
+        elif name == "similar_case_read":
+            container.similar_case_read = value
     except Exception:  # noqa: BLE001 — a container that keeps no notes keeps none
         return
 

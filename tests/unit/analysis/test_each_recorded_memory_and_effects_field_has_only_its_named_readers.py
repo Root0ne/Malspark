@@ -115,8 +115,12 @@ def test_which_fields_the_platform_read_is_kept_apart_and_read_only_by_the_effec
         f"{core}/tool_declarations.py",
         f"{core}/declared_reading.py",
     }
-    # The stored key, by its name or its text, and its one reader.
-    assert _naming(r"\bREAD_KEY\b|[\"']platform_read[\"']") == {f"{core}/declared_reading.py"}
+    # The stored key, by its name or its text: written on every record (the entry writer's
+    # fallback record too), and its one reader.
+    assert _naming(r"\bREAD_KEY\b|[\"']platform_read[\"']") == {
+        f"{core}/declared_reading.py",
+        "src/malspark/schemas/evidence.py",
+    }
     assert _naming(r"\bplatform_read\(") == {
         f"{core}/declared_reading.py",
         EFFECTS,

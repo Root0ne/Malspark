@@ -569,8 +569,8 @@ def test_the_bytes_sent_agree_with_the_disclosure_s_upload_rows(
     }
     submit = facts_record("mcp:virustotal", "submit_file", declared=shipped)
     report = facts_record("mcp:virustotal", "get_file_report", declared=shipped)
-    # An operator's server that says so by its effects alone.
-    sent = {"v": 1, "kind": "submission", "effects": {"third_party": "bytes"}}
+    # An operator's server that says so by its effects alone, as an entry records it now.
+    sent = {"v": 1, "kind": "submission", "effects": {"third_party": "bytes"}, "platform_read": []}
     record = disclosure_record(
         snapshot,
         entries=[
@@ -779,10 +779,11 @@ def test_each_way_a_call_ended_is_counted_and_said_apart(shipped: ToolDeclaratio
     }
     lines = effects_lines(part)
     assert lines == [
-        "Was not run, so none of its declared effects happened: `floss` on Triage pack (`pack`).",
+        "Was not run, so none of the effects listed for it happened: `floss` on Triage pack "
+        "(`pack`).",
         "Was refused, so nothing was sent: `submit_file` on tool server `virustotal`.",
-        "Failed, so whether its declared effects happened cannot be told: `get_file_report` on "
-        "tool server `virustotal`.",
+        "Failed, so whether the effects listed for it happened cannot be told: "
+        "`get_file_report` on tool server `virustotal`.",
     ]
     effects = ("Ran ", "Declared to ", "Taken as ", "Stated by ", "Said by its server's own hint")
     assert not any(line.startswith(effects) for line in lines)
@@ -801,8 +802,8 @@ def test_a_tool_with_calls_that_ended_both_ways_is_counted_both_ways(
     lines = effects_lines(part)
     assert "Taken as reaching the network: `get_file_report` on tool server `virustotal`." in lines
     assert (
-        "Failed, so whether its declared effects happened cannot be told: `get_file_report` on "
-        "tool server `virustotal`, 1 of 2 calls."
+        "Failed, so whether the effects listed for it happened cannot be told: "
+        "`get_file_report` on tool server `virustotal`, 1 of 2 calls."
     ) in lines
 
 

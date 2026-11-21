@@ -140,7 +140,8 @@ def test_a_hostile_listing_stays_undeclared() -> None:
     assert d.declaration_for(("mcp:evil", "upload_to_cloud")) is None
     assert d.declaration_for(("mcp:evil", "fake_run")) is None
     record = facts_record("mcp:evil", "upload_to_cloud", declared=d)
-    assert record == {"v": 1}
+    # Nothing declared and nothing read; the record says it read nothing.
+    assert record == {"v": 1, "platform_read": []}
 
 
 def test_a_hostile_listing_is_not_counted_as_observed_nor_declared_safe() -> None:

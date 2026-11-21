@@ -38,7 +38,11 @@ CODE = tool_effects._code
 
 
 def _tool(source: str, tool: str, **over: Any) -> dict[str, Any]:
-    """A row of one tool with one completed call, declared to do none of the three."""
+    """A row of one tool with one completed call, declared to do none of the three.
+
+    Built with where each answer came from: each a declaration's, a network a server's own
+    word or hint by ``network_by``, unless the row says otherwise.
+    """
     row: dict[str, Any] = {
         "source": source,
         "server": "",
@@ -57,7 +61,19 @@ def _tool(source: str, tool: str, **over: Any) -> dict[str, Any]:
         "refused": 0,
     }
     row.update(over)
+    origin = {DECLARED: "declared", SERVER_HINT: "hint", SERVER_STATED: "server"}
+    row.setdefault(
+        "network_from", origin.get(row["network_by"], "") if row["network"] is not None else ""
+    )
+    row.setdefault("third_party_from", "declared" if row["third_party"] else "")
+    row.setdefault("executes_from", "declared" if row["executes"] else "")
+    row.setdefault("why_from", "declared" if row["why_undeclared"] else "")
     return row
+
+
+def _stored(row: dict[str, Any]) -> dict[str, Any]:
+    """The row as a record stored before it recorded where its answers came from."""
+    return {key: value for key, value in row.items() if not key.endswith("_from")}
 
 
 def test_each_place_a_tool_was_called_through_is_named_by_its_kind() -> None:
@@ -107,16 +123,16 @@ def test_a_network_answer_is_said_in_the_voice_of_where_it_came_from() -> None:
     # A row built with the field says it.
     for held in ("declared", "sends", "server", "hint", "read", ""):
         assert network_from({"network_from": held, "network_by": DECLARED}) == held
-    # A row stored before it cannot tell a declaration from the platform's reading: a
-    # network is taken, whatever is sent beside it; a named mode and a closed network stay.
+    # A row stored before it cannot tell a declaration from the platform's reading: its
+    # network is taken, whatever is sent beside it, a named mode and a closed one alike.
     assert network_from({"network_by": SERVER_STATED, "network": True}) == "server"
     assert network_from({"network_by": SERVER_HINT, "network": True}) == "hint"
     for sent in ("no", "hash", "bytes"):
         assert network_from({"network_by": DECLARED, "network": True, "third_party": sent}) == (
             "taken"
         )
-    assert network_from({"network_by": DECLARED, "network": "case_store"}) == "declared"
-    assert network_from({"network_by": DECLARED, "network": False}) == "declared"
+    assert network_from({"network_by": DECLARED, "network": "case_store"}) == "taken"
+    assert network_from({"network_by": DECLARED, "network": False}) == "taken"
     assert network_from({"network_by": ""}) == ""
     assert tool_effects._hint_closed({"hints": {"openWorldHint": False}}) == (
         "though its server's own hint says it does not reach outside its server"
@@ -239,55 +255,109 @@ def test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it() -> 
     ]
     part = {"partial_reason": "the job was stopped part way", "tools": rows}
     placed = [{"backend": "qdrant", "host": "127.0.0.1", "where": "local"}]
-    fronted = (
-        "`submit` on tool server `detonator`, at `127.0.0.1:8000`, which the disclosure places "
-        "on this machine, so the operator's own and not a third party"
-    )
     assert effects_lines(part, stores=placed) == [
-        "This part may be incomplete: the job was stopped part way, and a call made in the step "
-        "it stopped in may not be recorded.",
-        "Ran the sample's code natively: `emu` on tool server `analysis`, read in a process the "
-        "worker started, not shown to be kept from the worker.",
-        # A declared condition: the record does not hold that the run happened.
-        "Declared to run the sample's code under emulation: `emulate_function` on tool server "
-        "`analysis`, at analysis level 2 and above, the isolation part records no read of the "
-        "sample by its source.",
-        f"Declared to have the sample run in the sandbox service its server fronts: {fronted}.",
+        "This part may be incomplete: the job was stopped part way, and a call made in the "
+        "step it stopped in may not be recorded.",
+        "Ran the sample's code natively: `emu` on tool server `analysis`, read in a process "
+        "the worker started, not shown to be kept from the worker.",
+        "Declared to run the sample's code under emulation: `emulate_function` on tool server"
+        " `analysis`, at analysis level 2 and above, the isolation part records no read of "
+        "the sample by its source.",
+        "Declared to have the sample run in the sandbox service its server fronts: `submit` "
+        "on tool server `detonator`, at `127.0.0.1:8000`, which the disclosure places on this"
+        " machine, so the operator's own and not a third party.",
         "Declared to run the sample in a sandbox its server does not front, which may be a "
         "third party's: `detonate` on the `remote` provider's tool server.",
-        # Rows stored before ``network_from``: a network is taken.
+        "Declared to reach the network: `detonate` on the `remote` provider's tool server; "
+        "`lookup` on tool server `intel`.",
+        "Stated by its own server, in a declaration its block does not trust, to reach the "
+        "network: `pull` on tool server `other`.",
+        "Said by its server's own hint to reach outside its server: `fetch` on tool server "
+        "`other`.",
+        "Declared to reach the sandbox service its server fronts: `submit` on tool server "
+        "`detonator`, at `127.0.0.1:8000`, which the disclosure places on this machine, so "
+        "the operator's own and not a third party.",
+        "Declared to reach the configured case-memory store, which the disclosure's "
+        "case-memory row places: `recall` on tool server `memory`.",
+        "Declared to reach the network only to fetch or refresh reference data they keep, "
+        "sending nothing of the sample: `techniques` on tool server `knowledge`.",
+        "Declared to send the sample's hash to a third party: `lookup` on tool server `intel`.",
+        "Declared to hand the sample's bytes to the sandbox service its server fronts: "
+        "`submit` on tool server `detonator`, at `127.0.0.1:8000`, which the disclosure "
+        "places on this machine, so the operator's own and not a third party; where each call"
+        " sent them is in the upload rows of the disclosure above.",
+        "Declared to send the sample's bytes to a third party: `detonate` on the `remote` "
+        "provider's tool server; where each call sent them is in the upload rows of the "
+        "disclosure above.",
+        "Declared to do none of these: 2 tools, on tool server `analysis` and Triage pack "
+        "(`pack`).",
+        "Said not to reach the network by its server's own hint (openWorldHint false), which "
+        "no declaration says: `peek` on tool server `other`.",
+        "Said of itself by its own server, which no declaration the operator trusts says: "
+        "`pull` on tool server `other`, effects.executes no.",
+        "Was not run, so none of the effects listed for it happened: `capabilities` on tool "
+        "server `analysis`.",
+        "Was refused, so nothing was sent: `submit_file` on tool server `intel`.",
+        "Failed, so whether the effects listed for it happened cannot be told: `rule_scan` on"
+        " tool server `analysis`, 2 of 3 calls.",
+        "Undeclared whether it may run the sample's code or send the sample's hash or bytes "
+        "to a third party, so not taken as safe: `fetch` on tool server `other`.",
+        "Undeclared whether it may send the sample's hash or bytes to a third party, so not "
+        "taken as safe: `rule_scan` on tool server `analysis`.",
+        "Undeclared whether it may run the sample's code, reach the network or send the "
+        "sample's hash or bytes to a third party, so not taken as safe: `run_script` on tool "
+        "server `x`; its declaration says why: it runs whatever script it is given.",
+    ]
+    # The same rows stored before they recorded where each answer came from: every
+    # effect is taken, a server's own word and hint stay its own.
+    stored = {**part, "tools": [_stored(row) for row in rows]}
+    assert effects_lines(stored, stores=placed) == [
+        "This part may be incomplete: the job was stopped part way, and a call made in the "
+        "step it stopped in may not be recorded.",
+        "Taken as running the sample's code natively: `emu` on tool server `analysis`, read "
+        "in a process the worker started, not shown to be kept from the worker.",
+        "Taken as running the sample's code under emulation: `emulate_function` on tool "
+        "server `analysis`, at analysis level 2 and above, the isolation part records no read"
+        " of the sample by its source.",
+        "Taken as having the sample run in the sandbox service its server fronts: `submit` on"
+        " tool server `detonator`, at `127.0.0.1:8000`, which the disclosure places on this "
+        "machine, so the operator's own and not a third party.",
+        "Taken as running the sample in a sandbox its server does not front, which may be a "
+        "third party's: `detonate` on the `remote` provider's tool server.",
         "Taken as reaching the network: `detonate` on the `remote` provider's tool server; "
         "`lookup` on tool server `intel`.",
         "Stated by its own server, in a declaration its block does not trust, to reach the "
         "network: `pull` on tool server `other`.",
         "Said by its server's own hint to reach outside its server: `fetch` on tool server "
         "`other`.",
-        f"Declared to reach the sandbox service its server fronts: {fronted}.",
-        "Declared to reach the configured case-memory store, which the disclosure's case-memory "
-        "row places: `recall` on tool server `memory`.",
-        "Declared to reach the network only to fetch or refresh reference data they keep, "
+        "Taken as reaching the sandbox service its server fronts: `submit` on tool server "
+        "`detonator`, at `127.0.0.1:8000`, which the disclosure places on this machine, so "
+        "the operator's own and not a third party.",
+        "Taken as reaching the configured case-memory store, which the disclosure's "
+        "case-memory row places: `recall` on tool server `memory`.",
+        "Taken as reaching the network only to fetch or refresh reference data they keep, "
         "sending nothing of the sample: `techniques` on tool server `knowledge`.",
-        # A row stored before ``third_party_from``: a sent hash is taken.
         "Taken as sending the sample's hash to a third party: `lookup` on tool server `intel`.",
-        f"Taken as handing the sample's file to the sandbox service its server fronts: "
-        f"{fronted}; the upload rows of the disclosure above say what is known of where each "
-        "call sent it.",
-        "Taken as sending the sample's file out of the deployment: `detonate` on the `remote` "
-        "provider's tool server; the upload rows of the disclosure above say what is known of "
-        "where each call sent it.",
-        "Declared to do none of these: 2 tools, on tool server `analysis` and Triage pack "
+        "Taken as handing the sample's file to the sandbox service its server fronts: "
+        "`submit` on tool server `detonator`, at `127.0.0.1:8000`, which the disclosure "
+        "places on this machine, so the operator's own and not a third party; the upload rows"
+        " of the disclosure above say what is known of where each call sent it.",
+        "Taken as sending the sample's file out of the deployment: `detonate` on the `remote`"
+        " provider's tool server; the upload rows of the disclosure above say what is known "
+        "of where each call sent it.",
+        "Taken as doing none of these: 2 tools, on tool server `analysis` and Triage pack "
         "(`pack`).",
-        "Said not to reach the network by its server's own hint (openWorldHint false), which no "
-        "declaration says: `peek` on tool server `other`.",
+        "Said not to reach the network by its server's own hint (openWorldHint false), which "
+        "no declaration says: `peek` on tool server `other`.",
         "Said of itself by its own server, which no declaration the operator trusts says: "
         "`pull` on tool server `other`, effects.executes no.",
-        "Was not run, so none of its declared effects happened: `capabilities` on tool server "
-        "`analysis`.",
+        "Was not run, so none of the effects listed for it happened: `capabilities` on tool "
+        "server `analysis`.",
         "Was refused, so nothing was sent: `submit_file` on tool server `intel`.",
-        "Failed, so whether its declared effects happened cannot be told: `rule_scan` on tool "
-        "server `analysis`, 2 of 3 calls.",
-        "Undeclared whether it may run the sample's code or send the sample's hash or bytes to "
-        "a third party, so not taken as safe: `fetch` on tool server `other`.",
+        "Failed, so whether the effects listed for it happened cannot be told: `rule_scan` on"
+        " tool server `analysis`, 2 of 3 calls.",
+        "Undeclared whether it may run the sample's code or send the sample's hash or bytes "
+        "to a third party, so not taken as safe: `fetch` on tool server `other`.",
         "Undeclared whether it may send the sample's hash or bytes to a third party, so not "
         "taken as safe: `rule_scan` on tool server `analysis`.",
         "Undeclared whether it may run the sample's code, reach the network or send the "
@@ -332,11 +402,12 @@ def test_the_report_heads_the_part_with_its_lead_sentence_after_the_isolation_pa
 
     text = rendered(record)
     assert (
-        "\n\n**Tool effects:** what each tool this run called is declared to do beyond "
-        "answering: run the sample's code, reach the network, or send the sample's hash or "
-        "bytes to a third party. Where the sample's bytes were read is the isolation part "
-        "above, and where they were sent the upload rows of the disclosure; a tool whose "
-        "declaration does not say is listed as undeclared, and is not taken as safe.\n\n"
+        "\n\n**Tool effects:** what is listed of each tool this run called beyond answering: "
+        "whether it runs the sample's code, reaches the network, or sends the sample's hash or "
+        "bytes to a third party, each said as declared or as taken by where it came from. "
+        "Where the sample's bytes were read is the isolation part above, and where they were "
+        "sent the upload rows of the disclosure; an answer nothing gives is listed as "
+        "undeclared for that tool, and is not taken as safe.\n\n"
         "- Declared to do none of these: 1 tool, on tool server `analysis`.\n"
     ) in text
     # A record stored before the part existed prints no lead sentence.
@@ -465,7 +536,7 @@ def test_where_a_network_answer_came_from_and_the_offline_condition_are_built_fr
             source="mcp:svc",
             server="svc",
             agent="static",
-            facts={"v": 1, "kind": "", **facts},
+            facts={"v": 1, "kind": "", "platform_read": [], **facts},
         )
 
     # A hash-only third party with no network declared: taken as reaching it, as a tool
@@ -518,7 +589,7 @@ def test_bytes_a_declaration_states_are_declared_and_bytes_read_cautiously_are_t
             source="mcp:svc",
             server="svc",
             agent="static",
-            facts={"v": 1, "kind": "", **facts},
+            facts={"v": 1, "kind": "", "platform_read": [], **facts},
         )
 
     stated = entry("push", {"effects": {"executes": "no", "network": True, "third_party": "bytes"}})
@@ -558,9 +629,9 @@ def test_bytes_a_declaration_states_are_declared_and_bytes_read_cautiously_are_t
             line.startswith("Taken as sending the sample's file out of the deployment: ")
             for line in effects_lines({"tools": [stored]})
         )
-    # A sent hash of a row stored before the field is taken too; a closed third party stays.
+    # A sent hash of a row stored before the field is taken too, and so is sending nothing.
     assert tool_effects.third_party_from({"third_party": "hash"}) == "taken"
-    assert tool_effects.third_party_from({"third_party": "no"}) == "declared"
+    assert tool_effects.third_party_from({"third_party": "no"}) == "taken"
     assert tool_effects.third_party_from({}) == ""
 
 

@@ -27,15 +27,18 @@ TOKENS = {
 STDIO = {"mcp.servers.refs.transport": "stdio", "mcp.servers.refs.url": ""}
 QDRANT = {"qdrant": {"address_leaf": "url"}}
 WORKER = {"uid": 1000, "platform_names_in_env": []}
+# Each as an entry records it now: with where its answers came from (none read).
 REFRESH = {
     "v": 1,
     "kind": "capability_rules",
     "effects": {"executes": "no", "network": "on_refresh", "third_party": "no"},
+    "platform_read": [],
 }
 CASES = {
     "v": 1,
     "kind": "",
     "effects": {"executes": "no", "network": "case_store", "third_party": "no"},
+    "platform_read": [],
 }
 
 
@@ -135,7 +138,13 @@ def test_an_in_process_tool_declared_to_read_the_case_store_is_said_so_where_it_
 
 def test_the_calls_made_here_name_each_named_mode_and_the_store_s_place() -> None:
     rows = [{"source": "mcp:refs", "made": 2, "served": 0, "not_run": 0}]
-    tool = {"source": "mcp:refs", "server": "", "calls": 2, "network_by": "declared"}
+    tool = {
+        "source": "mcp:refs",
+        "server": "",
+        "calls": 2,
+        "network_by": "declared",
+        "network_from": "declared",
+    }
     both = {
         "effects": {
             "tools": [
@@ -182,6 +191,7 @@ def test_nothing_left_names_a_refreshing_tool_only_when_one_was_called_here() ->
                     "calls": 1,
                     "network": "on_refresh",
                     "network_by": "declared",
+                    "network_from": "declared",
                 }
             ]
         },

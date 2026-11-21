@@ -114,7 +114,7 @@
   },
   {
    "constant": "malspark.analysis.disclosure:_REFRESH_DECLARED",
-   "condition": "the declaration said of a tool called on this machine whose network on_refresh a declaration states (network_from declared, or a row stored before it), in the line on calls made on this machine and among what \"Nothing of the sample left this machine\" rests on",
+   "condition": "the declaration said of a tool called on this machine whose row records that a declaration states its network on_refresh (network_from declared), in the line on calls made on this machine and among what \"Nothing of the sample left this machine\" rests on",
    "basis": ["run_summary.disclosure.effects.tools[].network"],
    "test": [
     "tests/unit/analysis/test_the_calls_made_here_and_the_case_memory_are_said_as_recorded.py::test_the_calls_made_here_name_each_named_mode_and_the_store_s_place",
@@ -124,7 +124,7 @@
   },
   {
    "constant": "malspark.analysis.disclosure:_REFRESH_TAKEN",
-   "condition": "the reading said of a tool called on this machine whose network on_refresh the platform read rather than a declaration stated (network_from any value but declared), in the line on calls made on this machine and among what \"Nothing of the sample left this machine\" rests on",
+   "condition": "the reading said of a tool called on this machine whose network on_refresh no declaration is recorded to state (network_from any value but declared: read by the platform, of unrecorded origin, or a row stored before network_from), in the line on calls made on this machine and among what \"Nothing of the sample left this machine\" rests on",
    "basis": ["run_summary.disclosure.effects.tools[].network", "run_summary.disclosure.effects.tools[].network_from"],
    "test": [
     "tests/unit/analysis/test_each_recorded_memory_and_effects_field_has_only_its_named_readers.py::test_no_form_or_condition_names_a_tool_a_server_or_a_source"
@@ -338,7 +338,7 @@
   },
   {
    "function": "malspark.analysis.disclosure:_stayed_line",
-   "condition": "in the Disclosure block of Appendix B (disclosure_lines) where the record holds stayed rows: the total, then each source with its count; where the effects part holds a row with a call made of a tool called through one of those sources (an effects row with no source joined by its server) whose network is on_refresh or case_store, \"Tool calls made on this machine\" and, after the sources, each such tool as declared or, where the platform read that network (network_from), as taken (refreshing reference data, whether a call did not recorded; reading the case-memory store, which the case-memory line places only where a store row is placed with a host, of which that line cannot tell where it runs where a store row is listed and not so placed, else kept in the process or not configured); otherwise \"Tool calls that stayed on this machine\"",
+   "condition": "in the Disclosure block of Appendix B (disclosure_lines) where the record holds stayed rows: the total, then each source with its count; where the effects part holds a row with a call made of a tool called through one of those sources (an effects row with no source joined by its server) whose network is on_refresh or case_store, \"Tool calls made on this machine\" and, after the sources, each such tool as declared where its row records that a declaration states that network (network_from declared), else as taken (refreshing reference data, whether a call did not recorded; reading the case-memory store, which the case-memory line places only where a store row is placed with a host, of which that line cannot tell where it runs where a store row is listed and not so placed, else kept in the process or not configured); otherwise \"Tool calls that stayed on this machine\"",
    "basis": [
     "run_summary.disclosure.stayed[]",
     "run_summary.disclosure.effects.tools[].source",

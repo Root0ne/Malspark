@@ -132,7 +132,9 @@ SERVED_CLAIMS_KEY = "served_claims"
 # The key of the stored record that names, dotted, the fields of the tool's effects
 # that the platform's own reading of its listing or program gave, not a declaration
 # (``Declared.read_fields``): in force as any other, and read only by the tool-effects
-# part's lines, which say each such field as taken (:func:`platform_read`).
+# part's lines, which say each such field as taken (:func:`platform_read`). Written on
+# every record, empty where nothing was read, so a record without it is one whose
+# origin was not recorded.
 READ_KEY = "platform_read"
 # The MCP tool annotations a server may give, each a yes or no.
 SERVER_HINTS: tuple[str, ...] = (
@@ -292,7 +294,8 @@ def _in_process_facts(source: str, tool: str) -> dict[str, Any] | None:
     held = _in_process_blocks().get(source)
     if held is None:
         return None
-    return stored_record(held.get(tool))
+    # Built-in data alone: nothing of it is the platform's reading of a listing.
+    return {**stored_record(held.get(tool)), READ_KEY: []}
 
 
 def facts_record(
@@ -352,22 +355,21 @@ def _with_served(
         out[SERVED_KEY] = stored
     if claims:
         out[SERVED_CLAIMS_KEY] = dict(claims)
-    taken = [name for name in read if name.partition(".")[0] in record]
-    if taken:
-        out[READ_KEY] = taken
+    out[READ_KEY] = [name for name in read if name.partition(".")[0] in record]
     return out
 
 
-def platform_read(entry: Any) -> frozenset[str]:
+def platform_read(entry: Any) -> frozenset[str] | None:
     """The fields of the entry's stored effects the platform read, not a declaration stated.
 
     Dotted (``effects.network``), as the entry stored them (:data:`READ_KEY`); empty for
-    a record that names none.
+    a record that names none; ``None`` for a record that does not record the origin
+    (one written before the key, or none at all).
     """
     held = _field(entry, "facts")
     read = held.get(READ_KEY) if isinstance(held, Mapping) else None
     if not isinstance(read, list | tuple):
-        return frozenset()
+        return None
     return frozenset(str(name) for name in read if isinstance(name, str))
 
 
