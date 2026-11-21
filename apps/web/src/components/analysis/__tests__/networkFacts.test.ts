@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { MalwareReport, NetworkDomain, NetworkIOCs, NetworkIP } from "@/types/malware-report";
-import { domainFacts, endpointCounts, formValues, ipFacts, networkCounts } from "../networkFacts";
-import { hostLabel, hostRows, hostSuspicious } from "../networkView";
+import { domainFacts, endpointCounts, formValues, ipFacts, networkCounts, valueKey } from "../networkFacts";
+import { hostLabel, hostReading, hostRows, hostSuspicious } from "../networkView";
 
 function ip(over: Partial<NetworkIP> = {}): NetworkIP {
   return {
@@ -140,5 +140,43 @@ describe("a row of the sample's strings the API serves as its form (T-778)", () 
       ips: 0,
       urls: 0,
     });
+  });
+
+  it("says why a host stands out and its generated-name score only on a row that is no form row", () => {
+    const rows = hostRows(report.network as unknown as NetworkIOCs, formValues(report));
+    expect(rows.map((r) => [r.host, hostReading(r)])).toEqual([
+      ["abi.name", { reason: "", score: null }],
+      ["c2.example", { reason: "DGA-like (score 0.71)", score: null }],
+    ]);
+    const scored = hostRows({
+      domains: [
+        domain({ fqdn: "abi.name", source: "strings", reason: "DGA-like (score 0.82)", dga_score: 0.82 }),
+        domain({ fqdn: "c2.example", reason: "DGA-like (score 0.71)", dga_score: 0.71 }),
+        domain({ fqdn: "plain.example", dga_score: 0 }),
+      ],
+      ips: [ip()],
+      urls: [],
+    } as unknown as NetworkIOCs, formValues(report));
+    expect(scored.map((r) => hostReading(r))).toEqual([
+      { reason: "", score: null },
+      { reason: "DGA-like (score 0.71)", score: 0.71 },
+      { reason: "", score: null },
+      { reason: "", score: null },
+    ]);
+  });
+
+  it("finds a form row's value written with a trailing dot, as the report keys a name", () => {
+    expect(valueKey(" Abi.Name. ")).toBe("abi.name");
+    const dotted = {
+      ...report,
+      consolidated_iocs: [{ type: "Dotted name", kind: "dotted_name", value: "abi.name.", source: "strings" }],
+    } as unknown as MalwareReport;
+    expect([...formValues(dotted)]).toEqual([["abi.name", "Dotted name"]]);
+    const rows = hostRows(dotted.network as unknown as NetworkIOCs, formValues(dotted));
+    expect(rows.map((r) => [hostLabel(r), hostSuspicious(r)])).toEqual([
+      ["Dotted name", false],
+      ["Domain", true],
+    ]);
+    expect(networkCounts(dotted)).toEqual({ domains: 2, ips: 0, urls: 0, suspicious: 1 });
   });
 });

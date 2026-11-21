@@ -11,6 +11,7 @@
  */
 
 import type { NetworkDomain, NetworkIOCs, NetworkIP, NetworkURL } from "@/types/malware-report";
+import { valueKey } from "./networkFacts";
 
 /** How many rows each network table draws before offering more. */
 export const NETWORK_ROWS_STEP = 10;
@@ -42,7 +43,7 @@ export function urlHost(url: string | null | undefined): string {
 
 /**
  * Every host the network block names, domains first, each with its requests.
- * A name the IOC table serves as its form (`forms`, names without case) keeps
+ * A name the IOC table serves as its form (`forms`, keyed by `valueKey`) keeps
  * its row and carries that form.
  */
 export function hostRows(
@@ -63,7 +64,7 @@ export function hostRows(
       host: domain.fqdn,
       domain,
       requests: requestsOf(domain.fqdn),
-      form: forms.get(String(domain.fqdn ?? "").trim().toLowerCase()) ?? "",
+      form: forms.get(valueKey(domain.fqdn)) ?? "",
     }),
   );
   (net.ips ?? []).forEach((ip, i) =>
@@ -81,6 +82,20 @@ export function hostSuspicious(row: HostRow): boolean {
 export function hostLabel(row: HostRow): string {
   if (row.kind === "ip") return "IP address";
   return row.form || "Domain";
+}
+
+/**
+ * Why the network block flags a domain and its generated-name score, as the
+ * host detail says them: nothing on a name the IOC table serves as its form,
+ * since both read it as a host. A score of 0 is not said.
+ */
+export function hostReading(row: HostRow): { reason: string; score: number | null } {
+  if (row.kind !== "domain" || row.form) return { reason: "", score: null };
+  const score = row.domain.dga_score;
+  return {
+    reason: row.domain.reason ?? "",
+    score: typeof score === "number" && score > 0 ? score : null,
+  };
 }
 
 /** The enrichment record of a host, when the run holds one. */

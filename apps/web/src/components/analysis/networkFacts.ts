@@ -78,9 +78,14 @@ export const FORM_KINDS: ReadonlySet<string> = new Set([
   "registry_key_shaped_text",
 ]);
 
-const valueKey = (value: string) => String(value ?? "").trim().toLowerCase();
+/**
+ * One spelling of a name for every lookup, as the report keys one
+ * (`ledger_projection.value_key`): without case and without a trailing dot.
+ */
+export const valueKey = (value: string | null | undefined) =>
+  String(value ?? "").trim().toLowerCase().replace(/\.+$/, "");
 
-/** Each value the report's IOC table serves as its form (names without case), with the form it prints. */
+/** Each value the report's IOC table serves as its form (keyed by `valueKey`), with the form it prints. */
 export function formValues(mr: Pick<MalwareReport, "consolidated_iocs"> | null | undefined): Map<string, string> {
   const forms = new Map<string, string>();
   for (const row of mr?.consolidated_iocs ?? []) {

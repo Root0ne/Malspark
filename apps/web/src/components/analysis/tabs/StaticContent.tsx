@@ -413,7 +413,8 @@ export default function StaticContent({ report }: { report: ReportDetailDTO }) {
                     <table className="w-full">
                       <thead>
                         <tr className="border-b border-border">
-                          <Th>Kind</Th>
+                          {/* The extractor's typing by form, not what the run reads the value as. */}
+                          <Th>Kind (as the string sweep typed it)</Th>
                           <Th>Value</Th>
                           <Th>Notes</Th>
                         </tr>
