@@ -225,6 +225,20 @@ def test_a_json_copy_keeps_the_original_layout(indent: int | None) -> None:
         )
 
 
+def test_a_domain_row_served_as_its_form_is_defanged_as_a_domain_row(tmp_path: Path) -> None:
+    """A domain row of the file's strings nothing reads as a host is served as its form
+    (``string_row_form.EXPORTED_FORM_KINDS``); its value is defanged as before."""
+    run = tmp_path / "run"
+    run.mkdir()
+    items = [
+        {"kind": "dotted_name", "value": "odd.zz"},
+        {"kind": "text_not_a_plain_host_name", "value": "\\\\.\\pipe\\x.yy"},
+        {"kind": "name_at_domain_text", "value": "a@b.zz"},
+    ]
+    (run / "iocs.json").write_text(json.dumps({"items": items}), encoding="utf-8")
+    assert run_indicators(run) == {"odd.zz", "\\\\.\\pipe\\x.yy"}
+
+
 def test_a_run_folder_is_published_whole(tmp_path: Path) -> None:
     run, out = tmp_path / "run", tmp_path / "out"
     run.mkdir()

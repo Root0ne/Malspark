@@ -66,30 +66,59 @@ export function ipFacts(ip: NetworkIP): string[] {
 }
 
 /**
+ * The kinds the IOC table is served a row of the sample's strings under when
+ * nothing in the run reads it as its kind (`reporting.string_row_form`): its
+ * form, which names no host, address or mailbox.
+ */
+export const FORM_KINDS: ReadonlySet<string> = new Set([
+  "name_at_domain_text",
+  "dotted_name",
+  "text_not_a_plain_host_name",
+  "path_shaped_text",
+  "registry_key_shaped_text",
+]);
+
+const valueKey = (value: string) => String(value ?? "").trim().toLowerCase();
+
+/** Each value the report's IOC table serves as its form (names without case), with the form it prints. */
+export function formValues(mr: Pick<MalwareReport, "consolidated_iocs"> | null | undefined): Map<string, string> {
+  const forms = new Map<string, string>();
+  for (const row of mr?.consolidated_iocs ?? []) {
+    if (row && typeof row.value === "string" && row.kind && FORM_KINDS.has(row.kind)) {
+      forms.set(valueKey(row.value), row.type || row.kind);
+    }
+  }
+  return forms;
+}
+
+/**
  * How many distinct domains, addresses and URLs a run names, from the network
  * block and the sample's own strings together. A value both sources carry is
- * one endpoint, so it is counted once (names compare without case).
+ * one endpoint, so it is counted once (names compare without case). A value
+ * the IOC table serves as its form (`forms`) is no domain and is not counted.
  */
 export function endpointCounts(
   net: { domains: { fqdn: string }[]; ips: { address: string }[]; urls: { url: string }[] } | null | undefined,
   strings: { kind: string; value: string }[] | null | undefined,
+  forms: ReadonlyMap<string, string> = new Map(),
 ): { domains: number; ips: number; urls: number } {
-  const key = (value: string) => String(value ?? "").trim().toLowerCase();
-  const domains = new Set((net?.domains ?? []).map((d) => key(d.fqdn)));
-  const ips = new Set((net?.ips ?? []).map((i) => key(i.address)));
+  const domains = new Set((net?.domains ?? []).map((d) => valueKey(d.fqdn)));
+  const ips = new Set((net?.ips ?? []).map((i) => valueKey(i.address)));
   const urls = new Set((net?.urls ?? []).map((u) => String(u.url ?? "").trim()));
   for (const s of strings ?? []) {
-    if (s.kind === "domain") domains.add(key(s.value));
-    else if (s.kind === "ip") ips.add(key(s.value));
+    if (s.kind === "domain") domains.add(valueKey(s.value));
+    else if (s.kind === "ip") ips.add(valueKey(s.value));
     else if (s.kind === "url") urls.add(String(s.value ?? "").trim());
   }
+  for (const value of forms.keys()) domains.delete(value);
   return { domains: domains.size, ips: ips.size, urls: urls.size };
 }
 
 /**
  * The counts the Network tab leads with: the endpoints the capture and the
  * binary's own strings name (a hard-coded C2 domain is not "0 domains"), and
- * how many of the capture's endpoints were found suspicious.
+ * how many of the capture's endpoints were found suspicious. A value the IOC
+ * table serves as its form is neither a domain nor a suspicious endpoint.
  */
 export function networkCounts(mr: MalwareReport): {
   domains: number;
@@ -101,9 +130,11 @@ export function networkCounts(mr: MalwareReport): {
   const staticIocs = (mr.static?.interesting_strings ?? []).filter(
     (s) => s.kind === "domain" || s.kind === "ip" || s.kind === "url",
   );
-  const counts = endpointCounts(n, staticIocs);
+  const forms = formValues(mr);
+  const counts = endpointCounts(n, staticIocs, forms);
   if (!n) return { ...counts, suspicious: 0 };
   const suspicious =
-    n.domains.filter((d) => d.is_suspicious).length + n.ips.filter((i) => i.is_suspicious).length;
+    n.domains.filter((d) => d.is_suspicious && !forms.has(valueKey(d.fqdn))).length +
+    n.ips.filter((i) => i.is_suspicious).length;
   return { ...counts, suspicious };
 }

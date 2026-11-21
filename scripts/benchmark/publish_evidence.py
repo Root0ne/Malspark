@@ -64,6 +64,11 @@ from pathlib import Path
 from typing import Any
 
 from malspark.core.previous_name import CURRENT_NAME, PREVIOUS_NAME
+from malspark.reporting.string_row_form import (
+    DOTTED_NAME,
+    EXPORTED_FORM_KINDS,
+    NOT_A_PLAIN_HOST_BY_FORM,
+)
 
 OUT = Path(__file__).resolve().parents[2] / "apps" / "docs" / "public" / "assets" / "benchmark"
 
@@ -99,7 +104,16 @@ RULE_KEYWORDS = frozenset({"http.host"})
 
 # The run-folder records that hold network indicators, and the keys of a
 # sandbox or capture record whose values are an address or a host name.
-INDICATOR_KINDS = ("ip", "domain", "url")
+# A domain row of the file's strings that nothing in the run reads as a host
+# is served as its form (``string_row_form``); its value is defanged as every
+# domain row's is.
+INDICATOR_KINDS = (
+    "ip",
+    "domain",
+    "url",
+    EXPORTED_FORM_KINDS[DOTTED_NAME],
+    EXPORTED_FORM_KINDS[NOT_A_PLAIN_HOST_BY_FORM],
+)
 NETWORK_RECORD_KINDS = ("sandbox_network", "pcap")
 NETWORK_KEYS = frozenset({"dst", "src", "ip", "domain", "host", "hostname", "query", "url"})
 

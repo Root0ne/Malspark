@@ -259,7 +259,8 @@ class TestThePrivacyPathsAreAllChecked:
 
         The feed's rows are the table's, each with the one rule's answer, so a
         mailbox only the file's strings carry is a withheld row, never one the
-        default feed serves.
+        default feed serves. Nothing else in the run reads it as a mailbox, so
+        it is served as the form it has (T-778).
         """
         from app.services.report_service import ioc_feed_rows
 
@@ -267,9 +268,11 @@ class TestThePrivacyPathsAreAllChecked:
 
         rows = ioc_feed_rows(report.model_dump(mode="json"))
 
-        assert [(row["published"], row["source"]) for row in rows if row["kind"] == "email"] == [
-            (False, "strings")
-        ]
+        assert [
+            (row["kind"], row["published"], row["source"])
+            for row in rows
+            if row["value"] == "operator@example.org"
+        ] == [("name_at_domain_text", False, "strings")]
         assert "operator@example.org" not in str(ExtendedSTIXRenderer().render(report))
 
     def test_the_enrichment_looks_up_no_address(self) -> None:

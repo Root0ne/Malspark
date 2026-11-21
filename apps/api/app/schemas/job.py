@@ -530,7 +530,11 @@ class IOCEntry(BaseModel):
     # The row kind of the report's IOC table the row is: "hash" | "domain" |
     # "ip" | "url" | "email" | "user_agent" | "ja3" | "ja3s" | "path" |
     # "registry" | "registry_value" | "mutex" | "folder" | "scheduled_task" |
-    # "service" | "named_pipe" | "ads" | "command" | ...
+    # "service" | "named_pipe" | "ads" | "command" | ... A row of the file's
+    # strings that nothing in the run reads as its kind carries its form
+    # instead: "name_at_domain_text" | "dotted_name" |
+    # "text_not_a_plain_host_name" | "path_shaped_text" |
+    # "registry_key_shaped_text" (``string_row_form.EXPORTED_FORM_KINDS``).
     kind: str
     value: str
     is_suspicious: bool = False
@@ -584,7 +588,9 @@ class IOCEntry(BaseModel):
     )
     # What an identifier row the rule refuses is, which the full list carries
     # after the IOC table's rows: the rule's label (``Folder``), or the kind as
-    # the analysis wrote it where the rule has none. Left out on every other row.
+    # the analysis wrote it where the rule has none; and the form a row of the
+    # file's strings carries as its kind, as §9 prints it (``Dotted name``).
+    # Left out on every other row.
     type: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 

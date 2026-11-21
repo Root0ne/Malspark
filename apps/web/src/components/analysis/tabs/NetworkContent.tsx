@@ -12,10 +12,11 @@ import { ArtifactSections } from "@/components/analysis/ArtifactTable";
 import DetonationMark from "@/components/analysis/DetonationMark";
 import { isCoveredBySection, sectionsForTab } from "@/components/analysis/reportSections";
 import { endpointReputation, reputationTooltip, verdictWords } from "@/components/analysis/reputation";
-import { domainFacts, ipFacts } from "@/components/analysis/networkFacts";
+import { domainFacts, formValues, ipFacts } from "@/components/analysis/networkFacts";
 import StructuredValue, { StructuredCell } from "@/components/analysis/StructuredValue";
 import {
   NETWORK_ROWS_STEP,
+  hostLabel,
   hostReputation,
   hostRows,
   hostSource,
@@ -49,15 +50,19 @@ export default function NetworkContent({ report }: { report: ReportDetailDTO }) 
   // Network IOCs recovered from the sample's static strings (a hard-coded C2
   // domain) live on `static.interesting_strings`, not on the sandbox-only
   // `network` block; they are listed here, labelled as found in the strings.
+  // A value the IOC table serves as its form is no endpoint (`formValues`).
+  const forms = formValues(mr);
   const staticIocs: StringIOC[] = (mr?.static?.interesting_strings ?? []).filter(
-    (s) => s.kind === "domain" || s.kind === "ip" || s.kind === "url",
+    (s) =>
+      (s.kind === "domain" || s.kind === "ip" || s.kind === "url") &&
+      !forms.has(String(s.value ?? "").trim().toLowerCase()),
   );
   const reportSections = mr?.sections;
   const evidenceSections = sectionsForTab(reportSections, "network", report.section_tabs);
   const covering = evidenceSections.filter((s) => s.key === "sandbox_network" || s.key === "iocs");
   const otherSections = evidenceSections.filter((s) => !covering.includes(s));
   const showsStaticIocs = staticIocs.length > 0 && !isCoveredBySection(reportSections, ["iocs"]);
-  const hosts = hostRows(net);
+  const hosts = hostRows(net, forms);
   const urls = net?.urls ?? [];
   const domains = net?.domains ?? [];
   const tls: { kind: string; value: unknown }[] = [
@@ -329,7 +334,7 @@ function HostDetail({ row }: { row: HostRow }) {
   return (
     <div className="space-y-4 text-sm">
       <div className="flex flex-wrap items-center gap-1.5">
-        <Flag tone="neutral">{row.kind === "domain" ? "Domain" : "IP address"}</Flag>
+        <Flag tone="neutral">{hostLabel(row)}</Flag>
         {hostSuspicious(row) && <Flag tone="red">Suspicious</Flag>}
         <ReputationPill rep={rep} />
         <SourceWord source={source} />

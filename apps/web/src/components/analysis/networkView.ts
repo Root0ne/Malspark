@@ -16,7 +16,15 @@ import type { NetworkDomain, NetworkIOCs, NetworkIP, NetworkURL } from "@/types/
 export const NETWORK_ROWS_STEP = 10;
 
 export type HostRow =
-  | { kind: "domain"; key: string; host: string; domain: NetworkDomain; requests: NetworkURL[] }
+  | {
+      kind: "domain";
+      key: string;
+      host: string;
+      domain: NetworkDomain;
+      requests: NetworkURL[];
+      /** The form the IOC table serves the value as (`networkFacts.formValues`), or "". */
+      form: string;
+    }
   | { kind: "ip"; key: string; host: string; ip: NetworkIP; requests: NetworkURL[] };
 
 /** The host a URL names, lower-cased, or "" when it names none. */
@@ -32,8 +40,15 @@ export function urlHost(url: string | null | undefined): string {
   }
 }
 
-/** Every host the network block names, domains first, each with its requests. */
-export function hostRows(net: NetworkIOCs | null | undefined): HostRow[] {
+/**
+ * Every host the network block names, domains first, each with its requests.
+ * A name the IOC table serves as its form (`forms`, names without case) keeps
+ * its row and carries that form.
+ */
+export function hostRows(
+  net: NetworkIOCs | null | undefined,
+  forms: ReadonlyMap<string, string> = new Map(),
+): HostRow[] {
   if (!net) return [];
   const urls = net.urls ?? [];
   const requestsOf = (host: string) => {
@@ -42,7 +57,14 @@ export function hostRows(net: NetworkIOCs | null | undefined): HostRow[] {
   };
   const rows: HostRow[] = [];
   (net.domains ?? []).forEach((domain, i) =>
-    rows.push({ kind: "domain", key: `d${i}`, host: domain.fqdn, domain, requests: requestsOf(domain.fqdn) }),
+    rows.push({
+      kind: "domain",
+      key: `d${i}`,
+      host: domain.fqdn,
+      domain,
+      requests: requestsOf(domain.fqdn),
+      form: forms.get(String(domain.fqdn ?? "").trim().toLowerCase()) ?? "",
+    }),
   );
   (net.ips ?? []).forEach((ip, i) =>
     rows.push({ kind: "ip", key: `i${i}`, host: ip.address, ip, requests: requestsOf(ip.address) }),
@@ -50,9 +72,15 @@ export function hostRows(net: NetworkIOCs | null | undefined): HostRow[] {
   return rows;
 }
 
-/** Whether a host is flagged suspicious by the run. */
+/** Whether a host is flagged suspicious by the run; a name served as its form is no host to flag. */
 export function hostSuspicious(row: HostRow): boolean {
-  return row.kind === "domain" ? row.domain.is_suspicious : row.ip.is_suspicious;
+  return Boolean(row.kind === "domain" ? !row.form && row.domain.is_suspicious : row.ip.is_suspicious);
+}
+
+/** What a host row is: a domain, an address, or the form the IOC table serves the name as. */
+export function hostLabel(row: HostRow): string {
+  if (row.kind === "ip") return "IP address";
+  return row.form || "Domain";
 }
 
 /** The enrichment record of a host, when the run holds one. */

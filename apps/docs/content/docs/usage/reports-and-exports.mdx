@@ -105,9 +105,13 @@ its `role` (`sample_identity` for a digest of the sample's own bytes,
 value no export matches on) and `indicator_type`, the STIX word the exported
 bundle carries it under, absent where no export carries it. The IOC table
 builds each row once, and the report's §9, this feed, MISP, the STIX bundle
-and the rule drafts read it. A path the file's strings hold is asked its shape
-by the same rule: one with neither a listed file extension nor a system
-location is not the shape of a file the sample uses, and is withheld. A
+and the rule drafts read it. A row of the file's strings that nothing in the
+run reads as its kind is served as the form it has (`dotted_name`,
+`name_at_domain_text`, ...), with the type §9 prints and no suspicion flag or
+note; the console's network counts do not count it as a domain. A path the
+file's strings hold is asked its shape by the same rule: one with neither a
+listed file extension nor a system location is not the shape of a file the
+sample uses, and is withheld. A
 value the sample hid carries `recovered_by`, naming the tool that recovered it
 and its ledger entry. `evidence_ids` lists the ledger entries the run's record
 ties to the row (the entries an analyst's listing cites, the entry a call
