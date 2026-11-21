@@ -474,6 +474,29 @@ class DynamicBehavior(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class MakerSource(BaseModel):
+    """One kind of record a name's maker tally counted, with the processes it names.
+
+    ``source`` is ``requests`` (the name's HTTP requests), ``lookups`` (its DNS
+    requests that name their own process) or ``flows`` (the flows to
+    ``addresses``, addresses it resolved to whose flows name the same
+    processes). The processes as in :class:`TrafficMakers`, each kind left out
+    of a dump where empty; ``more``: the records name more processes than are
+    listed here (a request carrying part of its flow id's processes, or more
+    processes of a kind reached an address than a name takes from it).
+    """
+
+    model_config = _STRICT_CONFIG
+
+    source: Literal["requests", "lookups", "flows"]
+    addresses: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    outside: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    launcher: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    unlisted: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    disputed: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    more: bool = Field(default=False, exclude_if=lambda value: not value)
+
+
 class TrafficMakers(BaseModel):
     """The processes of another lineage than the sample's that a sandbox names for some traffic.
 
@@ -494,6 +517,11 @@ class TrafficMakers(BaseModel):
     unlisted: list[str] = Field(default_factory=list)
     disputed: list[str] = Field(default_factory=list)
     more: bool = Field(default=False, exclude_if=lambda value: not value)
+    # For a name: each kind of record the tally counted, with the processes
+    # that kind of record names (``MakerSource``), so a sentence names every
+    # source with its own makers. Left out of a dump where none is kept, so a
+    # stored report reads as it was written.
+    sources: list[MakerSource] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
 class NetworkDomain(BaseModel):

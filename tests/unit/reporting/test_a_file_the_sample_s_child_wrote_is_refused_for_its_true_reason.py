@@ -12,7 +12,8 @@ whose number no listed process answers to, where every listed process it
 could name (its task's, where it states one) states its guest pid, is said to
 be named so, never placed outside a tree it was not tested against; where one
 of them states none, such a number may be its guest pid, and the writer is
-unattributed. The process tree the report
+unattributed. Each refusal says what the publish rule found for each number,
+by its field and its task, and the process list it matched it against. The process tree the report
 is built from keeps each process's task and the guest's pid any answer of the
 run states for it.
 
@@ -25,20 +26,34 @@ from typing import Any
 
 from malspark.reporting.ledger_projection import dynamic_from_ledger
 from malspark.reporting.models import DynamicBehavior, ProcessNode
-from malspark.reporting.renderers.stix_renderer import (
-    HOST_ROW_OUTSIDE_THE_TREE,
-    HOST_ROW_UNLISTED,
-    UNATTRIBUTED_HOST_ROW,
-    sandbox_facts_for_the_judge,
-)
+from malspark.reporting.renderers.stix_renderer import sandbox_facts_for_the_judge
 from malspark.schemas.evidence import LedgerEntry
 from malspark.schemas.sandbox_report import sample_process_trees
 
 SAMPLE = "a1b2c3.exe"
 DIGEST = "5cd55b0775d76e715b840827d0f3201470df24f2230dce71c7313de7f41761a7"
-NOT_HELD = (
-    "the sandbox report names the process that wrote it by a number its process list does not hold"
-)
+NOT_PLACED = "the publish rule could not place the process that wrote it ({})"
+EVERY_GUEST = "and that list states a guest pid for every process"
+
+
+def _unsettled(numbers: str) -> str:
+    return NOT_PLACED.format(
+        f"it could not place {numbers} in or outside the sample's process tree"
+    )
+
+
+def _undecided(numbers: str, of_task: str = "") -> str:
+    return NOT_PLACED.format(
+        f"it could not decide whether {numbers} is a listed process since the process list it "
+        f"read does not state a guest pid for every process{of_task}"
+    )
+
+
+def _unlisted(numbers: str, of_task: str = "") -> str:
+    return (
+        f"the publish rule matched {numbers} to no process of the process list it read "
+        f"{EVERY_GUEST}{of_task}"
+    )
 
 
 def _node(pid: int, name: str, ppid: int, task: str = "", **more: Any) -> ProcessNode:
@@ -94,39 +109,40 @@ class TestTheWriterIsOneProcess:
         assert _fact(processes, pids=["1924"]) == ""
 
     def test_an_id_two_tasks_list_named_without_its_task_is_unattributed(self) -> None:
-        assert _fact(_two_tasks(), pids=["87"]) == UNATTRIBUTED_HOST_ROW.format(did="wrote")
+        assert _fact(_two_tasks(), pids=["87"]) == _unsettled("pid 87")
 
     def test_a_number_no_listed_process_answers_to_is_said_to_be_so(self) -> None:
         processes = _every_guest_pid_stated()
 
-        assert _fact(processes, pids=["1928"]) == HOST_ROW_UNLISTED.format(did="wrote")
-        assert HOST_ROW_UNLISTED.format(did="wrote") == NOT_HELD
+        assert _fact(processes, pids=["1928"]) == _unlisted("pid 1928")
 
     def test_where_the_listing_states_no_guest_pid_the_writer_is_unattributed(self) -> None:
-        assert _fact(_two_tasks(), pids=["1924"]) == UNATTRIBUTED_HOST_ROW.format(did="wrote")
+        assert _fact(_two_tasks(), pids=["1924"]) == _undecided("pid 1924")
 
     def test_where_one_process_states_no_guest_pid_the_number_may_be_its(self) -> None:
         processes = _every_guest_pid_stated()
         processes[0].children[0].guest_pid = ""
 
-        assert _fact(processes, pids=["1928"]) == UNATTRIBUTED_HOST_ROW.format(did="wrote")
-        assert _fact(processes, pids=["1928"], task="t1") == UNATTRIBUTED_HOST_ROW.format(
-            did="wrote"
+        assert _fact(processes, pids=["1928"]) == _undecided("pid 1928")
+        assert _fact(processes, pids=["1928"], task="t1") == _undecided(
+            "pid 1928 of task t1", " of task t1"
         )
 
     def test_a_record_s_task_is_read_alone_where_it_states_one(self) -> None:
         processes = _every_guest_pid_stated()
         processes[1].children[0].guest_pid = ""
 
-        assert _fact(processes, pids=["1928"], task="t1") == HOST_ROW_UNLISTED.format(did="wrote")
-        assert _fact(processes, pids=["1928"], task="t2") == UNATTRIBUTED_HOST_ROW.format(
-            did="wrote"
+        assert _fact(processes, pids=["1928"], task="t1") == _unlisted(
+            "pid 1928 of task t1", " of task t1"
         )
-        assert _fact(processes, pids=["1928"]) == UNATTRIBUTED_HOST_ROW.format(did="wrote")
+        assert _fact(processes, pids=["1928"], task="t2") == _undecided(
+            "pid 1928 of task t2", " of task t2"
+        )
+        assert _fact(processes, pids=["1928"]) == _undecided("pid 1928")
 
     def test_a_task_the_listing_does_not_hold_states_no_guest_pid(self) -> None:
         assert _fact(_every_guest_pid_stated(), pids=["1928"], task="t9") == (
-            UNATTRIBUTED_HOST_ROW.format(did="wrote")
+            _undecided("pid 1928 of task t9", " of task t9")
         )
 
     def test_an_id_a_task_lists_twice_names_no_writer_by_any_number(self) -> None:
@@ -135,20 +151,25 @@ class TestTheWriterIsOneProcess:
             _node(900, "x.exe", 87, "t1", guest_pid="1500"),
             _node(900, "y.exe", 87, "t1", guest_pid="1504"),
         ]
-        unattributed = UNATTRIBUTED_HOST_ROW.format(did="wrote")
-
-        assert _fact(processes, pids=["900"], task="t1") == unattributed
-        assert _fact(processes, pids=["1500"]) == unattributed
+        assert _fact(processes, pids=["900"], task="t1") == _unsettled("pid 900 of task t1")
+        assert _fact(processes, pids=["1500"]) == _unsettled("pid 1500")
 
     def test_a_listed_process_outside_the_tree_is_outside(self) -> None:
         processes = [*_two_tasks(), _node(40, "svchost.exe", 4, "t1")]
 
-        assert _fact(processes, pids=["40"], task="t1") == HOST_ROW_OUTSIDE_THE_TREE
+        assert _fact(processes, pids=["40"], task="t1") == (
+            "the publish rule matched pid 40 of task t1 to a listed process outside the sample's "
+            "process tree"
+        )
 
     def test_a_listed_writer_outside_the_tree_beside_an_unlisted_number_is_outside(self) -> None:
         processes = [*_every_guest_pid_stated(), _node(40, "svchost.exe", 4, "t1", guest_pid="700")]
 
-        assert _fact(processes, pids=["40", "1928"], task="t1") == HOST_ROW_OUTSIDE_THE_TREE
+        assert _fact(processes, pids=["40", "1928"], task="t1") == (
+            "the publish rule matched pid 40 of task t1 to a listed process outside the sample's "
+            "process tree and matched pid 1928 of task t1 to no process of the process list it "
+            f"read {EVERY_GUEST} of task t1"
+        )
 
     def test_a_disputed_writer_is_unattributed_and_named(self) -> None:
         # 85 runs the submitted file and carries no mark: the two facts disagree.

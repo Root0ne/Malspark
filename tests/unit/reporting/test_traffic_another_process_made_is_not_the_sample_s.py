@@ -162,11 +162,13 @@ class TestTheLiveReport:
             "(procid 46)"
         )
         # The name: its HTTP requests and the flow to the address it resolved
-        # to (procid 46); the DNS lookup's flow is the resolver's (procid 36).
+        # to (procid 46), each named with its makers; the DNS lookup's flow is
+        # the resolver's (procid 36).
         host = _answer(report, "domain", HOST)
         assert host.startswith(
-            "no: the sandbox report says it was made by a process the report does not list "
-            "(procid 46)"
+            "no: the publish rule counted its requests as made by a process the report does not "
+            "list (procid 46) and the flows to 172.217.76.94 (an address it resolved to) as made "
+            "by a process the report does not list (procid 46)"
         )
         # The rows stay, as recorded, with whose they are.
         (domain,) = [d for d in report.network.domains if d.fqdn == HOST]
@@ -238,8 +240,8 @@ class TestANameIsDecidedByItsRequestsAndTheFlowsToItsAddresses:
     def test_a_name_only_the_launcher_s_flows_reached_is_withheld(self) -> None:
         report = _report(_sandbox(_lookup_only(84), LAUNCHER))
         assert _answer(report, "domain", C2).startswith(
-            "no: the sandbox report says it was made by the launcher's process "
-            "(powershell.exe (procid 84))"
+            "no: the publish rule counted the flows to 172.217.76.94 (an address it resolved to) "
+            "as made by the launcher's process (powershell.exe (procid 84))"
         )
         assert not any(C2 in p for p in _patterns(report))
         # The row stays, with whose traffic it is.

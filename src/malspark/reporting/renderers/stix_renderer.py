@@ -3593,15 +3593,34 @@ UNATTRIBUTED_FLOW = "the sandbox report does not say which process made the flow
 # A file, a digest, a key or a mutex the sandbox recorded is the sample's own
 # observation when the record names a process of the sample's tree; one that
 # names none, or a process outside it, is the guest's as much as the sample's.
-UNATTRIBUTED_HOST_ROW = "the sandbox report does not say which process {did} it"
-HOST_ROW_OUTSIDE_THE_TREE = (
-    "the sandbox report attributes it to a process outside the sample's process tree"
+# Each sentence says what the publish rule found in the records it read of the
+# value (:func:`_host_findings`), never what the whole report says: where no
+# record it read names a process by a number or a name, it found none.
+HOST_ROW_NONE_FOUND = "the publish rule found no process that {did} it"
+# Where the records name numbers and none settles the writer, each number is
+# said with what the rule found for it, by its field and its task.
+HOST_ROW_NOT_PLACED = "the publish rule could not place the process that {did} it ({found})"
+# What the rule found for a number, by where :meth:`ProcessTrees.place` put
+# it; ``{numbers}`` names it by its field (``pid 1780``, ``pids 1536 and 908``,
+# ``process id 5``, each with its task where the record states one) and
+# ``{listing}`` the process list it was matched against.
+HOST_FOUND_UNLISTED = (
+    "matched {numbers} to no process of {listing} and that list states a guest pid for "
+    "every process{of_task}"
 )
-# A record naming its process by a number no listed process answers to, as
-# the report's own id or as the guest's pid: no tree was tested against it.
-HOST_ROW_UNLISTED = (
-    "the sandbox report names the process that {did} it by a number its process list does not hold"
+HOST_FOUND_UNDECIDED = (
+    "could not decide whether {numbers} {is_listed} since {listing} does not state a guest "
+    "pid for every process{of_task}"
 )
+HOST_FOUND_UNSETTLED = "could not place {numbers} in or outside the sample's process tree"
+HOST_FOUND_IN_TREE = "matched {numbers} to {which} of the sample's process tree"
+HOST_FOUND_OUTSIDE = "matched {numbers} to {which} outside the sample's process tree"
+HOST_FOUND_DISPUTED = "matched {numbers} to {who} whose lineage the report's two facts dispute"
+HOST_FOUND_NAME_OUTSIDE = "matched the process {names} to no process of the sample's process tree"
+# The process list a number is matched against: the one the report is built from.
+HOST_LISTING = "the process list it read"
+# The field a record names its writer's number under, as the sentence names it.
+_PID_FIELD_WORDS = {"pid": "pid", "pids": "pid", "process_id": "process id"}
 # The host kinds that answer for the process that made them.
 HOST_KINDS = frozenset({"hash", "path", "registry", "mutex"})
 # Why a host row the sandbox recorded is not published on its own: the guest
@@ -3637,8 +3656,9 @@ _PID_KEYS = ("pid", "process_id", "pids")
 _PROCESS_KEYS = ("process", "process_name", "processes")
 
 
-def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
-    """Why a sandbox record is not the sample's, or ``""`` when a process of its tree made it.
+def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str | None:
+    """Why a sandbox record is not the sample's: ``""`` when a process of its tree made it,
+    ``None`` where it is unattributed, else the sentence of what the rule found.
 
     Decided by the record's pid when it names one, read as one process (its
     task where the record states one, the report's id or the guest's pid,
@@ -3651,7 +3671,8 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
     pid, and is unattributed where one of them states none. A record naming
     a process whose lineage the two lineage facts dispute is unattributed
     too, and says so naming the process in the network row's words for that
-    case (:data:`MADE_BY_WHOM`).
+    case (:data:`MADE_BY_WHOM`). An unattributed record's sentence is written
+    over every record of its value (:func:`_host_unattributed`).
     """
     from types import SimpleNamespace
 
@@ -3664,7 +3685,7 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
 
     names = trees.names
     if not isinstance(record, dict):
-        return UNATTRIBUTED_HOST_ROW.format(did=did)
+        return None
     by_pid: list[str] = []
     for key in _PID_KEYS:
         value = record.get(key)
@@ -3675,11 +3696,11 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
         task = str(record.get("task") or "") or None
         places = {trees.place(pid, task) for pid in by_pid}
         if WRITER_UNSETTLED in places:
-            return UNATTRIBUTED_HOST_ROW.format(did=did)
+            return None
         if WRITER_DISPUTED in places:
             named = list(dict.fromkeys(trees.disputed(pid, task) for pid in by_pid))
             said = made_by_reason(SimpleNamespace(disputed=[one for one in named if one]))
-            return said or UNATTRIBUTED_HOST_ROW.format(did=did)
+            return said or None
         if WRITER_IN_TREE in places:
             return ""
         if places == {WRITER_UNLISTED}:
@@ -3687,18 +3708,107 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str:
             # every process the record could name states its guest pid; else
             # it may be the guest pid of one that states none.
             if trees.identities.states_every_guest_pid(task):
-                return HOST_ROW_UNLISTED.format(did=did)
-            return UNATTRIBUTED_HOST_ROW.format(did=did)
-        return HOST_ROW_OUTSIDE_THE_TREE
+                return _host_matched([record], trees, did)
+            return None
+        return _host_matched([record], trees, did)
     by_name: list[str] = []
     for key in _PROCESS_KEYS:
         value = record.get(key)
         for one in value if isinstance(value, list) else [value]:
             if one not in (None, ""):
-                by_name.append(str(one).strip().lower())
+                by_name.append(str(one).strip())
     if not by_name:
-        return UNATTRIBUTED_HOST_ROW.format(did=did)
-    return "" if any(name in names for name in by_name) else HOST_ROW_OUTSIDE_THE_TREE
+        return None
+    if any(name.lower() in names for name in by_name):
+        return ""
+    listed = list(dict.fromkeys(by_name))
+    return "the publish rule " + HOST_FOUND_NAME_OUTSIDE.format(
+        names=f"name{'s' if len(listed) > 1 else ''} {' and '.join(listed)}"
+    )
+
+
+def _host_findings(records: list[Any], trees: ProcessTrees) -> list[str]:
+    """What the rule found for each number ``records`` name, one phrase per kind of finding.
+
+    Every number every record names under a pid field (``_PID_KEYS``) is read,
+    as a pid is (``sandbox_document.pid_of``: ``0`` and text are none), with
+    its record's task, and placed (:meth:`ProcessTrees.place`). Numbers are
+    grouped by what was found for them, their field and their task, in the
+    order the records name them: no number is lost, and one number met under
+    two tasks keeps each.
+    """
+    from malspark.schemas.sandbox_document import pid_of
+    from malspark.schemas.sandbox_report import (
+        WRITER_DISPUTED,
+        WRITER_IN_TREE,
+        WRITER_OUTSIDE,
+        WRITER_UNLISTED,
+        WRITER_UNSETTLED,
+    )
+
+    groups: dict[tuple[str, str, str, str], list[str]] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        task = str(record.get("task") or "")
+        for key in _PID_KEYS:
+            value = record.get(key)
+            for one in value if isinstance(value, list) else [value]:
+                pid = pid_of(one)
+                if not pid:
+                    continue
+                place = trees.place(pid, task or None)
+                who = trees.disputed(pid, task or None) if place == WRITER_DISPUTED else ""
+                held = groups.setdefault((place, who, _PID_FIELD_WORDS[key], task), [])
+                if pid not in held:
+                    held.append(pid)
+    found: list[str] = []
+    for (place, who, field, task), pids in groups.items():
+        one = len(pids) == 1
+        numbers = f"{field}{'' if one else 's'} {' and '.join(pids)}"
+        of_task = f" of task {task}" if task else ""
+        numbers += of_task
+        if place == WRITER_UNLISTED:
+            words = (
+                HOST_FOUND_UNLISTED
+                if trees.identities.states_every_guest_pid(task or None)
+                else HOST_FOUND_UNDECIDED
+            )
+            found.append(
+                words.format(
+                    numbers=numbers,
+                    listing=HOST_LISTING,
+                    of_task=of_task,
+                    is_listed="is a listed process" if one else "are listed processes",
+                )
+            )
+        elif place == WRITER_UNSETTLED:
+            found.append(HOST_FOUND_UNSETTLED.format(numbers=numbers))
+        elif place == WRITER_IN_TREE:
+            which = "a process" if one else "processes"
+            found.append(HOST_FOUND_IN_TREE.format(numbers=numbers, which=which))
+        elif place == WRITER_OUTSIDE:
+            which = "a listed process" if one else "listed processes"
+            found.append(HOST_FOUND_OUTSIDE.format(numbers=numbers, which=which))
+        elif place == WRITER_DISPUTED:
+            found.append(HOST_FOUND_DISPUTED.format(numbers=numbers, who=who or "a process"))
+    return found
+
+
+def _host_matched(records: list[Any], trees: ProcessTrees, did: str) -> str:
+    """The definite sentence of a record the rule placed outside every tree, by what it matched."""
+    found = _host_findings(records, trees)
+    if not found:
+        return HOST_ROW_NONE_FOUND.format(did=did)
+    return "the publish rule " + " and ".join(found)
+
+
+def _host_unattributed(records: list[Any], trees: ProcessTrees, did: str) -> str:
+    """The sentence of a value no record of which the rule could place, over every record of it."""
+    found = _host_findings(records, trees)
+    if not found:
+        return HOST_ROW_NONE_FOUND.format(did=did)
+    return HOST_ROW_NOT_PLACED.format(did=did, found=" and ".join(f"it {f}" for f in found))
 
 
 def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
@@ -3707,7 +3817,10 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
     ``""`` for a value a record attributes to the sample's tree: one such
     record is enough. A registry record is read by the pids of the calls the
     sandbox recorded writing the key (``RegistryMod.pids``); one with none
-    names no process, so its key is not attributed.
+    names no process, so its key is not attributed. Otherwise the first
+    definite reason a record gives, and where every record is unattributed,
+    what the rule found over every record of the value
+    (:func:`_host_unattributed`).
     """
 
     def _build() -> dict[tuple[str, str], str]:
@@ -3720,16 +3833,16 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
             str(_field(identity, "file_name") or ""),
             str(_field(_field(identity, "hashes"), "sha256") or ""),
         )
-        out: dict[tuple[str, str], str] = {}
+        held: dict[tuple[str, str], tuple[str, list[Any], list[str | None]]] = {}
 
         def _put(kind: str, value: Any, record: Any, did: str) -> None:
             text = str(value or "").strip()
             if not text:
                 return
             key = (kind, _value_key(kind, text))
-            why = _not_the_sample_s(record, tree, did)
-            if key not in out or not why:
-                out[key] = why
+            _did, records, whys = held.setdefault(key, (did, [], []))
+            records.append(record)
+            whys.append(_not_the_sample_s(record, tree, did))
 
         for op in list(_field(dynamic, "file_operations") or []):
             if not isinstance(op, dict):
@@ -3742,6 +3855,13 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
         for mod in list(_field(dynamic, "registry_mods") or []):
             if _field(mod, "operation") in ("create", "modify"):
                 _put("registry", _field(mod, "key"), {"pids": _field(mod, "pids")}, "wrote")
+        out: dict[tuple[str, str], str] = {}
+        for key, (did, records, whys) in held.items():
+            if "" in whys:
+                out[key] = ""
+                continue
+            definite = next((why for why in whys if why), None)
+            out[key] = definite or _host_unattributed(records, tree, did)
         return out
 
     index: dict[tuple[str, str], str] = _memo(report, "sandbox_host_index", _build)
@@ -3806,6 +3926,65 @@ def made_by_reason(makers: Any, word: Callable[[str], str] = str) -> str:
         return ""
     more = MADE_BY_MORE if _field(makers, "more") else ""
     return MADE_BY.format(whose="; and by ".join(parts)) + more
+
+
+# A name's traffic, said by the kinds of record the publish rule counted, each
+# with the processes it names (``TrafficMakers.sources``): never one list of
+# processes over several kinds of record. No "," or ";" outside brackets, so a
+# reader of the clause after a value reads it whole.
+NAME_COUNTED = "the publish rule counted {sources}"
+NAME_SOURCE = "{what} as made by {whose}"
+NAME_REQUESTS = "its requests"
+NAME_LOOKUPS = "its lookups that state their process"
+NAME_FLOWS_TO_ONE = "the flows to {address} (an address it resolved to)"
+NAME_FLOWS_TO_SEVERAL = "the flows to {count} addresses it resolved to ({addresses})"
+NAME_MORE = " and by further processes"
+# Beside the flows to addresses each of which names more processes in its own row.
+NAME_FLOWS_MORE = " and by further processes each such address's own row names"
+
+
+def name_made_by_reason(makers: Any, word: Callable[[str], str] = str) -> str:
+    """Why a name's traffic is not the sample's, each counted kind of record with its makers.
+
+    Its requests, its lookups that state their process, and the flows to the
+    addresses it resolved to (:class:`~malspark.reporting.models.MakerSource`),
+    each with the processes those records name. A name whose tally kept no
+    sources (a report stored before they were kept) is said as any traffic is
+    (:func:`made_by_reason`). ``""`` for none.
+    """
+    sources = [one for one in _field(makers, "sources") or [] if _field(one, "source")]
+    if not sources:
+        return made_by_reason(makers, word)
+    said: list[str] = []
+    for one in sources:
+        parts = []
+        for kind, whose in MADE_BY_WHOM.items():
+            named = [str(p) for p in (_field(one, kind) or []) if str(p)]
+            if named:
+                parts.append(f"{whose} ({', '.join(map(word, named))})")
+        if not parts:
+            continue
+        kind = _field(one, "source")
+        addresses = [str(a) for a in _field(one, "addresses") or [] if str(a)]
+        if kind == "requests":
+            what = NAME_REQUESTS
+        elif kind == "lookups":
+            what = NAME_LOOKUPS
+        elif len(addresses) == 1:
+            what = NAME_FLOWS_TO_ONE.format(address=word(addresses[0]))
+        elif addresses:
+            what = NAME_FLOWS_TO_SEVERAL.format(
+                count=len(addresses), addresses=", ".join(map(word, addresses))
+            )
+        else:
+            continue
+        more = ""
+        if _field(one, "more"):
+            more = NAME_FLOWS_MORE if kind == "flows" else NAME_MORE
+        said.append(NAME_SOURCE.format(what=what, whose=" and by ".join(parts)) + more)
+    if not said:
+        return made_by_reason(makers, word)
+    return NAME_COUNTED.format(sources=" and ".join(said))
 
 
 BENIGN_NAME_RESOLVED = "a well-known benign name the sandbox's guest resolved"
@@ -3931,7 +4110,7 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
     else:
         if row is None or _field(row, "source") != "sandbox":
             return {}
-        made = made_by_reason(_field(row, "made_by"))
+        made = name_made_by_reason(_field(row, "made_by"))
         if made and _field(row, "sample_process_tree") is not True:
             why = made
         elif _field(row, "capture_only"):
@@ -4053,7 +4232,7 @@ def unlisted_reason(kind: str, row: Any) -> str:
     ``""`` for any other row. An address (``kind`` ``ip``) by its reason
     (:func:`address_flow_reason`); a name's or a request's row by the
     processes its records name (``made_by``), only where every one is such a
-    process.
+    process; a name's by each kind of record counted (:func:`name_made_by_reason`).
     """
     if _field(row, "source") != "sandbox" or _field(row, "sample_process_tree") is True:
         return ""
@@ -4067,7 +4246,7 @@ def unlisted_reason(kind: str, row: Any) -> str:
         and _field(made, "unlisted")
         and not any(_field(made, other) for other in others)
     ):
-        return made_by_reason(made)
+        return name_made_by_reason(made) if kind == "domain" else made_by_reason(made)
     return ""
 
 

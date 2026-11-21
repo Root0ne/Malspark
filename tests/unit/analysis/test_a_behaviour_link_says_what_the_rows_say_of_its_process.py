@@ -180,7 +180,11 @@ class TestOneDecisionWithThePublishRule:
         assert network is not None
         row = next(d for d in network.domains if d.fqdn == HOST)
         answer = bc.link_behaviour_to_code(report, None, _strings_of(HOST))
-        assert _link(answer, HOST)["attribution"] == sr.made_by_reason(row.made_by)
+        assert _link(answer, HOST)["attribution"] == sr.name_made_by_reason(row.made_by)
+        assert _link(answer, HOST)["attribution"] == (
+            "the publish rule counted its requests as made by a process the report does not "
+            "list (procid 46)"
+        )
 
     def test_a_request_one_of_two_naming_no_process_is_not_attributed(self) -> None:
         report = _network(

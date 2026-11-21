@@ -135,7 +135,10 @@ STORED_EXPORTS = {
 # a public DNS resolver's §9 row states the resolver first and the sandbox's fact after it, a
 # listed row's states the judge's test with its why and the listing after them, and a cell beside
 # such a value states its refusing parts. Those are the only changes; the STIX did not change.
-HAIKU4_RENDERS = ("477790b616709be4", "ca07a2ee7451873e", "ff5607de575fb489")
+# The Markdown and HTML re-pinned when a host row no record of which the publish rule could
+# place came to say what the rule found (T-782d): each such digest row in §9's table is the
+# only change; the STIX did not change.
+HAIKU4_RENDERS = ("64a6d2dbc8cc5192", "0b089fe43342fed0", "ff5607de575fb489")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

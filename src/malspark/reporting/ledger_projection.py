@@ -51,6 +51,7 @@ from malspark.reporting.models import (
     ExportRow,
     FileHashes,
     ImportRow,
+    MakerSource,
     NetworkDomain,
     NetworkIOCs,
     NetworkIP,
@@ -292,7 +293,42 @@ class _MakerTally:
         if self.unstated or not self.named:
             return
         row.sample_process_tree = False
-        row.made_by = TrafficMakers(**self.named, more=self.more)
+        row.made_by = TrafficMakers.model_validate({**self.named, "more": self.more})
+
+
+def _maker_sources(
+    own: list[_MakerTally | None], flows: list[tuple[str, _MakerTally]]
+) -> list[MakerSource]:
+    """Each kind of record a name's tally counted, with the processes it names (``MakerSource``).
+
+    ``own`` is the name's requests' tally and its lookups' tally, in that
+    order; ``flows`` each address it resolved to with its flows' tally, in the
+    name's order. Read only where the name's attribution is another
+    lineage's, so every counted record names a process. Addresses whose flows
+    name the same processes are one source; each address gives a name at
+    most ``_ADDRESS_MAKERS_NAMED`` processes of a kind, as the whole tally
+    takes them.
+    """
+    out: list[MakerSource] = []
+    for source, held in zip(("requests", "lookups"), own, strict=True):
+        if held is not None and held.named:
+            said = {"source": source, **held.named, "more": held.more}
+            out.append(MakerSource.model_validate(said))
+    by_makers: dict[tuple[Any, ...], MakerSource] = {}
+    for address, held in flows:
+        if not held.named:
+            continue
+        named = {kind: names[:_ADDRESS_MAKERS_NAMED] for kind, names in held.named.items()}
+        more = held.more or any(len(names) > _ADDRESS_MAKERS_NAMED for names in held.named.values())
+        shape = (tuple(sorted((k, tuple(v)) for k, v in named.items())), more)
+        known = by_makers.get(shape)
+        if known is None:
+            known = MakerSource(source="flows", **named, more=more)
+            by_makers[shape] = known
+            out.append(known)
+        if address not in known.addresses:
+            known.addresses.append(address)
+    return out
 
 
 _STRING_KINDS = {
@@ -1554,7 +1590,18 @@ def network_from_ledger(
     makers: dict[tuple[str, str], list[bool | tuple[str, str] | None]] = {}
     tallies: dict[tuple[str, str], _MakerTally] = {}
 
-    def _made(kind: str, key: str, answer: bool | tuple[str, str] | None, whole: bool) -> None:
+    # A name's own records by the kind of record they are (``requests``,
+    # ``lookups``), each tallied apart too: the sentence names every kind of
+    # record with the processes it names (``MakerSource``).
+    source_tallies: dict[tuple[str, str], _MakerTally] = {}
+
+    def _made(
+        kind: str,
+        key: str,
+        answer: bool | tuple[str, str] | None,
+        whole: bool,
+        source: str = "",
+    ) -> None:
         # A page of a view can only show that a record is the sample's: one
         # naming another lineage counts as naming none, as the sample's may
         # be on another page. One rule for the three kinds.
@@ -1562,6 +1609,8 @@ def network_from_ledger(
             answer = None
         makers.setdefault((kind, key), []).append(answer)
         tallies.setdefault((kind, key), _MakerTally()).add(answer)
+        if source:
+            source_tallies.setdefault((source, key), _MakerTally()).add(answer)
 
     # The names a DNS or HTTP view named, and the names only the capture's TLS
     # list recorded: a TLS name says nothing about which process made the
@@ -1610,7 +1659,7 @@ def network_from_ledger(
                 # asking program's: only a process the record itself names is
                 # its maker, and a record naming none says nothing of the name.
                 if key == "dns" and name and _states_a_process(row):
-                    _made("domain", value_key("domain", name), traffic_maker(row), whole)
+                    _made("domain", value_key("domain", name), traffic_maker(row), whole, "lookups")
                 # The addresses the answer gave for it, as the record states them.
                 known_name = domains.get(value_key("domain", name)) if name else None
                 if known_name is None:
@@ -1706,7 +1755,7 @@ def network_from_ledger(
             _add("url", url, "sandbox")
             for made in traffic_makers(row):
                 if host:
-                    _made("domain", value_key("domain", host), made, whole)
+                    _made("domain", value_key("domain", host), made, whole, "requests")
                 if url:
                     _made("url", _fold_url_host(url), made, whole)
             if _flows_left_out(row):
@@ -1714,6 +1763,9 @@ def network_from_ledger(
                 for part in (("domain", value_key("domain", host)), ("url", _fold_url_host(url))):
                     if part[1]:
                         tallies.setdefault(part, _MakerTally()).more = True
+                if host:
+                    asked = ("requests", value_key("domain", host))
+                    source_tallies.setdefault(asked, _MakerTally()).more = True
             # The method and the user agent of one request record, never two
             # records' facts joined: the first record of the URL that names a
             # method gives both (its agent, or none where it states none);
@@ -1806,14 +1858,22 @@ def network_from_ledger(
             # reads those flows as a page's: a flow to an address withheld may
             # be the sample's.
             tally = _MakerTally()
-            own = tallies.get(("domain", value_key("domain", domain.fqdn)))
+            key = value_key("domain", domain.fqdn)
+            own = tallies.get(("domain", key))
             if own is not None:
                 tally.take(own)
+            counted: list[tuple[str, _MakerTally]] = []
             for address in domain.resolved_ips:
                 flows = tallies.get(("ip", address_key(address)))
                 if flows is not None:
                     tally.take(flows, _ADDRESS_MAKERS_NAMED, in_part=domain.resolved_ips_partial)
+                    counted.append((address_key(address), flows))
             tally.state(domain)
+            if domain.made_by is not None:
+                domain.made_by.sources = _maker_sources(
+                    [source_tallies.get((kind, key)) for kind in ("requests", "lookups")],
+                    counted,
+                )
     for request in network.urls:
         if request.source == "sandbox":
             tallies.get(("url", _fold_url_host(request.url)), _MakerTally()).state(request)

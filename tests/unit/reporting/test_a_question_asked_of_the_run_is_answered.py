@@ -559,7 +559,10 @@ class TestTheReport:
         # sweep row records the entry it was read from (the dump of the rich and hostile
         # shapes), and a value the string sweep holds and nothing admitted is refused with
         # the row it is from and what the network rule read (the hostile Markdown's two
-        # rows of its URL). Those are the only changes.
+        # rows of its URL). Re-pinned for the rule of T-782d: a host row no record of
+        # which the publish rule could place says what the rule found (the dump and the
+        # Markdown of the rich and hostile shapes, their four host rows). Those are the
+        # only changes.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the
