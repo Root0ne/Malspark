@@ -1052,7 +1052,7 @@ THIRD_PARTY_SENDS: tuple[str, ...] = (THIRD_PARTY_NO, THIRD_PARTY_HASH, THIRD_PA
 # ``on_refresh``: only to fetch or refresh reference data the tool keeps (a
 # technique catalogue, model weights), never with anything of the sample;
 # ``case_store``: the configured case-memory store, wherever it is, which the
-# disclosure's case-memory row places;
+# disclosure's case-memory row places where it places it at a host;
 # ``operator_sandbox``: the operator's own sandbox service the tool's server
 # fronts (its API), which is not a third party.
 NETWORK_ON_REFRESH = "on_refresh"
@@ -2987,6 +2987,11 @@ class Declared:
     # said as the server's, read only by a reader that applies it to be more
     # careful (``agents.tool_pinning``).
     served_claims: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    # Per tool, the fields of its effects in force that the platform's own reading of
+    # its listing or program gave, not a declaration (``served_declarations.READ_FIELDS``):
+    # stored with each entry, and read only by the tool-effects part's lines, which say
+    # each such field as taken (``core.declared_reading.platform_read``).
+    read_fields: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     @classmethod
     def of(cls, source: SourceRef, cfg: Any, *, enabled: bool, label: str = "") -> Declared:
@@ -3133,6 +3138,15 @@ class ToolDeclarations:
         """What ``tool``'s untrusted server under ``source`` claims that nothing put in force."""
         held = self.source(source)
         return dict(held.served_claims.get(tool, {})) if held is not None else {}
+
+    def read_fields_for(self, source: SourceRef | str, tool: str) -> tuple[str, ...]:
+        """The fields of ``tool``'s effects under ``source`` that the platform read, not declared.
+
+        Empty for a tool whose every such field a declaration states
+        (:attr:`Declared.read_fields`).
+        """
+        held = self.source(source)
+        return tuple(held.read_fields.get(tool, ())) if held is not None else ()
 
     def tools_of_kind(
         self, kind: str | Iterable[str], *, enabled_only: bool = False

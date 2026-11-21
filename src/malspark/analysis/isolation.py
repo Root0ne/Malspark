@@ -817,9 +817,24 @@ def isolation_part(
 # ---------------------------------------------------------------------------
 
 INTRO_SENTENCE = (
-    "**Isolation:** where this run read the sample's bytes, and what kept each reader from "
-    "the worker, as measured when each started; never assumed."
+    "**Isolation:** where this run read the sample's bytes, and for each reader what was "
+    "measured when it started, or why nothing was; never assumed."
 )
+# The lead where a row is isolated by its block's declared launcher.
+INTRO_DECLARED_SENTENCE = (
+    "**Isolation:** where this run read the sample's bytes, and for each reader what was "
+    "measured when it started, or why nothing was; a launcher is taken from its block's "
+    "declaration, as its row says."
+)
+
+
+def intro_sentence(part: Any) -> str:
+    """The part's lead: :data:`INTRO_DECLARED_SENTENCE` where a row rests on a declared launcher."""
+    rows = part.get("rows") if isinstance(part, Mapping) else None
+    declared = any(
+        isinstance(row, Mapping) and row.get("isolated_by") == BY_DECLARATION for row in rows or []
+    )
+    return INTRO_DECLARED_SENTENCE if declared else INTRO_SENTENCE
 
 
 def _code(text: str) -> str:
@@ -843,9 +858,19 @@ def _names(names: Any, code: Callable[[str], str]) -> str:
     return ", ".join(code(str(name)) for name in names or [])
 
 
-def _env_clause(names: Any, code: Callable[[str], str], whose: str) -> str:
+# Said of a field a row holds unread where its starts were measured
+# differently (:data:`NOT_MEASURED_DISAGREE`): the starts disagreed on it, or
+# none read it, and the row does not say which.
+APART = "not read as one value across its starts"
+
+
+def _env_clause(names: Any, code: Callable[[str], str], whose: str, apart: bool = False) -> str:
     if names is None:
-        return f"{whose} environment could not be read"
+        return (
+            f"{whose} environment was {APART}"
+            if apart
+            else f"{whose} environment could not be read"
+        )
     if not names:
         return f"{whose} environment held none of the platform's own variables"
     return f"{whose} environment held the platform's own variables {_names(names, code)}"
@@ -863,13 +888,14 @@ def _cap(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-def _user(uid: Any, same: Any) -> str:
-    who = "a user that could not be read" if uid is None else f"user {uid}"
+def _user(uid: Any, same: Any, apart: bool = False) -> str:
+    unread = f"a user {APART}" if apart else "a user that could not be read"
+    who = unread if uid is None else f"user {uid}"
     whose = _yes_no(
         same,
         " (one of its real, effective, saved or filesystem user ids is the worker's)",
         " (none of its real, effective, saved or filesystem user ids is the worker's)",
-        " (its user ids could not all be read)",
+        f" (its user ids {APART})" if apart else " (its user ids could not all be read)",
     )
     return f"{who}{whose}"
 
@@ -881,12 +907,20 @@ _CAPABILITY_SETS = (
 )
 
 
+def _apart(row: Mapping[str, Any]) -> bool:
+    """Whether the row's starts were measured differently, so a field it holds unread may not
+    have been unread at any start."""
+    return row.get("why_not_measured") == NOT_MEASURED_DISAGREE
+
+
 def _capabilities(row: Mapping[str, Any]) -> str:
     """The three capability sets, said together."""
     held = [name for key, name in _CAPABILITY_SETS if row.get(key) is False]
     unread = [name for key, name in _CAPABILITY_SETS if row.get(key) is None]
     if held:
         return f"{_joined_names(held)} capabilities"
+    if unread and _apart(row):
+        return f"{_joined_names(unread)} capabilities {APART}"
     if unread:
         return f"{_joined_names(unread)} capabilities that could not be read"
     return "no effective, permitted or ambient capabilities"
@@ -926,40 +960,45 @@ def _child_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
             f"{who} (stdio, run on this machine) read the sample in a process the worker "
             f"started; {why}, so its isolation cannot be told."
         )
+    apart = _apart(row)
     parts = [
-        f"it ran as {_user(row.get('uid'), row.get('same_uid_as_worker'))}",
+        f"it ran as {_user(row.get('uid'), row.get('same_uid_as_worker'), apart)}",
         _yes_no(
             row.get("shares_group_with_worker"),
             "in a group of the worker's",
             "in none of the worker's groups",
-            "in groups that could not all be read",
+            f"in groups {APART}" if apart else "in groups that could not all be read",
         ),
         _yes_no(
             row.get("own_pid_namespace"),
             "with a process table of its own",
             "sharing the worker's process table",
-            "its process table could not be compared",
+            f"its process table was {APART}"
+            if apart
+            else "its process table could not be compared",
         ),
         _yes_no(
             row.get("own_mount_namespace"),
             "a mount namespace of its own",
             "the worker's mount namespace",
-            "its mount namespace could not be compared",
+            f"its mount namespace was {APART}"
+            if apart
+            else "its mount namespace could not be compared",
         ),
         _yes_no(
             row.get("own_net_namespace"),
             "a network of its own",
             "the worker's network",
-            "its network could not be compared",
+            f"its network was {APART}" if apart else "its network could not be compared",
         ),
         _capabilities(row),
         _yes_no(
             row.get("no_new_privs"),
             "no way to gain privileges",
             "no bar on gaining privileges",
-            "a privilege flag that could not be read",
+            f"a privilege flag {APART}" if apart else "a privilege flag that could not be read",
         ),
-        _env_clause(row.get("platform_names_in_env"), code, "its"),
+        _env_clause(row.get("platform_names_in_env"), code, "its", apart),
     ]
     starts = int(row.get("attaches") or 0)
     measured = (
@@ -989,6 +1028,7 @@ def _launcher_sentence(row: Mapping[str, Any], levels: int) -> str:
         "not measured), so the launcher is held only to carrying none of the platform's own "
         "variables, and every process under it to every check."
     )
+    declared += f" {_started_check(row)}."
     if not row.get("descendants_judged"):
         return (
             f"{declared} Its descendant processes were not judged "
@@ -1001,9 +1041,40 @@ def _launcher_sentence(row: Mapping[str, Any], levels: int) -> str:
             "cannot be shown to be kept from the worker."
         )
     noun = "process under the launcher was" if under == 1 else "processes under the launcher were"
+    # The walk counts every process below the started one, launcher levels
+    # included, and the failures over that same set; the count under the
+    # launcher is named apart.
+    count = int(row.get("descendants") or 0)
+    starts = int(row.get("attaches") or 0)
+    below = "below the process the worker started"
+    if starts > 1:
+        below += f", over its {starts} starts"
+    if count == 1:
+        held = "passed" if not failing else "did not pass"
+        # The starts clause stands between commas before the verb.
+        below += "," if starts > 1 else ""
+        return f"{declared} {under} {noun} measured. The one process {below} {held} its check."
     if not failing:
-        return f"{declared} {under} {noun} measured, and every process of the tree passed."
-    return f"{declared} {under} {noun} measured, and {failing} of the tree did not pass."
+        said = "each passed its check"
+    elif failing == 1:
+        said = "1 did not pass its check"
+    else:
+        said = f"{failing} did not pass their checks"
+    return f"{declared} {under} {noun} measured. Of the {count} processes {below}, {said}."
+
+
+def _started_check(row: Mapping[str, Any]) -> str:
+    """What the launcher check gave for the process the worker started, judged apart."""
+    names = row.get("platform_names_in_env")
+    if names == []:
+        return "The process the worker started passed its launcher check"
+    if names is None:
+        why = f"its environment was {APART}" if _apart(row) else "its environment could not be read"
+        return f"The process the worker started could not be checked ({why})"
+    return (
+        "The process the worker started did not pass its launcher check (its environment held "
+        "the platform's own variables)"
+    )
 
 
 def _tree_sentence(row: Mapping[str, Any]) -> str:
@@ -1042,6 +1113,40 @@ def _service_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
     )
 
 
+def _shown_not_kept(row: Mapping[str, Any]) -> bool:
+    """Whether a row was read in the worker, or its started process measured with a check read
+    and not held; a row only not verified or not measured is neither.
+
+    Only the started process's own checks choose the headline that says a
+    source was not kept. The descendants are not read here: their count of
+    failures takes a process left unread as not passing, so it cannot tell a
+    process that failed a check from one that was not read, and a row whose
+    descendants failed or were not read keeps the headline that says not every
+    source was shown to be kept, which holds of either.
+    """
+    if row.get("where") == IN_PROCESS:
+        return True
+    if row.get("where") != CHILD or row.get("measured_by") != "worker":
+        return False
+    names = row.get("platform_names_in_env")
+    if isinstance(names, list) and names:
+        return True
+    if int(row.get("launcher_depth") or 0):
+        return False
+    failed = [
+        row.get("same_uid_as_worker") is True,
+        row.get("shares_group_with_worker") is True,
+        row.get("own_pid_namespace") is False,
+        row.get("own_mount_namespace") is False,
+        row.get("cap_eff_zero") is False,
+        row.get("cap_prm_zero") is False,
+        row.get("cap_amb_zero") is False,
+        row.get("no_new_privs") is False,
+        row.get("needs_network") is not True and row.get("own_net_namespace") is False,
+    ]
+    return any(failed)
+
+
 def isolation_lines(part: Any, code: Callable[[str], str] = _code) -> list[str]:
     """The part's sentences, one per line; ``[]`` for a record without the part."""
     if not isinstance(part, Mapping) or "rows" not in part:
@@ -1062,10 +1167,15 @@ def isolation_lines(part: Any, code: Callable[[str], str] = _code) -> list[str]:
         lines.append(
             "Every source that read the sample's bytes was measured as kept from the worker."
         )
-    else:
+    elif any(_shown_not_kept(row) for row in rows if not row.get("isolated")):
         lines.append(
             "Not every source that read the sample's bytes was kept from the worker; each is "
             "listed with what was measured."
+        )
+    else:
+        lines.append(
+            "Not every source that read the sample's bytes was shown to be kept from the worker; "
+            "each is listed with what was measured, or why it was not."
         )
     worker = part.get("worker")
     if isinstance(worker, Mapping) and rows:

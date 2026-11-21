@@ -175,10 +175,10 @@ def test_a_started_process_kept_on_every_count_is_said_check_by_check() -> None:
     }
     assert isolation._child_line(row, CODE) == (
         "Tool server `analysis` (stdio, run on this machine) read the sample. The process the "
-        "worker started for it was measured at each of its 2 starts: it ran as a user that "
-        "could not be read (none of its real, effective, saved or filesystem user ids is the "
-        "worker's); in none of the worker's groups; with a process table of its own; a mount "
-        "namespace of its own; a network of its own; no effective, permitted or ambient "
+        "worker started for it was measured at each of its 2 starts: it ran as a user not read "
+        "as one value across its starts (none of its real, effective, saved or filesystem user "
+        "ids is the worker's); in none of the worker's groups; with a process table of its own; "
+        "a mount namespace of its own; a network of its own; no effective, permitted or ambient "
         "capabilities; no way to gain privileges; its environment held none of the platform's "
         "own variables. It had no descendant process when it was measured. So: isolated. Its "
         "block declares that it needs the network. Its processes were measured differently "
@@ -245,33 +245,110 @@ def test_a_row_kept_by_a_declared_launcher_says_it_rests_on_the_declaration() ->
     }
     line = isolation._child_line(row, CODE)
     assert line.endswith(
-        f"{LAUNCHER_ONE} 1 process under the launcher was measured, and every process of the "
-        "tree passed. So: isolated by its block's declaration."
+        f"{LAUNCHER_ONE} The process the worker started passed its launcher check. 1 process "
+        "under the launcher was measured. The one process below the process the worker started "
+        "passed its check. So: isolated by its block's declaration."
     )
 
 
 def test_the_tree_under_a_declared_launcher_is_said_by_what_was_measured_under_it() -> None:
-    judged = {"descendants_judged": True, "under_launcher": 0, "descendants_failing": 0}
+    passed = "The process the worker started passed its launcher check."
+    judged = {
+        "platform_names_in_env": [],
+        "descendants_judged": True,
+        "under_launcher": 0,
+        "descendants": 0,
+        "descendants_failing": 0,
+    }
     assert isolation._launcher_sentence(
-        {"descendants_judged": False, "descendants_why": "its tree was cut"}, 1
+        {**judged, "descendants_judged": False, "descendants_why": "its tree was cut"}, 1
     ) == (
-        f"{LAUNCHER_ONE} Its descendant processes were not judged (its tree was cut), so they "
-        "cannot be shown to be kept from the worker."
+        f"{LAUNCHER_ONE} {passed} Its descendant processes were not judged (its tree was cut), "
+        "so they cannot be shown to be kept from the worker."
     )
     assert isolation._launcher_sentence(judged, 1) == (
-        f"{LAUNCHER_ONE} No process under the launcher was measured, so what read the sample "
-        "cannot be shown to be kept from the worker."
+        f"{LAUNCHER_ONE} {passed} No process under the launcher was measured, so what read the "
+        "sample cannot be shown to be kept from the worker."
     )
-    assert isolation._launcher_sentence({**judged, "under_launcher": 1}, 1) == (
-        f"{LAUNCHER_ONE} 1 process under the launcher was measured, and every process of the "
-        "tree passed."
+    one = {**judged, "under_launcher": 1, "descendants": 1}
+    assert isolation._launcher_sentence(one, 1) == (
+        f"{LAUNCHER_ONE} {passed} 1 process under the launcher was measured. The one process "
+        "below the process the worker started passed its check."
     )
-    two = isolation._launcher_sentence({**judged, "under_launcher": 2, "descendants_failing": 1}, 2)
-    assert two == (
+    assert isolation._launcher_sentence({**one, "descendants_failing": 1}, 1) == (
+        f"{LAUNCHER_ONE} {passed} 1 process under the launcher was measured. The one process "
+        "below the process the worker started did not pass its check."
+    )
+    three = {**judged, "under_launcher": 2, "descendants": 3}
+    top_two = (
         "Its block declares the top 2 levels of its tree a launcher that does not read the "
         "sample (the block's word, not measured), so the launcher is held only to carrying "
-        "none of the platform's own variables, and every process under it to every check. "
-        "2 processes under the launcher were measured, and 1 of the tree did not pass."
+        "none of the platform's own variables, and every process under it to every check."
+    )
+    assert isolation._launcher_sentence(three, 2) == (
+        f"{top_two} {passed} 2 processes under the launcher were measured. Of the 3 processes "
+        "below the process the worker started, each passed its check."
+    )
+    assert isolation._launcher_sentence({**three, "descendants_failing": 1}, 2) == (
+        f"{top_two} {passed} 2 processes under the launcher were measured. Of the 3 processes "
+        "below the process the worker started, 1 did not pass its check."
+    )
+    assert isolation._launcher_sentence({**three, "descendants_failing": 2, "attaches": 2}, 2) == (
+        f"{top_two} {passed} 2 processes under the launcher were measured. Of the 3 processes "
+        "below the process the worker started, over its 2 starts, 2 did not pass their checks."
+    )
+
+
+def test_the_tree_count_reads_as_one_sentence_for_one_or_several_processes_and_starts() -> None:
+    passed = "The process the worker started passed its launcher check."
+    row = {
+        "platform_names_in_env": [],
+        "descendants_judged": True,
+        "under_launcher": 1,
+        "descendants": 1,
+        "descendants_failing": 0,
+    }
+    head = f"{LAUNCHER_ONE} {passed} 1 process under the launcher was measured."
+    said = {
+        (1, 1): f"{head} The one process below the process the worker started passed its check.",
+        (1, 2): (
+            f"{head} The one process below the process the worker started, over its 2 starts, "
+            "passed its check."
+        ),
+        (2, 1): (
+            f"{head} Of the 2 processes below the process the worker started, each passed its "
+            "check."
+        ),
+        (2, 3): (
+            f"{head} Of the 2 processes below the process the worker started, over its 3 starts, "
+            "each passed its check."
+        ),
+    }
+    for (count, starts), sentence in said.items():
+        held = {**row, "descendants": count, "attaches": starts}
+        assert isolation._launcher_sentence(held, 1) == sentence, (count, starts)
+    failing = {**row, "attaches": 2, "descendants_failing": 1}
+    assert isolation._launcher_sentence(failing, 1) == (
+        f"{head} The one process below the process the worker started, over its 2 starts, did "
+        "not pass its check."
+    )
+
+
+def test_the_started_launcher_is_said_by_its_own_check() -> None:
+    assert isolation._started_check({"platform_names_in_env": []}) == (
+        "The process the worker started passed its launcher check"
+    )
+    assert isolation._started_check({"platform_names_in_env": ["DATABASE_URL"]}) == (
+        "The process the worker started did not pass its launcher check (its environment held "
+        "the platform's own variables)"
+    )
+    assert isolation._started_check({"platform_names_in_env": None}) == (
+        "The process the worker started could not be checked (its environment could not be read)"
+    )
+    apart = {"platform_names_in_env": None, "why_not_measured": NOT_MEASURED_DISAGREE}
+    assert isolation._started_check(apart) == (
+        "The process the worker started could not be checked (its environment was not read as "
+        "one value across its starts)"
     )
 
 
@@ -381,8 +458,8 @@ def test_a_part_not_isolated_lists_every_reader_and_each_read_with_no_source() -
     ]
     # With no row, no worker line: only the reads with no source.
     assert isolation_lines({"worker": worker, "rows": [], "unsourced_reads": 2}) == [
-        "Not every source that read the sample's bytes was kept from the worker; each is listed "
-        "with what was measured.",
+        "Not every source that read the sample's bytes was shown to be kept from the worker; "
+        "each is listed with what was measured, or why it was not.",
         "2 calls that read the sample recorded no source, so where they ran cannot be told.",
     ]
 
@@ -411,9 +488,121 @@ def test_the_report_heads_the_part_with_its_lead_sentence_inside_the_disclosure(
         return str(MarkdownRenderer().render(report))
 
     assert (
-        "\n\n**Isolation:** where this run read the sample's bytes, and what kept each reader "
-        "from the worker, as measured when each started; never assumed.\n\n- "
+        "\n\n**Isolation:** where this run read the sample's bytes, and for each reader what "
+        "was measured when it started, or why nothing was; never assumed.\n\n- "
     ) in rendered(record)
     # A record stored before the part existed prints no lead sentence.
     old = {key: value for key, value in record.items() if key != "isolation"}
     assert "**Isolation:**" not in rendered(old)
+
+
+def test_a_field_unread_on_a_row_measured_differently_is_said_not_read_as_one_value() -> None:
+    # The starts disagreed on each field, or none read it: the row holds which
+    # of the two it was for no field, so each is said not read as one value.
+    unread = dict.fromkeys(isolation.MEASURED_FIELDS)
+    row = {
+        **KEPT,
+        **unread,
+        "attaches": 2,
+        "isolated": False,
+        "isolated_by": "",
+        "why_not_measured": NOT_MEASURED_DISAGREE,
+    }
+    assert isolation._child_line(row, CODE) == (
+        "Tool server `analysis` (stdio, run on this machine) read the sample. The process the "
+        "worker started for it was measured at each of its 2 starts: it ran as a user not read "
+        "as one value across its starts (its user ids not read as one value across its starts); "
+        "in groups not read as one value across its starts; its process table was not read as "
+        "one value across its starts; its mount namespace was not read as one value across its "
+        "starts; its network was not read as one value across its starts; effective, permitted "
+        "and ambient capabilities not read as one value across its starts; a privilege flag not "
+        "read as one value across its starts; its environment was not read as one value across "
+        "its starts. It had no descendant process when it was measured. So: not isolated. Its "
+        "processes were measured differently from one start to the next."
+    )
+    assert isolation._user(None, None, apart=True) == (
+        "a user not read as one value across its starts (its user ids not read as one value "
+        "across its starts)"
+    )
+    assert isolation._env_clause(None, CODE, "its", apart=True) == (
+        "its environment was not read as one value across its starts"
+    )
+    # A field read alike at every start is said as read.
+    assert isolation._capabilities({**row, "cap_eff_zero": False}) == "effective capabilities"
+
+
+def test_a_part_whose_failing_rows_were_only_not_verified_says_not_shown_kept() -> None:
+    worker = {"uid": 1000, "platform_names_in_env": []}
+    near = {
+        "where": LOCAL_SERVICE,
+        "source": "mcp:near",
+        "transport": "streamable-http",
+        "host": "",
+        "why_not_measured": NOT_MEASURED_SERVICE,
+    }
+    untold = {
+        "where": CHILD,
+        "source": "mcp:untold",
+        "measured_by": "",
+        "why_not_measured": NOT_MEASURED_CHILD,
+    }
+    shown = (
+        "Not every source that read the sample's bytes was shown to be kept from the worker; "
+        "each is listed with what was measured, or why it was not."
+    )
+    kept_not = (
+        "Not every source that read the sample's bytes was kept from the worker; each is listed "
+        "with what was measured."
+    )
+    part = {"worker": worker, "rows": [near, untold], "isolated": False}
+    assert isolation_lines(part)[0] == shown
+    # A started process measured with every check unread failed none of them.
+    unread = {
+        **KEPT,
+        **dict.fromkeys(isolation.MEASURED_FIELDS),
+        "isolated": False,
+        "isolated_by": "",
+    }
+    assert isolation_lines({**part, "rows": [unread]})[0] == shown
+    # One check read and not held, a read in the worker, or a launcher's own
+    # variables: today's headline.
+    shares = {**KEPT, "same_uid_as_worker": True, "isolated": False, "isolated_by": ""}
+    assert isolation_lines({**part, "rows": [near, shares]})[0] == kept_not
+    pack = {"where": IN_PROCESS, "source": "pack", "label": "Triage pack"}
+    assert isolation_lines({**part, "rows": [near, pack]})[0] == kept_not
+    leaky = {
+        **KEPT,
+        "launcher_depth": 1,
+        "platform_names_in_env": ["DATABASE_URL"],
+        "isolated": False,
+        "isolated_by": "",
+    }
+    assert isolation_lines({**part, "rows": [leaky]})[0] == kept_not
+    # A network the block declares it needs is not a failed check.
+    networked = {
+        **KEPT,
+        "own_net_namespace": False,
+        "needs_network": True,
+        "descendants_failing": 1,
+        "isolated": False,
+        "isolated_by": "",
+    }
+    assert isolation_lines({**part, "rows": [networked]})[0] == shown
+    assert isolation_lines({**part, "rows": [{**networked, "needs_network": False}]})[0] == (
+        kept_not
+    )
+
+
+def test_the_lead_names_the_declaration_where_a_row_rests_on_a_launcher() -> None:
+    measured = (
+        "**Isolation:** where this run read the sample's bytes, and for each reader what was "
+        "measured when it started, or why nothing was; never assumed."
+    )
+    assert isolation.intro_sentence(None) == measured
+    assert isolation.intro_sentence({"rows": [KEPT]}) == measured
+    declared = {"rows": [KEPT, {**KEPT, "source": "mcp:b", "isolated_by": BY_DECLARATION}]}
+    assert isolation.intro_sentence(declared) == (
+        "**Isolation:** where this run read the sample's bytes, and for each reader what was "
+        "measured when it started, or why nothing was; a launcher is taken from its block's "
+        "declaration, as its row says."
+    )

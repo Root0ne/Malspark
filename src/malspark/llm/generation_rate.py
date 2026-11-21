@@ -56,8 +56,9 @@ from malspark.llm.registry import PROVIDER_REQUEST_TIMEOUT_SECONDS
 # the server's own, the call's time is its prompt read plus its answer, each
 # at its own rate, and the margin covers the spread between turns, which on
 # the slow run went from about 70 s to 240 s around a typical 100 s. Where the
-# reading rate is not measured, the answer alone is timed at the rate that
-# includes the prompt read (the wall clock's, or Ollama's), as before.
+# reading rate is not measured, the answer alone is timed at the whole rate:
+# the wall clock's, which includes the prompt read, or Ollama's own generation
+# time, which does not.
 TIMEOUT_MARGIN = 1.5
 
 # The HTTP request timeout a call is sent with until its model has a measured
@@ -109,8 +110,9 @@ def measured_generation(
     Read in the order of how close the number is to the generation itself:
     the server's own generation time first, the call's wall clock last.
     ``server_timings=False`` skips llama.cpp's ``timings``: the rate a timeout
-    falls back on when no prompt reading rate is measured, which includes the
-    prompt read.
+    falls back on when no prompt reading rate is measured, the wall clock's,
+    which includes the prompt read, unless Ollama's generation time, which
+    does not, is read first.
     """
     meta = getattr(message, "response_metadata", None) or {}
     try:
@@ -145,8 +147,9 @@ class _ModelRate:
     prompt_tokens: int = 0
     prompt_seconds: float = 0.0
     prompt_sources: list[str] = field(default_factory=list)
-    # The same answers measured with their prompt read included: Ollama's own
-    # generation rate, or the wall clock's where the server's timings are read.
+    # The same answers measured with llama.cpp's timings skipped: Ollama's own
+    # generation time, which leaves the prompt read out, or else the wall
+    # clock's, which takes it in.
     whole_tokens: int = 0
     whole_seconds: float = 0.0
 
@@ -196,7 +199,7 @@ class GenerationRates:
                 row.sources.append(source)
 
     def observe_whole(self, model: str, tokens: int, seconds: float) -> None:
-        """One answer measured with its prompt read included."""
+        """One answer measured by its whole rate (Ollama's generation time, else the wall clock)."""
         if tokens <= 0 or seconds <= 0:
             return
         with self._lock:
@@ -272,8 +275,9 @@ class GenerationRates:
         With both of the model's server rates measured and the call's prompt
         size given: ``(prompt_tokens / prompt_rate + max_tokens / rate) ×
         TIMEOUT_MARGIN``. Otherwise ``max_tokens / whole_rate × TIMEOUT_MARGIN``,
-        the rate that includes the prompt read (the server's rate where no
-        whole one was measured). Never shorter than configured. With no rate
+        the wall clock's rate, which includes the prompt read, or Ollama's
+        generation rate, which does not (the server's rate where no whole one
+        was measured). Never shorter than configured. With no rate
         or no output budget the configured value stands. ``budget`` is how the
         caller reached ``max_tokens``, kept with the row so the record says
         where both numbers came from.
@@ -315,7 +319,7 @@ class GenerationRates:
 
         With both of the model's server rates measured and the prompt size
         given, the prompt read and the answer each at its own rate; otherwise
-        the answer at the rate that includes the prompt read. ``None`` seconds
+        the answer at the whole rate (:meth:`call_timeout`). ``None`` seconds
         with no rate measured or no output budget.
         """
         with self._lock:

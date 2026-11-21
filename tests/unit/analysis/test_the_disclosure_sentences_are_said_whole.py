@@ -424,13 +424,64 @@ def test_an_upload_row_s_short_form_says_what_was_sent_and_to_whom() -> None:
 
 def test_the_store_unreadable_rows_and_tracing_are_said_whole() -> None:
     store = {**REMOTE, "backend": "qdrant"}
-    assert _store_line(store, _code) == (
+    configured = (
         "Case memory: the `qdrant` case-memory store at `far.example` (outside this machine), "
-        "which this job reads similar cases from and stores its case in."
+        "configured as this job's case memory."
+    )
+    # A row stored before the job recorded its case memory.
+    assert _store_line(store, _code) == (
+        f"{configured} This record does not say whether the judge read similar cases from it "
+        "or whether the job filed its case in it."
+    )
+    assert _store_line(store, _code, partial="the run was stopped part-way") == (
+        f"{configured} The run stopped part-way, and a job that does not complete files no "
+        "case. This record does not say whether the judge read similar cases from it."
+    )
+    unplaced = (
+        "Case memory: the `qdrant` case-memory store at `10.0.0.5`, configured as this job's "
+        "case memory; it is a local gateway, so where it runs cannot be told."
     )
     assert _store_line({**store, **NAMED_UNPLACED}, _code) == (
-        "Case memory: the `qdrant` case-memory store at `10.0.0.5`; it is a local gateway, so "
-        "where its cases went cannot be told."
+        f"{unplaced} This record does not say whether the judge read similar cases from it or "
+        "whether the job filed its case in it."
+    )
+    # The job's case, as the platform decided it, then how the judge's read ended.
+    shown = {**store, "case": "held", "case_why": "", "similar_read": "shown", "similar_shown": 2}
+    assert _store_line(shown, _code) == (
+        f"{configured} The run held its case to file there once the job completes; whether it "
+        "was filed is not recorded in this report. The judge's last verdict prompt was given 2 "
+        "similar cases of other samples read from it."
+    )
+    assert _store_line({**shown, "similar_shown": 1}, _code).endswith(
+        " The judge's last verdict prompt was given 1 similar case of another sample read from it."
+    )
+    withheld = {**shown, "case": "withheld", "case_why": "no negotiation round completed"}
+    assert _store_line({**withheld, "similar_read": "none_shown"}, _code) == (
+        f"{configured} The run held no case to file there (no negotiation round completed). "
+        "The judge read it for similar cases of other samples, and its last verdict prompt was "
+        "given none."
+    )
+    assert _store_line(
+        {**withheld, **NAMED_UNPLACED, "case": "none", "case_why": "", "similar_read": "failed"},
+        _code,
+    ) == (
+        f"{unplaced} The run held no case to file there. The judge's read of similar cases from "
+        "it failed, so the judge's last verdict prompt was given none."
+    )
+    assert _store_line({**shown, "similar_read": "not_opened"}, _code, partial="stopped") == (
+        f"{configured} The run stopped part-way, and a job that does not complete files no "
+        "case. The store could not be opened when the judge was to read similar cases from it, "
+        "so the judge's last verdict prompt was given none."
+    )
+    assert _store_line({**shown, "similar_read": "nothing_to_search"}, _code).endswith(
+        " The judge had no analyst claim to search it with when its last verdict prompt was "
+        "built, so that prompt was given no similar case from it."
+    )
+    assert _store_line({**shown, "similar_read": "not_reached"}, _code).endswith(
+        " The run did not reach the judge's read of similar cases from it."
+    )
+    assert _store_line({**shown, "similar_read": "garbage"}, _code).endswith(
+        " This record does not say whether the judge read similar cases from it."
     )
     assert _store_line(store, _code, short=True) == (
         "Case memory: the `qdrant` case-memory store at `far.example` (outside this machine)."

@@ -35,6 +35,20 @@
    "text_digest": "29ced54badd3a3815769a661f33dc2e0e855ed261767933749f3b10dfa99fd03"
   },
   {
+   "function": "malspark.analysis.run_summary:_prompt_read",
+   "condition": "inside a single-rate timeout line (derived_s set, no prompt_tokens_per_second): (prompt read included) where the timeout row's model holds a non-empty sources list in the generation record and every source in it is the wall clock's (generation_rate.WALL_CLOCK_SOURCE), every answer of that model, and so any rate the timeout used, being timed by the call's wall clock; otherwise, a model not recorded, no sources, or any other source among them, that whether the rate includes the prompt read is not recorded",
+   "basis": ["run_summary.generation timeouts[].model", "run_summary.generation models[].sources"],
+   "test": [
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_a_single_rate_is_said_to_include_the_prompt_read_only_where_the_wall_clock_timed_it",
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_each_rate_and_each_timeout_is_said_with_its_arithmetic",
+    "tests/unit/llm/test_generation_rate.py::TestTheTimeoutLineSaysThePromptReadOnlyWhereTheRecordHoldsIt::test_a_model_measured_only_by_an_unfinished_calls_pieces",
+    "tests/unit/llm/test_generation_rate.py::TestTheTimeoutLineSaysThePromptReadOnlyWhereTheRecordHoldsIt::test_a_server_generation_time_with_no_usage_block",
+    "tests/unit/llm/test_generation_rate.py::TestTheTimeoutLineSaysThePromptReadOnlyWhereTheRecordHoldsIt::test_a_server_generation_time_read_as_the_whole_rate",
+    "tests/unit/llm/test_generation_rate.py::TestTheTimeoutLineSaysThePromptReadOnlyWhereTheRecordHoldsIt::test_a_model_timed_only_by_the_wall_clock"
+   ],
+   "text_digest": "b819023dc3283063b662b92b60924ba325d99831f2762eff3e7cc3759143b503"
+  },
+  {
    "function": "malspark.analysis.run_summary:_unreported_clause",
    "condition": "inside the token sentence, after the count of calls that reported no usage: the agent, call and model of each unreported row, identical rows once with their count; nothing for a summary stored without rows",
    "basis": ["run_summary.tokens.unreported"],
@@ -68,13 +82,14 @@
   },
   {
    "function": "malspark.analysis.run_summary:generation_lines",
-   "condition": "printed in the served report's Appendix B: one line per model with a measured generation rate and one per measured prompt reading rate, then for each sized call its output budget where recorded and its timeout (none of its own when no limit is configured and nothing is derived; the configured value when nothing is derived; else the derived arithmetic, with the prompt read at its own rate where one was measured); nothing for a summary without the generation record",
+   "condition": "printed in the served report's Appendix B: one line per model with a measured generation rate and one per measured prompt reading rate, then for each sized call its output budget where recorded and its timeout (none of its own when no limit is configured and nothing is derived; the configured value when nothing is derived; else the derived arithmetic, with the prompt read at its own rate where one was measured, or the single rate said with what the record holds of the prompt read in it (_prompt_read)); nothing for a summary without the generation record",
    "basis": ["run_summary.generation models: tokens_per_second, tokens, seconds, calls, sources, prompt_tokens_per_second, prompt_tokens, prompt_seconds, prompt_sources", "run_summary.generation timeouts: configured_s, derived_s, applied_s, max_tokens, tokens_per_second, prompt_tokens, prompt_tokens_per_second, budget; and margin"],
    "test": [
     "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_each_rate_and_each_timeout_is_said_with_its_arithmetic",
-    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_a_models_name_is_written_by_the_callers_writers_and_nothing_measured_says_nothing"
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_a_models_name_is_written_by_the_callers_writers_and_nothing_measured_says_nothing",
+    "tests/unit/analysis/test_the_run_summary_says_each_figure_in_whole_sentences.py::test_a_single_rate_is_said_to_include_the_prompt_read_only_where_the_wall_clock_timed_it"
    ],
-   "text_digest": "aae990ce9f86b5526d9ec28d174360359bb3e5159ae9ad9eaa504b7a5a56e162"
+   "text_digest": "0d3ba14373c59782f257047686c009e26f2675e8ddd95ceee5c3ad31cbc71d68"
   },
   {
    "function": "malspark.analysis.run_summary:server_rest_sentence",

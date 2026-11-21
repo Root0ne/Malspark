@@ -285,7 +285,11 @@ class TestTheRunSummaryRecordsIt:
         assert "Timeout of `judge:verdict`: 3234s" in text
         assert "= 3234s" in text
         assert "at most" not in text
-        assert "8192 tokens at 3.80 tokens/s (prompt read included) × 1.5" in text
+        # The model's rate was read from the server's generation time alone.
+        assert (
+            "8192 tokens at 3.80 tokens/s (whether this rate includes the prompt read is not "
+            "recorded) × 1.5" in text
+        )
         assert "Timeout of `composer:section`: 355s" in text
 
     def test_the_run_summary_markdown_states_it_too(self) -> None:
@@ -588,6 +592,69 @@ class TestAModelListSwitchSticksForTheReportStage:
         assert all(section is not None for section in authored), composer.degradations
         assert len(primary.calls) == 1, "the stalled first model was waited out once"
         assert len(fallback.calls) == 4
+
+
+class TestTheTimeoutLineSaysThePromptReadOnlyWhereTheRecordHoldsIt:
+    """A single-rate timeout says its rate takes in the prompt read only where every recorded
+    source of its model's rate is the call's wall clock; otherwise that it is not recorded.
+    The timeouts themselves are as they were."""
+
+    NOT_RECORDED = "(whether this rate includes the prompt read is not recorded)"
+
+    def _line(self, rates: GenerationRates) -> str:
+        from malspark.analysis.run_summary import generation_lines
+
+        (line,) = [x for x in generation_lines(rates.snapshot()) if x.startswith("Timeout")]
+        return line
+
+    def test_a_model_measured_only_by_an_unfinished_calls_pieces(self) -> None:
+        from malspark.llm.generation_rate import IN_CALL_SOURCE
+
+        rates = GenerationRates()
+        rates.observe("m", 400, 10.0, IN_CALL_SOURCE)
+        assert rates.call_timeout("judge:verdict", "m", 60.0, 8192) == pytest.approx(307.2)
+        line = self._line(rates)
+        assert "(prompt read included)" not in line
+        assert f"8192 tokens at 40.00 tokens/s {self.NOT_RECORDED} × 1.5 = 307s" in line
+
+    def test_a_server_generation_time_with_no_usage_block(self) -> None:
+        answer = AIMessage(
+            content="x", response_metadata={"timings": {"predicted_n": 500, "predicted_ms": 10000}}
+        )
+        assert measured_generation(answer, 30.0, server_timings=False) is None
+        rates = GenerationRates()
+        rates.observe("q", *(measured_generation(answer, 30.0) or (0, 0.0, "")))
+        assert rates.call_timeout("narrative:round", "q", 60.0, 8192) == pytest.approx(245.8, 0.01)
+        line = self._line(rates)
+        assert "(prompt read included)" not in line
+        assert self.NOT_RECORDED in line
+
+    def test_a_server_generation_time_read_as_the_whole_rate(self) -> None:
+        answer = _ollama_answer(500, 10.0)
+        whole = measured_generation(answer, 30.0, server_timings=False)
+        assert whole is not None
+        rates = GenerationRates()
+        rates.observe("o", *(measured_generation(answer, 30.0) or (0, 0.0, "")))
+        rates.observe_whole("o", whole[0], whole[1])
+        assert rates.call_timeout("composer:section", "o", 60.0, 8192) == pytest.approx(245.8, 0.01)
+        line = self._line(rates)
+        assert "(prompt read included)" not in line
+        assert self.NOT_RECORDED in line
+
+    def test_a_model_timed_only_by_the_wall_clock(self) -> None:
+        answer = AIMessage(
+            content="x",
+            usage_metadata={"input_tokens": 900, "output_tokens": 500, "total_tokens": 1400},
+        )
+        measured = measured_generation(answer, 25.0)
+        assert measured is not None
+        rates = GenerationRates()
+        rates.observe("w", *measured)
+        rates.observe_whole("w", measured[0], measured[1])
+        assert rates.call_timeout("judge:verdict", "w", 60.0, 8192) == pytest.approx(614.4)
+        assert "8192 tokens at 20.00 tokens/s (prompt read included) × 1.5 = 614s" in (
+            self._line(rates)
+        )
 
 
 def _appendix_text(run_summary: dict) -> str:

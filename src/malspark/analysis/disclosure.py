@@ -80,6 +80,19 @@ from malspark.core.host_locality import (
     normal_host,
     taken_as_service_name,
 )
+from malspark.core.tool_declarations import NETWORK_CASE_STORE, NETWORK_ON_REFRESH
+from malspark.memory.long_term_memory import (
+    CASE_HELD,
+    CASE_NONE,
+    CASES,
+    SIMILAR_FAILED,
+    SIMILAR_NONE_SHOWN,
+    SIMILAR_NOT_OPENED,
+    SIMILAR_NOT_REACHED,
+    SIMILAR_NOTHING_TO_SEARCH,
+    SIMILAR_READS,
+    SIMILAR_SHOWN,
+)
 
 # The version of the stored record's shape. Version 2 adds the isolation part
 # (``analysis.isolation``), version 3 the effects part (``analysis.tool_effects``),
@@ -1005,6 +1018,7 @@ def disclosure_record(
     sample_paths: Iterable[str] = (),
     endpoints: Iterable[str] | None = None,
     addressed: Iterable[str] | None = None,
+    memory: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """What the run sent beyond this machine, as the run summary stores it.
 
@@ -1026,8 +1040,10 @@ def disclosure_record(
     model endpoints the job's settings configure and ``addressed`` the hosts
     they address, read off the job's own settings (:func:`run_disclosure`);
     each is read off ``snapshot`` where ``None``, whose secret scrub may have
-    masked a host that holds a configured secret's text. Linear in the
-    entries and the snapshot.
+    masked a host that holds a configured secret's text. ``memory`` is what
+    the job recorded of its case memory (:func:`memory_facts`), laid on the
+    store row; ``None`` records nothing of it. Linear in the entries and the
+    snapshot.
     """
     entries = list(entries)
     tools = _tool_rows(snapshot, entries)
@@ -1044,7 +1060,10 @@ def disclosure_record(
         "undeclared": _ordered(tools.undeclared.values()),
         "local_servers": sorted(tools.local_servers),
         "stayed": [{"source": source, **counts} for source, counts in sorted(tools.stayed.items())],
-        "stores": _stores(snapshot, memory_backends() if backends is None else backends),
+        "stores": [
+            {**row, **(memory or {})}
+            for row in _stores(snapshot, memory_backends() if backends is None else backends)
+        ],
         "tracing": bool(tracing) or _setting_on(snapshot.get(TRACING_SETTING)),
         "unreadable_entries": max(0, int(unreadable or 0)),
         "addressed": (
@@ -1457,6 +1476,38 @@ def job_sample_paths(container: Any) -> list[str]:
     return paths
 
 
+def memory_facts(container: Any) -> dict[str, Any]:
+    """What the job recorded of its case memory, as the store row keeps it.
+
+    ``case`` (``long_term_memory.CASES``): held where the job holds a case to file
+    once it completes, else what the platform noted where it withheld one or built
+    none, with ``case_why``; ``similar_read`` (``long_term_memory.SIMILAR_READS``)
+    and ``similar_shown``: how the judge's read of similar cases ended, as the
+    judge noted it, else not reached. Each is noted where the platform decides or
+    does it, before this record is built; no model reads them.
+    """
+    from malspark.memory.long_term_memory import StoredCase
+
+    decided = getattr(container, "memory_case", None)
+    case, why = CASE_NONE, ""
+    if isinstance(getattr(container, "pending_memory_case", None), StoredCase):
+        case = CASE_HELD
+    elif isinstance(decided, Mapping) and decided.get("case") in CASES:
+        if decided["case"] != CASE_HELD:
+            case, why = str(decided["case"]), str(decided.get("why") or "")
+    read = getattr(container, "similar_case_read", None)
+    if isinstance(read, Mapping) and read.get("read") in SIMILAR_READS:
+        outcome, shown = str(read["read"]), read.get("shown")
+    else:
+        outcome, shown = SIMILAR_NOT_REACHED, 0
+    return {
+        "case": case,
+        "case_why": why,
+        "similar_read": outcome,
+        "similar_shown": shown if isinstance(shown, int) and not isinstance(shown, bool) else 0,
+    }
+
+
 def run_disclosure(
     container: Any,
     *,
@@ -1509,6 +1560,7 @@ def run_disclosure(
             sample_paths=job_sample_paths(container),
             endpoints=configured_endpoint_labels(settings),
             addressed=settings_hosts(settings),
+            memory=memory_facts(container),
         )
     except Exception as exc:  # noqa: BLE001 — an absent block is right; a guessed one is not
         from malspark.core.logger import logger
@@ -1909,8 +1961,75 @@ def _stayed_count(row: Mapping[str, Any], label: Callable[[int], str]) -> str:
     return label(made) + (f" (+{', '.join(apart)})" if apart else "")
 
 
-def _stayed_line(rows: list[Mapping[str, Any]], code: Callable[[str], str]) -> str:
-    """The calls no row above counts, all on this machine: so the lines sum to every call."""
+def _named_modes(
+    record: Mapping[str, Any], sources: Iterable[str], mode: str
+) -> list[Mapping[str, Any]]:
+    """The effects part's rows of a tool called through one of ``sources`` whose declared
+    network is the named ``mode`` (``on_refresh``, ``case_store``), each with a call made.
+
+    Read from the two stored parts by the source each records, never by a tool's name.
+    """
+    wanted = set(sources)
+    effects = record.get("effects")
+    rows = effects.get("tools") if isinstance(effects, Mapping) else None
+    return [
+        row
+        for row in rows or []
+        if isinstance(row, Mapping)
+        and row.get("network") == mode
+        and int(row.get("calls") or 0)
+        and str(row.get("source") or row.get("server") or "") in wanted
+    ]
+
+
+# What a tool declared to reach the network only for its reference data is declared to do.
+_REFRESH_DECLARED = (
+    "declared to reach the network only to fetch or refresh reference data, sending nothing "
+    "of the sample (whether a call did is not recorded in this report)"
+)
+
+
+# The same where the platform read that network of the tool, not a declaration.
+_REFRESH_TAKEN = (
+    "taken as reaching the network only to fetch or refresh reference data, sending nothing "
+    "of the sample (whether a call did is not recorded in this report)"
+)
+
+
+def _by_origin(
+    rows: list[Mapping[str, Any]],
+) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]]]:
+    """The rows whose named network a declaration states, and those the platform read."""
+    from malspark.analysis.tool_effects import FROM_DECLARED, network_from
+
+    stated = [row for row in rows if network_from(row) == FROM_DECLARED]
+    return stated, [row for row in rows if network_from(row) != FROM_DECLARED]
+
+
+def _declared_tools(rows: list[Mapping[str, Any]], code: Callable[[str], str], what: str) -> str:
+    """``<tool> on <source> is <what>``, each source named as the stayed line names it and the
+    verb by how many tools are named."""
+    by_source: dict[str, list[str]] = {}
+    for row in rows:
+        source = str(row.get("source") or row.get("server") or "")
+        by_source.setdefault(source, []).append(code(str(row.get("tool") or "")))
+    named = "; ".join(
+        f"{_joined(tools)} on {_stayed_name(source, code)}" for source, tools in by_source.items()
+    )
+    return f"{named} {'is' if len(rows) == 1 else 'are'} {what}"
+
+
+def _stayed_line(
+    rows: list[Mapping[str, Any]],
+    code: Callable[[str], str],
+    record: Mapping[str, Any] | None = None,
+) -> str:
+    """The calls no row above counts, all made on this machine: so the lines sum to every call.
+
+    Where a tool called through one of their sources is declared to reach the network only
+    in a named way (``record``'s effects part), the line says that declaration, and says the
+    calls were made on this machine rather than that they stayed on it.
+    """
     total = {
         key: sum(int(row.get(key) or 0) for row in rows) for key in ("made", "served", "not_run")
     }
@@ -1919,20 +2038,140 @@ def _stayed_line(rows: list[Mapping[str, Any]], code: Callable[[str], str]) -> s
         for row in rows
     )
     calls = _stayed_count(total, lambda count: count_label(count, "call"))
-    return f"Tool calls that stayed on this machine: {calls} ({by_source})."
+    sources = [str(row.get("source") or "") for row in rows]
+    held = record if isinstance(record, Mapping) else {}
+    refresh = _named_modes(held, sources, NETWORK_ON_REFRESH)
+    store = _named_modes(held, sources, NETWORK_CASE_STORE)
+    if not refresh and not store:
+        return f"Tool calls that stayed on this machine: {calls} ({by_source})."
+    declared: list[str] = []
+    stated, taken = _by_origin(refresh)
+    if stated:
+        declared.append(_declared_tools(stated, code, _REFRESH_DECLARED))
+    if taken:
+        declared.append(_declared_tools(taken, code, _REFRESH_TAKEN))
+    if store:
+        # The case-memory line places the store only where its row is placed with a host;
+        # a listed store it does not place, it says cannot be told; with none listed, the
+        # store is kept in the process or not configured (:func:`_stores`).
+        rows = [row for row in held.get("stores") or [] if isinstance(row, Mapping)]
+        if any(_placed(row) and row.get("host") for row in rows):
+            where = "which the case-memory line places"
+        elif rows:
+            where = "of which the case-memory line cannot tell where it runs"
+        else:
+            where = "which is kept in the process or not configured"
+        stated, taken = _by_origin(store)
+        if stated:
+            declared.append(
+                _declared_tools(stated, code, f"declared to read the case-memory store, {where}")
+            )
+        if taken:
+            declared.append(
+                _declared_tools(taken, code, f"taken as reading the case-memory store, {where}")
+            )
+    return (
+        f"Tool calls made on this machine: {calls} ({by_source}); of the tools called through "
+        f"these sources, {'; '.join(declared)}."
+    )
 
 
-def _store_line(row: Mapping[str, Any], code: Callable[[str], str], *, short: bool = False) -> str:
-    """A store row's sentence; ``short``, which store, and where."""
+# What the case-memory line says of the job's case, by what the platform decided
+# (``long_term_memory.CASES``), and of a run that stopped part-way.
+_CASE_HELD = (
+    "The run held its case to file there once the job completes; whether it was filed is not "
+    "recorded in this report."
+)
+_CASE_NOT_HELD = "The run held no case to file there"
+_CASE_STOPPED = "The run stopped part-way, and a job that does not complete files no case."
+# What it says of a row stored before the job recorded its case memory.
+_NOT_RECORDED_READ = "This record does not say whether the judge read similar cases from it."
+_NOT_RECORDED_EITHER = (
+    "This record does not say whether the judge read similar cases from it or whether the job "
+    "filed its case in it."
+)
+# What it says of the judge's read of similar cases, by how the read ended
+# (``long_term_memory.SIMILAR_READS``); a shown count is said apart.
+# Each is of the read made for the judge's last verdict prompt, which is what the record
+# notes: a model call that fails after the prompt was built leaves the prompt as said.
+_SIMILAR_READ = {
+    SIMILAR_NONE_SHOWN: (
+        "The judge read it for similar cases of other samples, and its last verdict prompt was "
+        "given none."
+    ),
+    SIMILAR_FAILED: (
+        "The judge's read of similar cases from it failed, so the judge's last verdict prompt "
+        "was given none."
+    ),
+    SIMILAR_NOT_OPENED: (
+        "The store could not be opened when the judge was to read similar cases from it, so the "
+        "judge's last verdict prompt was given none."
+    ),
+    SIMILAR_NOTHING_TO_SEARCH: (
+        "The judge had no analyst claim to search it with when its last verdict prompt was "
+        "built, so that prompt was given no similar case from it."
+    ),
+    SIMILAR_NOT_REACHED: "The run did not reach the judge's read of similar cases from it.",
+}
+
+
+def _similar_sentence(row: Mapping[str, Any]) -> str:
+    """How the judge's read of similar cases from the store ended, as the row records it."""
+    read = str(row.get("similar_read") or "")
+    if read == SIMILAR_SHOWN:
+        count = int(row.get("similar_shown") or 0)
+        cases = (
+            "1 similar case of another sample"
+            if count == 1
+            else f"{count} similar cases of other samples"
+        )
+        return f"The judge's last verdict prompt was given {cases} read from it."
+    return _SIMILAR_READ.get(read, _NOT_RECORDED_READ)
+
+
+def _case_sentences(row: Mapping[str, Any], partial: str) -> list[str]:
+    """What the run recorded of its case and of the judge's read, after the configuration.
+
+    A row stored before the job recorded them says that this record does not say.
+    """
+    if "case" not in row:
+        if partial:
+            return [_CASE_STOPPED, _NOT_RECORDED_READ]
+        return [_NOT_RECORDED_EITHER]
+    if partial:
+        case = _CASE_STOPPED
+    elif row.get("case") == CASE_HELD:
+        case = _CASE_HELD
+    else:
+        why = str(row.get("case_why") or "")
+        case = f"{_CASE_NOT_HELD} ({why})." if why else f"{_CASE_NOT_HELD}."
+    return [case, _similar_sentence(row)]
+
+
+def _store_line(
+    row: Mapping[str, Any], code: Callable[[str], str], *, short: bool = False, partial: str = ""
+) -> str:
+    """A store row's sentence; ``short``, which store, and where.
+
+    The full form says the store as the settings configure it, then what the run
+    recorded of its case and of the judge's read of similar cases from it
+    (:func:`memory_facts`); ``partial`` is why the record may be incomplete.
+    """
     store = f"the {code(str(row.get('backend') or ''))} case-memory store"
     if short:
         return _short("Case memory", _receiver(row, store, code), "", row, None)
     if _placed(row) and row.get("host"):
-        return (
-            f"Case memory: {store} at {code(str(row['host']))} {_mark(row)}, which this job "
-            "reads similar cases from and stores its case in."
+        head = (
+            f"Case memory: {store} at {code(str(row['host']))} {_mark(row)}, configured as this "
+            "job's case memory."
         )
-    return f"Case memory: {store}{_at(row, code)}{_untold(row, 'its cases')}."
+    else:
+        why = str(row.get("why") or "the record does not say")
+        head = (
+            f"Case memory: {store}{_at(row, code)}, configured as this job's case memory; {why}, "
+            "so where it runs cannot be told."
+        )
+    return " ".join([head, *_case_sentences(row, partial)])
 
 
 TRACING_SENTENCE = (
@@ -2043,8 +2282,14 @@ def _enrichment_state_lines(held: Mapping[str, Any], code: Callable[[str], str])
 
 
 def _nothing_sentence(record: Mapping[str, Any], code: Callable[[str], str]) -> str:
-    """ "Nothing left this machine", with what it rests on."""
+    """ "Nothing left this machine", with what it rests on.
+
+    Where a tool called on this machine is declared to reach the network only to fetch or
+    refresh reference data, the headline says the declarations count it, and the tool is
+    named among what it rests on.
+    """
     parts: list[str] = []
+    stayed = [row for row in record.get("stayed") or [] if isinstance(row, Mapping)]
     models = [row for row in record.get("models") or [] if isinstance(row, Mapping)]
     if models:
         named = ", ".join(f"{code(str(row.get('host')))} ({row.get('runtime')})" for row in models)
@@ -2059,6 +2304,15 @@ def _nothing_sentence(record: Mapping[str, Any], code: Callable[[str], str]) -> 
             f"the local tool servers called ({servers}) were taken as local by their tools' "
             "declarations"
         )
+    # A tool called on this machine and declared to reach the network for its reference
+    # data: the declarations count nothing of the sample in it, and it is said.
+    on_machine = [*local_servers, *(row.get("source") for row in stayed)]
+    refresh = _named_modes(record, [str(s or "") for s in on_machine], NETWORK_ON_REFRESH)
+    stated, taken = _by_origin(refresh)
+    if stated:
+        parts.append(_declared_tools(stated, code, _REFRESH_DECLARED))
+    if taken:
+        parts.append(_declared_tools(taken, code, _REFRESH_TAKEN))
     stores = [row for row in record.get("stores") or [] if isinstance(row, Mapping)]
     if stores:
         parts.append("the case-memory store is at a local address")
@@ -2068,7 +2322,12 @@ def _nothing_sentence(record: Mapping[str, Any], code: Callable[[str], str]) -> 
     if uploads:
         parts.append("the sample went only to local addresses")
     parts.append("no lookup was asked, and tracing is off")
-    return "Nothing left this machine. This rests on: " + "; ".join(parts) + "."
+    head = (
+        "Nothing of the sample left this machine, as the declarations count it."
+        if refresh
+        else "Nothing left this machine."
+    )
+    return f"{head} This rests on: " + "; ".join(parts) + "."
 
 
 # What the analyst report's limitations say after what left this machine (T-719).
@@ -2165,12 +2424,13 @@ def disclosure_lines(record: Any, code: Callable[[str], str] = _code) -> list[st
         lines.append(_nothing_sentence(record, code))
     elif record.get("partial_reason"):
         lines.append(_partial_line(record))
+    partial = str(record.get("partial_reason") or "")
     writers: tuple[tuple[str, Callable[[Mapping[str, Any], Callable[[str], str]], str]], ...] = (
         ("models", _model_line),
         ("lookups", _lookup_line),
         ("uploads", _upload_line),
         ("servers", _server_line),
-        ("stores", _store_line),
+        ("stores", lambda row, code: _store_line(row, code, partial=partial)),
     )
     for part, write in writers:
         for row in record.get(part) or []:
@@ -2181,7 +2441,7 @@ def disclosure_lines(record: Any, code: Callable[[str], str] = _code) -> list[st
         lines.append(_undeclared_line(undeclared, code))
     stayed = [row for row in record.get("stayed") or [] if isinstance(row, Mapping)]
     if stayed:
-        lines.append(_stayed_line(stayed, code))
+        lines.append(_stayed_line(stayed, code, record))
     unreadable = int(record.get("unreadable_entries") or 0)
     if unreadable:
         lines.append(_unreadable_line(unreadable))
