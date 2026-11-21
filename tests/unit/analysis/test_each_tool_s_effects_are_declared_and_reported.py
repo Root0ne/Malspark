@@ -313,10 +313,16 @@ def test_a_submission_to_the_sidecar_s_sandbox_is_told_where_the_disclosure_plac
         "third party's: `submit_file` on tool server `virustotal`.",
     ]
     assert not any("not a third party" in line for line in lines)
+    # Both declarations state the bytes sent themselves: declared, not taken.
     assert (
-        "Taken as sending the sample's file out of the deployment: `submit_file` on tool server "
-        "`virustotal`; the upload rows of the disclosure above say what is known of where each "
-        "call sent it."
+        "Declared to send the sample's bytes to a third party: `submit_file` on tool server "
+        "`virustotal`; where each call sent them is in the upload rows of the disclosure above."
+    ) in lines
+    assert (
+        "Declared to hand the sample's bytes to the sandbox service its server fronts: "
+        "`submit_file` on the `cape2` provider's tool server, where it went cannot be told: the "
+        "disclosure does not place it; where each call sent them is in the upload rows of the "
+        "disclosure above."
     ) in lines
 
 
@@ -382,8 +388,8 @@ def test_reference_refreshes_and_the_case_store_are_named(shipped: ToolDeclarati
     assert effects_lines(part) == [
         "Declared to reach the configured case-memory store, which the disclosure's case-memory "
         "row places: `function_matches` on Triage pack (`pack`).",
-        "Reach the network only to fetch or refresh reference data they keep, sending nothing "
-        "of the sample: `attck_lookup` on tool server `knowledge`.",
+        "Declared to reach the network only to fetch or refresh reference data they keep, "
+        "sending nothing of the sample: `attck_lookup` on tool server `knowledge`.",
     ]
     with pytest.raises(ValueError, match="network"):
         ToolEffects(network="sometimes")
@@ -574,9 +580,9 @@ def test_the_bytes_sent_agree_with_the_disclosure_s_upload_rows(
     assert _row(record["effects"], "push")["network"] is True
     lines = effects_lines(record["effects"])
     assert (
-        "Taken as sending the sample's file out of the deployment: `push` on tool server `acme`; "
-        "`submit_file` on tool server `virustotal`; the upload rows of the disclosure above say "
-        "what is known of where each call sent it."
+        "Declared to send the sample's bytes to a third party: `push` on tool server `acme`; "
+        "`submit_file` on tool server `virustotal`; where each call sent them is in the upload "
+        "rows of the disclosure above."
     ) in lines
     assert any(
         line.startswith("Sample upload: tool server `acme`") for line in disclosure_lines(record)
@@ -851,7 +857,9 @@ def test_r2_s_analysis_says_when_it_emulates(shipped: ToolDeclarations) -> None:
     assert facts is not None and facts["effects"]["executes"] == "emulation"
     assert "level 2" in facts["effects"]["when"]
     lines = effects_lines(effects_part([_entry("provider:r2", "analyze", facts)]))
+    # Its declared condition says when the run happens, which the record does not hold.
     assert lines[0].startswith(
-        "Ran the sample's code under emulation: `analyze` on the `r2` provider's tool server, "
+        "Declared to run the sample's code under emulation: `analyze` on the `r2` provider's "
+        "tool server, "
         "at analysis level 2 and above"
     )

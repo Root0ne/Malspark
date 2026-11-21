@@ -3,10 +3,10 @@
 The store row's ``case``, ``case_why``, ``similar_read`` and ``similar_shown`` are noted on
 the job's container where the platform decides or does the thing, and laid on the record
 when the disclosure is built, after the report node's last model call; each effects row's
-``network_from`` and ``offline_without_credentials`` are written with the effects part,
-built at the same time. No model and no decision reads them: the only code that names them
-is listed here, by a search of the whole source tree, the web console included, so a new
-reader is a changed test (T-815, T-820).
+``network_from``, ``third_party_from`` and ``offline_without_credentials`` are written with
+the effects part, built at the same time. No model and no decision reads them: the only
+code that names them is listed here, by a search of the whole source tree, the web console
+included, so a new reader is a changed test (T-815, T-820).
 """
 
 from __future__ import annotations
@@ -66,6 +66,7 @@ def test_a_network_origin_and_the_offline_condition_are_read_only_by_the_lines()
     # Written by the effects part and read by its lines, in the one module: the
     # disclosure places calls by ``network`` and ``network_by``, which stay as they were.
     assert _naming(r"[\"']network_from[\"']|\.network_from\b") == {EFFECTS}
+    assert _naming(r"[\"']third_party_from[\"']|\.third_party_from\b") == {EFFECTS}
     # The row's offline flag; the declaration's own field is read by the declarations,
     # the proposals and the offline rehearsal, as before.
     assert _naming(
@@ -101,6 +102,8 @@ def test_no_form_or_condition_names_a_tool_a_server_or_a_source() -> None:
         disclosure._store_line,
         tool_effects.entry_effects,
         tool_effects.network_from,
+        tool_effects.third_party_from,
+        tool_effects._ran,
         tool_effects._reaches_key,
         tool_effects._hint_closed,
         tool_effects._offline,
@@ -121,6 +124,7 @@ def test_no_form_or_condition_names_a_tool_a_server_or_a_source() -> None:
     for table in (
         tool_effects._REACHES,
         tool_effects._REACHED,
+        tool_effects._DECLARED_TO_RUN,
         disclosure._SIMILAR_READ,
         {"": disclosure._REFRESH_DECLARED},
     ):

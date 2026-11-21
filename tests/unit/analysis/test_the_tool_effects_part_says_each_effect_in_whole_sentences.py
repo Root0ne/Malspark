@@ -248,9 +248,10 @@ def test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it() -> 
         "it stopped in may not be recorded.",
         "Ran the sample's code natively: `emu` on tool server `analysis`, read in a process the "
         "worker started, not shown to be kept from the worker.",
-        "Ran the sample's code under emulation: `emulate_function` on tool server `analysis`, at "
-        "analysis level 2 and above, the isolation part records no read of the sample by its "
-        "source.",
+        # A declared condition: the record does not hold that the run happened.
+        "Declared to run the sample's code under emulation: `emulate_function` on tool server "
+        "`analysis`, at analysis level 2 and above, the isolation part records no read of the "
+        "sample by its source.",
         f"Declared to have the sample run in the sandbox service its server fronts: {fronted}.",
         "Declared to run the sample in a sandbox its server does not front, which may be a "
         "third party's: `detonate` on the `remote` provider's tool server.",
@@ -264,8 +265,8 @@ def test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it() -> 
         f"Declared to reach the sandbox service its server fronts: {fronted}.",
         "Declared to reach the configured case-memory store, which the disclosure's case-memory "
         "row places: `recall` on tool server `memory`.",
-        "Reach the network only to fetch or refresh reference data they keep, sending nothing "
-        "of the sample: `techniques` on tool server `knowledge`.",
+        "Declared to reach the network only to fetch or refresh reference data they keep, "
+        "sending nothing of the sample: `techniques` on tool server `knowledge`.",
         "Declared to send the sample's hash to a third party: `lookup` on tool server `intel`.",
         f"Taken as handing the sample's file to the sandbox service its server fronts: "
         f"{fronted}; the upload rows of the disclosure above say what is known of where each "
@@ -414,8 +415,8 @@ def test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whol
         f"{at}.",
         "Declared to reach the configured case-memory store, which the disclosure's case-memory "
         "row places: `recall` on tool server `memory`, when memory is on.",
-        "Reach the network only to fetch or refresh reference data they keep, sending nothing "
-        "of the sample: `techniques` on tool server `knowledge`, once a day.",
+        "Declared to reach the network only to fetch or refresh reference data they keep, "
+        "sending nothing of the sample: `techniques` on tool server `knowledge`, once a day.",
         "Declared to send the sample's hash to a third party: `lookup` on tool server `intel`, "
         "only at analysis level 2, declared to answer offline when it is given no credentials; "
         "`hash_only` on tool server `rep`.",
@@ -493,3 +494,79 @@ def test_where_a_network_answer_came_from_and_the_offline_condition_are_built_fr
         "Taken as reaching the network, as a tool taken to send the sample's file out: `push` "
         "on tool server `svc`.",
     ]
+
+
+def test_bytes_a_declaration_states_are_declared_and_bytes_read_cautiously_are_taken() -> None:
+    from malspark.analysis.tool_effects import effects_part, entry_effects
+    from malspark.schemas.evidence import LedgerEntry
+
+    def entry(tool: str, facts: dict[str, Any]) -> LedgerEntry:
+        return LedgerEntry(
+            id="ev_0001",
+            tool=tool,
+            source="mcp:svc",
+            server="svc",
+            agent="static",
+            facts={"v": 1, "kind": "", **facts},
+        )
+
+    stated = entry("push", {"effects": {"executes": "no", "network": True, "third_party": "bytes"}})
+    cautious = entry("upload", {"discloses_sample": True})
+    assert entry_effects(stated).third_party_from == "declared"
+    assert entry_effects(cautious).third_party_from == "discloses"
+    part = effects_part([stated, cautious])
+    assert [(row["tool"], row["third_party_from"]) for row in part["tools"]] == [
+        ("push", "declared"),
+        ("upload", "discloses"),
+    ]
+    lines = effects_lines(part)
+    assert (
+        "Taken as reaching the network, as a tool taken to send the sample's file out: `upload` "
+        "on tool server `svc`." in lines
+    )
+    sent = [line for line in lines if "sample's bytes" in line or "sample's file out of" in line]
+    assert sent == [
+        "Declared to send the sample's bytes to a third party: `push` on tool server `svc`; where "
+        "each call sent them is in the upload rows of the disclosure above.",
+        "Taken as sending the sample's file out of the deployment: `upload` on tool server "
+        "`svc`; the upload rows of the disclosure above say what is known of where each call "
+        "sent it.",
+    ]
+    # Declared to send the bytes, its network not declared: the sends clause says so.
+    quiet = entry("drop", {"effects": {"executes": "no", "third_party": "bytes"}})
+    assert effects_lines(effects_part([quiet]))[0] == (
+        "Taken as reaching the network, as a tool declared to send the sample's bytes to a third "
+        "party: `drop` on tool server `svc`."
+    )
+    # A row stored before ``third_party_from``, of either origin: its fields hold no
+    # declared value for the bytes, so they are taken.
+    for row in part["tools"]:
+        stored = {key: value for key, value in row.items() if key != "third_party_from"}
+        assert tool_effects.third_party_from(stored) == "discloses"
+        assert any(
+            line.startswith("Taken as sending the sample's file out of the deployment: ")
+            for line in effects_lines({"tools": [stored]})
+        )
+    assert tool_effects.third_party_from({"third_party": "hash"}) == "declared"
+    assert tool_effects.third_party_from({"third_party": "no"}) == "declared"
+    assert tool_effects.third_party_from({}) == ""
+
+
+def test_a_run_of_the_sample_s_code_is_said_only_where_a_counted_call_completed_unconditioned() -> (
+    None
+):
+    ran = _tool("mcp:analysis", "emu", executes="emulation")
+    assert effects_lines({"tools": [ran]})[0].startswith(
+        "Ran the sample's code under emulation: `emu` on tool server `analysis`"
+    )
+    conditioned = {**ran, "when": "at analysis level 2"}
+    legacy = {key: value for key, value in ran.items() if key != "completed"}
+    for row in (conditioned, legacy):
+        assert effects_lines({"tools": [row]})[0].startswith(
+            "Declared to run the sample's code under emulation: `emu` on tool server `analysis`"
+        )
+    # Only failed: said by how it ended, never as a run.
+    failed = {**ran, "completed": 0, "failed": 1}
+    assert not any(
+        line.startswith(("Ran ", "Declared to run")) for line in effects_lines({"tools": [failed]})
+    )

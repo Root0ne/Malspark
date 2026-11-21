@@ -363,12 +363,23 @@ says what the run sent beyond the machine it ran on:
   the platform reads as undeclared however many other facts they state.
 - **Case memory**, **tracing** and the ledger: the long-term memory store,
   placed by what its backend declares (kept in the process, or the settings
-  leaf that holds its address); tracing when it is on in the settings
-  (`langchain_tracing_v2`) or in the process environment; and the ledger rows
+  leaf that holds its address) and said as configured as the job's case
+  memory, then what the run recorded: whether it held its case to file there
+  once the job completes (whether it was filed is not recorded in the report),
+  held none and why, or stopped part-way, when a job files no case; and how the
+  judge's one read of similar cases of other samples from it ended (how many
+  its verdict prompt showed, none, a failed read, a store that could not be
+  opened, nothing to search with, or not reached). A record stored before
+  these were recorded says that it does not say; tracing when it is on in the
+  settings (`langchain_tracing_v2`) or in the process environment; and the ledger rows
   the report could not read.
 - **Calls that stayed on this machine**: the tool calls no line above counts,
   each by its source: the platform's in-process tools, questions put to
   another agent of the team, and calls to a tool server run on this machine.
+  Where a tool called through one of those sources is declared to reach the
+  network only to refresh its reference data, or to read the case-memory
+  store, the line says "Tool calls made on this machine" and names each such
+  tool with its declaration.
   With it the block's lines count every ledger entry once, as the run's
   finished tool-call events do.
 - **Enrichment**: when enrichment is on, the follow-up job queued after the
@@ -424,7 +435,10 @@ or proxy to a remote runtime answers the probe the same way and cannot be told
 apart, and the block says so), the local tool servers called are taken as
 local by their tools' declarations, where the case-memory store is, that the
 sample went only to local addresses, that no lookup was asked and that tracing
-is off. Wherever it cannot tell, it says what and why instead: a call it
+is off. Where a tool called on this machine is declared to reach the network
+to refresh its reference data, it says **Nothing of the sample left this
+machine, as the declarations count it** and names that tool among what it
+rests on. Wherever it cannot tell, it says what and why instead: a call it
 cannot place, a lookup or an upload through a local tool server, a call
 through a local gateway, a call through a local tool server to a tool that
 declares that it reaches the network, a call to a
@@ -553,17 +567,26 @@ uploaded, and a mismatch there marks the run degraded.
 
 Inside the same block, after the isolation part and under its own **Tool
 effects** lead, the report says, for every tool the run called (a repeat and
-a guard's answer are not calls), whether it ran the sample's code (natively,
-under emulation or in a sandbox), whether it reached the network, and what of
-the sample it sent to a third party (its hash or its bytes). A tool that reaches
+a guard's answer are not calls), what it is declared to do beyond answering:
+run the sample's code (natively, under emulation or in a sandbox), reach the
+network, and send the sample's hash or bytes to a third party. Each line says
+where its answer came from, never as an event: "Declared to …" for what a
+declaration states, with its `when` and its offline condition; "Taken as …"
+for the cautious reading, such as a tool taken to reach the network because it
+is declared to send the sample's hash out, or taken to send the sample's file
+out because it is read as disclosing the sample; and a server's own untrusted
+declaration or hint as its own. "Ran the sample's code" is said only of a tool
+with a completed call whose declaration sets no condition on the run. A
+record stored before these readings says "Declared" only where its own fields
+hold the declared value. A tool that reaches
 a network only in a named way says which: only to refresh reference data it
 keeps, the configured case store, or the sandbox service its server fronts.
 For the last, the line says where the disclosure placed that call: the
 operator's own and not a third party only where it is placed on this machine,
 the host the settings name where it is outside, and that it cannot be told,
 with the disclosure's own reason, where the disclosure cannot place it. A
-submission to VirusTotal is said to hand the sample to a third party's
-sandbox, which may run what it is sent.
+submission to VirusTotal is said to be declared to run the sample in a sandbox
+its server does not front, which may be a third party's.
 
 Only a call that completed had an effect. Each tool's calls are counted by how
 they ended: completed, failed (made, and broke), not run (the pipeline wrote
