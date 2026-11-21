@@ -3119,14 +3119,14 @@ class _Analyst:
                 lines.append(_item(f"[{self.ctx.value(ref.source, pipes=True)}]({target}){note}"))
             lines.append("")
         bundle = self.ctx.keep(f"[{BUNDLE_HTML}]({BUNDLE_HTML}) and [{BUNDLE_JSON}]({BUNDLE_JSON})")
-        # The bundle's index lists the calls, not their answers; whether each
-        # answer is held whole is what its row records (``Trimmed``).
+        # The bundle's index lists the calls, not their answers; the sentence
+        # says what its rows mark (``Trimmed``), never that an answer is whole:
+        # an entry can be served without a part and still not be marked trimmed.
         trimmed = sum(1 for row in report.evidence_index if row.truncated)
+        marked = f"{trimmed:,}" if trimmed else "none"
         served = (
             "The evidence endpoint serves each answer as the ledger holds it; the index marks "
-            f"{trimmed:,} of them trimmed."
-            if trimmed
-            else "The evidence endpoint serves each answer whole."
+            f"{marked} of them trimmed."
         )
         lines.extend(
             [

@@ -5,7 +5,9 @@ for a technique the judge related to nothing, carries none. Where the
 technique's row of the capability matrix says the judge was asked about it and
 did not confirm it, the edge carries those words as its description, so the
 technique is not exported as an unqualified "uses"; any other row leaves the
-edge as it was (T-785).
+edge as it was (T-785). The status is read wherever the marker stands as one of
+the row's notes, split as the matrix joins them; the marker's words inside
+another note's sentence are not the status.
 """
 
 from __future__ import annotations
@@ -90,6 +92,29 @@ def test_the_status_is_read_beside_another_note_of_the_row() -> None:
     edges = _edges([_cell("T1489", f"{CARRIED}; {JUDGE_UNCONFIRMED_TECHNIQUE_MARKER}")])
 
     assert edges["T1489"]["description"] == JUDGE_UNCONFIRMED_TECHNIQUE_MARKER
+
+
+def test_the_status_is_read_with_a_further_note_after_it() -> None:
+    edges = _edges(
+        [
+            _cell("T1489", f"{JUDGE_UNCONFIRMED_TECHNIQUE_MARKER}; {CARRIED}"),
+            _cell("T1490", f"{CARRIED}; {JUDGE_UNCONFIRMED_TECHNIQUE_MARKER}; {CARRIED}"),
+        ]
+    )
+
+    assert edges["T1489"]["description"] == JUDGE_UNCONFIRMED_TECHNIQUE_MARKER
+    assert edges["T1490"]["description"] == JUDGE_UNCONFIRMED_TECHNIQUE_MARKER
+
+
+def test_the_marker_s_words_inside_another_note_are_not_the_status() -> None:
+    edges = _edges(
+        [
+            _cell("T1082", f"kept as {JUDGE_UNCONFIRMED_TECHNIQUE_MARKER} said; {CARRIED}"),
+            _cell("T1083", f"{CARRIED}; the row was {JUDGE_UNCONFIRMED_TECHNIQUE_MARKER} once"),
+        ]
+    )
+
+    assert all("description" not in edges[tid] for tid in ("T1082", "T1083"))
 
 
 def test_a_row_the_judge_did_not_leave_unconfirmed_leaves_the_edge_without_one() -> None:

@@ -71,6 +71,8 @@ ROOT = Path(__file__).resolve().parents[3]
 # section 8.1 closing and recorded-values sentences are the only change. Re-pinned when the
 # evidence bundle's sentence came to name the index of every call and say from its rows whether
 # each answer is served whole (T-780): that sentence of each analyst report is the only change.
+# Re-pinned when that sentence came to say, where no row is marked trimmed, that the index marks
+# none of them trimmed: that sentence of each analyst report is the only change.
 GOLDEN = ROOT / "tests" / "fixtures" / "golden" / "reporting" / "no_rules.json"
 HOST = "gate9.example.org"
 URL = f"https://{HOST}/live/"

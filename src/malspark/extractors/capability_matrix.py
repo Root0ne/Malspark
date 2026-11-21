@@ -54,6 +54,7 @@ from malspark.reporting.models import CapabilityCell, TTPMapping
 from malspark.schemas.evidence import ENTRY_ID_RE, entry_ids_in
 from malspark.schemas.isr_models import (
     ABSENCE_TECHNIQUE_MARKER,
+    CAPABILITY_NOTE_JOINER,
     FAILED_CALLS_MARKER,
     JUDGE_ONLY_TECHNIQUE_MARKER,
     JUDGE_UNCONFIRMED_TECHNIQUE_MARKER,
@@ -369,7 +370,7 @@ def build_capability_matrix(
                 platforms=platforms,
                 domain=domain,
                 not_published=not_published,
-                note="; ".join(notes),
+                note=CAPABILITY_NOTE_JOINER.join(notes),
                 # Each analyst statement naming it, verbatim, by analyst: what
                 # the analysts said is theirs to weigh, never classified here.
                 statements=[

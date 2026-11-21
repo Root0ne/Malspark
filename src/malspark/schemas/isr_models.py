@@ -188,6 +188,10 @@ def judge_and_findings_note(agents: list[str]) -> str:
 # question, and the row says the judge did not confirm it.
 JUDGE_UNCONFIRMED_TECHNIQUE_MARKER = "not confirmed by the judge"
 
+# How the capability matrix joins a row's notes into its one ``note``; a reader
+# of a note splits it by the same words.
+CAPABILITY_NOTE_JOINER = "; "
+
 
 # How the capability matrix's row of a technique the judge dropped when asked opens.
 JUDGE_DROPPED_MARKER = "the judge dropped it"

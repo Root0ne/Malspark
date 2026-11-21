@@ -3,8 +3,10 @@
 The bundle lists every tool call in its evidence index, with the parts of the
 answers the report reads; it holds no answer whole. Where no row of the index
 is marked trimmed, the sentence says the evidence endpoint serves each answer
-whole; where some are, it says the endpoint serves each answer as the ledger
-holds it and counts the rows the index marks trimmed (T-780).
+as the ledger holds it and that the index marks none of them trimmed; where some
+are, it counts the rows the index marks trimmed (T-780). The sentence says what
+the index marks, never that an answer is whole: an entry can be served without a
+part and still not be marked trimmed.
 """
 
 from __future__ import annotations
@@ -34,8 +36,14 @@ def test_the_bundle_is_not_said_to_hold_every_output() -> None:
     assert "every tool call in its index with the parts of the answers the report reads" in said
 
 
-def test_an_index_with_no_trimmed_row_says_each_answer_is_served_whole() -> None:
-    assert "The evidence endpoint serves each answer whole." in _sentence(False, False)
+def test_an_index_with_no_trimmed_row_says_the_index_marks_none_trimmed() -> None:
+    said = _sentence(False, False)
+
+    assert "whole" not in said
+    assert (
+        "The evidence endpoint serves each answer as the ledger holds it; the index marks none "
+        "of them trimmed."
+    ) in said
 
 
 def test_an_index_with_trimmed_rows_counts_them_and_claims_no_whole_answer() -> None:
