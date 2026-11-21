@@ -3603,12 +3603,14 @@ TENANT_NAME_IN_A_URL = (
 # outside brackets, so a reader of the clause after a value reads it whole.
 # A row read from a report stored before the reading was recorded, with no
 # network entry of its job at hand, is said by the decision alone, and a
-# made-by or disputed row by the processes the rule counted its flows as made
-# by, with no count of flows. Where the rows of a count were read in more than
-# one part view and in no whole one, the count is no count of flows: the
-# sentence says "flow rows" or "any flow row", never "a flow" or "the flow". A
-# word for word restatement of each form passes the restatement check (no two
-# words it reads stand more than its gap apart).
+# made-by or disputed row by the processes the rule counted flows as made by,
+# with no count of flows: a made-by row's list is set only where every flow to
+# it is of its kind, so "its flows"; a disputed row's wherever any flow to it
+# is disputed, so "flows to it", which claims nothing of the others. Where the
+# rows of a count were read in more than one part view and in no whole one, the
+# count is no count of flows: the sentence says "flow rows" or "any flow row",
+# never "a flow" or "the flow". A word for word restatement of each form passes
+# the restatement check (no two words it reads stand more than its gap apart).
 FLOW_NOT_PLACED = "the publish rule placed no flow to it inside the sample's process tree"
 FLOW_RULE = "the publish rule "
 FLOW_NO_ROW = "found no flow row to it"
@@ -3616,6 +3618,7 @@ FLOW_NO_ID = "read no process id from {flows} to it"
 FLOW_NO_ID_UNCOUNTED = "any flow row"
 FLOW_MADE_BY = "found {flows} to it made by {whose}"
 FLOW_COUNTED = "counted its flows as made by {whose}"
+FLOW_COUNTED_SOME = "counted flows to it as made by {whose}"
 FLOW_ROWS_UNCOUNTED = "flow rows"
 FLOW_UNPLACED = "did not place the {processes} {flows} to it {name} by id"
 FLOW_OTHER_NO_ID = "read no process id from its other {flows}"
@@ -4065,8 +4068,9 @@ def disputed_flow_reason(
     rows to the address (``NetworkIP.flow_reading``): with it, the flows the
     disputed processes made are counted from it, and the other flows to the
     address are said as :func:`unplaced_flow_reason` says them; without it
-    (a row read from a report stored before the reading), the rule counted its
-    flows as made by the processes named, with no count of flows. ``clause``
+    (a row read from a report stored before the reading), the rule counted
+    flows to it as made by the processes named, with no count of flows and no
+    word of the other flows to it. ``clause``
     false leaves the other flows unsaid; ``names`` false says the disputed
     processes by their kind and no list of processes.
     """
@@ -4082,7 +4086,7 @@ def disputed_flow_reason(
         )
     whose = "; and by ".join(parts) if names else MADE_BY_WHOM["disputed"]
     if reading is None:
-        return FLOW_RULE + FLOW_COUNTED.format(whose=whose)
+        return FLOW_RULE + FLOW_COUNTED_SOME.format(whose=whose)
     processes = list(_field(reading, "processes") or [])
     disputed = [p for p in processes if _field(p, "kind") == "disputed"]
     flows = (

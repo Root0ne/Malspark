@@ -156,14 +156,14 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # flow to it made by …", wherever the row's answer or its context cell prints. Those are the
 # only changes; the STIX did not change.
 # local8's Markdown and HTML re-pinned when a disputed address row read from its
-# stored file, with no reading of its flow rows, came to say the publish rule "counted its flows
-# as made by" its processes, with no count of flows (T-811): that row's answer and context cell
-# are the only change; the STIX did not change.
+# stored file, with no reading of its flow rows, came to say the publish rule "counted flows to
+# it as made by" its processes, with no count of flows and no word of the other flows to it
+# (T-811): that row's answer and context cell are the only change; the STIX did not change.
 STORED_RENDERS = {
     "run7": ("c4ae175f45f8c7a8", "e62618ce13a05d2e", "af1240b0f29bfd9c"),
     "run5": ("94143f0e9b75f230", "a50eee57a3b2250f", "2e717357e24fbfe2"),
     "run4": ("63ed48679c51edcf", "2497a07295eb3770", "0a90e4edd679e2be"),
-    "local8": ("0aa30424c0da5f8b", "3c18f107419abc54", "75d022862e3237de"),
+    "local8": ("142eb3d0937a8e74", "0c9d8845fc7107b4", "75d022862e3237de"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

@@ -2,16 +2,25 @@
  "entries": [
   {
    "constant": "malspark.reporting.renderers.stix_renderer:FLOW_COUNTED",
-   "condition": "the publish answer, context cell, judge fact, flow-voice fact and capture-line words of a sandbox address row the publish rule puts on another lineage (outside the sample's process tree, a process the report does not list, a script host naming the launcher, or a disputed lineage) that holds no reading of its flow rows: a row of a report stored before the reading was recorded, served or packaged with no job entry that agrees with its stored decision",
+   "condition": "the publish answer and context cell of a sandbox address row the publish rule puts on a lineage whose list is set only where every flow to it is of that kind (outside the sample's process tree, a process the report does not list, a script host naming the launcher) that holds no reading of its flow rows: a row of a report stored before the reading was recorded, on the surfaces served or packaged from that stored report (the report and its HTML, the IOC list, the evidence bundle, the job package) with no job entry that agrees with its stored decision; on the build path every address row carries its reading, so the form reaches no judge fact, flow-voice fact or capture line",
    "basis": [
-    "the stored row's outside_processes, unlisted_processes, launcher_unsettled_processes, marked_only_processes and file_only_processes",
-    "the stored row's sample_process_tree and marked_by"
+    "the stored row's outside_processes, unlisted_processes and launcher_unsettled_processes",
+    "the stored row's sample_process_tree"
+   ],
+   "test": "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestAReadingNeverTakenIsKeptApart::test_a_made_by_row_with_no_reading_states_no_count",
+   "text_digest": "adf4d335e0657b988bd0bba21e804a9ecceac6d5747f55e773c673319e65ae6b"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:FLOW_COUNTED_SOME",
+   "condition": "the publish answer and context cell of a sandbox address row with a disputed lineage (a list set wherever any flow to it is disputed) that holds no reading of its flow rows: a row of a report stored before the reading was recorded, on the surfaces served or packaged from that stored report (the report and its HTML, the IOC list, the evidence bundle, the job package) with no job entry that agrees with its stored decision; it names the disputed processes and claims nothing of the other flows to it; on the build path every address row carries its reading, so the form reaches no judge fact, flow-voice fact or capture line",
+   "basis": [
+    "the stored row's marked_only_processes, file_only_processes and marked_by"
    ],
    "test": [
-    "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestAReadingNeverTakenIsKeptApart::test_a_made_by_row_with_no_reading_states_no_count",
-    "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestAReadingNeverTakenIsKeptApart::test_a_disputed_row_with_no_reading_states_no_count"
+    "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestAReadingNeverTakenIsKeptApart::test_a_disputed_row_with_no_reading_states_no_count",
+    "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestAReadingNeverTakenIsKeptApart::test_a_disputed_row_with_no_reading_claims_no_other_flow"
    ],
-   "text_digest": "adf4d335e0657b988bd0bba21e804a9ecceac6d5747f55e773c673319e65ae6b"
+   "text_digest": "8c903869648f30d54569f46423c0884a523cba8681bc3a553d81ae2653be5c71"
   },
   {
    "constant": "malspark.reporting.renderers.stix_renderer:FLOW_NO_ID_UNCOUNTED",

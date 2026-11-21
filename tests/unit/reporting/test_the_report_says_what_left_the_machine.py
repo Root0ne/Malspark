@@ -324,15 +324,15 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # flow to it made by …", wherever the row's answer or its context cell prints. Those are the
 # only changes.
 # haiku4's and local8's Markdown and HTML re-pinned when a disputed address row read from its
-# stored file, with no reading of its flow rows, came to say the publish rule "counted its flows
-# as made by" its processes, with no count of flows (T-811): that row's answer and context cell
-# are the only change.
+# stored file, with no reading of its flow rows, came to say the publish rule "counted flows to
+# it as made by" its processes, with no count of flows and no word of the other flows to it
+# (T-811): that row's answer and context cell are the only change.
 STORED_RENDERS = {
     "run7": ("c4ae175f45f8c7a8", "e62618ce13a05d2e"),
     "run5": ("94143f0e9b75f230", "a50eee57a3b2250f"),
     "run4": ("63ed48679c51edcf", "2497a07295eb3770"),
-    "local8": ("0aa30424c0da5f8b", "3c18f107419abc54"),
-    "haiku4": ("5581a0e5bbd381eb", "48ee3a0b6d3d36d3"),
+    "local8": ("142eb3d0937a8e74", "0c9d8845fc7107b4"),
+    "haiku4": ("6fe2d4d8cee337ac", "40947280fbb55747"),
 }
 
 

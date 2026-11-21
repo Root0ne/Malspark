@@ -2906,16 +2906,18 @@ class _FlowTally:
     lists the projection names a row's process in by its image (outside the
     tree, a script host naming the launcher, the disputed lineage facts). A
     process is keyed by its detonation, task and numbers (by its image only
-    where it holds no number and the rule placed it under a kind), its image
-    taken from any row that gives one, so a flow read again in another view
-    or a page is one process, and one a kind holds is never also said as
-    placed under none. Its count is the most rows any one view holds of it;
-    where its rows were read in more than one part view of its detonation and
-    in no whole one, that is no count of its flows, and it is marked so. Each
-    number is read under the fields the readers declare
-    (``declared_process_id_fields``) and the one key every reader writes it
-    under (``TRAFFIC_PROCESS_KEY``), the latter only where no declared field
-    holds its value.
+    where it holds no number and the rule placed it under a kind or its row
+    marks it outside the tree, whatever the view), its image taken from the
+    rows that give one, so a flow read again in another view or a page is one
+    process, and one a kind holds is never also said as placed under none.
+    Where its rows give more than one image, it is named by its numbers alone:
+    a number two programs held is never given one program's name. Its count is
+    the most rows any one view holds of it; where its rows were read in more
+    than one part view of its detonation and in no whole one, that is no count
+    of its flows, and it is marked so. Each number is read under the fields
+    the readers declare (``declared_process_id_fields``) and the one key every
+    reader writes it under (``TRAFFIC_PROCESS_KEY``), the latter only where no
+    declared field holds its value.
 
     A view is read as a part only where no whole, uncut read of the view
     stands for its detonation; an answer of the network view whose structure
@@ -2984,7 +2986,7 @@ class _FlowTally:
             part = FlowPartView(detonation=mark.detonation if later and named else "")
             if part not in self.parts:
                 self.parts.append(part)
-        # address -> process key -> [kind, {view: rows}, named, image]
+        # address -> process key -> [kind, {view: rows}, named, [images]]
         self.keys: dict[str, dict[tuple[Any, ...], list[Any]]] = {}
         # The addresses a flow row the rule placed in the sample's tree goes to.
         self.tree: set[str] = set()
@@ -3024,22 +3026,22 @@ class _FlowTally:
             view.mark.detonation,
             str(task).strip() if isinstance(task, str | int) else "",
             tuple(ids),
-            image if kind and not ids else "",
+            image if not ids and (kind or row.get(SAMPLE_TREE_KEY) is False) else "",
         )
-        held_key = self.keys.setdefault(address, {}).setdefault(key, ["", {}, False, ""])
+        held_key = self.keys.setdefault(address, {}).setdefault(key, ["", {}, False, []])
         if kind and not held_key[0]:
             held_key[0] = kind
         held_key[1][index] = held_key[1].get(index, 0) + 1
         held_key[2] = held_key[2] or self.named[index]
-        if image and not held_key[3]:
-            held_key[3] = image
+        if image and image not in held_key[3]:
+            held_key[3].append(image)
 
     def reading(self, address: str) -> FlowReading:
         """The rule's reading of the flow rows to ``address``; empty where none was read."""
         processes: list[FlowProcess] = []
         unnamed = 0
         unnamed_counted = True
-        for (detonation, task, ids, _image), (kind, rows, named, image) in self.keys.get(
+        for (detonation, task, ids, _image), (kind, rows, named, images) in self.keys.get(
             address, {}
         ).items():
             flows = max(rows.values())
@@ -3053,7 +3055,7 @@ class _FlowTally:
             processes.append(
                 FlowProcess(
                     ids=list(ids),
-                    image=image,
+                    image=images[0] if len(images) == 1 else "",
                     task=task,
                     detonation=detonation if named else "",
                     kind=kind,

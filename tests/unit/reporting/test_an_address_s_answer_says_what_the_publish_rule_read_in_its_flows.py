@@ -155,6 +155,18 @@ class TestWhatTheRuleRead:
             RULE + "did not place the process the flows to it name by id (procid 47 pid 2780)"
         )
 
+    def test_a_number_two_programs_hold_is_named_by_its_ids_alone(self) -> None:
+        flows = [
+            _flow(pid=5, **{FLOW_PROCESS_KEY: "x.exe"}),
+            _flow(pid=5, dport=2, **{FLOW_PROCESS_KEY: "y.exe"}),
+        ]
+        assert _said({"tcp": flows}) == (
+            RULE + "did not place the process the flows to it name by id (pid 5)"
+        )
+        assert _said({"tcp": [_flow(pid=5, **{FLOW_PROCESS_KEY: "x.exe"})]}) == (
+            RULE + "did not place the process a flow to it names by id (x.exe pid 5)"
+        )
+
     def test_one_number_under_two_tasks_keeps_its_task(self) -> None:
         flows = [
             _flow(procid=46, **{PROCESS_TASK_KEY: "behavioral1"}),
@@ -217,6 +229,15 @@ class TestOneFlowIsSaidOnce:
             ({"tcp": [_flow(pid=5, **{FLOW_PROCESS_KEY: "x.exe"})]}, {"args": {"limit": 10}}),
         )
         assert said == RULE + "did not place the process a flow to it names by id (x.exe pid 5)"
+
+    def test_a_flow_outside_the_tree_with_no_id_read_whole_and_in_a_page(self) -> None:
+        outside = _flow(**{SAMPLE_TREE_KEY: False, FLOW_PROCESS_KEY: "svc.exe"})
+        said = _said({"tcp": [outside]}, ({"tcp": [outside]}, {"args": {"limit": 1}}))
+        assert said == (
+            RULE + "found a flow to it made by a process outside the sample's process tree "
+            "(svc.exe)"
+        )
+        assert "other" not in said
 
     def test_a_later_detonation_s_flow_is_named_by_its_detonation(self) -> None:
         later = {
@@ -422,10 +443,29 @@ class TestAReadingNeverTakenIsKeptApart:
     def test_a_disputed_row_with_no_reading_states_no_count(self) -> None:
         said = disputed_flow_reason(["SearchHost.exe (procid 104)"], [], "AcmeBox")
         assert said == (
-            RULE + "counted its flows as made by SearchHost.exe (procid 104), which AcmeBox "
+            RULE + "counted flows to it as made by SearchHost.exe (procid 104), which AcmeBox "
             "marks as the sample's but which runs none of the submitted file's names and "
             "descends from none of its processes"
         )
+
+    def test_a_disputed_row_with_no_reading_claims_no_other_flow(self) -> None:
+        disputed = _flow(
+            procid=104,
+            **{
+                FLOW_PROCESS_KEY: "StartMenuExperienceHost.exe",
+                LINEAGE_DISPUTED_KEY: LINEAGE_MARKED_STORED,
+            },
+        )
+        row = _row({"tcp": [disputed, _flow(procid=92, dport=2)]})
+        stored = NetworkIP.model_validate(
+            {**json.loads(row.model_dump_json()), "flow_reading": None}
+        )
+        said = address_flow_reason(stored)
+        assert said.startswith(
+            RULE + "counted flows to it as made by StartMenuExperienceHost.exe (procid 104), which "
+        )
+        assert "its flows" not in said and "other" not in said
+        assert _restated(said)
 
 
 def _stored_document(network: NetworkIOCs | None) -> dict[str, Any]:
