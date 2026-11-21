@@ -507,7 +507,10 @@ class TestTheWriterGivesParts:
 
         answer = S.public_resolver_reason(FACT, LISTER, MENTIONERS)
 
-        for again in (copy.deepcopy(answer), pickle.loads(pickle.dumps(answer))):
+        # The bytes unpickled are the ones this test pickled, never data from outside.
+        # nosemgrep: python.lang.security.deserialization.pickle.avoid-pickle
+        pickled = pickle.loads(pickle.dumps(answer))
+        for again in (copy.deepcopy(answer), pickled):
             assert isinstance(again, PublishAnswer)
             assert (again.refusing, again.facts) == (answer.refusing, answer.facts)
 
