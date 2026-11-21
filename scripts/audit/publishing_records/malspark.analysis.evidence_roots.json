@@ -189,6 +189,20 @@
    "text_digest": "81b7eb397ce00419df84a62949b2306fe482f0f54801b4fe5fb1b74ad20c6c5c"
   },
   {
+   "constant": "malspark.analysis.evidence_roots:NAMES_NO_ROW",
+   "condition": "the reason of a cited entry or signature item of several roots, or with a row that gives none, when the statement's words pick out none of them and no row they pick out gives a reason of its own; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": [
+    "the entry's roots by address, value and name",
+    "the statement's written numbers, quoted values and pids"
+   ],
+   "test": [
+    "tests/unit/analysis/test_evidence_roots_writes_each_root_and_each_reason_in_words.py::TestASandboxSignatureOrCommandLineThatGivesNoProcessSaysWhy::test_a_statement_whose_words_pick_out_none_of_an_entry_s_rows",
+    "tests/unit/analysis/test_a_root_reason_says_what_the_reading_gave.py::TestAStatementPickingOutNoRow::test_a_value_two_rows_hold_picks_out_neither",
+    "tests/unit/analysis/test_a_root_reason_says_what_the_reading_gave.py::TestNoTwoFormsOfOneReasonMeetInOneCountedList::test_the_statement_and_unchosen_forms_carry_different_citations"
+   ],
+   "text_digest": "c276bfe832f39b60a9830bf7183e049b9db8ac0e70b967ca54d6ff1aa244ccdc"
+  },
+  {
    "constant": "malspark.analysis.evidence_roots:NOTHING_TO_PLACE",
    "condition": "the reason, naming the tool, of a cited entry whose reading gave no root and no other reason: its answer and arguments placed nothing, or no row of it gave a root and the first row that gave none gave no reason of its own; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
    "basis": [
@@ -201,6 +215,16 @@
     "tests/unit/analysis/test_a_root_reason_says_what_the_reading_gave.py::TestAnUnplacedRowOfAnEntryThatGivesRoots::test_an_entry_none_of_whose_rows_gives_a_root_says_its_reading_gave_none"
    ],
    "text_digest": "5ef4cbc7608135db47cf1f1424d4bf5c5018f27f77da76b7965ccaa5418a89a2"
+  },
+  {
+   "constant": "malspark.analysis.evidence_roots:NO_ROW_NAMES_TECHNIQUE",
+   "condition": "the reason of an asserting entry that gives roots, none of whose rows that give a root names the technique, where no row naming it gave a reason of its own; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "basis": [
+    "the entry's rows' technique ids",
+    "the entry's roots"
+   ],
+   "test": "tests/unit/analysis/test_a_root_reason_says_what_the_reading_gave.py::TestEachFormCarriesOnlyItsOldValuesAndNamesNoTool::test_an_asserting_entry_none_of_whose_placed_rows_names_the_technique",
+   "text_digest": "609d7e6ac8c2b53bdc41cfbea4162c93e9bed93b753f112e3362f231b3e44a8d"
   },
   {
    "constant": "malspark.analysis.evidence_roots:OFFSET_UNPLACED",
@@ -328,7 +352,7 @@
   },
   {
    "constant": "malspark.analysis.evidence_roots:SIGNATURE_ITEM_UNREAD",
-   "condition": "the reason of a cited signature item no item reader's signatures answer of the ledger gave indicator rows for, or whose indicator list holds no row; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "condition": "the reason of a cited signature item, read as the citation itself, that no item reader's signatures answer of the ledger gave indicator rows for, or whose indicator list holds no row; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
    "basis": [
     "the ledger's sandbox_items answers of the signatures section",
     "the sandbox section index"
@@ -358,14 +382,17 @@
   },
   {
    "constant": "malspark.analysis.evidence_roots:SIGNATURE_UNPLACED",
-   "condition": "the reason of an indicator row that holds neither a process nor a target mapping, for its signature, description and item values, and of a signatures answer or signature item whose first unplaced row is one; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
+   "condition": "the reason of an indicator row that holds neither a process nor a target mapping, for its signature, description and item values, of a signatures answer or signature item whose first unplaced row is one, and, in an item reader's signatures answer, of a row whose signature item no indexed answer gave indicator rows for: one wording, as both meet in that answer's reasons; stored as '<citation>: <reason>' in roots_not_read of the technique's corroboration row, ATT&CK row and capability cell, which the served full report carries; the ATT&CK table only counts it",
    "basis": [
-    "the indicator row's process and target"
+    "the indicator row's process and target",
+    "the ledger's sandbox_items answers of the signatures section"
    ],
    "test": [
-    "tests/unit/analysis/test_a_root_reason_says_what_the_reading_gave.py::TestASignaturesAnswerSaysWhatTheReadingFound::test_an_indicator_row_with_no_process"
+    "tests/unit/analysis/test_a_root_reason_says_what_the_reading_gave.py::TestASignaturesAnswerSaysWhatTheReadingFound::test_an_indicator_row_with_no_process",
+    "tests/unit/analysis/test_a_root_reason_says_what_the_reading_gave.py::TestNoTwoFormsOfOneReasonMeetInOneCountedList::test_an_indicator_row_with_no_process_and_an_item_with_none_are_one_reason",
+    "tests/unit/analysis/test_a_root_reason_says_what_the_reading_gave.py::TestNoTwoFormsOfOneReasonMeetInOneCountedList::test_a_signatures_entry_with_no_root_gives_its_one_reason_everywhere"
    ],
-   "text_digest": "bf71c5cf63f49ff340898db58c84b54f9c2a19879c8e74b3f90a2bb9dff44684"
+   "text_digest": "ed82f0219745d7ab6d34cc2880443fd2d31106b587d30e682dcaa32ad4b94544"
   },
   {
    "constant": "malspark.analysis.evidence_roots:WHOLE_FILE",

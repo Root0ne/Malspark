@@ -62,10 +62,11 @@ path it names is the sample's, or it names no path and its server's program
 is the sample (``_Files``); an entry about any other file is placed against
 that file's own section table and image base, and its roots name the file.
 An entry whose root cannot be read has none, and says why in a ``no:``
-sentence: a reference lookup reads nothing of the sample, a failed call read
-nothing, a tool whose answer carries no offset, address, section, event or
-flow has nothing to place, a file offset with no section table to place it
-against the file's addresses.
+sentence in the reader's voice, saying what was read and what the reading
+gave: a reference lookup reads nothing of the sample, a failed call read
+nothing, an entry whose reading placed nothing says its reading gave no root,
+a file offset with no section table to place it against the file's
+addresses.
 
 A statement's roots are those of the entries it cites. An entry holding one
 root gives it. An entry holding several gives the ones the statement picks
@@ -165,12 +166,19 @@ ADDRESS_NOT_NUMBER = (
 REPEAT_LOOP = "no: {entry} repeats an entry that holds no answer"
 # A signatures answer that gave no root: an indicator row the reading found no
 # process in; no signature row, or no named one, and no indicator row read.
-SIGNATURE_UNPLACED = "no: the reading found no process in a sandbox signature's indicator row"
+# The first is one wording with a signature item's no indicator row: the two
+# meet in one item reader's answer, whose reasons are counted once each.
+SIGNATURE_UNPLACED = (
+    "no: the reading found no process in an indicator row of a sandbox signature, or no "
+    "indicator row for the signature item in the answers it indexed"
+)
 SIGNATURES_NONE = "no: the reading found no signature row and read no indicator row in the answer"
 SIGNATURE_NAMES_NONE = (
     "no: the reading found no signature name and read no indicator row in the answer"
 )
-# A signature item whose indicator rows no answer the reading indexed gave it.
+# A signature item whose indicator rows no answer the reading indexed gave it,
+# said where the item is the citation (``of_item``); in an item reader's answer
+# it is ``SIGNATURE_UNPLACED``.
 SIGNATURE_ITEM_UNREAD = (
     "no: the reading found no indicator row of the signature item in the answers it indexed"
 )
@@ -1264,6 +1272,16 @@ def _process(pid: Any) -> str:
     return PROCESS_ROOT.format(pid=pid)
 
 
+def picks_none(citation: str) -> str:
+    """The reason of a citation of several rows a statement's words pick out none of."""
+    return NAMES_NO_ROW.format(entry=citation)
+
+
+def no_row_names_technique(entry: str) -> str:
+    """The reason of an asserting entry none of whose rows that give a root names the technique."""
+    return NO_ROW_NAMES_TECHNIQUE.format(entry=entry)
+
+
 def _flow(proto: Any, dst: Any, port: Any) -> str:
     return FLOW_ROOT.format(proto=str(proto or "").lower(), host=_written(dst), port=port)
 
@@ -1776,6 +1794,9 @@ def _read_entry(entry: Any, found: EntryRoots, joins: _Joins) -> EntryRoots:
             if label:
                 found.add(label, values=[item, *values])
             else:
+                # Beside its indicator rows' own reason, in one wording.
+                if reason == SIGNATURE_ITEM_UNREAD:
+                    reason = SIGNATURE_UNPLACED
                 found.unplace(reason or ITEM_UNPLACED.format(section="report"), values=[item])
     elif branch == "signature_rules":
         found.coordinate = "offset"
@@ -1859,6 +1880,10 @@ class RunRoots:
         joins = _joins(entries, files)
         self._joins = joins
         self._pid_written = _pid_written()
+        # The reasons a statement's or an assertion's reading gives where it
+        # picks out none of a citation's rows.
+        self._picks_none = picks_none
+        self._no_row_names_technique = no_row_names_technique
         # The run's sandbox section index: an item id is read only against it.
         self.items: ItemIndex | None = item_index_of(entries)
         self.entries: dict[str, EntryRoots] = {}
@@ -2008,7 +2033,7 @@ class RunRoots:
                 named, unplaced = self._named(text, rows)
                 reasons = [f"{item}: {reason}" for reason in unplaced]
                 if not named and not unplaced:
-                    reasons.append(f"{item}: {NAMES_NO_ROW.format(entry=item)}")
+                    reasons.append(f"{item}: {self._picks_none(item)}")
                 out.append((item, rows.ordered(named), reasons))
                 continue
             label, reason = self.of_item(item)
@@ -2029,7 +2054,7 @@ class RunRoots:
             named, unplaced = self._named(text, found)
             reasons = [f"{eid}: {reason}" for reason in unplaced]
             if not named and not unplaced:
-                reasons.append(f"{eid}: {NAMES_NO_ROW.format(entry=eid)}")
+                reasons.append(f"{eid}: {self._picks_none(eid)}")
             out.append((eid, found.ordered(named), reasons))
         return out
 
@@ -2123,7 +2148,7 @@ class RunRoots:
             return [], [f"{eid}: {found.reason}"]
         if len(found.roots) == 1 and not found.unplaced_values and not unplaced:
             return list(found.roots), []
-        return [], [f"{eid}: {unplaced or NO_ROW_NAMES_TECHNIQUE.format(entry=eid)}"]
+        return [], [f"{eid}: {unplaced or self._no_row_names_technique(eid)}"]
 
 
 # A key of an answer whose integer is a count the answer states as a whole.

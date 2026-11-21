@@ -11,7 +11,11 @@ it was given an address, and an address given says why it gave none; a match
 says whether a process listing was indexed to join its command line against;
 a signatures answer says what the reading found and read; a sandbox item says
 where the reading looked. Each form carries only the values the reason it
-replaces carried, and names no tool, server or sample (T-816).
+replaces carried, and names no tool, server or sample. A reason written as
+one before and as several forms now keeps one count: two of its forms never
+stand for one citation in one counted list, and where they could (an
+indicator row with no process beside a signature item with no indicator row
+in one item reader's answer) they are one wording (T-816).
 
 Every value is synthetic.
 """
@@ -24,7 +28,7 @@ import re
 from typing import Any
 
 from malspark.analysis import evidence_roots as er
-from malspark.analysis.evidence_roots import RootCount, run_roots
+from malspark.analysis.evidence_roots import RootCount, layers_and_roots, run_roots
 from malspark.schemas.evidence import LedgerEntry
 
 SECTIONS = [
@@ -253,7 +257,8 @@ class TestASignaturesAnswerSaysWhatTheReadingFound:
         )
 
         assert run_roots([page]).of_entry("ev_0085").reason == (
-            "no: the reading found no process in a sandbox signature's indicator row"
+            "no: the reading found no process in an indicator row of a sandbox signature, or no "
+            "indicator row for the signature item in the answers it indexed"
         )
 
     def test_signature_rows_none_of_them_named(self) -> None:
@@ -385,6 +390,12 @@ class TestEachFormCarriesOnlyItsOldValuesAndNamesNoTool:
             "REPEAT_UNPLACED": {"item"},
         }
 
+    def test_an_asserting_entry_none_of_whose_placed_rows_names_the_technique(self) -> None:
+        assert run_roots([_sample_pe(), _rules()]).of_assertion("ev_0008", "T1055") == (
+            [],
+            ["ev_0008: no: no row of ev_0008 that gives a root names the technique"],
+        )
+
     def test_no_form_names_a_shipped_tool_or_server(self) -> None:
         from malspark.core import builtin_declarations as built
 
@@ -417,3 +428,237 @@ class TestEachFormCarriesOnlyItsOldValuesAndNamesNoTool:
                 }
 
         assert held <= {",", ""}
+
+
+# Each new form with the one reason it replaces, as that reason was written:
+# two new reasons of one citation that read as one old reason would be counted
+# once before and twice now.
+_REPLACES = [
+    (r"(.+): no: reading (.+)'s answer gave no root", "{0}: R3 {1}"),
+    (
+        r"(.+): no: the reading found nothing to place in a row of (.+)'s answer that the "
+        r"statement's words or the technique pick out",
+        "{0}: R3 {1}",
+    ),
+    (r"(.+): no: the statement's words, as read, pick out none of (.+)'s rows", "{0}: R3b {1}"),
+    (
+        r"(.+): no: reading (.+) gave more than one root, and which one is meant is not read here",
+        "{0}: R3b {1}",
+    ),
+    (r"(.+): no: the call is given a name and no address, and .+", "{0}: R4"),
+    (r"(.+): no: the address lies outside the program the server last named", "{0}: R4"),
+    (r"(.+): no: the call's address argument is not read as a number, .+", "{0}: R4"),
+    (r"(.+): no: the reading joined the match by command line to .+", "{0}: R5"),
+    (r"(.+): no: the reading found no process in an indicator row of a sandbox .+", "{0}: R7"),
+    (r"(.+): no: the reading found no signature (?:row|name) and read no indicator .+", "{0}: R7"),
+    (r"(.+): no: the reading found no indicator row of the signature item .+", "{0}: R7"),
+    (r"(.+): no: the reading found no single process at (.+) in the listings .+", "{0}: R8 {1}"),
+    (r"(.+): no: the reading takes no place from the repeat part of (.+)", "{0}: R8 {1}"),
+]
+
+
+def _replaced(reason: str) -> str:
+    for pattern, old in _REPLACES:
+        match = re.fullmatch(pattern, reason)
+        if match:
+            return old.format(*match.groups())
+    return reason
+
+
+def _counted_as_before(reasons: list[str]) -> bool:
+    """Whether no two of ``reasons`` stand for one reason as it was written before."""
+    return len({_replaced(reason) for reason in reasons}) == len(reasons)
+
+
+class TestNoTwoFormsOfOneReasonMeetInOneCountedList:
+    """A reason split into forms stays one count: its forms never meet for one citation."""
+
+    @staticmethod
+    def _index(**sections: Any) -> LedgerEntry:
+        return _entry("ev_0060", "sandbox_sections", {"sections": sections})
+
+    def test_an_indicator_row_with_no_process_and_an_item_with_none_are_one_reason(self) -> None:
+        index = self._index(
+            processes={"items": 1, "prefix": "proc", "pids": [[84, 84]]},
+            signatures={"items": 3, "prefix": "sig"},
+        )
+        listing = _entry("ev_0061", "sandbox_processes", {"processes": [{"pid": 84}]})
+        items = _entry(
+            "ev_0089",
+            "sandbox_items",
+            {
+                "section": "signatures",
+                "items": [
+                    {"id": "sig:1", "kind": "signatures", "indicators": [{"description": "a"}]},
+                    {"id": "sig:2", "kind": "signatures", "indicators": []},
+                    {
+                        "id": "sig:3",
+                        "kind": "signatures",
+                        "indicators": [{"process": {"id": 84, "image": "a.exe"}}],
+                    },
+                ],
+            },
+            args={"section": "signatures"},
+        )
+        found = run_roots([index, listing, items])
+        _roots, one = found.of_statement("It acts (`a`) and `sig:2` fires [ev_0089].", ["ev_0089"])
+        counted = RootCount()
+        counted.add(*found.of_statement("It acts (`a`) [ev_0089].", ["ev_0089"]))
+        counted.add(*found.of_statement("The `sig:2` signature fires [ev_0089].", ["ev_0089"]))
+
+        assert one == [
+            "ev_0089: no: the reading found no process in an indicator row of a sandbox "
+            "signature, or no indicator row for the signature item in the answers it indexed"
+        ]
+        assert counted.not_read == one
+        # The judge's line counts one citation, as it did when both were one sentence.
+        assert layers_and_roots(1, counted.roots, counted.not_read) == (
+            "1 layer, no evidence root read (1 citation whose root could not be read)"
+        )
+        # Where the item is itself the citation, it says which: no list joins it to a row.
+        assert found.of_item("sig:2") == (
+            "",
+            "no: the reading found no indicator row of the signature item in the answers it "
+            "indexed",
+        )
+
+    def test_the_entry_and_row_forms_stand_for_entries_without_and_with_roots(self) -> None:
+        bare = _entry(
+            "ev_0009", "capa", {"capabilities": [{"rule": "xor loop", "attck": ["T1140"]}]}
+        )
+        found = run_roots([_sample_pe(), _rules(), bare])
+        counted = RootCount()
+        counted.add(
+            *found.of_statement(
+                'A VM check ("reference anti-VM strings") and a loop [ev_0008] [ev_0009].',
+                ["ev_0008", "ev_0009"],
+            )
+        )
+        counted.add(*found.of_assertion("ev_0008", "T1497.001"))
+        counted.add(*found.of_assertion("ev_0009", "T1140"))
+
+        assert counted.not_read == [
+            "ev_0008: no: the reading found nothing to place in a row of capa's answer that the "
+            "statement's words or the technique pick out",
+            "ev_0009: no: reading capa's answer gave no root",
+        ]
+        assert _counted_as_before(counted.not_read)
+
+    def test_the_statement_and_unchosen_forms_carry_different_citations(self) -> None:
+        index = self._index(
+            processes={"items": 2, "prefix": "proc", "pids": [[85, 85], [87, 87]]},
+            signatures={"items": 2, "prefix": "sig"},
+        )
+        listing = _entry(
+            "ev_0011",
+            "sandbox_processes",
+            {"processes": [{"pid": 85, "name": "a.exe"}, {"pid": 87, "name": "b.exe"}]},
+        )
+        both = [{"process": {"id": "85", "image": "a.exe"}, "target": {"id": "87"}}]
+        one = [{"process": {"id": "85", "image": "a.exe"}}]
+        held = _entry(
+            "ev_0088",
+            "sandbox_items",
+            {
+                "section": "signatures",
+                "items": [{"id": "sig:1", "kind": "signatures", "indicators": both}],
+            },
+            args={"section": "signatures"},
+        )
+        reader = _entry(
+            "ev_0089",
+            "sandbox_items",
+            {
+                "section": "signatures",
+                "items": [
+                    {"id": "sig:1", "kind": "signatures"},
+                    {"id": "sig:2", "kind": "signatures", "indicators": one},
+                    {"id": "sig:3", "kind": "signatures", "indicators": one},
+                ],
+            },
+            args={"section": "signatures"},
+        )
+        found = run_roots([index, listing, held, reader])
+        counted = RootCount()
+        counted.add(*found.of_statement("The `sig:1` signature fires [ev_0089].", ["ev_0089"]))
+        counted.add(*found.of_statement("A signature fires [ev_0089].", ["ev_0089"]))
+
+        assert counted.not_read == [
+            "ev_0089: no: reading sig:1 gave more than one root, and which one is meant is not "
+            "read here",
+            "ev_0089: no: the statement's words, as read, pick out none of ev_0089's rows",
+        ]
+        assert _counted_as_before(counted.not_read)
+
+    def test_a_call_given_a_name_gives_one_reason_whatever_its_address(self) -> None:
+        calls = [
+            _entry("ev_0041", "decompile_function", args={"name": "main"}),
+            _entry("ev_0042", "decompile_function", args={"name": "main", "address": "start"}),
+        ]
+        found = run_roots(calls)
+        counted = RootCount()
+        for text in ("It decompiles `main` [ev_0041] [ev_0042].", "Twice [ev_0041] [ev_0042]."):
+            counted.add(*found.of_statement(text, ["ev_0041", "ev_0042"]))
+
+        assert [reason.split(":", 1)[0] for reason in counted.not_read] == ["ev_0041", "ev_0042"]
+        assert _counted_as_before(counted.not_read)
+
+    def test_a_run_says_every_unjoined_match_in_the_form_of_its_one_listing_flag(self) -> None:
+        def match(eid: str, command: str) -> LedgerEntry:
+            return _entry(
+                eid,
+                "sigma_match_sandbox",
+                {"matches": [{"matched_fields": {"CommandLine": command}, "tags": []}]},
+            )
+
+        matches = [match("ev_0054", COMMAND), match("ev_0055", "")]
+        listing = _entry("ev_0052", "sandbox_processes", {"processes": [{"pid": 84}]})
+        for ledger in ([listing, *matches], matches):
+            reasons = run_roots(ledger).of_statement("Two matches.", ["ev_0054", "ev_0055"])[1]
+            forms = {reason.split(": ", 1)[1] for reason in reasons}
+
+            assert len(reasons) == 2 and len(forms) == 1
+
+    def test_a_signatures_entry_with_no_root_gives_its_one_reason_everywhere(self) -> None:
+        page = _entry(
+            "ev_0085",
+            "sandbox_signatures",
+            {
+                "signatures": [{"severity": 2, "attck": ["T1055"]}],
+                "indicators": [{"signature": "Writes", "description": "an act"}],
+            },
+        )
+        found = run_roots([page])
+        counted = RootCount()
+        counted.add(*found.of_statement("It acts (`an act`) [ev_0085].", ["ev_0085"]))
+        counted.add(*found.of_statement("It writes [ev_0085].", ["ev_0085"]))
+        counted.add(*found.of_assertion("ev_0085", "T1055"))
+
+        assert counted.not_read == [
+            "ev_0085: no: the reading found no process in an indicator row of a sandbox "
+            "signature, or no indicator row for the signature item in the answers it indexed"
+        ]
+
+    def test_the_two_process_item_forms_carry_their_items(self) -> None:
+        index = self._index(
+            processes={"items": 2, "prefix": "proc", "pids": [[84, 84]], "repeats": [[84, 2]]}
+        )
+        listing = _entry("ev_0061", "sandbox_processes", {"processes": [{"pid": 84}]})
+        rows = [{"id": item, "kind": "processes"} for item in ("proc:84", "proc:84.0", "proc:84.2")]
+        items = _entry(
+            "ev_0064",
+            "sandbox_items",
+            {"section": "processes", "items": rows},
+            args={"section": "processes"},
+        )
+        found = run_roots([index, listing, items])
+        counted = RootCount()
+        counted.add(*found.of_statement("It ran `proc:84.0` [ev_0064].", ["ev_0064"]))
+        counted.add(*found.of_statement("It ran `proc:84.2` [ev_0064].", ["ev_0064"]))
+
+        assert counted.not_read == [
+            "ev_0064: no: the reading takes no place from the repeat part of proc:84.0",
+            "ev_0064: no: the reading found no single process at proc:84.2 in the listings of "
+            "processes it indexed",
+        ]
+        assert _counted_as_before(counted.not_read)
