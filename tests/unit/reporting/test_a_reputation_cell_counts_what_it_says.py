@@ -199,7 +199,10 @@ LONG = "9" * 5000
             f"acme, {FRAME}: malicious not counted, harmless 9",
         ),
         ({"source": "acme", "malicious": 1, "harmless": LONG}, f"acme, {FRAME}: malicious 1"),
-        ({"source": "acme", "malicious": 1, "harmless": 4.0}, f"acme, {FRAME}: malicious 1"),
+        (
+            {"source": "acme", "malicious": 1, "harmless": 4.0},
+            f"acme, {FRAME}: malicious 1, harmless 4",
+        ),
     ],
 )
 def test_a_value_that_is_no_whole_number_is_no_count_and_the_whole_report_renders(
@@ -311,4 +314,42 @@ def test_a_count_held_as_a_list_or_an_object_is_no_count_and_the_report_renders(
     _renders_whole(report)
     report = _stored_json('{"source": "acme", "malicious": 1, "harmless": [2]}', stored=True)
     assert _reputations(report)["one.example.org"] == f"acme, {FRAME}: malicious 1"
+    _renders_whole(report)
+
+
+# A count is a whole number however the record holds it: 19.0 is 19.
+WHOLE_FLOATS = {
+    "source": "vt",
+    "malicious": 19.0,
+    "suspicious": 0.0,
+    "harmless": 41.0,
+    "undetected": 31.0,
+}
+
+
+def test_a_count_held_as_a_whole_valued_float_is_read_as_its_whole_number() -> None:
+    assert _cell(WHOLE_FLOATS) == f"vt, {FRAME}: malicious 19, harmless 41, undetected 31"
+    assert _cell(WHOLE_FLOATS, stored=True) == "vt: 19 of 91 engines flag it as malicious"
+    assert _cell({"source": "acme", "malicious": 4.0, "harmless": 10}) == (
+        f"acme, {FRAME}: malicious 4, harmless 10"
+    )
+
+
+@pytest.mark.parametrize("held", ["2.5", "NaN", "Infinity", "-Infinity"])
+@pytest.mark.parametrize("name", ["malicious", "harmless", "engines"])
+def test_a_float_that_is_no_whole_number_is_no_count_and_the_report_renders(
+    held: str, name: str
+) -> None:
+    counts = {"malicious": "1", "harmless": "2", name: held}
+    record = (
+        "{" + ", ".join(['"source": "acme"', *(f'"{k}": {v}' for k, v in counts.items())]) + "}"
+    )
+    report = _stored_json(record, stored=False)
+
+    said = _reputations(report).get("one.example.org")
+    kept = [f"{k} {v}" for k, v in counts.items() if k != name and k != "engines"]
+    if name == "malicious":
+        assert said == f"acme, {FRAME}: malicious not counted, harmless 2"
+    else:
+        assert said == f"acme, {FRAME}: " + ", ".join(kept)
     _renders_whole(report)

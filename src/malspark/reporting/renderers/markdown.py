@@ -31,6 +31,7 @@ cleanly on terminals, PDFs and ticket systems alike.
 from __future__ import annotations
 
 import ipaddress
+import math
 import re
 import secrets
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
@@ -5233,14 +5234,17 @@ _NETWORK_COUNTS = ("malicious", "suspicious", "harmless", "undetected")
 def _held_count(value: Any) -> int | None:
     """``value`` as the whole number the record holds, or ``None`` where it holds none.
 
-    A count is an ``int`` (not a bool) or a string of digits that converts;
-    any other value, a digit string too long to convert among them, is no
-    count. Reading a value never raises.
+    A count is a whole number however the record holds it: an ``int`` (not a
+    bool), a finite ``float`` with no fraction (``19.0`` is 19), or a string
+    of digits that converts; any other value, a digit string too long to
+    convert among them, is no count. Reading a value never raises.
     """
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
         return value
+    if isinstance(value, float):
+        return int(value) if math.isfinite(value) and value.is_integer() else None
     if isinstance(value, str) and re.fullmatch(r"\s*-?\d+\s*", value):
         try:
             return int(value)
