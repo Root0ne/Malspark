@@ -5171,66 +5171,94 @@ _SOURCE_WORDS = {
 
 # What a verdict-withheld answer says of what the evidence held, before it in brackets.
 EVIDENCE_ALONE = "the evidence alone would publish it"
-# What the rule's lookup (:func:`second_source`) found for a value asked as the
-# string sweep's that it refused: said after the row the value is from.
-LOOKUP_FOUND_NO_SECOND_SOURCE = "the rule's lookup found no second source"
-# The source of a row asked as the string sweep's that no sweep row holds.
-ASKED_AS_THE_SWEEP_S = "its row is asked as the string sweep's"
+# What the publish rule's lookup (:func:`second_source`) found for a value asked as
+# the string sweep's that it refused: said after the row the value is from.
+LOOKUP_FOUND_NO_SECOND_SOURCE = "the publish rule's lookup found no second source"
+# The source of a row asked as the string sweep's that no sweep row holds, by the
+# source the row records (``strings``, or none).
+NO_SWEEP_ROW = "its row's source is {source} and no row of the string sweep holds it"
+NO_SWEEP_ROW_NO_SOURCE = "its row records no source and no row of the string sweep holds it"
+# A sweep row that records no entry (a report stored before rows recorded one).
+ROW_WITHOUT_ENTRY = "its row records no entry and its source is {source}"
+ROW_WITHOUT_ENTRY_OR_SOURCE = "its row records no entry and no source"
+# The counts a reputation record carries (``network_extractor.corroboration_reason``).
+_REPUTATION_COUNTS = ("malicious", "suspicious")
 
 
-def strings_source(value: Any, corroborating: Any) -> str:
+def strings_source(value: Any, corroborating: Any, source: str | None = "strings") -> str:
     """Where a value asked as the string sweep's is from, as the run's record names it.
 
-    The sweep's rows that hold it (:attr:`SecondSources.swept`), named by the
-    tool and the entry of each row that records its entry (``the string
-    sweep's row from iocs_from_file (ev_0006) holds it``), else as the sweep's
-    (``the string sweep's row holds it``); a value no sweep row holds is
-    :data:`ASKED_AS_THE_SWEEP_S`. It says which record holds the value, never
-    what the file holds: a sweep row may come from a text a model passed to
-    an extractor.
+    The rows that hold it (:attr:`SecondSources.swept`), each named by the
+    tool and the entry it records (``the row from iocs_from_file (ev_0006)
+    holds it``), an entry the index names no tool for by its id after the
+    named ones; a row that records no entry by that and its source
+    (:data:`ROW_WITHOUT_ENTRY`); a value no sweep row holds by the source its
+    own row records (:data:`NO_SWEEP_ROW`). It says which record holds the
+    value, never what the file holds, and never calls a row the file's sweep:
+    a row may come from a text a model passed to an extractor.
     """
     record = _as_record(corroborating)
     held = record.swept.get(str(value or "").strip().lower())
+    recorded = str(source or "").strip()
     if held is None:
-        return ASKED_AS_THE_SWEEP_S
+        return NO_SWEEP_ROW.format(source=recorded) if recorded else NO_SWEEP_ROW_NO_SOURCE
+    if not held:
+        if not recorded:
+            return ROW_WITHOUT_ENTRY_OR_SOURCE
+        return ROW_WITHOUT_ENTRY.format(source=recorded)
     by_tool: dict[str, list[str]] = {}
     for tool, entry in held:
         by_tool.setdefault(tool, []).append(entry)
     named = [f"{tool} ({', '.join(ids)})" for tool, ids in by_tool.items() if tool]
-    # An entry the index does not name a tool for is said by its id alone.
-    unnamed = [entry for tool, entry in held if not tool]
+    # An entry the index does not name a tool for is said by its id alone, after the named.
+    named += [entry for tool, entry in held if not tool]
     one = len(held) < 2
-    sources = f" ({', '.join(unnamed)})" if unnamed else ""
     # Joined by "and" alone, so the part holds no "," outside a bracket.
-    sources += f" from {' and '.join(named)}" if named else ""
-    return f"the string sweep's {'row' if one else 'rows'}{sources} {'holds' if one else 'hold'} it"
+    rows, verb = ("row", "holds") if one else ("rows", "hold")
+    return f"the {rows} from {' and '.join(named)} {verb} it"
+
+
+def holds_a_reputation_record(reputation: Any) -> bool:
+    """Whether a row's reputation field is a provider's record: it names its source or a count.
+
+    An empty or failed shell is no record (``enrichment.orchestrator``).
+    """
+    return isinstance(reputation, dict) and (
+        bool(reputation.get("source")) or any(key in reputation for key in _REPUTATION_COUNTS)
+    )
 
 
 def strings_refusal(
-    kind: str, value: Any, corroborating: Any, reputation: Any = None, recovered: str = ""
+    kind: str,
+    value: Any,
+    corroborating: Any,
+    reputation: Any = None,
+    recovered: str = "",
+    source: str | None = "strings",
 ) -> str:
     """The refusing part of a value asked as the string sweep's that nothing admitted.
 
     The row it is from (:func:`strings_source`), then what the deciding test
-    found, in its own names: for a domain, an address or a URL, what the
-    network rule read (a recovery of it, and a reputation record for it, or for
-    a URL's host, said as given or not given); for any other kind, that the
-    rule's lookup (:func:`second_source`) found no second source, which is the
-    only way such a value reaches this answer. One part, no ``;`` or ``,`` in
-    the platform's words, so a writer restates it whole in a bracket or out of
-    one.
+    found, in its own names, its finding the publish rule's: for a domain, an
+    address or a URL, what the publish rule read (a recovery of it, and a
+    reputation record for it, or for a URL's host, said as given or not
+    given, :func:`holds_a_reputation_record`); for any other kind, that the
+    publish rule's lookup (:func:`second_source`) found no second source,
+    which is the only way such a value reaches this answer. One part, no
+    ``;`` or ``,`` in the platform's words, so a writer restates it whole in a
+    bracket or out of one.
     """
-    said = strings_source(value, corroborating)
+    said = strings_source(value, corroborating, source)
     if kind not in NETWORK_KINDS:
         return f"{said} and {LOOKUP_FOUND_NO_SECOND_SOURCE}"
     recovery = "did not admit its recovery" if recovered else "found no recovery of it"
     of = "for its host" if kind == "url" else "for it"
     record = (
         f"read a reputation record {of} with no malicious or suspicious count above zero"
-        if isinstance(reputation, dict)
+        if holds_a_reputation_record(reputation)
         else f"read no reputation record {of}"
     )
-    return f"{said} and the network rule {recovery} and {record}"
+    return f"{said} and the publish rule {recovery} and {record}"
 
 
 def published_because(reason: str) -> str:
@@ -5440,7 +5468,7 @@ def publish_answer(
     # The row it is from and what the deciding test found refuse it, as one
     # part; each holder an analyst section cites is a fact of its own.
     return refused(
-        strings_refusal(kind, text, corroborating, reputation, recovered)
+        strings_refusal(kind, text, corroborating, reputation, recovered, source)
         if from_strings
         else f"its row's source is {source}",
         facts=holders,
@@ -6434,12 +6462,13 @@ def second_source_refusal(value: Any, corroborating: Any, *, network: bool = Fal
 # How a holder clause says a citation, as the rule's lookup reads one
 # (:func:`_cited_entries`: the entries an analyst section cites).
 _CITED = "an analyst section cites"
-# Why a cited holder of a kind that confirms nothing does not count: the rule's
-# standing for its kind (``tool_kinds.second_source_standing``).
-_CONFIRMS_NOTHING = "the rule counts as confirming nothing"
-# Why a cited holder that would confirm a path does not count on a network row:
-# the network rule reads the row's source, a recovery and a reputation record.
-_NETWORK_RULE_DOES_NOT_ASK = "the rule for a network value does not ask which entries hold it"
+# Why a cited holder of a kind that confirms nothing does not count: the publish
+# rule's standing for its kind (``tool_kinds.second_source_standing``). Printed on
+# a row of a kind other than a domain, an address or a URL only.
+_CONFIRMS_NOTHING = "the publish rule counts as confirming nothing"
+# Why no cited holder counts on a network row: the publish rule reads the row's
+# source, a recovery and a reputation record, and asks no holder's kind.
+_NETWORK_RULE_DOES_NOT_ASK = "the publish rule does not ask which entries hold a network value"
 
 
 def second_source_refusal_parts(
@@ -6451,11 +6480,12 @@ def second_source_refusal_parts(
     Each clause names what the run's record (:class:`SecondSources`) holds and
     why it does not count, read off the record it names: a cited entry of a
     kind that confirms nothing, by tool and entry id; on a report stored
-    before the per-entry record, a cited section of such a kind, by tool; a
-    section that holds a cited entry beside one no analyst section cites; and,
-    on a ``network`` row, a cited entry of an observing or undeclared kind,
-    which the rule for a network value does not ask. An entry no analyst
-    section cites is not named.
+    before the per-entry record, a cited section of such a kind, by tool; and
+    a section that holds a cited entry beside one no analyst section cites.
+    On a ``network`` row no holder's kind is asked: every cited entry (of
+    whatever kind), every cited section and the section beside an uncited
+    entry is named with :data:`_NETWORK_RULE_DOES_NOT_ASK`, never with a
+    kind's standing. An entry no analyst section cites is not named.
     """
     record = _as_record(corroborating)
     text = str(value or "").strip()
@@ -6486,41 +6516,33 @@ def second_source_refusal_parts(
         one = len({entry for _tool, entry in held}) == 1
         return f"{'holds' if one else 'hold'} it in {'an entry' if one else 'entries'} {_CITED}"
 
-    def of_kinds(tools: int) -> str:
+    def prints(tools: list[str]) -> str:
+        return f"{_tools_said(tools)} {'prints' if len(tools) == 1 else 'print'} it in a section"
+
+    def why(tools: int) -> str:
+        if network:
+            return f"and {_NETWORK_RULE_DOES_NOT_ASK}"
         return f"of {'a kind' if tools == 1 else 'kinds'} {_CONFIRMS_NOTHING}"
 
     said: list[str] = []
-    rereads = cited_entries((tool_kinds.REREADS,))
-    if rereads:
-        tools = len({tool for tool, _entry in rereads})
-        said.append(f"{entries_said(rereads)} {holds(rereads)}, {of_kinds(tools)}")
+    standings: tuple[str, ...] = (tool_kinds.REREADS,)
+    if network:
+        standings += (tool_kinds.OBSERVES, tool_kinds.UNDECLARED)
+    entries = cited_entries(standings)
+    if entries:
+        tools = len({tool for tool, _entry in entries})
+        said.append(f"{entries_said(entries)} {holds(entries)}, {why(tools)}")
     sections = holders(record.rereads)
     if sections:
-        verb = "prints" if len(sections) == 1 else "print"
-        said.append(
-            f"{_tools_said(sections)} {verb} it in a section holding an entry {_CITED}, "
-            f"{of_kinds(len(sections))}"
-        )
+        said.append(f"{prints(sections)} holding an entry {_CITED}, {why(len(sections))}")
     beside = holders(record.uncited)
     if beside:
-        verb = "prints" if len(beside) == 1 else "print"
-        said.append(
-            f"{_tools_said(beside)} {verb} it in a section holding an entry {_CITED} "
-            "beside one no analyst section cites"
-        )
+        clause = f"{prints(beside)} holding an entry {_CITED} beside one no analyst section cites"
+        said.append(f"{clause}, {why(len(beside))}" if network else clause)
     if network:
-        confirming = cited_entries((tool_kinds.OBSERVES, tool_kinds.UNDECLARED))
-        if confirming:
-            said.append(
-                f"{entries_said(confirming)} {holds(confirming)}, and {_NETWORK_RULE_DOES_NOT_ASK}"
-            )
         undeclared = holders(record.undeclared)
         if undeclared:
-            verb = "prints" if len(undeclared) == 1 else "print"
-            said.append(
-                f"{_tools_said(undeclared)} {verb} it in a section {_CITED}, and "
-                f"{_NETWORK_RULE_DOES_NOT_ASK}"
-            )
+            said.append(f"{prints(undeclared)} {_CITED}, {why(len(undeclared))}")
     return tuple(said)
 
 

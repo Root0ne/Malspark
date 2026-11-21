@@ -26,6 +26,7 @@ import ipaddress
 import json
 import re
 import types
+from collections import Counter
 from collections.abc import Awaitable, Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -9253,31 +9254,34 @@ def _restates_words(after: str, reason: str, *, slack: float = 0.0) -> bool:
 
     Each of its words that carries meaning is looked for after the last one
     found, at most ``_REASON_GAP`` words further on; ``slack`` is the share of
-    them that may be missing, a negation of the reason never among them. A
-    negation in the restatement that the reason does not carry turns it around
-    and is no restatement.
+    them that may be missing, a negation of the reason never among them: each
+    negation is found as often as the reason carries it. A negation in the
+    restatement that the reason does not carry turns it around and is no
+    restatement.
     """
     wanted = [word for word in re.findall(r"\w+", reason.lower()) if word not in _REASON_FILLER]
     if len(wanted) < _REASON_MIN_WORDS:
         return False
     written = re.findall(r"\w+", after.lower())
     allowed = int(len(wanted) * slack)
-    negations = set(wanted) & _NEGATIONS
+    negations = Counter(word for word in wanted if word in _NEGATIONS)
     for start in range(len(written)):
         at: int | None = None
-        found: set[str] = set()
+        found: Counter[str] = Counter()
         count = 0
         for want in wanted:
             if at is None:
                 if written[start] == want:
                     at, count = start, 1
-                    found.add(want)
+                    found[want] += 1
                 continue
             ahead = written[at + 1 : at + 2 + _REASON_GAP]
             if want in ahead:
                 at, count = at + 1 + ahead.index(want), count + 1
-                found.add(want)
-        if at is None or len(wanted) - count > allowed or not negations <= found:
+                found[want] += 1
+        if at is None or len(wanted) - count > allowed:
+            continue
+        if any(found[word] < times for word, times in negations.items()):
             continue
         span = set(written[max(start - 2, 0) : at + 1])
         if not (span & _NEGATIONS) - set(wanted):

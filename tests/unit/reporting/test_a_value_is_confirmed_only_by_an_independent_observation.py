@@ -139,7 +139,7 @@ class TestAnotherReadingOfTheBytesConfirmsNothing:
         # A report stored before the per-entry record names the cited section by its tool.
         assert (
             "reader prints it in a section holding an entry an analyst section cites, of a kind "
-            "the rule counts as confirming nothing"
+            "the publish rule counts as confirming nothing"
         ) in answer
 
     def test_a_registry_key_a_listing_holds(self) -> None:
@@ -236,8 +236,8 @@ class TestTheDecisionIsPerEntry:
         )
         assert not publishes(answer), answer
         assert (
-            "reader (ev_0070) holds it in an entry an analyst section cites, of a kind the rule "
-            "counts as confirming nothing"
+            "reader (ev_0070) holds it in an entry an analyst section cites, of a kind the publish "
+            "rule counts as confirming nothing"
         ) in answer
 
     def test_a_section_citing_no_entry_confirms_nothing(self) -> None:
@@ -655,7 +655,7 @@ class TestATransformWithStepsRecovers:
         assert not publishes(answer), answer
         assert (
             "transform_bytes (ev_0120) holds it in an entry an analyst section cites, of a kind "
-            "the rule counts as confirming nothing"
+            "the publish rule counts as confirming nothing"
         ) in answer
 
 
@@ -705,7 +705,8 @@ class TestEachReasonStatesItselfFirst:
         answer = _answer(_held_by("listing", RUNTIME_PATH), RUNTIME_PATH)
 
         assert answer.split(";", 1)[0] == (
-            "no: the string sweep's row holds it and the rule's lookup found no second source"
+            "no: its row records no entry and its source is strings and the publish rule's lookup "
+            "found no second source"
         )
 
     def test_an_undeclared_confirmation_keeps_the_published_reason_first(self) -> None:

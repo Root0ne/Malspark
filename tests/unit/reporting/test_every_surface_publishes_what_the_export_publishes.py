@@ -120,7 +120,8 @@ class TestAJudgeValueTheRuleRefuses:
 
         # No sweep row holds it: its network row is asked as the sweep's.
         assert _row(report, SWEPT).published == (
-            "no: its row is asked as the string sweep's and the network rule found no "
+            "no: its row's source is strings and no row of the string sweep holds it and the "
+            "publish rule found no "
             "recovery of it and read no reputation record for it"
         )
 
@@ -162,7 +163,8 @@ class TestAJudgeValueTheRuleRefuses:
         )
 
         assert _row(report, "only-judge.example.net").published == (
-            "no: the string sweep's row holds it and the network rule found no recovery of it "
+            "no: its row records no entry and its source is strings and the publish rule found no "
+            "recovery of it "
             "and read no reputation record for it"
         )
 

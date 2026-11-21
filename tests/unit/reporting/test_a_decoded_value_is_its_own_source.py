@@ -224,7 +224,8 @@ class TestAMalwareVerdict:
         assert C2 not in _exported(report)
         # A network row of the sweep's source that no sweep row holds.
         assert _published(report, C2) == (
-            "no: its row is asked as the string sweep's and the network rule found no "
+            "no: its row's source is strings and no row of the string sweep holds it and the "
+            "publish rule found no "
             "recovery of it and read no reputation record for it"
         )
 

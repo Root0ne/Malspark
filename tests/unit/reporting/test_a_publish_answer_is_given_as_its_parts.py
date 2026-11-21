@@ -483,7 +483,9 @@ class TestTheWriterGivesParts:
 
         assert isinstance(answer, PublishAnswer)
         (first,) = answer.refusing
-        assert first == f"{S.ASKED_AS_THE_SWEEP_S} and {S.LOOKUP_FOUND_NO_SECOND_SOURCE}"
+        assert first == (
+            f"{S.NO_SWEEP_ROW.format(source='strings')} and {S.LOOKUP_FOUND_NO_SECOND_SOURCE}"
+        )
         assert len(answer.facts) == 2
         assert answer == "; ".join([f"no: {first}", *answer.facts])
 

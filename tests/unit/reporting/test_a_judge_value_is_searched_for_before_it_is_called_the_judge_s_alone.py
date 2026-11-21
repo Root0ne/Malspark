@@ -127,7 +127,8 @@ def test_a_value_a_sweep_row_holds_names_that_row() -> None:
     report.static = StaticAnalysis(interesting_strings=[StringIOC(kind="domain", value=NAME)])
 
     assert _answer(report) == (
-        "no: the string sweep's row holds it and the network rule found no recovery of it "
+        "no: its row records no entry and its source is strings and the publish rule found no "
+        "recovery of it "
         "and read no reputation record for it"
     )
 

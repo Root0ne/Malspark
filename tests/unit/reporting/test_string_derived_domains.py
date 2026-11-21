@@ -186,9 +186,9 @@ class TestNoStringDerivedDomainReachesTheBundle:
 
 
 # What the rule answers for a name only the sweep's row of iocs_from_file holds: the
-# row it is from, then what the network rule read (no recovery, no reputation record).
+# row it is from, then what the publish rule read (no recovery, no reputation record).
 SWEPT_DOMAIN = (
-    "no: the string sweep's row from iocs_from_file (ev_0001) holds it and the network rule "
+    "no: the row from iocs_from_file (ev_0001) holds it and the publish rule "
     "found no recovery of it and read no reputation record for it"
 )
 

@@ -314,10 +314,13 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # The Markdown and HTML re-pinned when a host row no record of which the publish rule could
 # place came to say what the rule found (T-782d): each such digest row in §9's table is the
 # only change.
+# The Markdown and HTML re-pinned when every clause of a strings refusal came to name its
+# finding as the publish rule's and its row by what the row records (T-782c): the one such
+# path row, in the strings table and in §9's table, is the only change.
 STORED_RENDERS = {
     "run7": ("d369c9b6dd6637e8", "fcfdb48e546dd330"),
-    "run5": ("f602ba82a5c2cefe", "d6a52f069a9f87a3"),
-    "run4": ("1988f1484188ae1c", "798484f81ae891d3"),
+    "run5": ("3553ba8ab6266a80", "636abe4bd0e8350d"),
+    "run4": ("46f38f2d9beec731", "3ab7961426fc665b"),
     "local8": ("0f7fadddc744670f", "ca68f7add4579ed4"),
     "haiku4": ("64a6d2dbc8cc5192", "0b089fe43342fed0"),
 }
