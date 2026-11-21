@@ -418,3 +418,27 @@ def test_an_entry_written_before_the_record_and_rebuilt_is_never_said_as_declare
         "records no read of the sample by its source.",
         "Declared to reach the network: `emu` and `rep` on tool server `old`.",
     ]
+
+
+def test_the_reason_an_entry_is_undeclared_is_said_by_where_the_entry_records_it_came_from() -> (
+    None
+):
+    """The undeclared line gives its reason as a declaration's only where the entry's record
+    says nothing of it was read; an entry that records no origin gives it as its record's."""
+    why = "it runs whatever script or command it is given, so what it does is not known"
+    entry = {"id": "ev_1", "source": "mcp:dis", "server": "dis", "tool": "run_command"}
+    entry |= {"ok": True, "args": {}}
+    facts = {"v": 1, "kind": "utility", "effects": {"why_undeclared": why}}
+    lead = (
+        "Undeclared whether it may run the sample's code, reach the network or send the sample's "
+        "hash or bytes to a third party, so not taken as safe: `run_command` on tool server `dis`"
+    )
+
+    def last(held: dict[str, Any]) -> str:
+        return effects_lines(effects_part([{**entry, "facts": held}]))[-1]
+
+    assert last(dict(facts)) == f"{lead}; the reason its record gives: {why}."
+    assert last({**facts, READ_KEY: ["effects.why_undeclared"]}) == (
+        f"{lead}; the platform's reading of its listing says why: {why}."
+    )
+    assert last({**facts, READ_KEY: []}) == f"{lead}; its declaration says why: {why}."

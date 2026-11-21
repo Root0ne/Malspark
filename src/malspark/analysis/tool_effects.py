@@ -134,11 +134,18 @@ FROM_DISCLOSES = "discloses"
 INTRO_SENTENCE = (
     "**Tool effects:** what is listed of each tool this run called beyond answering: whether it "
     "runs the sample's code, reaches the network, or sends the sample's hash or bytes to a third "
-    "party, each said as declared or as taken by where it came from. Where the sample's bytes "
-    "were read is the isolation part above, and where they were sent the upload rows of the "
-    "disclosure; an answer nothing gives is listed as undeclared for that tool, and is not taken "
-    "as safe."
+    "party, each said by where it came from. Where the sample's bytes were read is the "
+    "isolation part above, and where they were sent the upload rows of the disclosure; an answer "
+    "nothing gives is listed as undeclared for that tool, and is not taken as safe."
 )
+
+# How the undeclared line introduces the reason, by where the reason came from; a row
+# that does not record it is said as the reason its record gives.
+_WHY_SAID = {
+    FROM_DECLARED: "its declaration says why",
+    FROM_READ: "the platform's reading of its listing says why",
+}
+_WHY_RECORD = "the reason its record gives"
 
 # What a missing answer is, as the undeclared line says it.
 _UNDECLARED_EXECUTES = "run the sample's code"
@@ -641,10 +648,10 @@ def executes_from(row: Mapping[str, Any]) -> str:
 
 def why_from(row: Mapping[str, Any]) -> str:
     """Where a row's reason its effects cannot be declared came from; a row stored before it
-    says it as stored (the sentence has two forms only, by this)."""
+    cannot tell a declaration from a reading, and its reason is its record's."""
     if "why_from" in row:
         return str(row.get("why_from") or "")
-    return FROM_DECLARED if row.get("why_undeclared") else ""
+    return FROM_UNRECORDED if row.get("why_undeclared") else ""
 
 
 def _ran(row: Mapping[str, Any]) -> bool:
@@ -967,16 +974,13 @@ def effects_lines(
         missing = _missing(row)
         if missing and made:
             why = str(row.get("why_undeclared") or "")
-            # The reason as its declaration states it, or as the platform read it.
-            said = (
-                "the platform's reading of its listing"
-                if why_from(row) == FROM_READ
-                else "its declaration"
-            )
+            # The reason as its declaration states it, as the platform read it, or, where
+            # the row does not record which, as the reason its record gives.
+            said = _WHY_SAID.get(why_from(row), _WHY_RECORD)
             groups.setdefault((missing, why, said), []).append(row)
     for (missing, why, said), held in groups.items():
         lines.append(
             f"Undeclared whether it may {_joined(list(missing), 'or')}, so not taken as safe: "
-            f"{_named(held, code)}" + (f"; {said} says why: {why}" if why else "") + "."
+            f"{_named(held, code)}" + (f"; {said}: {why}" if why else "") + "."
         )
     return lines

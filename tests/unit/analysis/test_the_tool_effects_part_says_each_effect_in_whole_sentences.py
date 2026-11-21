@@ -362,7 +362,7 @@ def test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it() -> 
         "taken as safe: `rule_scan` on tool server `analysis`.",
         "Undeclared whether it may run the sample's code, reach the network or send the "
         "sample's hash or bytes to a third party, so not taken as safe: `run_script` on tool "
-        "server `x`; its declaration says why: it runs whatever script it is given.",
+        "server `x`; the reason its record gives: it runs whatever script it is given.",
     ]
 
 
@@ -404,7 +404,7 @@ def test_the_report_heads_the_part_with_its_lead_sentence_after_the_isolation_pa
     assert (
         "\n\n**Tool effects:** what is listed of each tool this run called beyond answering: "
         "whether it runs the sample's code, reaches the network, or sends the sample's hash or "
-        "bytes to a third party, each said as declared or as taken by where it came from. "
+        "bytes to a third party, each said by where it came from. "
         "Where the sample's bytes were read is the isolation part above, and where they were "
         "sent the upload rows of the disclosure; an answer nothing gives is listed as "
         "undeclared for that tool, and is not taken as safe.\n\n"
