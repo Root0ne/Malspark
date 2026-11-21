@@ -154,9 +154,13 @@ NEGATIVES_INTRO = (
 # How a claim was read as negative.
 WORDING = "wording"
 ABSENCE_QUESTION = "absence_question"
+# Said where no row of what could not be established prints: it names only the
+# states that make a row (:func:`_not_established`), and says an answer read in
+# part, which makes none, is not counted there.
 NOTHING_MISSING = (
-    "Nothing recorded: every tool call answered whole, and no input, layer, tool server or "
-    "analyst was recorded missing."
+    "Nothing recorded as missing: no tool call failed, was refused by a guard, was not run, was "
+    "cut by the platform or was kept from the model, and no input, layer, tool server or analyst "
+    "was recorded missing; an answer its tool capped, paged or narrowed is not counted here."
 )
 # Said after a capability subsection's "nothing recorded" line, only where the
 # record exists.
