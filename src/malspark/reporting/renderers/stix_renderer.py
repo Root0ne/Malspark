@@ -1192,10 +1192,7 @@ class ExtendedSTIXRenderer:
                 objects.append(
                     Indicator(
                         name=f"Files like the sample {sha256[:12]}",
-                        description=(
-                            "The sample's import-table and similarity digests; each also "
-                            "matches files that share its imports or most of its bytes."
-                        ),
+                        description=similarity_description(similar) or None,
                         pattern=_digests_pattern(similar),
                         pattern_type="stix",
                         indicator_types=[str(similar[0].indicator_type)],
@@ -5779,6 +5776,39 @@ def _digests_pattern(rows: Sequence[Any]) -> str:
         if (comparison := hash_comparison(str(row.type or ""), str(row.value or "").strip()))
     ]
     return f"[{' OR '.join(comparisons)}]"
+
+
+def similarity_description(rows: Sequence[Any]) -> str:
+    """The description of the indicator of the sample's similarity digests, from the digests
+    its pattern compares (:func:`_digests_pattern`).
+
+    An import table's digest also matches files that share the sample's imports, a fuzzy
+    digest files that share most of its bytes; each kind is named only where the pattern
+    holds a digest of it. ``""`` where it holds none.
+    """
+    kinds = [
+        label
+        for row in rows
+        if hash_comparison(label := str(row.type or ""), str(row.value or "").strip())
+    ]
+    imports = [k for k in kinds if k.lower() == "imphash"]
+    fuzzy = [k for k in kinds if k.lower() != "imphash"]
+    named: list[str] = []
+    matches: list[str] = []
+    for held, what, shared in (
+        (imports, "import-table digest", "its imports"),
+        (fuzzy, "similarity digest", "most of its bytes"),
+    ):
+        if held:
+            plural = "s" if len(held) > 1 else ""
+            named.append(f"{what}{plural} ({', '.join(dict.fromkeys(held))})")
+            matches.append(shared)
+    if not named:
+        return ""
+    return (
+        f"The sample's {' and '.join(named)}; {'it' if len(kinds) == 1 else 'each'} also "
+        f"matches files that share {' or '.join(matches)}."
+    )
 
 
 def _host_row(row: Any) -> bool:
