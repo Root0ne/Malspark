@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { MalwareReport, NetworkDomain, NetworkIOCs, NetworkIP } from "@/types/malware-report";
+import { relatedFindings } from "../iocList";
 import { domainFacts, endpointCounts, formValues, ipFacts, networkCounts, valueKey } from "../networkFacts";
 import { hostLabel, hostReading, hostRows, hostSuspicious } from "../networkView";
 
@@ -163,6 +164,12 @@ describe("a row of the sample's strings the API serves as its form (T-778)", () 
       { reason: "", score: null },
       { reason: "", score: null },
     ]);
+  });
+
+  it("lists a form row's name alone among the related findings, and a host with its reason", () => {
+    const hosts = (value: string) => relatedFindings(report, value).filter((f) => f.where === "Network host");
+    expect(hosts("Abi.Name")).toEqual([{ where: "Network host", text: "abi.name" }]);
+    expect(hosts("c2.example")).toEqual([{ where: "Network host", text: "c2.example: DGA-like (score 0.71)" }]);
   });
 
   it("finds a form row's value written with a trailing dot, as the report keys a name", () => {

@@ -14,6 +14,7 @@ table's own rows, whose kind stays the key of every lookup.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import pytest
@@ -333,6 +334,50 @@ class TestTheContextCellOfAFormRowSaysNoHostReading:
         assert context["g59bq3uukp.j52keb9e.name"] == "queried by pid 4242"
         assert context["k3v9q.example.org"] == ""
         assert context["qx7rk2vbn9.example-c2.net"] == f"{_DGA}; DGA score 0.82"
+
+    def test_a_form_row_keeps_its_look_alike_target_and_resolved_addresses(self) -> None:
+        report = _report(
+            network=NetworkIOCs(
+                domains=[
+                    NetworkDomain(
+                        fqdn="xn--pple-43d.com",
+                        source="strings",
+                        is_suspicious=True,
+                        reason="look-alike of apple.com",
+                        dga_score=0.5,
+                        is_punycode=True,
+                        homograph_target="apple.com",
+                        resolved_ips=["203.0.113.7"],
+                        queried_pids=[1234],
+                    )
+                ]
+            )
+        )
+        cell = "punycode resembling apple.com; resolved to 203.0.113.7; queried by pid 1234"
+        row = next(r for r in ioc_table(report) if r.value == "xn--pple-43d.com")
+        assert row.context == cell and row.description == cell
+        served, _note = with_current_iocs(report.model_dump(mode="json"), "r")
+        served_row = next(
+            r for r in served["consolidated_iocs"] if r["value"] == "xn--pple-43d.com"
+        )
+        assert served_row["kind"] == EXPORTED_FORM_KINDS[DOTTED_NAME]
+        assert served_row["context"] == cell
+
+    def test_every_row_is_kept_as_written_and_logged_when_the_forms_cannot_be_read(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        def unreadable(*_args: Any, **_kwargs: Any) -> Any:
+            raise RuntimeError("forms unreadable")
+
+        monkeypatch.setattr("malspark.reporting.string_row_form.string_row_forms", unreadable)
+        with caplog.at_level(logging.ERROR, logger="malspark"):
+            rows = {row.value: row for row in ioc_table(_scored())}
+        assert rows["g59bq3uukp.j52keb9e.name"].context == (
+            f"{_DGA}; DGA score 0.82; queried by pid 4242"
+        )
+        assert rows["k3v9q.example.org"].context == "DGA score 0.41"
+        assert rows["qx7rk2vbn9.example-c2.net"].context == f"{_DGA}; DGA score 0.82"
+        assert "the IOC table's form rows could not be read" in caplog.text
 
 
 class TestThePublishingExportsCarryNoFormRow:

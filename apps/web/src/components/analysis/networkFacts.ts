@@ -99,7 +99,7 @@ export function formValues(mr: Pick<MalwareReport, "consolidated_iocs"> | null |
 /**
  * How many distinct domains, addresses and URLs a run names, from the network
  * block and the sample's own strings together. A value both sources carry is
- * one endpoint, so it is counted once (names compare without case). A value
+ * one endpoint, so it is counted once (names compare by `valueKey`). A value
  * the IOC table serves as its form (`forms`) is no domain and is not counted.
  */
 export function endpointCounts(
