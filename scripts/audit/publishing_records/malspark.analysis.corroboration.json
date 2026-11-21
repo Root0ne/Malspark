@@ -1,0 +1,63 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.analysis.corroboration:NO_BEHAVIOUR_SOURCE",
+   "condition": "closes the support sentence and the ATT&CK table's status words of a technique whose support is capability or unobserved; prints in the ATT&CK table's status words, the export's support note on the uses relationship, and the lines the judge and the report models read",
+   "basis": ["the corroboration row's and TTPMapping's support"],
+   "test": [
+    "tests/unit/analysis/test_corroboration_names_a_technique_s_sources_and_support_in_words.py::TestTheSentenceOnATechniqueNoSourceOfWhichIsBehaviour::test_the_export_and_the_models_are_told_the_label_the_kinds_and_the_clause",
+    "tests/unit/analysis/test_corroboration_names_a_technique_s_sources_and_support_in_words.py::TestTheSentenceOnATechniqueNoSourceOfWhichIsBehaviour::test_the_attack_table_row_says_the_same_clause"
+   ],
+   "text_digest": "c0a2f0e419af0424573f4512b4c1bc3d80fa4769483b759b93cde65790ec62c6"
+  },
+  {
+   "constant": "malspark.analysis.corroboration:_KIND_WORDS",
+   "condition": "the name of each kind of source sources_phrase counts, singular for a count of one and plural otherwise; prints in the ATT&CK table's status words, the export's support note on the uses relationship, and the lines the judge and the report models read",
+   "basis": ["source_kinds"],
+   "test": "tests/unit/analysis/test_corroboration_names_a_technique_s_sources_and_support_in_words.py::TestTheSourcesAreCountedByKind::test_each_kind_is_named_once_in_its_order_singular_or_plural",
+   "text_digest": "b871572a84902cf7b3f41b5023b86be909e18ed5b60304b427c492d2515bbf70"
+  },
+  {
+   "function": "malspark.analysis.corroboration:rule_match_only",
+   "condition": "for each published technique a deterministic source asserted and no analyst claimed: each asserting source with each of its rule rows that technique names (rule and count of distinct strings, singular or plural), the source alone where it has none; prints beside the ATT&CK table row's status and its capability cell's status, and is passed to the report-writing models' technique lines; nothing for a technique an analyst claimed",
+   "basis": ["run_summary.corroboration asserted_by and claimed_by", "rule_match_strings rule, strings and source", "ttp_mappings"],
+   "test": [
+    "tests/unit/analysis/test_corroboration_names_a_technique_s_sources_and_support_in_words.py::TestARuleMatchAloneIsNamedWithHowMuchMatched::test_each_rule_is_named_with_its_count_of_strings",
+    "tests/unit/analysis/test_corroboration_names_a_technique_s_sources_and_support_in_words.py::TestARuleMatchAloneIsNamedWithHowMuchMatched::test_an_analyst_claim_leaves_no_note",
+    "tests/unit/reporting/test_a_rule_match_alone_is_said_and_grounds_nothing.py::TestTheNote::test_a_rule_alone_is_named_with_how_much_matched",
+    "tests/unit/reporting/test_a_rule_match_alone_is_said_and_grounds_nothing.py::TestEachRowIsReadWithTheLayerThatMatchedIt::test_a_row_of_one_layer_is_never_shown_under_another"
+   ],
+   "text_digest": "894af5542ae3284184f6535174c179fe98b9e17b74414cf57f3080df4dbd848e"
+  },
+  {
+   "function": "malspark.analysis.corroboration:sources_phrase",
+   "condition": "for a technique with such a support: the total of its sources, how many of them were cited only for an absence where any were, then each recorded kind (artefact, external assessment, citation giving no root) counted in that order, singular or plural; the total alone where no kind was recorded; prints in the ATT&CK table's status words, the export's support note on the uses relationship, and the lines the judge and the report models read",
+   "basis": ["source_kinds", "the count of sources", "the count of absence sources"],
+   "test": [
+    "tests/unit/analysis/test_corroboration_names_a_technique_s_sources_and_support_in_words.py::TestTheSourcesAreCountedByKind::test_each_kind_is_named_once_in_its_order_singular_or_plural",
+    "tests/unit/analysis/test_corroboration_names_a_technique_s_sources_and_support_in_words.py::TestTheSourcesAreCountedByKind::test_the_total_alone_where_the_kinds_were_not_recorded",
+    "tests/unit/analysis/test_corroboration_names_a_technique_s_sources_and_support_in_words.py::TestTheSourcesAreCountedByKind::test_the_sources_cited_for_an_absence_are_named_after_the_total"
+   ],
+   "text_digest": "ec198deccb7f23244a0966ff3a33628f2eb274126527ef7441d14a32ffb9e2a2"
+  },
+  {
+   "function": "malspark.analysis.corroboration:support_label",
+   "condition": "for a published technique whose support is capability or unobserved: 'capability, not observed' or 'not observed', empty for any other support; prints in the ATT&CK table's status words, the export's support note on the uses relationship, and the lines the judge and the report models read",
+   "basis": ["the corroboration row's and TTPMapping's support"],
+   "test": "tests/unit/analysis/test_corroboration_names_a_technique_s_sources_and_support_in_words.py::TestTheSupportLabel::test_a_capability_and_an_unobserved_technique_are_named_and_any_other_is_not",
+   "text_digest": "7f7a2641fb84473620869b21c5d06280c24688ff99e08beed4644e158d27f54c"
+  },
+  {
+   "function": "malspark.analysis.corroboration:technique_label",
+   "condition": "the technique id of a row of the run summary's corroboration table, followed in brackets by the catalogue's retirement reason or the release that retired it, and the reason it was claimed and not published, joined by '; '; the id alone where the row holds none",
+   "basis": ["the corroboration row's retired_reason, retired_in and not_published"],
+   "test": [
+    "tests/unit/analysis/test_corroboration_names_a_technique_s_sources_and_support_in_words.py::TestTheIdIsPrintedWithWhatItsRowSays::test_the_retired_release_and_the_unpublished_reason_are_joined",
+    "tests/unit/analysis/test_corroboration_names_a_technique_s_sources_and_support_in_words.py::TestTheIdIsPrintedWithWhatItsRowSays::test_a_row_with_neither_prints_the_id_alone",
+    "tests/unit/reporting/test_a_printed_technique_is_published_or_says_it_is_not.py::TestTheCorroborationRowsSaySo::test_the_label_prints_it",
+    "tests/unit/pipeline/test_technique_check.py::TestEverySurfaceSaysWhatHappenedToARetiredId::test_the_corroboration_row_carries_the_reason"
+   ],
+   "text_digest": "3577a3f6a095d4ca1c42beb70f9ceb452566fc790b6b9801241e680b3d98ff40"
+  }
+ ]
+}
