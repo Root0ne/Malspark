@@ -43,7 +43,7 @@ RUN version="$(echo "${MINIO_RELEASE#RELEASE.}" | sed -E 's/T([0-9]{2})-([0-9]{2
 # what the compose healthcheck calls. It runs as root, as the pulled image did:
 # the files in an existing minio_data volume were written by root, and a
 # server under another uid could not write them.
-FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 ARG MINIO_RELEASE=RELEASE.2025-10-15T17-29-55Z
 ARG MINIO_COMMIT=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a
 LABEL org.opencontainers.image.title="minio" \
