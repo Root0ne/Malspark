@@ -6,8 +6,8 @@ answer holds them (the declared record parts of its kind: a signature view's
 ``indicators``, the item reader's ``items.*.indicators``), each row gives the
 root of the process that acted and of the one acted on, by the process's task
 and the report's own id (``schemas.process_identity``); a row naming no process
-the report settles says so, and a signature with no indicator row still says
-it names none. A statement picks a process out by the number it writes after
+the report settles says so, and a signatures answer with no indicator row says
+the reading read none. A statement picks a process out by the number it writes after
 ``pid`` or ``procid``, the report's id or the guest's pid; a number two
 processes answer to picks none. What a run observation is stays as it was.
 
@@ -28,7 +28,11 @@ from malspark.analysis.evidence_roots import (
     READING_RULE,
     READING_RUN,
     READING_UNPLACED,
+    REPEAT_UNPLACED,
+    ROWS_UNCHOSEN,
+    SIGNATURE_ITEM_UNREAD,
     SIGNATURE_UNPLACED,
+    SIGNATURES_NONE,
     run_roots,
     summary_of_sources,
 )
@@ -211,10 +215,10 @@ class TestEachIndicatorRowGivesTheRootsOfItsProcesses:
         assert found.reason == INDICATOR_UNSETTLED
         assert found.reason != SIGNATURE_UNPLACED
 
-    def test_a_signature_with_no_indicator_row_still_names_none(self) -> None:
+    def test_a_signature_with_no_indicator_row_says_the_reading_read_none(self) -> None:
         bare = _entry("ev_0091", "sandbox_signatures", {"indicators": [], "matched": 0})
 
-        assert run_roots(_ledger(bare)).of_entry("ev_0091").reason == SIGNATURE_UNPLACED
+        assert run_roots(_ledger(bare)).of_entry("ev_0091").reason == SIGNATURES_NONE
 
 
 class TestAStatementPicksAProcessByTheNumberItWrites:
@@ -265,7 +269,7 @@ class TestASignatureItemIsPlacedByItsIndicators:
         roots, reasons = run_roots(_ledger()).of_statement("The family is X [sig:1].", ["sig:1"])
 
         assert roots == []
-        assert reasons == [f"sig:1: {SIGNATURE_UNPLACED}"]
+        assert reasons == [f"sig:1: {SIGNATURE_ITEM_UNREAD}"]
 
     def test_the_item_reader_s_answer_gives_the_roots_of_its_indicators(self) -> None:
         assert run_roots(_ledger()).of_entry("ev_0089").roots == [P85, P87_T1]
@@ -278,7 +282,7 @@ class TestASignatureItemIsPlacedByItsIndicators:
     def test_an_item_of_several_processes_named_by_none_says_so(self) -> None:
         found = run_roots(_ledger())
 
-        assert found.of_item("sig:3") == ("", NAMES_NO_ROW.format(entry="sig:3"))
+        assert found.of_item("sig:3") == ("", ROWS_UNCHOSEN.format(entry="sig:3"))
         roots, reasons = found.of_statement("Code is written [sig:3].", ["sig:3"])
         assert (roots, reasons) == ([], [f"sig:3: {NAMES_NO_ROW.format(entry='sig:3')}"])
 
@@ -483,7 +487,7 @@ class TestTheMutantGapsAreClosed:
         found = run_roots(_ledger(items)).of_entry("ev_0095")
 
         assert found.roots == []
-        assert found.reason == ITEM_UNSETTLED.format(item="proc:87.0")
+        assert found.reason == REPEAT_UNPLACED.format(item="proc:87.0")
 
     def test_an_item_whose_rows_settle_no_process_says_so(self) -> None:
         items = _entry(
