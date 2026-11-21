@@ -18099,10 +18099,10 @@ def unattributed_indicator_violations(
                         code=UNATTRIBUTED_INDICATOR_CODE,
                         message=(
                             f"the indicator {name!r} names {safe_finding_value(value.value)!r} "
-                            f"and {safe_finding_value(said)}. Keep the indicator only if an "
-                            "entry of this run shows a process of the sample's tree made it, "
-                            "and cite that entry in the indicator's description; otherwise "
-                            "remove the indicator."
+                            f"and {safe_finding_value(said, whole=True)}. Keep the indicator "
+                            "only if an entry of this run shows a process of the sample's tree "
+                            "made it, and cite that entry in the indicator's description; "
+                            "otherwise remove the indicator."
                         ),
                         path=f"objects.{subject}",
                         subject=subject,
@@ -18137,8 +18137,9 @@ def unattributed_indicator_violations(
                     message=(
                         f"the indicator {name!r} names {safe_finding_value(value.value)!r}"
                         + (f", its host {safe_finding_value(host)!r}," if host else "")
-                        + f" and {safe_finding_value(said)}: the publish rule found no flow of "
-                        "the sample's tree to it, and without one it is the analysis machine's own "
+                        + f" and {safe_finding_value(said, whole=True)}: the publish rule found "
+                        "no flow of the sample's tree to it, and without one it is the analysis "
+                        "machine's own "
                         "traffic. Keep the indicator only if this run's evidence shows the "
                         "sample itself reached it, and cite that entry in the indicator's "
                         "description; otherwise remove the indicator."

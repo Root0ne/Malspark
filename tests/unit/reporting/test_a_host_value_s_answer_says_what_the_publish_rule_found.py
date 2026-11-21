@@ -157,7 +157,7 @@ class TestTheListingIsTheOneItWasMatchedAgainst:
         assert said == NOT_PLACED.format(
             "it could not place pid 900 of task t1 in or outside the sample's process tree and "
             "it could not decide whether pid 900 of task t2 is a listed process since the "
-            "process list it read does not state a guest pid for every process of task t2"
+            "process list it read does not state a guest pid for every process"
         )
 
 

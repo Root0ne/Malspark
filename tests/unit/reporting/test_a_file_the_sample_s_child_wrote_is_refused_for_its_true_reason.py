@@ -42,10 +42,11 @@ def _unsettled(numbers: str) -> str:
     )
 
 
-def _undecided(numbers: str, of_task: str = "") -> str:
+def _undecided(numbers: str) -> str:
+    # The task is named once, beside the number.
     return NOT_PLACED.format(
         f"it could not decide whether {numbers} is a listed process since the process list it "
-        f"read does not state a guest pid for every process{of_task}"
+        "read does not state a guest pid for every process"
     )
 
 
@@ -124,9 +125,7 @@ class TestTheWriterIsOneProcess:
         processes[0].children[0].guest_pid = ""
 
         assert _fact(processes, pids=["1928"]) == _undecided("pid 1928")
-        assert _fact(processes, pids=["1928"], task="t1") == _undecided(
-            "pid 1928 of task t1", " of task t1"
-        )
+        assert _fact(processes, pids=["1928"], task="t1") == _undecided("pid 1928 of task t1")
 
     def test_a_record_s_task_is_read_alone_where_it_states_one(self) -> None:
         processes = _every_guest_pid_stated()
@@ -135,14 +134,12 @@ class TestTheWriterIsOneProcess:
         assert _fact(processes, pids=["1928"], task="t1") == _unlisted(
             "pid 1928 of task t1", " of task t1"
         )
-        assert _fact(processes, pids=["1928"], task="t2") == _undecided(
-            "pid 1928 of task t2", " of task t2"
-        )
+        assert _fact(processes, pids=["1928"], task="t2") == _undecided("pid 1928 of task t2")
         assert _fact(processes, pids=["1928"]) == _undecided("pid 1928")
 
     def test_a_task_the_listing_does_not_hold_states_no_guest_pid(self) -> None:
         assert _fact(_every_guest_pid_stated(), pids=["1928"], task="t9") == (
-            _undecided("pid 1928 of task t9", " of task t9")
+            _undecided("pid 1928 of task t9")
         )
 
     def test_an_id_a_task_lists_twice_names_no_writer_by_any_number(self) -> None:

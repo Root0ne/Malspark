@@ -35,6 +35,7 @@ from malspark.schemas.sandbox_report import (
     FLOW_PROCESS_KEY,
     PROCESS_UNLISTED_KEY,
     SAMPLE_TREE_KEY,
+    TRAFFIC_FLOWS_LEFT_OUT_KEY,
     TRAFFIC_PROCESS_KEY,
 )
 
@@ -137,8 +138,8 @@ class TestEachKindOfRecordIsNamedWithItsOwnMakers:
         assert said == (
             "the publish rule counted its requests as made by a process the report does not "
             "list (procid 46) and the flows to 203.0.113.20 (an address it resolved to) as made "
-            f"by a process the report does not list ({named}) and by further processes each "
-            "such address's own row names"
+            f"by a process the report does not list ({named}) (and by further processes each "
+            "such address's own row names)"
         )
         assert ";" not in said and _restated(said)
 
@@ -197,6 +198,31 @@ class TestEachKindOfRecordIsNamedWithItsOwnMakers:
         assert _said(network) == (
             "the publish rule counted the flows to 8.8.8.8 (an address it resolved to) as made "
             "by a process the report does not list (procid 35)"
+        )
+
+    def test_an_address_is_printed_as_the_answer_records_it(self) -> None:
+        # The answer writes the address in capitals; the flow row in lower case.
+        network = _network(
+            {"dns": [_lookup("2001:DB8::20")], "tcp": [_unlisted("35", "2001:db8::20")]}
+        )
+
+        assert _said(network) == (
+            "the publish rule counted the flows to 2001:DB8::20 (an address it resolved to) as "
+            "made by a process the report does not list (procid 35)"
+        )
+
+    def test_further_makers_of_requests_stay_in_their_own_brackets(self) -> None:
+        # A request carrying part of its flow id's flows names part of its makers.
+        request = {**_request("46"), TRAFFIC_FLOWS_LEFT_OUT_KEY: True}
+        network = _network(
+            {"dns": [_lookup(ADDRESS)], "http": [request], "tcp": [_outside("12", "svchost.exe")]}
+        )
+
+        assert _said(network) == (
+            "the publish rule counted its requests as made by a process the report does not "
+            "list (procid 46) (and by further processes) and the flows to 203.0.113.20 (an "
+            "address it resolved to) as made by a process outside the sample's process tree "
+            "(svchost.exe (procid 12))"
         )
 
     def test_a_name_with_no_counted_record_has_no_made_by_clause(self) -> None:

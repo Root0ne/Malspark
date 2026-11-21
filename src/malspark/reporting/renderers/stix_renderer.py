@@ -3608,9 +3608,10 @@ HOST_FOUND_UNLISTED = (
     "matched {numbers} to no process of {listing} and that list states a guest pid for "
     "every process{of_task}"
 )
+# The task is named once, beside the number.
 HOST_FOUND_UNDECIDED = (
     "could not decide whether {numbers} {is_listed} since {listing} does not state a guest "
-    "pid for every process{of_task}"
+    "pid for every process"
 )
 HOST_FOUND_UNSETTLED = "could not place {numbers} in or outside the sample's process tree"
 HOST_FOUND_IN_TREE = "matched {numbers} to {which} of the sample's process tree"
@@ -3938,9 +3939,11 @@ NAME_REQUESTS = "its requests"
 NAME_LOOKUPS = "its lookups that state their process"
 NAME_FLOWS_TO_ONE = "the flows to {address} (an address it resolved to)"
 NAME_FLOWS_TO_SEVERAL = "the flows to {count} addresses it resolved to ({addresses})"
-NAME_MORE = " and by further processes"
+# In brackets after the makers it follows, so the next source's makers never
+# read as this tail's.
+NAME_MORE = " (and by further processes)"
 # Beside the flows to addresses each of which names more processes in its own row.
-NAME_FLOWS_MORE = " and by further processes each such address's own row names"
+NAME_FLOWS_MORE = " (and by further processes each such address's own row names)"
 
 
 def name_made_by_reason(makers: Any, word: Callable[[str], str] = str) -> str:

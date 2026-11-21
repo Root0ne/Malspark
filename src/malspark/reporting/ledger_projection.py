@@ -1620,8 +1620,11 @@ def network_from_ledger(
 
     from malspark.schemas.sandbox_document import ADDRESS_TYPES, DnsAnswers, dns_row_name
 
-    # The addresses each name already holds, so a value is added once.
+    # The addresses each name already holds, so a value is added once, and
+    # each address as an answer first recorded it, which a name's sentence
+    # prints.
     held_ips: dict[str, set[str]] = {}
+    spelled: dict[str, str] = {}
     # The job's own detonation's views, then each further detonation's: a
     # value a further one observed is marked with it, and with every other
     # detonation that observed it too.
@@ -1678,7 +1681,9 @@ def network_from_ledger(
                     kind = answer.get("type") if isinstance(answer, dict) else None
                     if kind and str(kind).strip().lower() not in ADDRESS_TYPES:
                         continue
-                    address = address_key(_first_str(answer, "data", "ip", "address"))
+                    recorded = _first_str(answer, "data", "ip", "address")
+                    address = address_key(recorded)
+                    spelled.setdefault(address, recorded)
                     if _parses_as_an_address(address) and address not in name_ips:
                         name_ips.add(address)
                         known_name.resolved_ips.append(address)
@@ -1867,7 +1872,7 @@ def network_from_ledger(
                 flows = tallies.get(("ip", address_key(address)))
                 if flows is not None:
                     tally.take(flows, _ADDRESS_MAKERS_NAMED, in_part=domain.resolved_ips_partial)
-                    counted.append((address_key(address), flows))
+                    counted.append((spelled.get(address_key(address), address), flows))
             tally.state(domain)
             if domain.made_by is not None:
                 domain.made_by.sources = _maker_sources(
