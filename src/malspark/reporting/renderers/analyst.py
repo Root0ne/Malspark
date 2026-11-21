@@ -693,7 +693,10 @@ def printed_procedures(report: MalwareReport) -> dict[str, str]:
     each pack spelling of a recorded text read as the text (``prose_forms.unspelled``). No
     consumer may render it as Markdown or HTML. Where the page's defang pass leaves the
     cell with a spelling it no longer matches (a host inside a path), these words hold the
-    recorded text and are the truer of the two. Read off a render of a copy of the report,
+    recorded text and are the truer of the two. So too where the cell shortens the clause on
+    a routine with no listed code to its first callers and a count: these words list every
+    caller; and where the cell prints a group of bare entry ids as a note marker: these words
+    keep the group as written. Read off a render of a copy of the report,
     as :func:`verbatim_texts` is, so nothing of the report changes (T-727)."""
     from malspark.reporting.renderers.layout import ANALYST
     from malspark.reporting.renderers.markdown import MarkdownRenderer

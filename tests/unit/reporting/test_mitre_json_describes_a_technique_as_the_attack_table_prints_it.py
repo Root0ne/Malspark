@@ -38,6 +38,7 @@ from malspark.reporting.models import (
     NetworkDomain,
     NetworkIOCs,
     TechnicalAnalysis,
+    TechnicalSubsection,
     TechniqueProcedure,
     TTPMapping,
     key_ordered,
@@ -451,6 +452,53 @@ def test_a_spelling_the_defang_hides_from_the_cell_is_the_recorded_text_in_the_d
     assert "x5c" in raw
     assert "\\\\files.corp-share.top\\drop\\ on start" in described
     assert "x5c" not in described
+
+
+def _impact(claim: str) -> MalwareReport:
+    report = _base()
+    [mapping] = report.ttp_mappings
+    mapping.evidence_quotes = [claim]
+    report.capability_matrix = [
+        CapabilityCell(
+            tactic=mapping.tactic,
+            tactic_name=mapping.tactic_name,
+            technique_id=mapping.technique_id,
+            technique_name=mapping.technique_name,
+            evidence=[claim],
+        )
+    ]
+    return report
+
+
+def test_the_description_lists_every_caller_where_the_cell_shortens_the_callers() -> None:
+    """The cell shortens the clause on a routine with no listed code to its first callers
+    and a count; the description lists every caller, the truer of the two."""
+    callers = ["0x402000", "0x403000", "0x404000", "0x405000", "0x406000"]
+    clause = (
+        f"the routine at 0x401000, called by the read routines at {', '.join(callers)}, "
+        "has no listed code (decompiled or disassembled)"
+    )
+    report = _impact(f"Encrypts each file with ChaCha20 in {clause} [ev_0002].")
+    ta = report.technical_analysis or TechnicalAnalysis()
+    ta.payloads = TechnicalSubsection(
+        title="Payloads", body=f"The payload encrypts files; {clause} [ev_0002]."
+    )
+    report.technical_analysis = ta
+    raw = _raw_cell(_rendered(report), "T1486")
+    described = _description(report, "T1486")
+    assert "called by 5 read routines" in raw
+    assert not all(caller in raw for caller in callers)
+    assert f"called by the read routines at {', '.join(callers)}," in described
+
+
+def test_the_description_keeps_a_group_of_bare_entry_ids_the_cell_prints_as_a_marker() -> None:
+    """The cell prints a group of bare entry ids as a note marker; the description keeps
+    the group as written."""
+    report = _impact("Encrypts files read by get_file_report, ev_0002, ev_0003 with ChaCha20.")
+    raw = _raw_cell(_rendered(report), "T1486")
+    described = _description(report, "T1486")
+    assert _MARKER.search(raw) and "ev_0003" not in raw
+    assert described == "Encrypts files read by get_file_report, ev_0002, ev_0003 with ChaCha20."
 
 
 # ---------------------------------------------------------------------------

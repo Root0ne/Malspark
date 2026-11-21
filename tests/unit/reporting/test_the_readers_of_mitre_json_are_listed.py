@@ -2,10 +2,12 @@
 
 mitre.json's ``description`` is the text the analyst report's ATT&CK table prints for each
 technique (T-727): an export, read by no prompt, tool answer, check or decision. A new
-reader of the stored ``mitre_techniques`` column or of the ``/mitre`` answer fails this test
-until it is listed here with its use, so a model input built from the field is a decision
-made in review, never one made in passing. The platform's own package (where every prompt is
-built) only names the answer in its prose.
+reader of the stored ``mitre_techniques`` column or of the ``/mitre`` answer, and a new
+caller of the words' writer (``analyst.printed_procedures``) or of the service that reads
+them (``technique_descriptions``), fails this test until it is listed here with its use, so
+a model input built from the field is a decision made in review, never one made in passing.
+The platform's own package (where every prompt is built) only names the answer in its prose,
+beside the words' writer.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ SCANNED = ("apps/api/app", "src/malspark", "scripts", "apps/web/src")
 SUFFIXES = (".py", ".ts", ".tsx")
 PATTERN = re.compile(
     r"\bmitre_techniques\b|get_mitre_techniques|/mitre[\"'`]|mitre\.json[\"'`]|-mitre\.json"
+    r"|\bprinted_procedures\b|\btechnique_descriptions\b"
 )
 
 READERS = {
@@ -33,6 +36,8 @@ READERS = {
     "apps/api/app/api/v1/reports.py": "the /mitre route",
     "apps/api/app/services/ledger_chain.py": "digests the column",
     "apps/api/app/services/run_export.py": "copies the stored column into the run export",
+    "apps/api/app/services/technique_descriptions.py": "reads the words off the analyst render "
+    "(printed_procedures) for the store, /mitre and the enrichment write",
     # The console: ids, names and tactics, and the download of /mitre whole.
     "apps/web/src/lib/api.ts": "fetches /mitre; the report row's type",
     "apps/web/src/components/ui/exportActions.ts": "downloads /mitre whole",
@@ -46,6 +51,8 @@ READERS = {
     "scripts/benchmark/publish_evidence.py": "copies a run's mitre.json",
     "scripts/audit/surfaces.py": "technique id to name",
     "scripts/replay/render_surfaces.py": "renders and compares /mitre",
+    # The platform's package: the words' writer, which reads neither the column nor /mitre.
+    "src/malspark/reporting/renderers/analyst.py": "writes the words (printed_procedures)",
     # The platform's package: named in prose only (no code token reads it).
     "src/malspark/extractors/capability_matrix.py": "named in prose",
     "src/malspark/memory/long_term_memory.py": "named in prose",

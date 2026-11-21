@@ -5349,9 +5349,9 @@ is assembled from what the run gathered rather than recomputed beside it:
   the worker from the report it stores (read before the store's transaction, on
   a worker thread), `/reports/{id}/mitre` and the console's download of it from
   the served report at each request, and the enrichment write from the payload
-  it writes, whose amendment covers the column. The run export copies the stored
-  column, and so does the job package inside the stored run's
-  `report-byjob.json`. A stored report that does not validate, or whose render
+  it writes, whose amendment covers the column. The report detail hands out the
+  stored column, the run export copies it, and so does the job package inside
+  the stored run's `report-byjob.json`. A stored report that does not validate, or whose render
   raises, serves its column as stored; a render that raises at the store keeps
   the run, logs why and records it in the run summary's degradation reasons.
   The column the STIX fallback writes keeps the judge's own description.
