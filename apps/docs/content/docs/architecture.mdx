@@ -5338,6 +5338,23 @@ is assembled from what the run gathered rather than recomputed beside it:
   `attack-pattern` objects of the STIX bundle — minted with ids derived from
   the technique id, so the same technique is the same object across exports —
   and the `mitre_techniques` column behind `/reports/{id}/mitre`.
+* **A technique's description in `mitre.json` is the text the analyst report's
+  ATT&CK table prints for it.** It is read off the same render that prints the
+  table (`analyst.printed_procedures`): the words the procedure cell keeps after
+  the agreement question's left-out step and the flagged-statement gate, plain
+  text as the cell holds it, without note markers, before the defang and the
+  Markdown escapes, whole, and `""` where the row prints `-`. It follows the
+  analyst report's table whichever layout the served report prints. Each surface
+  derives it from the report it renders its report text from at that moment:
+  the worker from the report it stores (read before the store's transaction, on
+  a worker thread), `/reports/{id}/mitre` and the console's download of it from
+  the served report at each request, and the enrichment write from the payload
+  it writes, whose amendment covers the column. The run export copies the stored
+  column, and so does the job package inside the stored run's
+  `report-byjob.json`. A stored report that does not validate, or whose render
+  raises, serves its column as stored; a render that raises at the store keeps
+  the run, logs why and records it in the run summary's degradation reasons.
+  The column the STIX fallback writes keeps the judge's own description.
 * **One evidence set per technique.** The matrix builder records on each row
   (`CapabilityCell.evidence_ids`, `TTPMapping.evidence_ids`) the entries cited
   by the statements that name the technique — its analyst claims and findings,
