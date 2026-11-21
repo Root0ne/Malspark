@@ -32,7 +32,7 @@ def _naming(pattern: str, trees: tuple[str, ...] = TREES) -> set[str]:
         for path in base.rglob("*"):
             if path.suffix in SUFFIXES and path.is_file():
                 if re.search(pattern, path.read_text(encoding="utf-8", errors="replace")):
-                    found.add(str(path.relative_to(ROOT)))
+                    found.add(path.relative_to(ROOT).as_posix())
     return found
 
 
