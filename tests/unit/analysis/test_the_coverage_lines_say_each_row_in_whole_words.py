@@ -140,8 +140,10 @@ def test_what_could_not_be_established_is_said_row_by_row() -> None:
 def test_a_record_with_nothing_missing_says_so_and_no_record_says_nothing() -> None:
     assert _lines({"v": 1}) == (
         [
-            "Nothing recorded: every tool call answered whole, and no input, layer, tool "
-            "server or analyst was recorded missing."
+            "Nothing recorded as missing: no tool call failed, was refused by a guard, was not "
+            "run, was cut by the platform or was kept from the model, and no input, layer, tool "
+            "server or analyst was recorded missing; an answer its tool capped, paged or "
+            "narrowed is not counted here."
         ],
         [],
         [],

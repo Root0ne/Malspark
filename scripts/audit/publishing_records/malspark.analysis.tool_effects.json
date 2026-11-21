@@ -5,28 +5,112 @@
    "condition": "printed in the served report's Appendix B as the lead of the tool effects block, after the isolation block inside the disclosure block, when the disclosure record holds an effects part and effects_lines gives a line; a record stored without the part prints none",
    "basis": ["run_summary.disclosure.effects (whether the part is stored)"],
    "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_the_report_heads_the_part_with_its_lead_sentence_after_the_isolation_part",
-   "text_digest": "1e929812fba008889109a23a2ed5a27112cbfb93ed92bfe1e3cedc8fc513f3c2"
+   "text_digest": "39a8037d89f3b3c6e304eef06f4171442f73044ca097950b32903e2e20d5ab4c"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_DECLARED_TO_RUN",
+   "condition": "the lead of the line naming the tools whose row records that a declaration states they run the sample's code natively, and of the line for under emulation (executes_from declared), whose record does not hold the run: a declared when, or no completed field, with a call taken as completed",
+   "basis": ["effects row executes, executes_from, completed, when, calls"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_run_of_the_sample_s_code_is_said_only_where_a_counted_call_completed_unconditioned",
+    "tests/unit/analysis/test_each_tool_s_effects_are_declared_and_reported.py::test_r2_s_analysis_says_when_it_emulates"
+   ],
+   "text_digest": "fe409deccc0a569234f2864ced2231787f529d17d8ec215f7d2417a08b4bacf9"
   },
   {
    "constant": "malspark.analysis.tool_effects:_ENDED",
-   "condition": "the lead of the line naming the tools, other than those declared to do none of the three, with a call not run, refused or failed, one line for each of the three in that order",
+   "condition": "the lead of the line naming the tools, other than those declared or taken to do none of the three, with a call not run, refused or failed, one line for each of the three in that order, said of the effects listed for it whatever their origin",
    "basis": ["effects row not_run, refused, failed"],
    "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
-   "text_digest": "cc030ba0d051182279547f2b66e3bddc02c9903ab0789976da63f07fc48a4323"
+   "text_digest": "88205a27a4933718316135e442cbd04e2e7ab01899e53b622c23d6bf9066d1a3"
   },
   {
    "constant": "malspark.analysis.tool_effects:_RAN",
-   "condition": "the lead of the line naming the tools with a completed call declared to run the sample's code natively, and of the line for under emulation",
-   "basis": ["effects row executes, completed"],
-   "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+   "condition": "the lead of the line naming the tools whose row records that a declaration states they run the sample's code natively, and of the line for under emulation (executes_from declared), each with a counted completed call (the row's completed) and no declared when: a completed call of a tool whose declared work is running the code is that run",
+   "basis": ["effects row executes, executes_from, completed, when"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_run_of_the_sample_s_code_is_said_only_where_a_counted_call_completed_unconditioned"
+   ],
    "text_digest": "4bd7492936cb85c6b7fbd6aa5967fb99a70e87a11e7674b1c0c9c855ba06cb01"
   },
   {
    "constant": "malspark.analysis.tool_effects:_REACHED",
-   "condition": "the lead of the lines naming the tools with a completed call declared to reach only the sandbox service their server fronts, the configured case-memory store, or reference data they refresh",
-   "basis": ["effects row network, completed"],
-   "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
-   "text_digest": "c2f6cb7b3d9ef6c3463cc446bbb5123fd14f4d432c75c2ae6892983fcf3f8595"
+   "condition": "the lead of the lines naming the tools with a completed call whose row records that a declaration states they reach only the sandbox service their server fronts, the configured case-memory store, or the network only to fetch or refresh reference data they keep (network_from declared); the case-memory store with where the disclosure's case-memory row places it (_STORE_PLACED, _STORE_UNPLACED, _STORE_NONE); each tool with its declared when",
+   "basis": ["effects row network, network_from, network_by, when, completed", "disclosure.stores"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whole",
+    "tests/unit/analysis/test_each_tool_s_effects_are_declared_and_reported.py::test_reference_refreshes_and_the_case_store_are_named",
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_the_case_store_a_tool_reaches_is_placed_only_where_the_case_memory_row_places_it"
+   ],
+   "text_digest": "f6684b747429bd50fc2b722a65b730f063188dc291ba70aee2815263dbef62ad"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_REACHES",
+   "condition": "the lead of the lines naming the tools with a completed call that reach the network (network true), one line per origin as network_from records it: declared (a declaration states it); taken, as a tool declared or taken to send the hash out, declared to send the bytes to a third party, or taken to send the file out (rows the cautious answer forced, the hash and bytes by third_party_from); taken (the platform read it, the entry's record does not record the origin, a row stored before network_from, or an origin this code does not know); stated by its server's own declaration its block does not trust; said by its server's own hint",
+   "basis": ["effects row network, network_from, network_by, third_party, third_party_from, completed"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whole",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_row_reaching_the_network_with_no_recorded_origin_is_taken",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_where_a_network_answer_came_from_and_the_offline_condition_are_built_from_the_entry",
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_a_reputation_lookup_read_from_its_listing_is_taken",
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_a_row_that_records_no_origin_says_a_network_a_hash_and_bytes_as_taken",
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_an_origin_this_code_does_not_know_is_taken"
+   ],
+   "text_digest": "119fe47071e16467675847cac2f222f09ba36b446c27d459e7484f476aeb96e8"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_STORE_NONE",
+   "condition": "after the case-memory store lead, where the record lists no store row (the store kept in the process or not configured)",
+   "basis": ["disclosure.stores"],
+   "test": [
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_the_case_store_a_tool_reaches_is_placed_only_where_the_case_memory_row_places_it"
+   ],
+   "text_digest": "b304c5f17b233580085819b053129f1574872a30c85ea86ca392ee3468852d56"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_STORE_PLACED",
+   "condition": "after the case-memory store lead, where a store row of the record is placed (local or outside) with a host",
+   "basis": ["disclosure.stores[].where, host"],
+   "test": [
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_the_case_store_a_tool_reaches_is_placed_only_where_the_case_memory_row_places_it",
+    "tests/unit/analysis/test_each_tool_s_effects_are_declared_and_reported.py::test_reference_refreshes_and_the_case_store_are_named"
+   ],
+   "text_digest": "ac140ad00022d3ffd02d2c0805994a454a0d6c4b02672a7ba30c6e0997f314fa"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_STORE_UNPLACED",
+   "condition": "after the case-memory store lead, where the record lists a store row and none is placed with a host",
+   "basis": ["disclosure.stores[].where, host"],
+   "test": [
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_the_case_store_a_tool_reaches_is_placed_only_where_the_case_memory_row_places_it"
+   ],
+   "text_digest": "92dd471a3394a9d2b60f4df0a93896b403cd583f9bfdbf199c8360a6fb69a00c"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_TAKEN_REACHED",
+   "condition": "the lead of the lines naming the tools with a completed call whose named network (the sandbox service their server fronts, the configured case-memory store, the network only for reference data) no declaration is recorded to state: read by the platform, of unrecorded origin, or a row stored before network_from (any value but declared); the case-memory store with where the disclosure's case-memory row places it; each tool with its declared when",
+   "basis": ["effects row network, network_from, when, completed", "disclosure.stores"],
+   "test": [
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_the_case_store_a_tool_reaches_is_placed_only_where_the_case_memory_row_places_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it"
+   ],
+   "text_digest": "2981cf523c63179458f8eef057d22676aca8492f95a8148595988c1a819a5bdc"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_TAKEN_TO_RUN",
+   "condition": "the lead of the line naming the tools with a completed call whose running of the sample's code natively, or under emulation, no declaration is recorded to state: the platform read it, the entry's record does not record the origin, or the row is stored before executes_from (any value but declared); never said as a run; each tool with its declared when and where its source read the sample",
+   "basis": ["effects row executes, executes_from, completed, when"],
+   "test": [
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_a_program_reading_is_taken",
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_the_block_s_statement_of_its_tools_as_a_whole_is_declared",
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_an_entry_written_before_the_record_and_rebuilt_is_never_said_as_declared",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it"
+   ],
+   "text_digest": "1c81a862b5f1fd66f7e37c15c548f2e4c93cab69fa77586cd5056a879c5b9f25"
   },
   {
    "constant": "malspark.analysis.tool_effects:_UNDECLARED_EXECUTES",
@@ -50,14 +134,14 @@
    "text_digest": "29c9b2bd37fdfa31a7c2e29b76b9f996b0dc09399994caf2f1820de113efef24"
   },
   {
-   "function": "malspark.analysis.tool_effects:_by_hint_only",
-   "condition": "beside a tool in the reached-the-network line when its network answer is its server's own declaration its block does not trust, or its server's openWorldHint; nothing for a declared answer",
-   "basis": ["effects row network_by"],
+   "function": "malspark.analysis.tool_effects:_hint_closed",
+   "condition": "beside a tool in a line on reaching the network whose server's own openWorldHint is false: that the hint says it does not reach outside its server; nothing otherwise",
+   "basis": ["effects row hints.openWorldHint"],
    "test": [
-    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_network_answered_by_the_server_s_own_word_says_whose_word_it_is",
-    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it"
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_network_answer_is_said_in_the_voice_of_where_it_came_from",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whole"
    ],
-   "text_digest": "1cff3ac229f25bb31f901b77afb0d5bbe3c50b2bf58fdd4f27d35729dd31407c"
+   "text_digest": "7016f4738dc9e3dbb94ef4921c6972b71f24491a95202d5e22a7644429cceec0"
   },
   {
    "function": "malspark.analysis.tool_effects:_label",
@@ -78,6 +162,17 @@
     "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it"
    ],
    "text_digest": "222dffb3b2014c6c1d40e2e814a489cac9c03e0172969ca3f66682ee6cce032a"
+  },
+  {
+   "function": "malspark.analysis.tool_effects:_offline",
+   "condition": "beside a tool in a line on reaching the network or on sending the hash whose declaration says it answers offline when given no credentials: that declaration, as declared; nothing otherwise",
+   "basis": ["effects row offline_without_credentials"],
+   "test": [
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_network_answer_is_said_in_the_voice_of_where_it_came_from",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whole",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_where_a_network_answer_came_from_and_the_offline_condition_are_built_from_the_entry"
+   ],
+   "text_digest": "8e878d9708f90639e76ab52c117220111ed5623e92ef9d18ab62d734ca48ee29"
   },
   {
    "function": "malspark.analysis.tool_effects:_read_note",
@@ -101,14 +196,38 @@
   },
   {
    "function": "malspark.analysis.tool_effects:effects_lines",
-   "condition": "the tool effects block of the served report's Appendix B for a disclosure record with an effects part: the line that the part may be incomplete where a partial reason is recorded; that no tool call was recorded; or, for tools with a completed call, the lines on running the sample's code, sandboxes, the network, the hash and the bytes sent, then the tools declared to do none, server hints and statements, the calls that did not complete, and the questions a declaration leaves open; [] for a record without the part",
-   "basis": ["disclosure.effects partial_reason, tools (each row's counts and declared answers)"],
+   "condition": "the tool effects block of the served report's Appendix B for a disclosure record with an effects part: the line that the part may be incomplete where a partial reason is recorded; that no tool call was recorded; or, for tools with a completed call, each effect in the voice of where it came from, declared only where the row records that a declaration states it, taken otherwise (read by the platform, of unrecorded origin, a row stored before the origin fields): running the sample's code (ran where declared and a counted call completed under no declared when, declared to run otherwise, taken as running), the sandbox leads, the network by where each answer came from (_REACHES) and in a named mode (_REACHED, _TAKEN_REACHED, the case-memory store placed only where a store row of the record is placed with a host), the hash, the bytes or file sent or handed to the sandbox a server fronts, each tool with its declared when and offline condition, then the tools declared or taken to do none, server hints and statements, the calls that did not complete, and the questions left open with the reason its declaration or the platform's reading of its listing gives (why_from); [] for a record without the part; the undeclared line gives the reason as its declaration's, as the platform's reading's, or, for a row that does not record where the reason came from, as the reason its record gives (_WHY_SAID, _WHY_RECORD)",
+   "basis": [
+    "disclosure.effects partial_reason, tools (each row's counts, answers, network_from, third_party_from, executes_from, why_from, when, offline_without_credentials, hints)",
+    "disclosure.stores"
+   ],
    "test": [
     "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_lead_of_a_row_built_with_where_its_network_came_from_is_said_whole",
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_bytes_a_declaration_states_are_declared_and_bytes_read_cautiously_are_taken",
     "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_a_part_with_no_call_says_so_and_a_record_without_the_part_says_nothing",
-    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_one_tool_declared_to_do_none_is_counted_in_the_singular"
+    "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_one_tool_declared_to_do_none_is_counted_in_the_singular",
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_a_reputation_lookup_read_from_its_listing_is_taken",
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_a_removed_tool_still_read_as_sending_is_taken",
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_a_program_reading_is_taken",
+    "tests/unit/analysis/test_an_effect_the_platform_read_is_said_as_taken.py::test_what_the_block_declares_stays_declared_over_a_reading",
+    "tests/unit/analysis/test_each_tool_s_effects_are_declared_and_reported.py::test_a_tool_that_runs_any_script_it_is_given_is_left_undeclared"
    ],
-   "text_digest": "566cf67744e9f525b8a12e5964e75071532e62dfc64be59a2343f7c2d1b2fc67"
+   "text_digest": "50a1cc3fcaf6958bc67c061d5a4db8e65fe5d678196b3c68027da2895411ee7c"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_WHY_SAID",
+   "condition": "the words that introduce the reason on the undeclared line of the tool effects block, by where the row records the reason came from: a declaration, or the platform's reading of the tool's listing",
+   "basis": ["disclosure.effects tools[].why_undeclared, why_from"],
+   "test": ["tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it", "tests/unit/analysis/test_each_tool_s_effects_are_declared_and_reported.py::test_a_tool_that_runs_any_script_it_is_given_is_left_undeclared"],
+   "text_digest": "2a5c57ce167e376a7f1d28e1b57cd61632855a21e3e09024d39464caeca6c586"
+  },
+  {
+   "constant": "malspark.analysis.tool_effects:_WHY_RECORD",
+   "condition": "the words that introduce the reason on the undeclared line of the tool effects block for a row that does not record where the reason came from (a row stored before the field, an entry of unrecorded origin)",
+   "basis": ["disclosure.effects tools[].why_undeclared, with no why_from or one that is neither declared nor read"],
+   "test": "tests/unit/analysis/test_the_tool_effects_part_says_each_effect_in_whole_sentences.py::test_every_line_of_the_part_is_said_whole_under_the_rows_that_print_it",
+   "text_digest": "072aeaf2ce7c515d00cf3736395af25e3098e2fad032fd02753e42b3a799ff55"
   }
  ]
 }

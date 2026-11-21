@@ -179,9 +179,10 @@ def test_a_threat_intel_lookup_is_declared_to_reach_the_network_and_send_the_has
         ("check_hash", True, "hash"),
     ]
     assert effects_lines(part) == [
-        "Reached the network: `check_domain_reputation` and `check_hash` on tool server "
+        "Declared to reach the network: `check_domain_reputation` and `check_hash` on tool "
+        "server `threatintel`.",
+        "Declared to send the sample's hash to a third party: `check_hash` on tool server "
         "`threatintel`.",
-        "Sent the sample's hash to a third party: `check_hash` on tool server `threatintel`.",
     ]
 
 
@@ -195,9 +196,11 @@ def test_a_tool_that_runs_any_script_it_is_given_is_left_undeclared(
     assert effects_lines(part) == [
         "Undeclared whether it may run the sample's code, reach the network or send the "
         "sample's hash or bytes to a third party, so not taken as safe: `run_command` on the "
-        "`r2` provider's tool server; its declaration says why: it runs whatever script or "
-        "command it is given, so what it does is whatever that does."
+        "`r2` provider's tool server; the platform's reading of its listing says why: it runs "
+        "whatever script or command it is given, so what it does is whatever that does."
     ]
+    # The reason is the platform's reading of the tool's listing, not a declaration.
+    assert facts["platform_read"] == ["effects.why_undeclared"]
 
 
 def _declared_as_shipped(key: str) -> dict[str, Any]:
@@ -305,16 +308,25 @@ def test_a_submission_to_the_sidecar_s_sandbox_is_told_where_the_disclosure_plac
     ]
     lines = effects_lines(part)
     assert lines[:2] == [
-        "Had the sample run in the sandbox service its server fronts: `submit_file` on the "
-        "`cape2` provider's tool server, where it went cannot be told: the disclosure does not "
-        "place it.",
-        "Handed the sample to a third party's sandbox, which may run it: `submit_file` on tool "
-        "server `virustotal`.",
+        "Declared to have the sample run in the sandbox service its server fronts: "
+        "`submit_file` on the `cape2` provider's tool server, where it went cannot be told: the "
+        "disclosure does not place it.",
+        "Taken as running the sample in a sandbox its server does not front, which may be a "
+        "third party's: `submit_file` on tool server `virustotal`.",
     ]
     assert not any("not a third party" in line for line in lines)
+    # The sidecar's declaration states the bytes it hands over: declared. The reputation
+    # service's tool is what the platform read of its listing: taken.
     assert (
-        "Sent the sample's bytes to a third party: `submit_file` on tool server `virustotal`; "
-        "where each call sent them is in the upload rows of the disclosure above."
+        "Taken as sending the sample's file out of the deployment: `submit_file` on tool server "
+        "`virustotal`; the upload rows of the disclosure above say what is known of where each "
+        "call sent it."
+    ) in lines
+    assert (
+        "Declared to hand the sample's bytes to the sandbox service its server fronts: "
+        "`submit_file` on the `cape2` provider's tool server, where it went cannot be told: the "
+        "disclosure does not place it; where each call sent them is in the upload rows of the "
+        "disclosure above."
     ) in lines
 
 
@@ -377,11 +389,13 @@ def test_reference_refreshes_and_the_case_store_are_named(shipped: ToolDeclarati
             _entry("pack", "function_matches", matches),
         ]
     )
-    assert effects_lines(part) == [
-        "Reached the configured case-memory store, which the disclosure's case-memory row "
-        "places: `function_matches` on Triage pack (`pack`).",
-        "Reach the network only to fetch or refresh reference data they keep, sending nothing "
-        "of the sample: `attck_lookup` on tool server `knowledge`.",
+    assert effects_lines(
+        part, stores=[{"backend": "qdrant", "host": "localhost", "where": "local"}]
+    ) == [
+        "Declared to reach the configured case-memory store, which the disclosure's case-memory "
+        "row places: `function_matches` on Triage pack (`pack`).",
+        "Declared to reach the network only to fetch or refresh reference data they keep, "
+        "sending nothing of the sample: `attck_lookup` on tool server `knowledge`.",
     ]
     with pytest.raises(ValueError, match="network"):
         ToolEffects(network="sometimes")
@@ -448,7 +462,8 @@ def test_an_open_world_hint_says_the_tool_reaches_the_network_by_its_server_s_wo
     )
     assert row["hints"] == {"readOnlyHint": True, "openWorldHint": True}
     assert effects_lines(part) == [
-        "Reached the network: `lookup` on tool server `intel`, by its server's own hint.",
+        "Said by its server's own hint to reach outside its server: `lookup` on tool server "
+        "`intel`.",
         "Undeclared whether it may run the sample's code or send the sample's hash or bytes to "
         "a third party, so not taken as safe: `lookup` on tool server `intel`.",
     ]
@@ -554,8 +569,8 @@ def test_the_bytes_sent_agree_with_the_disclosure_s_upload_rows(
     }
     submit = facts_record("mcp:virustotal", "submit_file", declared=shipped)
     report = facts_record("mcp:virustotal", "get_file_report", declared=shipped)
-    # An operator's server that says so by its effects alone.
-    sent = {"v": 1, "kind": "submission", "effects": {"third_party": "bytes"}}
+    # An operator's server that says so by its effects alone, as an entry records it now.
+    sent = {"v": 1, "kind": "submission", "effects": {"third_party": "bytes"}, "platform_read": []}
     record = disclosure_record(
         snapshot,
         entries=[
@@ -571,9 +586,14 @@ def test_the_bytes_sent_agree_with_the_disclosure_s_upload_rows(
     assert _row(record["effects"], "push")["network"] is True
     lines = effects_lines(record["effects"])
     assert (
-        "Sent the sample's bytes to a third party: `push` on tool server `acme`; `submit_file` "
-        "on tool server `virustotal`; where each call sent them is in the upload rows of the "
-        "disclosure above."
+        "Declared to send the sample's bytes to a third party: `push` on tool server `acme`; "
+        "where each call sent them is in the upload rows of the disclosure above."
+    ) in lines
+    # What the platform read of the reputation service's listing is taken, never declared.
+    assert (
+        "Taken as sending the sample's file out of the deployment: `submit_file` on tool server "
+        "`virustotal`; the upload rows of the disclosure above say what is known of where each "
+        "call sent it."
     ) in lines
     assert any(
         line.startswith("Sample upload: tool server `acme`") for line in disclosure_lines(record)
@@ -759,12 +779,14 @@ def test_each_way_a_call_ended_is_counted_and_said_apart(shipped: ToolDeclaratio
     }
     lines = effects_lines(part)
     assert lines == [
-        "Was not run, so none of its declared effects happened: `floss` on Triage pack (`pack`).",
+        "Was not run, so none of the effects listed for it happened: `floss` on Triage pack "
+        "(`pack`).",
         "Was refused, so nothing was sent: `submit_file` on tool server `virustotal`.",
-        "Failed, so whether its declared effects happened cannot be told: `get_file_report` on "
-        "tool server `virustotal`.",
+        "Failed, so whether the effects listed for it happened cannot be told: "
+        "`get_file_report` on tool server `virustotal`.",
     ]
-    assert not any(line.startswith(("Ran ", "Sent ", "Handed ", "Reached ")) for line in lines)
+    effects = ("Ran ", "Declared to ", "Taken as ", "Stated by ", "Said by its server's own hint")
+    assert not any(line.startswith(effects) for line in lines)
 
 
 def test_a_tool_with_calls_that_ended_both_ways_is_counted_both_ways(
@@ -778,10 +800,10 @@ def test_a_tool_with_calls_that_ended_both_ways_is_counted_both_ways(
         ]
     )
     lines = effects_lines(part)
-    assert "Reached the network: `get_file_report` on tool server `virustotal`." in lines
+    assert "Taken as reaching the network: `get_file_report` on tool server `virustotal`." in lines
     assert (
-        "Failed, so whether its declared effects happened cannot be told: `get_file_report` on "
-        "tool server `virustotal`, 1 of 2 calls."
+        "Failed, so whether the effects listed for it happened cannot be told: "
+        "`get_file_report` on tool server `virustotal`, 1 of 2 calls."
     ) in lines
 
 
@@ -847,7 +869,9 @@ def test_r2_s_analysis_says_when_it_emulates(shipped: ToolDeclarations) -> None:
     assert facts is not None and facts["effects"]["executes"] == "emulation"
     assert "level 2" in facts["effects"]["when"]
     lines = effects_lines(effects_part([_entry("provider:r2", "analyze", facts)]))
+    # Its declared condition says when the run happens, which the record does not hold.
     assert lines[0].startswith(
-        "Ran the sample's code under emulation: `analyze` on the `r2` provider's tool server, "
+        "Declared to run the sample's code under emulation: `analyze` on the `r2` provider's "
+        "tool server, "
         "at analysis level 2 and above"
     )

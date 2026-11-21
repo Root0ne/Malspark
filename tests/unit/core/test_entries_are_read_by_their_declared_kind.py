@@ -322,4 +322,7 @@ def test_the_stored_answers_read_the_same_with_or_without_a_recorded_source() ->
     assert hashlib.sha256(readings[0].encode()).hexdigest()[:16] == FIXTURE_READING
 
 
-FIXTURE_READING = "db91674fff1277ed"
+# Re-pinned with the words of the root reasons (T-816): each reason says what the reading
+# gave; the roots, the reasons' count and order, and every other part of the reading are as
+# they were.
+FIXTURE_READING = "579b69857a375038"
