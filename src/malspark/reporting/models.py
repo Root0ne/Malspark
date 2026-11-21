@@ -223,6 +223,11 @@ class StringIOC(BaseModel):
     # build without the sample, and then left out of the dump, so a stored
     # report reads and dumps as it did.
     cut_from: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    # The ledger entry whose answer holds this row, where the build read the row
+    # from one (``ledger_projection``): what a refusal names as the row's source.
+    # ``None`` for a producer that does not record it, and then left out of the
+    # dump, so a stored report reads and dumps as it did.
+    entry: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ExportRow(BaseModel):

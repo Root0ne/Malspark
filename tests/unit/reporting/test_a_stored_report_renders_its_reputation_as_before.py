@@ -139,10 +139,14 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # local8's Markdown and HTML re-pinned when a mark of a value the run does not publish came to be
 # labelled from the render's own reading of its sentence (T-782b): the mark states the refusing
 # parts the render's IOC table gives the value. That is the only change. The STIX did not change.
+# run4's and run5's Markdown and HTML re-pinned when a value the string sweep holds and nothing
+# admitted came to be refused with the row it is from and what the rule's lookup found (T-782c):
+# the one such path row, in the strings table and in §9's table, is the only change. The STIX
+# did not change.
 STORED_RENDERS = {
     "run7": ("d369c9b6dd6637e8", "fcfdb48e546dd330", "af1240b0f29bfd9c"),
-    "run5": ("e2078eef68da0895", "1c54e53f083ee8a3", "2e717357e24fbfe2"),
-    "run4": ("241dd81d9faa8855", "5b4206854f545890", "0a90e4edd679e2be"),
+    "run5": ("f602ba82a5c2cefe", "d6a52f069a9f87a3", "2e717357e24fbfe2"),
+    "run4": ("1988f1484188ae1c", "798484f81ae891d3", "0a90e4edd679e2be"),
     "local8": ("21051e7de76441ef", "ca4956da428d81b9", "75d022862e3237de"),
 }
 

@@ -1543,11 +1543,13 @@
    ],
    "interesting_strings": [
     {
+     "entry": "ev_0005",
      "kind": "domain",
      "notes": "hard-coded",
      "value": "c2.evil.tld"
     },
     {
+     "entry": "ev_0005",
      "kind": "url",
      "notes": null,
      "value": "http://c2.evil.tld/gate.php"

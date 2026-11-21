@@ -555,7 +555,11 @@ class TestTheReport:
         # indicator table heads its first column with whose kind it prints, and a
         # strings row nothing in the analysis reads as its kind prints its form, in
         # §9's table of such rows and in the strings table (T-778, the dump and the
-        # Markdown of the rich and hostile shapes). Those are the only changes.
+        # Markdown of the rich and hostile shapes). Re-pinned for the rule of T-782c: a
+        # sweep row records the entry it was read from (the dump of the rich and hostile
+        # shapes), and a value the string sweep holds and nothing admitted is refused with
+        # the row it is from and what the network rule read (the hostile Markdown's two
+        # rows of its URL). Those are the only changes.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the

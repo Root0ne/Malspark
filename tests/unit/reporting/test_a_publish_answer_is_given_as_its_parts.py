@@ -107,6 +107,24 @@ RESOLVER_FACTS = (
     f"{MENTIONERS} mentions it and does not keep it",
 )
 LISTING = f"{LISTER} lists it, and a listing does not change what the sandbox recorded about it"
+# A run's record in which a sweep row of iocs_from_file holds two values and a cited
+# decompile entry holds each of them.
+SWEPT_RECORD = S.SecondSources(
+    swept={
+        "c:\\x\\a.dll": (("iocs_from_file", "ev_0006"),),
+        "relay.example.net": (("iocs_from_file", "ev_0006"),),
+    },
+    reads=(
+        (
+            "ev_0068",
+            "batch_decompile",
+            "rereads",
+            True,
+            frozenset({"c:\\x\\a.dll", "relay.example.net"}),
+        ),
+        ("ev_0053", "extract_iocs", "undeclared", True, frozenset({"relay.example.net"})),
+    ),
+)
 BENIGN = ", but the verdict is Benign, which publishes no malicious indicator"
 
 # (form, kind, value, source, keywords, refusing parts, facts)
@@ -307,7 +325,25 @@ def _combinations() -> list[tuple[str, Any]]:
         ("judge only", S.judge_only_reason()),
         ("not resolving", S.publish_answer("domain", "host.local", "sandbox")),
         ("string cut", refused(S.CUT_REASON, facts=('the string reads "evil.ex"',))),
-        ("strings, two holders", refused(S.SEEN_ONLY_IN_THE_STRINGS, facts=(FACT, LISTING))),
+        (
+            "strings, a cited holder",
+            S.publish_answer("path", "C:\\x\\a.dll", "strings", corroborating=SWEPT_RECORD),
+        ),
+        ("strings, no sweep row", S.publish_answer("mutex", "Global\\x", "strings")),
+        (
+            "strings, a network value with a cited holder",
+            S.publish_answer("domain", "relay.example.net", "strings", corroborating=SWEPT_RECORD),
+        ),
+        (
+            "strings, a URL whose host has a reputation record",
+            S.publish_answer(
+                "url",
+                "http://relay.example.net/a",
+                "strings",
+                {"malicious": 0, "suspicious": 0},
+                corroborating=SWEPT_RECORD,
+            ),
+        ),
         ("bound browser user agent", refused(f"{S.BOUND}; {S.BROWSER_LIKE}")),
         (
             "benign name in a URL, lineage",
@@ -437,7 +473,7 @@ class TestTheWriterGivesParts:
         assert len(answer.facts) == 1 and answer.facts[0].startswith("the string reads ")
         assert answer == f"no: {S.CUT_REASON}; {answer.facts[0]}"
 
-    def test_the_strings_form_refuses_with_the_strings_and_names_each_holder_as_a_fact(
+    def test_the_strings_form_refuses_with_its_row_and_names_each_holder_as_a_fact(
         self,
     ) -> None:
         record = S.SecondSources(
@@ -446,9 +482,10 @@ class TestTheWriterGivesParts:
         answer = S.publish_answer("path", "C:\\x\\a.dll", "strings", corroborating=record)
 
         assert isinstance(answer, PublishAnswer)
-        assert answer.refusing == (S.SEEN_ONLY_IN_THE_STRINGS,)
+        (first,) = answer.refusing
+        assert first == f"{S.ASKED_AS_THE_SWEEP_S} and {S.LOOKUP_FOUND_NO_SECOND_SOURCE}"
         assert len(answer.facts) == 2
-        assert answer == "; ".join([f"no: {S.SEEN_ONLY_IN_THE_STRINGS}", *answer.facts])
+        assert answer == "; ".join([f"no: {first}", *answer.facts])
 
     def test_a_host_row_the_judge_was_not_told_of_gives_each_test_its_part(self) -> None:
         answer = S.publish_answer(

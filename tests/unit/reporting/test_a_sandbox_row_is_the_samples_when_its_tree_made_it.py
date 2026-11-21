@@ -398,7 +398,10 @@ class TestThePublishRule:
 
         answer = _answer(_report(network), "domain", row.fqdn, source=row.source)
 
-        assert answer == "no: seen only in the file's strings"
+        assert answer == (
+            "no: its row is asked as the string sweep's and the network rule found no "
+            "recovery of it and read no reputation record for it"
+        )
 
     def test_the_judge_s_indicator_keeping_it_publishes_it(self) -> None:
         network = network_from_ledger(_ledger(tcp=[{"dst": CONTACT, "dport": 80}]))

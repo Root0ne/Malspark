@@ -707,7 +707,7 @@ def static_from_ledger(ledger: list[LedgerEntry]) -> StaticAnalysis | None:
                 for name, row in zip(packers, rows, strict=True)
             ]
 
-    for _entry, data in _payloads(ledger, "file_iocs", "text_iocs"):
+    for sweep, data in _payloads(ledger, "file_iocs", "text_iocs"):
         seen = True
         for row in data.get("iocs") or []:
             if not isinstance(row, dict):
@@ -717,6 +717,7 @@ def static_from_ledger(ledger: list[LedgerEntry]) -> StaticAnalysis | None:
                     value=str(row.get("value") or ""),
                     kind=_string_kind(row.get("kind")),  # type: ignore[arg-type]
                     notes=_opt(row.get("notes")),
+                    entry=str(sweep.id) or None,
                 )
             )
 

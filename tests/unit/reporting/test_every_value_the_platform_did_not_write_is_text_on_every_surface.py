@@ -637,7 +637,8 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     export publishes (where the code decoded and loaded it, the call made
     through the import), a mutex string of note was cut from a longer string
     (the publish answer quoting it, in the host table and among the strings),
-    a path string carries a note (the path row's context), the sample's
+    a path string carries a note (the path row's context), a mutex string's row
+    records its entry (the publish answer naming it), the sample's
     reputation lookup is in the index (the header cell prints its record's
     service and the names of its counts), the domain carries its enrichment
     record (the indicator table's reputation cell prints its service), and an analyst's
@@ -667,10 +668,15 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     # answer quoting it holds its backtick pair whole.
     n = tokens._next("report.static.interesting_strings[].cut_from", "V")
     cut = f"zH{n}z `zC{n}z` zZ{n}z"
+    # The entry a sweep row records, which the refusal of a value it alone holds names.
+    swept = tokens.value("report.static.interesting_strings[].entry")
     second.static.interesting_strings = [
         *second.static.interesting_strings,
         held.model_copy(update={"kind": "mutex", "value": "Global\\listed", "cut_from": cut}),
         held.model_copy(update={"kind": "path", "value": "C:\\Users\\listed.txt"}),
+        held.model_copy(
+            update={"kind": "mutex", "value": "Global\\swept", "cut_from": None, "entry": swept}
+        ),
     ]
     # The sample's reputation lookup, whose record the header cell prints: the
     # service's name and a member of the answer's counts object, by its name.

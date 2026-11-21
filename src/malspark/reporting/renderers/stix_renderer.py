@@ -4992,8 +4992,66 @@ _SOURCE_WORDS = {
 
 # What a verdict-withheld answer says of what the evidence held, before it in brackets.
 EVIDENCE_ALONE = "the evidence alone would publish it"
-# What refuses a value only the string sweep read and no second source confirms.
-SEEN_ONLY_IN_THE_STRINGS = "seen only in the file's strings"
+# What the rule's lookup (:func:`second_source`) found for a value asked as the
+# string sweep's that it refused: said after the row the value is from.
+LOOKUP_FOUND_NO_SECOND_SOURCE = "the rule's lookup found no second source"
+# The source of a row asked as the string sweep's that no sweep row holds.
+ASKED_AS_THE_SWEEP_S = "its row is asked as the string sweep's"
+
+
+def strings_source(value: Any, corroborating: Any) -> str:
+    """Where a value asked as the string sweep's is from, as the run's record names it.
+
+    The sweep's rows that hold it (:attr:`SecondSources.swept`), named by the
+    tool and the entry of each row that records its entry (``the string
+    sweep's row from iocs_from_file (ev_0006) holds it``), else as the sweep's
+    (``the string sweep's row holds it``); a value no sweep row holds is
+    :data:`ASKED_AS_THE_SWEEP_S`. It says which record holds the value, never
+    what the file holds: a sweep row may come from a text a model passed to
+    an extractor.
+    """
+    record = _as_record(corroborating)
+    held = record.swept.get(str(value or "").strip().lower())
+    if held is None:
+        return ASKED_AS_THE_SWEEP_S
+    by_tool: dict[str, list[str]] = {}
+    for tool, entry in held:
+        by_tool.setdefault(tool, []).append(entry)
+    named = [f"{tool} ({', '.join(ids)})" for tool, ids in by_tool.items() if tool]
+    # An entry the index does not name a tool for is said by its id alone.
+    unnamed = [entry for tool, entry in held if not tool]
+    one = len(held) < 2
+    sources = f" ({', '.join(unnamed)})" if unnamed else ""
+    # Joined by "and" alone, so the part holds no "," outside a bracket.
+    sources += f" from {' and '.join(named)}" if named else ""
+    return f"the string sweep's {'row' if one else 'rows'}{sources} {'holds' if one else 'hold'} it"
+
+
+def strings_refusal(
+    kind: str, value: Any, corroborating: Any, reputation: Any = None, recovered: str = ""
+) -> str:
+    """The refusing part of a value asked as the string sweep's that nothing admitted.
+
+    The row it is from (:func:`strings_source`), then what the deciding test
+    found, in its own names: for a domain, an address or a URL, what the
+    network rule read (a recovery of it, and a reputation record for it, or for
+    a URL's host, said as given or not given); for any other kind, that the
+    rule's lookup (:func:`second_source`) found no second source, which is the
+    only way such a value reaches this answer. One part, no ``;`` or ``,`` in
+    the platform's words, so a writer restates it whole in a bracket or out of
+    one.
+    """
+    said = strings_source(value, corroborating)
+    if kind not in NETWORK_KINDS:
+        return f"{said} and {LOOKUP_FOUND_NO_SECOND_SOURCE}"
+    recovery = "did not admit its recovery" if recovered else "found no recovery of it"
+    of = "for its host" if kind == "url" else "for it"
+    record = (
+        f"read a reputation record {of} with no malicious or suspicious count above zero"
+        if isinstance(reputation, dict)
+        else f"read no reputation record {of}"
+    )
+    return f"{said} and the network rule {recovery} and {record}"
 
 
 def published_because(reason: str) -> str:
@@ -5173,8 +5231,7 @@ def publish_answer(
         return refused(_spelled_reason(spelled), facts=(recovered,))
     if also_plain:
         return refused(
-            f"seen only in the file's strings — also a plain string in the file "
-            f"({also_plain}), so not a value the sample hid"
+            f"also a plain string in the file ({also_plain}), so not a value the sample hid"
         )
     if recovered and is_well_known_benign_host(url_host(text) if kind == "url" else text):
         return refused(f"{recovered}, but it is a well-known benign host")
@@ -5194,17 +5251,21 @@ def publish_answer(
         return seen_in_reason(seen_in, listed_by)
     if judge_only:
         return judge_only
+    network = kind in NETWORK_KINDS
     holders = (
-        second_source_refusal_parts(text, corroborating)
-        if from_strings and kind not in ("domain", "ip", "url")
-        else ()
+        second_source_refusal_parts(text, corroborating, network=network) if from_strings else ()
     )
     if holders and holders[0] == CUT_REASON:
         # The cut refuses; the string as the record keeps it is a fact.
         return refused(CUT_REASON, facts=holders[1:])
-    # The strings refuse; each tool that holds the value and confirms
-    # nothing is a fact of its own.
-    return refused(SEEN_ONLY_IN_THE_STRINGS, facts=holders)
+    # The row it is from and what the deciding test found refuse it, as one
+    # part; each holder an analyst section cites is a fact of its own.
+    return refused(
+        strings_refusal(kind, text, corroborating, reputation, recovered)
+        if from_strings
+        else f"its row's source is {source}",
+        facts=holders,
+    )
 
 
 def corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
@@ -5283,15 +5344,20 @@ def judge_value_answer(
         else None
     )
     if kind == "domain" and row is not None:
-        return publish_answer("domain", text, row.source, row.reputation, **emulated)
+        return publish_answer(
+            "domain", text, row.source, row.reputation, corroborating=corroborating, **emulated
+        )
     if kind == "ip" and row is not None:
-        return publish_answer("ip", text, row.source, row.reputation, **emulated)
+        return publish_answer(
+            "ip", text, row.source, row.reputation, corroborating=corroborating, **emulated
+        )
     if kind == "url" and row is not None:
         return publish_answer(
             "url",
             text,
             row.source or "strings",
             _host_reputation(report, url_host(text)),
+            corroborating=corroborating,
             **emulated,
         )
     if kind == "hash":
@@ -6053,8 +6119,11 @@ class SecondSources:
     a report stored before the build recorded its entries, every section of
     an entry an analyst cites whose kind observes or recovers. ``reads`` is
     the build's record, entry by entry (``MalwareReport.second_source_reads``):
-    each entry's tool, standing, whether a claim cites it, and the asked
-    values it holds whole. ``undeclared`` holds each cited section of a tool
+    each entry's id, tool, standing, whether an analyst section cites it, and
+    the asked values it holds whole. ``swept`` holds each value a row of the
+    string sweep holds (``static.interesting_strings``), with the tool and the
+    entry of each such row that records its entry (``StringIOC.entry``): the
+    source a refusal names. ``undeclared`` holds each cited section of a tool
     that declares no kind, by tool, which confirms as an observation does and
     is named. ``rereads`` and ``uncited`` hold, by tool, the text of the sections that
     confirm nothing — a cited reading of the file's bytes, and a section that
@@ -6066,12 +6135,13 @@ class SecondSources:
     """
 
     observed: str = ""
-    reads: tuple[tuple[str, str, bool, frozenset[str]], ...] = ()
+    reads: tuple[tuple[str, str, str, bool, frozenset[str]], ...] = ()
     undeclared: tuple[tuple[str, str], ...] = ()
     rereads: tuple[tuple[str, str], ...] = ()
     uncited: tuple[tuple[str, str], ...] = ()
     cut: Mapping[str, str] = dataclasses.field(default_factory=dict)
     recovered: frozenset[str] = frozenset()
+    swept: Mapping[str, tuple[tuple[str, str], ...]] = dataclasses.field(default_factory=dict)
 
     def __contains__(self, text: object) -> bool:
         """Whether any text that can confirm a value holds ``text``, as a plain search."""
@@ -6081,7 +6151,7 @@ class SecondSources:
             or any(needle in held for _t, held in self.undeclared)
             or any(
                 needle in value
-                for _t, standing, cited, holds in self.reads
+                for _e, _t, standing, cited, holds in self.reads
                 if cited and standing != tool_kinds.REREADS
                 for value in holds
             )
@@ -6122,7 +6192,9 @@ def second_source(value: Any, corroborating: Any) -> str:
     if whole_as_held(text, record.observed, cut) or low.rstrip(".") in record.recovered:
         return SECOND_SOURCE
     held = [
-        (tool, standing) for tool, standing, cited, holds in record.reads if cited and low in holds
+        (tool, standing)
+        for _entry, tool, standing, cited, holds in record.reads
+        if cited and low in holds
     ]
     if any(standing == tool_kinds.OBSERVES for _tool, standing in held):
         return SECOND_SOURCE
@@ -6172,19 +6244,40 @@ def whole_as_held(value: str, text: str, cut: bool) -> bool:
     return stands_as_a_token(value, text, whole_value_starts(value.lower(), text))
 
 
-def second_source_refusal(value: Any, corroborating: Any) -> str:
-    """Why nothing confirms a value :func:`second_source` refused, in words; ``""`` for no holder.
+def second_source_refusal(value: Any, corroborating: Any, *, network: bool = False) -> str:
+    """Which holders an analyst section cites hold a value the rule did not publish, in words.
 
-    Names the tools that hold the value whole and confirm nothing, so an
-    operator can see what read it: :func:`second_source_refusal_parts`, joined.
+    ``""`` for no such holder: :func:`second_source_refusal_parts`, joined.
     """
-    return "; ".join(second_source_refusal_parts(value, corroborating))
+    return "; ".join(second_source_refusal_parts(value, corroborating, network=network))
 
 
-def second_source_refusal_parts(value: Any, corroborating: Any) -> tuple[str, ...]:
+# How a holder clause says a citation, as the rule's lookup reads one
+# (:func:`_cited_entries`: the entries an analyst section cites).
+_CITED = "an analyst section cites"
+# Why a cited holder of a kind that confirms nothing does not count: the rule's
+# standing for its kind (``tool_kinds.second_source_standing``).
+_CONFIRMS_NOTHING = "the rule counts as confirming nothing"
+# Why a cited holder that would confirm a path does not count on a network row:
+# the network rule reads the row's source, a recovery and a reputation record.
+_NETWORK_RULE_DOES_NOT_ASK = "the rule for a network value does not ask which entries hold it"
+
+
+def second_source_refusal_parts(
+    value: Any, corroborating: Any, *, network: bool = False
+) -> tuple[str, ...]:
     """:func:`second_source_refusal`'s clauses, each whole: the cut reason and the string as
-    the record keeps it, or each tool that holds the value and confirms nothing; ``()`` for
-    no holder."""
+    the record keeps it, or each holder an analyst section cites; ``()`` for none.
+
+    Each clause names what the run's record (:class:`SecondSources`) holds and
+    why it does not count, read off the record it names: a cited entry of a
+    kind that confirms nothing, by tool and entry id; on a report stored
+    before the per-entry record, a cited section of such a kind, by tool; a
+    section that holds a cited entry beside one no analyst section cites; and,
+    on a ``network`` row, a cited entry of an observing or undeclared kind,
+    which the rule for a network value does not ask. An entry no analyst
+    section cites is not named.
+    """
     record = _as_record(corroborating)
     text = str(value or "").strip()
     low = text.lower()
@@ -6196,29 +6289,59 @@ def second_source_refusal_parts(value: Any, corroborating: Any) -> tuple[str, ..
     def holders(held: tuple[tuple[str, str], ...]) -> list[str]:
         return list(dict.fromkeys(tool for tool, part in held if whole_value_in(text, part)))
 
-    def read_by(standings: tuple[str, ...], cited: bool) -> list[str]:
+    def cited_entries(standings: tuple[str, ...]) -> list[tuple[str, str]]:
         return [
-            tool
-            for tool, standing, by_a_claim, holds in record.reads
-            if standing in standings and by_a_claim is cited and low in holds
+            (tool, entry)
+            for entry, tool, standing, cited, holds in record.reads
+            if standing in standings and cited and low in holds
         ]
 
+    def entries_said(held: list[tuple[str, str]]) -> str:
+        by_tool: dict[str, list[str]] = {}
+        for tool, entry in held:
+            if entry not in by_tool.setdefault(tool, []):
+                by_tool[tool].append(entry)
+        return _tools_said([f"{tool} ({', '.join(ids)})" for tool, ids in by_tool.items()])
+
+    def holds(held: list[tuple[str, str]]) -> str:
+        one = len({entry for _tool, entry in held}) == 1
+        return f"{'holds' if one else 'hold'} it in {'an entry' if one else 'entries'} {_CITED}"
+
+    def of_kinds(tools: int) -> str:
+        return f"of {'a kind' if tools == 1 else 'kinds'} {_CONFIRMS_NOTHING}"
+
     said: list[str] = []
-    rereads = list(dict.fromkeys([*read_by((tool_kinds.REREADS,), True), *holders(record.rereads)]))
+    rereads = cited_entries((tool_kinds.REREADS,))
     if rereads:
-        verb = "reads" if len(rereads) == 1 else "read"
-        said.append(f"{_tools_said(rereads)} {verb} the file's text again, which confirms nothing")
-    uncited = list(dict.fromkeys(read_by((tool_kinds.OBSERVES, tool_kinds.UNDECLARED), False)))
-    if uncited:
-        verb = "holds" if len(uncited) == 1 else "hold"
-        said.append(f"{_tools_said(uncited)} {verb} it only in entries no analyst claim cites")
+        tools = len({tool for tool, _entry in rereads})
+        said.append(f"{entries_said(rereads)} {holds(rereads)}, {of_kinds(tools)}")
+    sections = holders(record.rereads)
+    if sections:
+        verb = "prints" if len(sections) == 1 else "print"
+        said.append(
+            f"{_tools_said(sections)} {verb} it in a section holding an entry {_CITED}, "
+            f"{of_kinds(len(sections))}"
+        )
     beside = holders(record.uncited)
     if beside:
         verb = "prints" if len(beside) == 1 else "print"
         said.append(
-            f"{_tools_said(beside)} {verb} it only in a section that holds a cited entry "
-            "beside an entry no analyst claim cites"
+            f"{_tools_said(beside)} {verb} it in a section holding an entry {_CITED} "
+            "beside one no analyst section cites"
         )
+    if network:
+        confirming = cited_entries((tool_kinds.OBSERVES, tool_kinds.UNDECLARED))
+        if confirming:
+            said.append(
+                f"{entries_said(confirming)} {holds(confirming)}, and {_NETWORK_RULE_DOES_NOT_ASK}"
+            )
+        undeclared = holders(record.undeclared)
+        if undeclared:
+            verb = "prints" if len(undeclared) == 1 else "print"
+            said.append(
+                f"{_tools_said(undeclared)} {verb} it in a section {_CITED}, and "
+                f"{_NETWORK_RULE_DOES_NOT_ASK}"
+            )
     return tuple(said)
 
 
@@ -6433,10 +6556,20 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
     cited = _cited_entries(report)
     recorded = getattr(report, "second_source_reads", None)
     reads = tuple(
-        (read.tool, read.standing, read.cited, frozenset(read.holds)) for read in recorded or ()
+        (read.entry, read.tool, read.standing, read.cited, frozenset(read.holds))
+        for read in recorded or ()
     )
     sections = list(getattr(report, "sections", None) or []) if recorded is None else []
     index = tool_kinds.index_by_id(getattr(report, "evidence_index", None) or [])
+    # Each value a sweep row holds, with the tool and the entry of each row that
+    # records its entry: the tool by the name the index gives that entry.
+    swept: dict[str, list[tuple[str, str]]] = {}
+    for row in sweep_rows:
+        held = swept.setdefault(str(row.value or "").strip().lower(), [])
+        entry = str(getattr(row, "entry", None) or "")
+        if entry and all(entry != known for _tool, known in held):
+            found = index.get(entry)
+            held.append((tool_kinds.display_name(found) if found is not None else "", entry))
     for section in sections:
         origin = str(getattr(section, "source", "") or "").strip().lower()
         if not origin.startswith("tool:"):
@@ -6483,6 +6616,7 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
             for row in sweep_rows
             if getattr(row, "cut_from", None)
         },
+        swept={value: tuple(held) for value, held in swept.items()},
     )
 
 

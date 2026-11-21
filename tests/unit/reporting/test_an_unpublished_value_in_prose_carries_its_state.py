@@ -386,7 +386,12 @@ class TestTheReportStatesTheState:
         text = MarkdownRenderer().render(report)
 
         channel = next(line for line in text.splitlines() if line.startswith("| relay"))
-        assert "(no: seen only in the file's strings)" in channel
+        # A network row of the sweep's source that no sweep row holds says so, and
+        # what the network rule read for it.
+        assert (
+            "(no: its row is asked as the string sweep's and the network rule found no "
+            "recovery of it and read no reputation record for it)"
+        ) in channel
 
 
 class TestOddAndLargeInput:

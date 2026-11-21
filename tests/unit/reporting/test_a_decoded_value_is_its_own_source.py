@@ -222,7 +222,11 @@ class TestAMalwareVerdict:
         )
 
         assert C2 not in _exported(report)
-        assert _published(report, C2) == "no: seen only in the file's strings"
+        # A network row of the sweep's source that no sweep row holds.
+        assert _published(report, C2) == (
+            "no: its row is asked as the string sweep's and the network rule found no "
+            "recovery of it and read no reputation record for it"
+        )
 
     def test_a_decoded_well_known_benign_host_does_not_publish(self) -> None:
         report = _report()
@@ -259,8 +263,7 @@ class TestAPlainStringTheSweepRead:
 
         assert swept not in _exported(report)
         assert _published(report, swept) == (
-            "no: seen only in the file's strings — also a plain string in the file "
-            "(ev_0005), so not a value the sample hid"
+            "no: also a plain string in the file (ev_0005), so not a value the sample hid"
         )
         assert not _fed(report, swept)
 

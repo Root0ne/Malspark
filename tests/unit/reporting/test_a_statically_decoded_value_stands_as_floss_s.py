@@ -268,8 +268,7 @@ class TestWhatTheRecordHoldsOut:
         assert report.emulated_strings is not None
         assert report.emulated_strings.plain == {C2: "ev_0005"}
         assert _row(report, C2).published == (
-            "no: seen only in the file's strings — also a plain string in the file "
-            "(ev_0005), so not a value the sample hid"
+            "no: also a plain string in the file (ev_0005), so not a value the sample hid"
         )
         assert _row(report, C2).recovered_by == ""
 

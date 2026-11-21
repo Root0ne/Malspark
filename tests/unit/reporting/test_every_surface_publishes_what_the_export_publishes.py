@@ -118,7 +118,11 @@ class TestAJudgeValueTheRuleRefuses:
     def test_the_table_prints_the_rule_s_refusal(self) -> None:
         report, _judge_bundle = self._setup()
 
-        assert _row(report, SWEPT).published == "no: seen only in the file's strings"
+        # No sweep row holds it: its network row is asked as the sweep's.
+        assert _row(report, SWEPT).published == (
+            "no: its row is asked as the string sweep's and the network rule found no "
+            "recovery of it and read no reputation record for it"
+        )
 
     def test_the_feed_withholds_it(self) -> None:
         report, _judge_bundle = self._setup()
@@ -146,7 +150,7 @@ class TestAJudgeValueTheRuleRefuses:
             JUDGE_ONLY,
         )
 
-    def test_a_judge_value_the_file_s_strings_hold_is_said_to_be_seen_there(self) -> None:
+    def test_a_judge_value_a_sweep_row_holds_names_that_row(self) -> None:
         from malspark.reporting.models import StaticAnalysis, StringIOC
 
         judge = _judge("[domain-name:value = 'only-judge.example.net']")
@@ -158,7 +162,8 @@ class TestAJudgeValueTheRuleRefuses:
         )
 
         assert _row(report, "only-judge.example.net").published == (
-            "no: seen only in the file's strings"
+            "no: the string sweep's row holds it and the network rule found no recovery of it "
+            "and read no reputation record for it"
         )
 
 

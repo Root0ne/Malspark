@@ -122,11 +122,14 @@ def test_a_value_only_a_query_for_it_holds_says_so() -> None:
     assert "only the answer to a query for it holds it (ev_0004 get_domain_report)" in answer
 
 
-def test_a_value_the_file_s_strings_hold_keeps_that_reason() -> None:
+def test_a_value_a_sweep_row_holds_names_that_row() -> None:
     report = _built([])
     report.static = StaticAnalysis(interesting_strings=[StringIOC(kind="domain", value=NAME)])
 
-    assert _answer(report) == "no: seen only in the file's strings"
+    assert _answer(report) == (
+        "no: the string sweep's row holds it and the network rule found no recovery of it "
+        "and read no reputation record for it"
+    )
 
 
 def _stored(*sections: EvidenceSection) -> MalwareReport:
