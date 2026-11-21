@@ -346,12 +346,20 @@ class TestEveryRowHasAPublishAnswer:
 
 class TestTheFeedIsTheTable:
     def test_every_row_of_the_table_is_a_row_of_the_feed_with_its_decision(self) -> None:
+        from malspark.reporting.string_row_form import exported_form, string_row_forms
+
         report = _report()
         table = [r for r in build_consolidated_iocs(report) if r.kind != "secret"]
         feed = ioc_feed_rows(report.model_dump(mode="json"))
+        # A strings row nothing in the run reads as its kind is served as its form (T-778).
+        forms = string_row_forms(report, build_consolidated_iocs(report))
+
+        def served(row: Any) -> str:
+            formed = exported_form(row, forms)
+            return formed[0] if formed else str(row.kind)
 
         assert [(row["kind"], _bare(row["value"]), row["publish_answer"]) for row in feed] == [
-            (row.kind, row.value, row.published) for row in table
+            (served(row), row.value, row.published) for row in table
         ]
         assert [row["published"] for row in feed] == [publishes(row.published) for row in table]
 
