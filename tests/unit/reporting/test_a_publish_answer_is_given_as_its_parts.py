@@ -255,23 +255,46 @@ FORMS: list[tuple[str, str, str, str, dict[str, Any], tuple[str, ...], tuple[str
     (
         "six sightings, a lister",
         "domain",
-        "tox.chat",
+        "relay-chat.example.net",
         "analyst",
         {"seen_in": SIX_ENTRIES, "listed_by": LISTER},
-        (f"seen only in the text of {SIX_ENTRIES}, and no second source in this run records it",),
-        (f"{LISTER} lists it",),
+        (f"{S.ANALYST_LISTING} ({LISTER}) and {S.LISTING_IS_NO_SOURCE}", S.JUDGE_DID_NOT_KEEP),
+        (f"{S.SEARCH_OF_THE_RUN}, {S.QUERY_ANSWERS_APART}, found it in {SIX_ENTRIES}",),
     ),
     (
-        "named only by an analyst",
+        "an analyst's listing",
         "domain",
         "evil.example.net",
         "analyst",
         {"listed_by": LISTER},
+        (f"{S.ANALYST_LISTING} ({LISTER}) and {S.LISTING_IS_NO_SOURCE}", S.JUDGE_DID_NOT_KEEP),
+        (f"{S.SEARCH_OF_THE_RUN}, {S.QUERY_ANSWERS_APART}, found it in none",),
+    ),
+    (
+        "an analyst's listing of a mutex",
+        "mutex",
+        "Global\\relay",
+        "analyst",
+        {"listed_by": LISTER},
+        (f"{S.ANALYST_LISTING} ({LISTER}) and {S.LISTING_IS_NO_SOURCE}",),
+        (f"{S.SEARCH_OF_THE_RUN}, {S.QUERY_ANSWERS_APART}, found it in none",),
+    ),
+    (
+        "a strings row the search found, a lister",
+        "domain",
+        "relay.example.net",
+        "strings",
+        {"seen_in": SIX_ENTRIES, "listed_by": LISTER, "corroborating": SWEPT_RECORD},
         (
-            f"{S.NAMED_ONLY_BY_AN_ANALYST} ({LISTER}); no tool in this run saw it, and "
-            f"{S.JUDGE_DID_NOT_KEEP}",
+            "the row from iocs_from_file (ev_0006) holds it and the publish rule found no "
+            "recovery of it and read no reputation record for it",
         ),
-        (),
+        (
+            f"{S.SEARCH_OF_THE_RUN}, {S.QUERY_ANSWERS_APART}, found it in {SIX_ENTRIES}",
+            "batch_decompile (ev_0068) and extract_iocs (ev_0053) hold it in entries an analyst "
+            "section cites, and the publish rule does not ask which entries hold a network value",
+            f"{LISTER} lists it",
+        ),
     ),
 ]
 # A why that holds a bracket inside a bracket, as a stored run's state does, and one of three
@@ -320,8 +343,22 @@ def _combinations() -> list[tuple[str, Any]]:
                     )
     out += [
         ("resolver", S.public_resolver_reason(LINEAGE, LISTER, MENTIONERS)),
-        ("seen in six entries", S.seen_in_reason(SIX_ENTRIES, LISTER)),
-        ("named only, the report searched", S.named_only_reason(LISTER, S.SEARCHED_THE_REPORT)),
+        ("listed, seen in six entries", S.listing_reason("domain", LISTER, SIX_ENTRIES)),
+        ("listed, a mutex seen in six entries", S.listing_reason("mutex", LISTER, SIX_ENTRIES)),
+        (
+            "listed, the report searched",
+            S.listing_reason("domain", LISTER, searched=S.SEARCHED_THE_REPORT),
+        ),
+        (
+            "listed, a query answer",
+            S.listing_reason("mutex", LISTER, asked_in="ev_0005 search_strings"),
+        ),
+        (
+            "a judge's value the search found",
+            S.publish_answer(
+                "mutex", "Global\\x", "strings", seen_in=SIX_ENTRIES, judge_s_value=True
+            ),
+        ),
         ("judge only", S.judge_only_reason()),
         ("not resolving", S.publish_answer("domain", "host.local", "sandbox")),
         ("string cut", refused(S.CUT_REASON, facts=('the string reads "evil.ex"',))),
@@ -373,7 +410,9 @@ LONGER_STATES = {
     "a recovery with two places, Benign",
     "a benign name in a published URL that holds ';', a lister",
     "six sightings, a lister",
-    "named only by an analyst",
+    "an analyst's listing",
+    "an analyst's listing of a mutex",
+    "a strings row the search found, a lister",
 }
 
 
@@ -725,7 +764,7 @@ class TestTheRestatement:
         assert _unstated_values(sentence, lambda kind, held: answer if held == value else "") == []
 
     def test_a_state_holding_a_semicolon_and_an_and_is_read_whole(self) -> None:
-        answer = S.named_only_reason(LISTER)
+        answer = refused(f"{S.BOUND}; {S.BROWSER_LIKE}", S.JUDGE_DID_NOT_KEEP)
         state = str(answer_state(answer))
 
         assert ";" in state and ", and " in state
@@ -808,7 +847,7 @@ class TestTheCells:
 
     def test_the_analyst_layout_prints_the_whole_answer_of_an_observed_only_row(self) -> None:
         answer = S.public_resolver_reason(FACT)
-        listed = S.named_only_reason(LISTER)
+        listed = S.listing_reason("domain", LISTER)
         ctx = _Context.of(_report())
         ctx.iocs = [
             ConsolidatedIOC(

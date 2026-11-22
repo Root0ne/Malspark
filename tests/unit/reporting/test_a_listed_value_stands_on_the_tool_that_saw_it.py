@@ -1,13 +1,14 @@
-"""A value an analyst listed stands on the tool whose answer holds it; "no tool saw it" is checked.
+"""A value an analyst listed stands on the tool whose answer holds it; the search is said as run.
 
 One run's endpoints artifact listed sixteen addresses the capture's conversations
 held, and the rule told each of them "no tool in this run saw it": the network
 block never read the capture. The capture's conversations and TLS names are now
 sandbox rows the sandbox rule decides, and a value an analyst listed is looked
-for, whole, in every tool answer of the run before the report says no tool saw
-it. Found, the row takes that answer's source and the reason names the entry.
-A stored report, built before the search existed, is searched in the tool
-sections it keeps, and says only what that search can.
+for, whole, in every tool answer of the run that did not fail. Found, the row
+takes that answer's source and the reason names the entry; the reason says what
+the publish rule's whole-value search read and what it found, never that no tool
+saw the value. A stored report, built before the search existed, is searched in
+the tool sections it keeps, and says only what that search can.
 
 Every value here is synthetic: routable addresses the reference run never reached, and
 example names. A documentation address would be refused by the address rule before
@@ -141,15 +142,25 @@ class TestAListedValueIsLookedForInEveryToolAnswer:
         (row,) = [ip for ip in report.network.ips if ip.address == DECOMPILED]
         assert row.source == "strings"
         answer = _published(report, DECOMPILED)
-        assert answer.startswith("no: seen only in the text of ev_0002 (decompile_function)")
-        assert "named only" not in answer
+        assert answer == (
+            "no: its row's source is strings and no row of the string sweep holds it and the "
+            "publish rule found no recovery of it and read no reputation record for it; the "
+            "publish rule's whole-value search of the kept text of the run's successful tool "
+            "answers, which sets apart an answer to a call whose arguments hold it, found it in "
+            "ev_0002 (decompile_function); an artifact of the network analyst lists it"
+        )
 
-    def test_a_value_no_tool_answer_holds_is_named_only_by_an_analyst(self) -> None:
+    def test_a_value_the_search_finds_in_no_answer_is_refused_as_an_analyst_s_listing(
+        self,
+    ) -> None:
         answer = _published(_build([_capture(), _decompile()], _listed(NOWHERE)), NOWHERE)
 
-        assert answer.startswith(
-            "no: named only by an analyst (an artifact of the network analyst); "
-            "no tool in this run saw it"
+        assert answer == (
+            "no: its row is an analyst's listing (an artifact of the network analyst) and the "
+            "publish rule takes no listing as a source, and the judge did not keep it as an "
+            "indicator; the publish rule's whole-value search of the kept text of the run's "
+            "successful tool answers, which sets apart an answer to a call whose arguments hold "
+            "it, found it in none"
         )
 
 
@@ -190,14 +201,19 @@ class TestAStoredReport:
 
         answer = _stored_answer(_stored([section]))
 
-        assert answer.startswith("no: seen only in the text of ev_0006 (iocs_from_file)")
-        assert "named only" not in answer
+        assert answer == (
+            "no: its row is an analyst's listing (an artifact of the network analyst) and the "
+            "publish rule takes no listing as a source, and the judge did not keep it as an "
+            "indicator; the publish rule's whole-value search of the tool sections this report "
+            "keeps found it in ev_0006 (iocs_from_file)"
+        )
 
     def test_a_value_no_kept_section_holds_says_only_what_the_report_can(self) -> None:
         answer = _stored_answer(_stored([]))
 
-        assert answer.startswith(
-            "no: named only by an analyst (an artifact of the network analyst)"
+        assert answer == (
+            "no: its row is an analyst's listing (an artifact of the network analyst) and the "
+            "publish rule takes no listing as a source, and the judge did not keep it as an "
+            "indicator; this report keeps no tool section for the publish rule's search to read"
         )
-        assert "no tool answer this report keeps holds it" in answer
-        assert "no tool in this run saw it" not in answer
+        assert "kept text of the run's" not in answer and "found it" not in answer
