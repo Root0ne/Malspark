@@ -1,0 +1,9 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.schemas.evidence:LedgerEntry.reputation",
+   "not_published": {"reason": "schema_text", "basis": "The description of the ledger entry's stored reputation record in the entry's JSON schema; no report, export, pack line or job row prints it."},
+   "text_digest": "8f2bd00e95e0174cae6acd7b5aa45cd08d5d876a6bdd69b660c6a5d74a0ee967"
+  }
+ ]
+}

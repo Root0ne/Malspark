@@ -2141,6 +2141,13 @@ class ReputationAnswer(ReputationRecord):
 
     entry_id: str
     tool: str = ""
+    # The keys the record's counts were read under and the counts it did not
+    # read are the ledger's (``core.reputation.LEDGER_ONLY``): the report
+    # carries none of them, in its dump or its schema, so a stored report and a
+    # rebuilt one print one cell.
+    names: SkipJsonSchema[dict[str, str]] = Field(default_factory=dict, exclude=True)
+    unread: SkipJsonSchema[int | None] = Field(default=None, exclude=True)
+    not_whole: SkipJsonSchema[list[str]] = Field(default_factory=list, exclude=True)
 
 
 def _readable_reputation(value: Any) -> Any:

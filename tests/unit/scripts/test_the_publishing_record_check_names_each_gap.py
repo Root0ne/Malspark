@@ -616,7 +616,7 @@ def test_the_shipped_record_checks_clean_for_its_entries(
     out = capsys.readouterr().out
     assert "no entry point reaches" in out
     assert f"not_published {pf.not_published_count(record)}" in out
-    assert pf.not_published_count(record) == 10
+    assert pf.not_published_count(record) == 11
 
 
 def test_the_schema_holds_the_closed_list_of_not_published_reasons() -> None:
@@ -778,7 +778,7 @@ def test_text_read_by_a_model_only_is_a_closed_not_published_reason() -> None:
     assert "model_text" in pf.NOT_PUBLISHED_REASONS
     record = pf.read_record(pf.RECORDS)
     reasons = {
-        entry["function"]: entry["not_published"]["reason"]
+        entry.get("function", entry.get("constant")): entry["not_published"]["reason"]
         for entry in record.entries
         if "not_published" in entry
     }
