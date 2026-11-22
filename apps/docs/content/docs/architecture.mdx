@@ -5851,7 +5851,9 @@ is assembled from what the run gathered rather than recomputed beside it:
   detonation's are a tree of their own (`dynamic.detonation_trees`, with the
   guest pids that detonation's answers state), and a record several
   detonations observed is placed in each, never in another detonation's
-  tree, where the same task and id may name another process. In a launched
+  tree, where the same task and id may name another process; a report that
+  keeps no further detonation's tree (one stored before the trees were kept
+  apart) places every record in the job's own, as it was written. In a launched
   detonation the launcher is not the sample: neither the submitted file nor
   the sandbox's mark names it, so a record of the launcher's process is
   outside the sample's tree. A writer outside its task's

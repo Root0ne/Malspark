@@ -3983,7 +3983,9 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
     Each record is placed against the process tree of the detonation it was
     observed in (``observed_in``): the job's own (``process_tree``) or a
     further one's (``detonation_trees``), never another detonation's. A record
-    several detonations observed is placed in each of them. In a launched
+    several detonations observed is placed in each of them; a report that
+    keeps no further detonation's tree places every record in the job's own,
+    as it was written. In a launched
     detonation the launcher is not the sample: neither the submitted file nor
     the sandbox's mark names it, so a record of its process is placed outside
     the sample's tree.
@@ -4004,6 +4006,10 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
                 for name, nodes in (_field(dynamic, "detonation_trees") or {}).items()
             },
         }
+        # A report that keeps no further detonation's tree (one stored before
+        # the trees were kept apart) places every record in the job's own, as
+        # it was written.
+        apart = len(listings) > 1
         trees: dict[str, ProcessTrees] = {}
 
         def _tree(detonation: str) -> ProcessTrees:
@@ -4028,7 +4034,8 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
             except ValueError:
                 # A mark of no detonation's form names none: the job's own.
                 marks = []
-            for mark in dict.fromkeys(one.detonation for one in marks) or [FIRST_DETONATION]:
+            stated = [one.detonation if apart else FIRST_DETONATION for one in marks]
+            for mark in dict.fromkeys(stated) or [FIRST_DETONATION]:
                 placed.setdefault(key, {}).setdefault(mark, []).append(record)
                 whys.append(_not_the_sample_s(record, _tree(mark), did))
 

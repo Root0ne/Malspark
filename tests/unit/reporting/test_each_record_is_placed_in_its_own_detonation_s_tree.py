@@ -5,9 +5,11 @@ further detonation's are a tree of their own (``detonation_trees``), with the
 guest pids that detonation's answers state. A file, digest or mutex record
 observed in a detonation is placed in that detonation's tree, never in
 another's, where the same task and process id may name another process. In a
-launched detonation the launcher is not the sample: the process view marks
-only the sample's lineage, so a record of the launcher's process is placed
-outside the sample's tree.
+launched detonation the launcher is not the sample: neither the submitted file
+nor the sandbox's mark names it, so a record of the launcher's process is
+placed outside the sample's tree. A report that keeps no further detonation's
+tree (one stored before the trees were kept apart) places every record in the
+job's own, as it was written.
 """
 
 from __future__ import annotations
@@ -101,6 +103,12 @@ class TestARecordIsPlacedInItsOwnDetonationSTree:
 
     def test_the_same_id_in_the_job_s_own_detonation_is_the_sample_s(self) -> None:
         report = _report(_write(FIRST_DIGEST, "10", None))
+        assert "unattributed" not in sandbox_host_kwargs(report, "hash", FIRST_DIGEST)
+
+    def test_a_report_keeping_no_further_tree_places_its_records_as_it_was_written(self) -> None:
+        report = _report(_write(FIRST_DIGEST, "10", D2))
+        assert report.dynamic is not None
+        report.dynamic.detonation_trees = {}
         assert "unattributed" not in sandbox_host_kwargs(report, "hash", FIRST_DIGEST)
 
 
