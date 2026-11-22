@@ -154,9 +154,10 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     no row of the table holds is listed unpublished with its refusal
     (``builder.full_ioc_list``), so the default list is the table's published
     rows alone.
-    ``is_suspicious`` is read from the row's own publication, the record its
-    ``published`` and its export type come from (:func:`_claims_activity`).
-    A domain or an address keeps the network block's reason as its note. A
+    ``is_suspicious`` is true where a detector or a reputation source flagged
+    the value in the network block, or the table publishes the row under a
+    type that claims activity (:func:`_claims_activity`). A domain or an
+    address keeps the network block's reason as its note. A
     row of the file's strings that nothing in the run reads as its kind (a
     form row, ``reporting.string_row_form``) is served as its form: the form
     as its ``kind`` (which a ``kind`` filter reads), the type §9 prints as
@@ -194,15 +195,15 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
             continue
         if row_kind in _ASKED_FOR_BY_NAME and kind != row_kind:
             continue
-        # A form row is no domain, so the network block's reason, read of it
-        # as one, does not stand on it.
+        # A form row is no domain, so the network block's flag and reason,
+        # read of it as one, do not stand on it.
         listed = {} if formed else network.get((row_kind, row.value.strip().lower().rstrip(".")))
         listed = listed or {}
         out.append(
             {
                 "kind": served_kind,
                 "value": _feed_value(row_kind, row.type, row.value),
-                "is_suspicious": _claims_activity(row),
+                "is_suspicious": bool(listed.get("is_suspicious")) or _claims_activity(row),
                 # An analyst's mutex, path, key, task or service carries the
                 # rule's refusal as its note, as it always has.
                 "notes": listed.get("reason")
@@ -238,12 +239,16 @@ def _claims_activity(row: ConsolidatedIOC) -> bool:
     """Whether the table publishes ``row`` under a type that claims activity.
 
     Read from the one record that decides the row's publication (its publish
-    answer and the type the table set with it), so a published row is never
-    served as not suspicious beside its own publication, and two rows of one
-    host are never told apart by having been read from different places. A
-    row the table withholds is not suspicious, whatever another block flags.
+    answer and the type the table set with it), whatever case or surrounding
+    space the type was written with: ``benign`` and ``unknown`` claim none,
+    every other type and a published row with no type do. A feed row's flag
+    is this or the network block's flag (a detector or a reputation source
+    flagged the value), so a published row is never served as not suspicious
+    beside its own publication, and a flag the network block holds is never
+    lost by a withholding.
     """
-    return publishes(row.published) and row.indicator_type not in _NO_ACTIVITY_TYPES
+    written = str(row.indicator_type or "").strip().lower()
+    return publishes(row.published) and written not in _NO_ACTIVITY_TYPES
 
 
 def _forms(report: Any) -> dict[tuple[str, str], str]:
