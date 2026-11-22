@@ -1,0 +1,19 @@
+{
+ "entries": [
+  {
+   "function": "malspark.reporting.renderers.markdown:_sandbox_held",
+   "condition": "what a held sandbox report lists, counted by kind: its processes, signatures, the rows of its dropped-files list (operation 'write'), its mutex names (operation 'mutex'), any other file-operation row and its registry rows, and the network rows the sandbox is the source of; 'listing no process, signature, dropped-files row, mutex name, file-operation row or registry row' where it lists none",
+   "basis": [
+    "the report's dynamic block: process tree, sandbox signatures, file_operations by operation, registry rows",
+    "the network rows whose source is the sandbox"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_sandbox_s_rows_are_named_by_the_list_they_come_from.py::test_rows_of_the_dropped_files_list_are_named_so",
+    "tests/unit/reporting/test_a_sandbox_s_rows_are_named_by_the_list_they_come_from.py::test_one_row_of_each_list_is_named_by_its_list",
+    "tests/unit/reporting/test_a_sandbox_s_rows_are_named_by_the_list_they_come_from.py::test_several_rows_of_each_list",
+    "tests/unit/reporting/test_a_sandbox_s_rows_are_named_by_the_list_they_come_from.py::test_a_report_listing_nothing_says_what_it_counted"
+   ],
+   "text_digest": "65b83fd6f6a844e95647463a08fc19a88e3485d4e1d650faf0e361d4f809ce4f"
+  }
+ ]
+}

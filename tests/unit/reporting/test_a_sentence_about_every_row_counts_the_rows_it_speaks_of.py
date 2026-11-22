@@ -133,14 +133,14 @@ def test_a_held_sandbox_report_is_counted_and_never_said_to_record_the_sample() 
     analyst = MarkdownRenderer(layout=ANALYST).render(report)
 
     said = (
-        "A sandbox report is held listing 2 processes, 1 signature and 1 file-operation row, "
-        "and the sandbox is the source of 1 network row."
+        "A sandbox report is held listing 2 processes, 1 signature and 1 row of its "
+        "dropped-files list, and the sandbox is the source of 1 network row."
     )
     assert said in bundle
     assert said in analyst
     assert _line(bundle, "- Sandbox:") == (
-        "- Sandbox: a report is held listing 2 processes, 1 signature and 1 file-operation "
-        "row; the source of 1 network row"
+        "- Sandbox: a report is held listing 2 processes, 1 signature and 1 row of its "
+        "dropped-files list; the source of 1 network row"
     )
     assert "recorded the sample's behaviour" not in bundle + analyst
 

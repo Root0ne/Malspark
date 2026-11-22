@@ -3695,8 +3695,12 @@ def _objects(count: int) -> str:
 
 def _sandbox_held(report: MalwareReport) -> list[str]:
     """What the report holds from a sandbox, as counts of its rows: the sandbox report's
-    processes, signatures, file operations and registry rows, and the network rows the sandbox
-    is the source of. Each is counted as held, whichever process it names (T-780)."""
+    processes, signatures, the rows of its dropped-files list and of its mutex list, any other
+    file-operation row and its registry rows, and the network rows the sandbox is the source
+    of. Each is counted as held, whichever process it names (T-780), and the rows of
+    ``file_operations`` by the list each was read from (``operation`` ``write`` or ``mutex``,
+    ``ledger_projection``): a row of the dropped-files list is no file operation the record
+    shows."""
     out: list[str] = []
     dyn = report.dynamic
     if dyn is not None:
@@ -3704,17 +3708,32 @@ def _sandbox_held(report: MalwareReport) -> list[str]:
         def processes(nodes: Iterable[ProcessNode]) -> int:
             return sum(1 + processes(node.children) for node in nodes)
 
+        def operations(name: str) -> int:
+            return sum(
+                1
+                for op in dyn.file_operations
+                if isinstance(op, dict) and op.get("operation") == name
+            )
+
+        dropped, mutexes = operations("write"), operations("mutex")
         counted = (
             (processes(dyn.process_tree), "process", "processes"),
             (len(dyn.sandbox_signatures), "signature", "signatures"),
-            (len(dyn.file_operations), "file-operation row", "file-operation rows"),
+            (dropped, "row of its dropped-files list", "rows of its dropped-files list"),
+            (mutexes, "mutex name", "mutex names"),
+            (
+                len(dyn.file_operations) - dropped - mutexes,
+                "file-operation row",
+                "file-operation rows",
+            ),
             (len(dyn.registry_mods), "registry row", "registry rows"),
         )
         listed = [f"{n} {one if n == 1 else many}" for n, one, many in counted if n]
         out.append(
             f"a report is held listing {_joined(listed)}"
             if listed
-            else "a report is held listing no process, signature, file operation or registry row"
+            else "a report is held listing no process, signature, dropped-files row, mutex "
+            "name, file-operation row or registry row"
         )
     net = report.network
     rows = [*(net.domains if net else []), *(net.ips if net else []), *(net.urls if net else [])]

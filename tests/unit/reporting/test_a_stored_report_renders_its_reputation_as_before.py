@@ -162,11 +162,14 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # The STIX re-pinned when the indicator of the sample's similarity digests came to be described
 # by the digests its pattern holds (T-785), and run7's Markdown and HTML when the line under an
 # analyst's table the report reads no value of came to say so (T-780): the only changes.
+# local8's Markdown and HTML re-pinned when a held sandbox report's rows came to be counted by
+# the list each was read from (C49, C47): its two sandbox lines now count rows of the
+# dropped-files list. Those are the only changes; the STIX did not change.
 STORED_RENDERS = {
     "run7": ("05df01d163a3fc39", "28f9aefd57b6db32", "b15eda451166721a"),
     "run5": ("94143f0e9b75f230", "a50eee57a3b2250f", "da124711a6423447"),
     "run4": ("63ed48679c51edcf", "2497a07295eb3770", "c98bd74e8825a72a"),
-    "local8": ("142eb3d0937a8e74", "0c9d8845fc7107b4", "5ef0ca19f5e5ec42"),
+    "local8": ("ca52343edf814bae", "0525109f62801a10", "5ef0ca19f5e5ec42"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

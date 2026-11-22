@@ -571,7 +571,11 @@ class TestTheReport:
         # rows of its dotted name; the dump did not move. An empty reading of the flow rows
         # to an address records how many detonations' network views the rule read: the dump
         # of the rich and hostile shapes holds that number in each address row's empty
-        # reading, and the Markdown holds none. Those are the only changes.
+        # reading, and the Markdown holds none. Re-pinned when a held sandbox report's rows
+        # came to be counted by the list each was read from (C49, C47): the Markdown of the
+        # rich and hostile shapes, its two sandbox lines, now count one row of the
+        # dropped-files list and one mutex name; the dump did not move. Those are the only
+        # changes.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the
