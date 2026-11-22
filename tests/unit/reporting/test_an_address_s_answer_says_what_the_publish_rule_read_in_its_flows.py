@@ -23,6 +23,8 @@ import json
 import re
 from typing import Any
 
+import pytest
+
 from malspark.pipeline.triage_pack import _pcap
 from malspark.pipeline.validation import (
     _states_publish_state,
@@ -128,7 +130,11 @@ class TestWhatTheRuleRead:
             {"tcp": []},
             ({"conversations": [{"dst": ADDRESS, "dport": 80}]}, {"tool": "pcap_summary"}),
         )
-        assert said == RULE + "found no flow row to it"
+        # The view it read, and beside it the capture's conversation (T-842).
+        assert said == (
+            RULE + "read the sandbox's network view and found no flow row to it while the "
+            "capture recorded a conversation with it"
+        )
 
     def test_a_flow_that_names_a_process_by_image_only(self) -> None:
         assert _said({"tcp": [_flow(**{FLOW_PROCESS_KEY: "svchost.exe"})]}) == (
@@ -258,7 +264,10 @@ class TestAViewReadAsAPart:
             ({"tcp": [{"dst": "198.51.100.9"}], "tcp_total": 9}, {"args": {"offset": 0}}),
             ({"conversations": [{"dst": ADDRESS, "dport": 80}]}, {"tool": "pcap_summary"}),
         )
-        assert said == RULE + "read only part of the network view and found no flow row to it"
+        assert said == (
+            RULE + "read only part of the network view and found no flow row to it while the "
+            "capture recorded a conversation with it"
+        )
 
     def test_a_view_cut_as_text_was_read_as_a_part(self) -> None:
         view = {"tcp": [_flow(pid=2756)], "pad": "x" * 600}
@@ -409,7 +418,8 @@ class TestAReadingNeverTakenIsKeptApart:
         assert network is not None
         (row,) = [ip for ip in network.ips if ip.address == ADDRESS]
         assert address_flow_reason(row) == (
-            RULE + "read only part of the network view and found no flow row to it"
+            RULE + "read only part of the network view and found no flow row to it while the "
+            "capture recorded a conversation with it"
         )
         whole = network_from_ledger([*_ledger({"tcp": [_flow()]}), blank])
         assert whole is not None
@@ -480,6 +490,72 @@ def _stored_document(network: NetworkIOCs | None) -> dict[str, Any]:
     for ip in document["network"]["ips"]:
         ip.pop("flow_reading", None)
     return document
+
+
+_CAPTURE = ({"conversations": [{"dst": ADDRESS, "dport": 80}]}, {"tool": "pcap_summary"})
+_INBOUND = (
+    {"conversations": [{"dst": ADDRESS, "dport": 80, "inbound_only": True}]},
+    {"tool": "pcap_summary"},
+)
+_STRINGS = ({"iocs": [{"kind": "ip", "value": ADDRESS}]}, {"tool": "iocs_from_file"})
+_VIEW = {"tcp": [{"dst": "198.51.100.9", "dport": 443}]}
+
+
+def _part_capture(n: int) -> Any:
+    data, more = _CAPTURE
+    return _entry(data, n, **more).model_copy(update={"truncated": True})
+
+
+def _served_said(ledger: list[Any], document: dict[str, Any] | None = None) -> str:
+    if document is None:
+        document = _stored_document(network_from_ledger(ledger))
+    rows = with_flow_readings(document, ledger)["network"]["ips"]
+    (row,) = [r for r in rows if r["address"] == ADDRESS]
+    return address_flow_reason(NetworkIP.model_validate(row))
+
+
+class TestAServedReadingReadsTheCaptureAsTheBuildDoes:
+    """A stored report served with its job's entries reads the capture as the build does."""
+
+    def test_a_conversation_with_it_in_the_capture_is_said(self) -> None:
+        assert _served_said(_ledger(_VIEW, _CAPTURE)) == (
+            RULE + "read the sandbox's network view and found no flow row to it while the "
+            "capture recorded a conversation with it"
+        )
+
+    def test_with_no_capture_entry_only_the_view_is_said(self) -> None:
+        document = _stored_document(network_from_ledger(_ledger(_VIEW, _CAPTURE)))
+        assert _served_said(_ledger(_VIEW), document) == (
+            RULE + "read the sandbox's network view and found no flow row to it"
+        )
+
+    def test_a_conversation_only_from_it_is_no_conversation_with_it(self) -> None:
+        document = _stored_document(network_from_ledger(_ledger(_VIEW, _CAPTURE)))
+        assert _served_said(_ledger(_VIEW, _INBOUND), document) == (
+            RULE + "read the sandbox's network view and found no flow row to it"
+        )
+
+    @pytest.mark.parametrize(
+        "ledger",
+        [
+            pytest.param(lambda: _ledger(_VIEW, _CAPTURE), id="view-and-capture"),
+            pytest.param(lambda: _ledger({"tcp": []}, _CAPTURE), id="empty-view-and-capture"),
+            pytest.param(lambda: _ledger(_VIEW, _STRINGS), id="view-no-capture"),
+            pytest.param(lambda: _ledger(_VIEW, _INBOUND, _STRINGS), id="inbound-only"),
+            pytest.param(lambda: [*_ledger(_VIEW, _STRINGS), _part_capture(3)], id="part-capture"),
+            pytest.param(
+                lambda: _ledger(_VIEW, _CAPTURE, ({"tcp": [_flow(pid=2756)]}, {})),
+                id="flow-row",
+            ),
+        ],
+    )
+    def test_the_served_sentence_is_the_built_one(self, ledger: Any) -> None:
+        entries = ledger()
+        network = network_from_ledger(entries)
+        assert network is not None
+        (built,) = [ip for ip in network.ips if ip.address == ADDRESS]
+        assert built.flow_reading is not None
+        assert _served_said(entries) == address_flow_reason(built)
 
 
 class TestThePackWordsInTwoPasses:

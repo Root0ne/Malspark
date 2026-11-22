@@ -646,7 +646,13 @@ class FlowReading(BaseModel):
     in more than one part view and in no whole one, so ``unnamed`` is no count
     of their flows (left out of a dump where it is ``True``); ``part_views``
     the views of the run the rule read as a part. No process and no unnamed
-    row: no flow row to the address was read.
+    row: no flow row to the address was read. On such a reading,
+    ``views_read`` is how many detonations' network views the rule read,
+    whole or as a part (``0``: it read none), and ``capture_conversation``
+    whether a conversation of the job's capture the network block read is
+    with the address; both are left out of a dump where unset, so a reading
+    recorded before them reads as it was written, and no decision reads
+    either.
     """
 
     model_config = _STRICT_CONFIG
@@ -655,6 +661,8 @@ class FlowReading(BaseModel):
     unnamed: int = 0
     unnamed_counted: bool = Field(default=True, exclude_if=lambda value: value)
     part_views: list[FlowPartView] = Field(default_factory=list)
+    views_read: int | None = Field(default=None, exclude_if=lambda value: value is None)
+    capture_conversation: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
 class NetworkIP(BaseModel):

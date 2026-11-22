@@ -42,26 +42,26 @@ def _stored() -> dict[str, Any]:
     return json.loads(report.model_dump_json())
 
 
-def _entry_row() -> Any:
+def _entry_row(data: dict[str, Any] = FLOWS, tool: str = "sandbox_network", seq: int = 1) -> Any:
     return SimpleNamespace(
         id=uuid.uuid4(),
-        entry_id="ev_0001",
+        entry_id=f"ev_{seq:04d}",
         stage="analysis",
         agent="dynamic",
         server=None,
-        tool="sandbox_network",
+        tool=tool,
         ok=True,
         error=None,
         remediation=None,
         duration_ms=1,
         waited_ms=0,
-        seq=1,
+        seq=seq,
         args={},
         args_repaired=False,
         args_raw=None,
         model=None,
-        output=json.dumps(FLOWS),
-        structured=FLOWS,
+        output=json.dumps(data),
+        structured=data,
         function_ranges=None,
         truncated=False,
         chars_dropped=0,
@@ -93,6 +93,42 @@ async def test_the_words_come_from_the_job_s_entries_and_the_decision_stays() ->
     )
     assert _answer(served).startswith("no:") and _answer(stored).startswith("no:")
     assert "flow_reading" not in stored["network"]["ips"][0]
+
+
+OTHER_VIEW = {"tcp": [{"dst": "198.51.100.9", "dport": 443}]}
+CAPTURE = {"conversations": [{"dst": ADDRESS, "dport": 80}]}
+INBOUND = {"conversations": [{"dst": ADDRESS, "dport": 80, "inbound_only": True}]}
+VIEW_READ = "the publish rule read the sandbox's network view and found no flow row to it"
+
+
+@pytest.mark.parametrize(
+    ("capture", "said"),
+    [
+        (CAPTURE, VIEW_READ + " while the capture recorded a conversation with it"),
+        (INBOUND, VIEW_READ),
+        (None, VIEW_READ),
+    ],
+    ids=["conversation-with-it", "inbound-only", "no-capture-entry"],
+)
+@pytest.mark.asyncio
+async def test_the_capture_s_conversation_is_read_from_the_job_s_entries(
+    capture: dict[str, Any] | None, said: str
+) -> None:
+    rows = [_entry_row(OTHER_VIEW)]
+    if capture is not None:
+        rows.append(_entry_row(capture, tool="pcap_summary", seq=2))
+    found = MagicMock()
+    found.scalars.return_value.all.return_value = rows
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=found)
+    report = SimpleNamespace(malware_report=_stored(), job_id=uuid.uuid4())
+
+    served = await ReportService(db).served_document(report)
+
+    assert said in _answer(served)
+    assert _answer(served).startswith("no:")
+    if capture is not CAPTURE:
+        assert "capture" not in _answer(served)
 
 
 @pytest.mark.asyncio

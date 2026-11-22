@@ -189,6 +189,7 @@ class MalwareReportBuilder:
             confirmed_only_by_undeclared,
             emulation_from_ledger,
             exported_indicator_values,
+            reads_as_held,
             recovered_network_values,
             second_source_reads,
             stated_verdict,
@@ -385,6 +386,15 @@ class MalwareReportBuilder:
         report.tlp = report.front_matter.tlp
         report.version_history = _build_version_history(report.front_matter)
         report.consolidated_iocs = build_consolidated_iocs(report)
+        # A form row is exported as the text its entry holds: each read of
+        # another entry records its value as that entry spells it.
+        if report.second_source_reads:
+            report.second_source_reads = reads_as_held(
+                report.second_source_reads,
+                _form_row_values(report),
+                self.evidence_ledger,
+                self.evidence_corpus,
+            )
         # How many values only a cited entry of a tool that declares no kind
         # confirmed: such a tool is used at full strength, and the count says
         # what it alone put in the table, so an operator can declare it.
@@ -1427,11 +1437,15 @@ def _form_rows_said_as_text(
 
     A form row (``reporting.string_row_form``) is exported as text nothing in
     the run reads as a host, so its context carries no suspicion reason and no
-    generated-name score; everything else the block records stays. Every
-    other row is as written, and so is every row where the forms cannot be
-    read: each export then serves the row under its own kind as well.
+    generated-name score; everything else the block records stays. Its value
+    is each text its entries hold it as (``string_row_form.written_texts``),
+    one row per text, never the case the network block folded a host's to;
+    a text an earlier row of the same type already holds is not added again.
+    Every other row is as written, and so is every row where the forms
+    cannot be read: each export then serves the row under its own kind as
+    well.
     """
-    from malspark.reporting.string_row_form import exported_form, string_row_forms
+    from malspark.reporting.string_row_form import exported_form, string_row_forms, written_texts
 
     try:
         forms = string_row_forms(report, rows)
@@ -1440,14 +1454,34 @@ def _form_rows_said_as_text(
         return rows
     if not forms:
         return rows
+    held = {(row.type, row.value) for row in rows}
     out: list[ConsolidatedIOC] = []
     for row in rows:
+        if not exported_form(row, forms):
+            out.append(row)
+            continue
         record = named.get((row.type, row.value.lower()))
-        if record is not None and exported_form(row, forms):
+        if record is not None:
             context = _domain_context(record, word, as_a_host=False)
             row = row.model_copy(update={"context": context, "description": context})
-        out.append(row)
+        for text in written_texts(report, row):
+            if text != row.value and (row.type, text) in held:
+                continue
+            held.add((row.type, text))
+            out.append(row if text == row.value else row.model_copy(update={"value": text}))
     return out
+
+
+def _form_row_values(report: MalwareReport) -> list[str]:
+    """The values of the IOC table's form rows (``reporting.string_row_form``), none if unread."""
+    from malspark.reporting.string_row_form import exported_form, string_row_forms
+
+    try:
+        forms = string_row_forms(report, report.consolidated_iocs)
+    except Exception:  # noqa: BLE001 — the reads are kept as recorded
+        logger.exception("builder: the IOC table's form rows could not be read.")
+        return []
+    return [row.value for row in report.consolidated_iocs if exported_form(row, forms)]
 
 
 def with_record(rows: Iterable[ConsolidatedIOC], report: Any) -> list[ConsolidatedIOC]:

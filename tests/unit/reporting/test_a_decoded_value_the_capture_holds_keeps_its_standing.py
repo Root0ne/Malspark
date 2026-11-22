@@ -112,7 +112,10 @@ class TestADecodedAddressTheCaptureReached:
         )
         assert reason is not None
         assert "recovered by emulation (decoded strings), ev_0012" in reason
-        assert "the publish rule found no flow row to it" in reason
+        assert (
+            "the publish rule read no network view of the sandbox while the capture recorded a "
+            "conversation with it" in reason
+        )
 
     def test_under_a_benign_verdict_it_is_refused(self) -> None:
         report = _build([_strings(), _floss(ADDRESS), _capture(ADDRESS)], verdict="Benign")
@@ -120,8 +123,9 @@ class TestADecodedAddressTheCaptureReached:
         answer = _published(report, ADDRESS)
         # Each test that closed a way is its own part (T-782b).
         assert answer.startswith(
-            "no: the publish rule found no flow row to it, and no "
-            "model kept it as an indicator, and recovered by emulation (decoded strings), ev_0012"
+            "no: the publish rule read no network view of the sandbox while the capture recorded a "
+            "conversation with it, and no model kept it as an indicator, and recovered by "
+            "emulation (decoded strings), ev_0012"
         )
         assert "but the verdict is Benign" in answer
 

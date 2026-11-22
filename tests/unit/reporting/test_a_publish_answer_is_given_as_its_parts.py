@@ -1073,6 +1073,47 @@ class TestEveryBuildPathCarriesTheParts:
         assert "reporting/builder.py" in writers, writers
 
 
+# The stored runs whose restatements the total below counts. Every stored run found is
+# swept for failures; the total is pinned over these alone, so a run added to the folder
+# does not move it, and one of these missing on the machine is said so.
+RESTATED_RUNS = (
+    "7za-r1/1",
+    "gentlemen-r1/1",
+    "haiku10",
+    "haiku11",
+    "haiku12",
+    "haiku13",
+    "haiku2",
+    "haiku3",
+    "haiku4",
+    "haiku5",
+    "haiku6",
+    "haiku7",
+    "haiku7-attempt1-falsestop",
+    "haiku8",
+    "haiku9",
+    "hk14-ref-haiku",
+    "hk20-e1/1",
+    "hk20-e1b/1",
+    "hk20-e1b/2",
+    "local3",
+    "local4",
+    "local6",
+    "local8",
+    "lockbit5-r1/1",
+    "plink-r1/1",
+    "plink-r2/1",
+    "plink-r3/1",
+    "plink-r4/1",
+    "run",
+    "run3",
+    "run4",
+    "run5",
+    "run7",
+)
+RESTATED_TOTAL = 2235
+
+
 def test_every_stored_refused_value_s_state_restated_word_for_word_passes() -> None:
     from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before import (
         _benchmark,
@@ -1089,10 +1130,11 @@ def test_every_stored_refused_value_s_state_restated_word_for_word_passes() -> N
     )
     if not runs:
         pytest.skip("the stored benchmark runs are not on this machine")
-    restated = own = 0
+    counted = 0
     failing: set[tuple[str, str, str]] = set()
     for run in runs:
         name = run.relative_to(root).as_posix()
+        restated = own = 0
         report = MalwareReport.model_validate(json.loads((run / "report.json").read_text()))
         seen: set[tuple[str, str]] = set()
         for row in builder.ioc_table(report, raise_unread=True):
@@ -1120,6 +1162,12 @@ def test_every_stored_refused_value_s_state_restated_word_for_word_passes() -> N
                 )
                 if any(value == wanted for _kind, value, _state in found):
                     failing.add((name, *key))
+        if name in RESTATED_RUNS:
+            counted += restated + 3 * own
 
-    assert restated + 3 * own == 2235, (restated, own)
     assert not failing, sorted(failing)
+    found_names = {run.relative_to(root).as_posix() for run in runs}
+    missing = [name for name in RESTATED_RUNS if name not in found_names]
+    if missing:
+        pytest.skip(f"the total is not read: these stored runs are not on this machine: {missing}")
+    assert counted == RESTATED_TOTAL, counted

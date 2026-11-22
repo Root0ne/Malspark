@@ -9343,6 +9343,64 @@ def _states_publish_state(after: str, answer: str) -> bool:
     )
 
 
+def _restated_state_end(plain: str, at: int, state: str) -> int | None:
+    """Where the bracket right after a value ends, when it restates the value's state word for word.
+
+    ``plain`` is the sentence as :func:`_unstated_values` reads it, ``at`` the
+    end of the value in it and ``state`` what refused the value
+    (``publish_parts.answer_state``). The bracket opens after nothing but
+    spaces and is read to the end of its own bracket, at any depth. It
+    restates the state when what it holds, under the state's own name
+    (``publish state:``) or not, is the state or the state without its leading
+    ``no:``, word for word (case and spacing aside). ``None`` for anything else.
+    """
+    index = at
+    while index < len(plain) and plain[index] == " ":
+        index += 1
+    if index >= len(plain) or plain[index] not in "([":
+        return None
+    begin = index + 1
+    depth = 0
+    for index in range(begin, len(plain)):
+        char = plain[index]
+        if char in "([":
+            depth += 1
+        elif char in ")]":
+            if depth == 0:
+                break
+            depth -= 1
+    else:
+        return None
+    held = " ".join(plain[begin:index].split())
+    named = _NAMED_PUBLISH_STATE_RE.match(held)
+    if named is not None:
+        held = held[named.end() :]
+    whole = " ".join(_refanged(state).lower().split())
+    reason = whole[3:].lstrip() if whole.startswith("no:") else None
+    return index + 1 if held == whole or (reason and held == reason) else None
+
+
+def _restated_whole(
+    plain: str, places: Sequence[tuple[int, str, str]], position: int, value: str, answer: str
+) -> bool:
+    """Whether the value at ``places[position]`` states its publish state once the
+    state it restates word for word is read whole.
+
+    Only where a value the restated state names cuts the value's text short:
+    the text then runs to the next place after the bracket, and is read as
+    any value's text is (:func:`_states_publish_state`).
+    """
+    from malspark.reporting.publish_parts import answer_state
+
+    at = places[position][0] + len(value)
+    end = places[position + 1][0] if position + 1 < len(places) else len(plain)
+    close = _restated_state_end(plain, at, str(answer_state(answer)))
+    if close is None or close <= end:
+        return False
+    later = next((start for start, _kind, _value in places[position + 1 :] if start >= close), None)
+    return _states_publish_state(plain[at : len(plain) if later is None else later], answer)
+
+
 def _prose_of_a_section(payload: Any) -> list[str]:
     """A composer answer's prose, in order: a body or a text, then each step's action.
 
@@ -9376,7 +9434,13 @@ def _unstated_values(
 
     The state is what refused the value: every refusing part of its answer
     (``publish_parts.answer_state``), or, for an answer read without its parts,
-    its first clause."""
+    its first clause.
+
+    A value's text runs to the next place a value is written. Where the bracket
+    right after the value restates its state word for word
+    (:func:`_restated_state_end`) and a value the state names cut that text
+    short, the text runs on to the next place after the bracket: the state is
+    read whole, whatever other values it names."""
     from malspark.agents._indicator_denylists import whole_value_starts
     from malspark.extractors.network_extractor import is_well_known_benign_host
     from malspark.reporting.publish_parts import answer_state
@@ -9417,6 +9481,8 @@ def _unstated_values(
         if start >= 0 and _states_publish_state(
             plain[start + len(value) : max(end, start)], answer
         ):
+            continue
+        if start >= 0 and _restated_whole(plain, places, position, value, answer):
             continue
         if (kind, value) in weighed:
             continue
