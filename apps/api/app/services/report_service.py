@@ -14,6 +14,7 @@ from malspark.reporting.models import ConsolidatedIOC, DetectionRule
 from malspark.reporting.renderers.stix_renderer import SAMPLE_DIGESTS, publishes, stated_verdict
 from malspark.reporting.run_diff import RunRecord, diff_runs
 from malspark.reporting.string_row_form import exported_form, string_row_forms
+from malspark.schemas.judgement import BENIGN_INDICATOR_TYPE, UNKNOWN_INDICATOR_TYPE
 from malspark.schemas.stix_models import tlp_name, with_current_property_names
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -153,11 +154,13 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     no row of the table holds is listed unpublished with its refusal
     (``builder.full_ioc_list``), so the default list is the table's published
     rows alone.
-    A domain or an address keeps the network block's suspicion flag and
-    reason. A row of the file's strings that nothing in the run reads as its
-    kind (a form row, ``reporting.string_row_form``) is served as its form:
-    the form as its ``kind`` (which a ``kind`` filter reads), the type §9
-    prints as its ``type``, and no suspicion flag or note. A stored report
+    ``is_suspicious`` is read from the row's own publication, the record its
+    ``published`` and its export type come from (:func:`_claims_activity`).
+    A domain or an address keeps the network block's reason as its note. A
+    row of the file's strings that nothing in the run reads as its kind (a
+    form row, ``reporting.string_row_form``) is served as its form: the form
+    as its ``kind`` (which a ``kind`` filter reads), the type §9 prints as
+    its ``type``, and no note. A stored report
     the model cannot read serves the rows it stored.
     The sample's own digests, which the router established and no rule
     decides, are served even when the table cannot be read at all. A
@@ -191,15 +194,15 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
             continue
         if row_kind in _ASKED_FOR_BY_NAME and kind != row_kind:
             continue
-        # A form row is no domain, so the network block's flag and reason,
-        # read of it as one, do not stand on it.
+        # A form row is no domain, so the network block's reason, read of it
+        # as one, does not stand on it.
         listed = {} if formed else network.get((row_kind, row.value.strip().lower().rstrip(".")))
         listed = listed or {}
         out.append(
             {
                 "kind": served_kind,
                 "value": _feed_value(row_kind, row.type, row.value),
-                "is_suspicious": bool(listed.get("is_suspicious")),
+                "is_suspicious": _claims_activity(row),
                 # An analyst's mutex, path, key, task or service carries the
                 # rule's refusal as its note, as it always has.
                 "notes": listed.get("reason")
@@ -224,6 +227,23 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
             }
         )
     return out
+
+
+# The export types that claim no activity: the sample's own word under a
+# Benign verdict, and the vocabulary's word for a claim nobody is making.
+_NO_ACTIVITY_TYPES = frozenset({BENIGN_INDICATOR_TYPE, UNKNOWN_INDICATOR_TYPE})
+
+
+def _claims_activity(row: ConsolidatedIOC) -> bool:
+    """Whether the table publishes ``row`` under a type that claims activity.
+
+    Read from the one record that decides the row's publication (its publish
+    answer and the type the table set with it), so a published row is never
+    served as not suspicious beside its own publication, and two rows of one
+    host are never told apart by having been read from different places. A
+    row the table withholds is not suspicious, whatever another block flags.
+    """
+    return publishes(row.published) and row.indicator_type not in _NO_ACTIVITY_TYPES
 
 
 def _forms(report: Any) -> dict[tuple[str, str], str]:
