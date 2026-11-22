@@ -950,6 +950,9 @@ NOT_PRINTED = frozenset(
         "reputation[].first_seen",
         "reputation[].labels[]",
         "reputation[].link",
+        # The keys a record's counts were read under: the ledger's pack line
+        # prints them; the report holds none (``ReputationAnswer``).
+        "reputation[].names.key",
         "reputation[].summary",
         "reputation[].tool",
         "second_source_reads[].entry",

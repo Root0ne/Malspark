@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -87,6 +87,15 @@ class ReputationRecord(BaseModel):
     whole seconds since the epoch), ``link`` a URL the answer carried, and
     ``summary`` the service's own sentence. A field the answer did not give
     is ``None`` or empty: a record never holds a value its answer did not.
+
+    Stored beside the values when the record is written, and read by no
+    decision: ``names``, per count field (``stats``, ``malicious``,
+    ``suspicious``, ``engines``, ``total``), the keys of the answer it was
+    read under (:func:`key_path`), held only where every count of the record
+    was read under a key; ``unread``, how many members of the counts object
+    are no whole number and were not read; ``not_whole``, the count fields
+    whose key held a value that is no whole number. A record written before
+    them holds none of the three.
     """
 
     model_config = ConfigDict(frozen=True, extra="ignore")
@@ -104,6 +113,9 @@ class ReputationRecord(BaseModel):
     last_seen: str | None = None
     link: str | None = None
     summary: str = ""
+    names: dict[str, str] = Field(default_factory=dict)
+    unread: int | None = None
+    not_whole: list[str] = Field(default_factory=list)
 
     def says_something(self) -> bool:
         """Whether the answer established anything: a count, a label or the service's words."""
@@ -126,6 +138,9 @@ class ReputationRecord(BaseModel):
         return {"v": RECORD_VERSION, **{k: v for k, v in dumped.items() if k != "v"}}
 
 
+# The record's fields stored for the ledger's lines alone: the report carries
+# none of them (``reporting.models.ReputationAnswer``).
+LEDGER_ONLY = ("names", "unread", "not_whole")
 # The words the counts line uses as labels of its own (:func:`counts_line`).
 COUNT_LABELS = frozenset({"malicious", "suspicious", "engines", "total"})
 _PLAIN_NAME = re.compile(r"[A-Za-z0-9_.-]+")
@@ -144,11 +159,35 @@ def member_name(name: str, labels: Iterable[str] = COUNT_LABELS) -> str:
     return json.dumps(name, ensure_ascii=False)
 
 
+_KEY_TOKEN = re.compile(r"[A-Za-z0-9_-]+")
+# The words a count is said with whose value the record's key held as no whole number.
+NOT_WHOLE = "not read as a whole number"
+
+
+def key_path(keys: Iterable[str | int]) -> str:
+    """The keys of an answer a value was read under, as a line prints them.
+
+    Each key as written where it is a plain token (letters, digits, ``_``,
+    ``-``), otherwise as a quoted JSON string, joined by ``.``; an item of a
+    list by its place, in brackets (``data[0].stats``). ``""`` for no key.
+    """
+    out = ""
+    for key in keys:
+        if isinstance(key, int):
+            out += f"[{key}]"
+            continue
+        word = key if _KEY_TOKEN.fullmatch(key) else json.dumps(key, ensure_ascii=False)
+        out = f"{out}.{word}" if out else word
+    return out
+
+
 def counts_line(
     record: ReputationRecord,
     *,
     unnamed: str = "Reputation lookup",
     written: Callable[[str], str] = str,
+    every_member: bool = False,
+    between: Sequence[str] = (),
 ) -> str:
     """The counts a record holds, as the platform prints them, or ``""`` when it holds none.
 
@@ -168,42 +207,158 @@ def counts_line(
     that name, whose figure it then is (``suspicious`` printed in its
     place); where the two differ, or the record has no field of that name,
     the member is printed quoted, also a zero. ``suspicious`` the object
-    does not hold is printed where it is not zero. Never a fraction and no
+    does not hold is printed where it is not zero. A count field whose key
+    held a value that is no whole number (``not_whole``: ``2.5``, a boolean,
+    a digit string that does not convert) is said to be one where the line
+    has a count to state, never as not counted. Never a fraction and no
     "of": the line names whose counts they are and claims no tally is whole.
     ``written`` writes the service's name and each member's name, the
     answer's words, for the surface.
+
+    ``every_member`` is the line a model reads, which a later cut may
+    shorten: every member, zeros too, with the flagged count and the engine
+    count first and the members last, so a cut loses members and never
+    those two; ``between`` (the caller's words about the same answer, its
+    labels) stands after the record's own figures and before the members. A record that
+    stores the keys its counts were read under (``names``) is then said
+    under them (:func:`_read_under_keys`); one that stores none, every
+    record written before they were, is said under the record's own names,
+    as the record's.
     """
+    if every_member and _keyed(record):
+        return _read_under_keys(record, unnamed=unnamed, written=written, between=between)
     fields = {"malicious": record.malicious, "suspicious": record.suspicious}
     members: list[str] = []
     for name, value in record.stats.items():
         field_value = fields.get(name)
         if name in fields and value == field_value:
-            if name == "suspicious" and value:
+            if name == "suspicious" and (value or every_member):
                 members.append(f"suspicious {value}")
             continue
-        if value != 0 or name in fields:
+        if value != 0 or name in fields or every_member:
             members.append(f"{written(member_name(name))} {value}")
     held = record.stats.get("suspicious")
     if (
         record.suspicious is not None
         and held != record.suspicious
-        and (record.suspicious or held is not None)
+        and (record.suspicious or held is not None or every_member)
     ):
         members.append(f"suspicious {record.suspicious}")
-    beside: list[str] = []
+    engines: list[str] = []
     if record.engines is not None:
-        beside.append(f"engines {record.engines}")
+        engines.append(f"engines {record.engines}")
+    total: list[str] = []
     summed = bool(record.stats) and record.total == sum(record.stats.values())
     if record.total is not None and not summed:
-        beside.append(f"total {record.total}")
-    if not members and not beside and record.malicious is None:
+        total.append(f"total {record.total}")
+    if not members and not engines and not total and record.malicious is None:
         return ""
+    unreadable = [name for name in record.not_whole if name not in ("malicious", "engines")]
+    members.extend(f"{written(member_name(name, ()))} {NOT_WHOLE}" for name in unreadable)
+    if record.engines is None and "engines" in record.not_whole:
+        engines.append(f"engines {NOT_WHOLE}")
+    flagged: list[str] = []
     if record.malicious is not None:
-        members.insert(0, f"malicious {record.malicious}")
+        flagged.append(f"malicious {record.malicious}")
+    elif "malicious" in record.not_whole:
+        flagged.append(f"malicious {NOT_WHOLE}")
     elif "malicious" not in record.stats:
-        members.insert(0, "malicious not counted")
-    said = "; ".join([", ".join(members), *beside])
+        flagged.append("malicious not counted")
+    if every_member:
+        parts = [*flagged, *engines, *total, *between, ", ".join(members)]
+        said = "; ".join(part for part in parts if part)
+    else:
+        said = "; ".join([", ".join([*flagged, *members]), *engines, *total])
     return f"{written(record.service or unnamed)}, counts in the lookup's record: {said}"
+
+
+def _keyed(record: ReputationRecord) -> bool:
+    """Whether the record stores the key of every count it holds (``names``).
+
+    A total with no key is the reader's sum of the members, never printed.
+    """
+    names = record.names
+    if not names:
+        return False
+    held = [
+        name
+        for name, value in (
+            ("malicious", record.malicious),
+            ("suspicious", record.suspicious),
+            ("engines", record.engines),
+        )
+        if value is not None
+    ]
+    held.extend(record.not_whole)
+    if record.stats:
+        held.append("stats")
+    if record.total is not None and not (
+        names.get("total") or (record.stats and record.total == sum(record.stats.values()))
+    ):
+        return False
+    return all(names.get(name) for name in held)
+
+
+def _read_under_keys(
+    record: ReputationRecord,
+    *,
+    unnamed: str,
+    written: Callable[[str], str],
+    between: Sequence[str] = (),
+) -> str:
+    """A record's counts under the keys of the answer they were read under (``names``).
+
+    The flagged count first under its keys, or that none was read; the engine
+    count; a suspicious count and a total read under keys of their own (a
+    total the reader summed has no key and is never printed); the caller's
+    ``between``; then every member of the counts object, zeros too, said to
+    be read from it, the one
+    the flagged count is left out where it is that member's figure; then how
+    many of its members are no whole number and were not read. A count whose
+    key held a value that is no whole number is said to be one.
+    """
+    names = record.names
+    counts = names.get("stats", "")
+
+    def member_of_counts(field: str) -> str | None:
+        """The member of the counts object ``field`` was read as, if it was."""
+        name = names.get(field, "")
+        for key in record.stats:
+            if counts and name == f"{counts}.{key_path([key])}":
+                return key
+        return None
+
+    def said(field: str, value: int | None) -> str:
+        if value is not None:
+            return f"{written(names[field])} {value}"
+        if field in record.not_whole:
+            return f"{written(names[field])} {NOT_WHOLE}"
+        return ""
+
+    flagged_member = member_of_counts("malicious")
+    parts = [said("malicious", record.malicious) or "no flagged count read"]
+    parts.append(said("engines", record.engines))
+    suspicious_member = member_of_counts("suspicious")
+    if suspicious_member is None or record.stats.get(suspicious_member) != record.suspicious:
+        parts.append(said("suspicious", record.suspicious))
+    if "total" in names:
+        parts.append(said("total", record.total))
+    parts.extend(between)
+    members = [
+        f"{written(member_name(key, ()))} {value}"
+        for key, value in record.stats.items()
+        if not (key == flagged_member and value == record.malicious)
+    ]
+    if members:
+        parts.append(f"counts read from {written(counts)}: {', '.join(members)}")
+    if record.unread:
+        plural = record.unread != 1
+        parts.append(
+            f"{record.unread} member{'s' if plural else ''} of {written(counts)} "
+            f"not read as {'whole numbers' if plural else 'a whole number'}"
+        )
+    said_parts = "; ".join(part for part in parts if part)
+    return f"{written(record.service or unnamed)}, read from the lookup's answer: {said_parts}"
 
 
 def is_lookup(facts: ToolFacts | None) -> bool:
@@ -373,14 +528,50 @@ def read_answer(
     malicious = _first_whole(document, declared.malicious) if declared.malicious else None
     suspicious = _first_whole(document, declared.suspicious) if declared.suspicious else None
     total = _first_whole(document, declared.total) if declared.total else None
+    engines = _first_whole(document, declared.engines) if declared.engines else None
+    # The keys each count was read under, before a sum or the text adds one.
+    keyed = {
+        name: path
+        for name, path, value in (
+            ("malicious", declared.malicious, malicious),
+            ("suspicious", declared.suspicious, suspicious),
+            ("total", declared.total, total),
+            ("engines", declared.engines, engines),
+        )
+        if value is not None
+    }
+    not_whole = [
+        name
+        for name, path in (
+            ("malicious", declared.malicious),
+            ("suspicious", declared.suspicious),
+            ("total", declared.total),
+            ("engines", declared.engines),
+        )
+        if name not in keyed and path and _holds_other_than_whole(document, path)
+    ]
+    from_text = False
     if total is None and stats:
         total = sum(stats.values())
     if malicious is None and declared.text_patterns:
         counted = declared.counts_in_text(str(output or ""))
         if counted is not None:
+            from_text = True
             malicious, said_total, said_suspicious = counted
             total = total if total is not None else said_total
             suspicious = suspicious if suspicious is not None else said_suspicious
+    names: dict[str, str] = {}
+    unread: int | None = None
+    if not from_text and (keyed or not_whole or stats):
+        paths = {name: getattr(declared, name) for name in (*keyed, *not_whole)}
+        if isinstance(stats_found, Mapping):
+            paths["stats"] = declared.stats
+        names = {name: _declared_keys(path) for name, path in paths.items()}
+        if all(names.values()):
+            if isinstance(stats_found, Mapping):
+                unread = len(stats_found) - len(stats)
+        else:
+            names = {}
     if declared.summary and document is not None:
         summary = next(iter(_texts(document, [declared.summary])), "")
     else:
@@ -392,7 +583,7 @@ def read_answer(
         malicious=malicious,
         suspicious=suspicious,
         total=total,
-        engines=_first_whole(document, declared.engines) if declared.engines else None,
+        engines=engines,
         stats=stats,
         labels=_once(_texts(document, declared.labels)),
         detections=_detections(document, declared.detections),
@@ -400,7 +591,35 @@ def read_answer(
         last_seen=_first_moment(document, declared.last_seen),
         link=_first_link(document, declared.link),
         summary=summary,
+        names=names,
+        unread=unread,
+        not_whole=not_whole,
     )
+
+
+def _holds_other_than_whole(document: Any, path: str) -> bool:
+    """Whether ``path`` names a value in ``document`` that is no whole number and not null."""
+    from malspark.core.tool_declarations import select
+
+    return any(found is not None and _whole(found) is None for found in select(document, path))
+
+
+def _declared_keys(path: str) -> str:
+    """The keys a declared path ends in, after its last wildcard or place, as :func:`key_path`.
+
+    The keys any value the path names was read under: a ``*``, a ``**`` or a
+    segment of digits (a list's place or a key, which the path does not say)
+    leaves only the keys after it. ``""`` where none follows.
+    """
+    from malspark.core.tool_declarations import EVERY, parse_path
+
+    keys: list[str] = []
+    for segment in parse_path(path):
+        if isinstance(segment, str) and segment != EVERY and not segment.isdigit():
+            keys.append(segment)
+        else:
+            keys = []
+    return key_path(keys)
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +684,8 @@ class _Node:
     value: Any
     depth: int
     parent: Any
+    # The keys (and a list item's place) from the answer's top to this member.
+    path: tuple[str | int, ...] = ()
 
 
 def _shape_nodes(document: Any) -> list[_Node]:
@@ -475,10 +696,10 @@ def _shape_nodes(document: Any) -> list[_Node]:
     is linear in the answer and bounded.
     """
     out: list[_Node] = []
-    queue: list[tuple[Any, int]] = [(document, 0)]
+    queue: list[tuple[Any, int, tuple[str | int, ...]]] = [(document, 0, ())]
     at = 0
     while at < len(queue) and len(out) < SHAPE_NODES:
-        value, depth = queue[at]
+        value, depth, path = queue[at]
         at += 1
         if depth >= SHAPE_DEPTH:
             continue
@@ -486,15 +707,16 @@ def _shape_nodes(document: Any) -> list[_Node]:
             for key, member in value.items():
                 if len(out) >= SHAPE_NODES:
                     break
-                out.append(_Node(str(key), member, depth + 1, value))
+                keyed = (*path, str(key))
+                out.append(_Node(str(key), member, depth + 1, value, keyed))
                 if isinstance(member, Mapping | list) and len(queue) < SHAPE_NODES:
-                    queue.append((member, depth + 1))
+                    queue.append((member, depth + 1, keyed))
         elif isinstance(value, list):
-            for item in value:
+            for place, item in enumerate(value):
                 if len(queue) >= SHAPE_NODES:
                     break
                 if isinstance(item, Mapping | list):
-                    queue.append((item, depth))
+                    queue.append((item, depth, (*path, place)))
     return out
 
 
@@ -564,6 +786,10 @@ class ShapeReading:
     first_seen: str | None = None
     last_seen: str | None = None
     link: str | None = None
+    # The keys each count was read under (``ReputationRecord.names``), and
+    # how many members of the counts object are no whole number.
+    names: dict[str, str] = field(default_factory=dict)
+    unread: int | None = None
 
 
 def read_shape(document: Any) -> ShapeReading:
@@ -614,6 +840,7 @@ def read_shape(document: Any) -> ShapeReading:
                     tally, tally_node = rank, node
         if out.engines is None and "engines" in words and _whole(node.value) is not None:
             out.engines = _whole(node.value)
+            out.names["engines"] = key_path(node.path)
         if not out.detections and "detections" in words and isinstance(node.value, list):
             out.detections = [
                 " ".join(i.split()) for i in node.value if isinstance(i, str) and i.strip()
@@ -640,11 +867,15 @@ def read_shape(document: Any) -> ShapeReading:
     if tally_node is not None:
         held = tally_node.value
         out.stats = {str(k): v for k, v in held.items() if _whole(v) is not None}
-        out.malicious = next((_whole(held.get(k)) for k in _MALICIOUS_KEYS if k in held), None)
-        out.suspicious = next(
-            (_whole(held.get(k)) for k in _SUSPICIOUS_KEYS if _whole(held.get(k)) is not None),
-            None,
-        )
+        out.unread = len(held) - len(out.stats)
+        flagged = next(k for k in _MALICIOUS_KEYS if k in held)
+        out.malicious = _whole(held[flagged])
+        out.names["stats"] = key_path(tally_node.path)
+        out.names["malicious"] = key_path((*tally_node.path, flagged))
+        suspicious = next((k for k in _SUSPICIOUS_KEYS if _whole(held.get(k)) is not None), None)
+        if suspicious is not None:
+            out.suspicious = _whole(held[suspicious])
+            out.names["suspicious"] = key_path((*tally_node.path, suspicious))
         for around in (held, tally_node.parent):
             named = next(
                 (around[k].strip() for k in _SERVICE_KEYS if isinstance(around.get(k), str)),
@@ -703,6 +934,8 @@ def _read_by_shape(
         last_seen=shape.last_seen,
         link=shape.link,
         summary="" if document is not None else str(output or "").strip(),
+        names=shape.names,
+        unread=shape.unread,
     )
 
 

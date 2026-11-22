@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 from malspark.analysis.run_summary import NOT_APPLICABLE
 from malspark.analysis.technique_ids import TECHNIQUE_WORD_RE
 from malspark.core.logger import logger
-from malspark.core.reputation import reputation_of
+from malspark.core.reputation import LEDGER_ONLY, reputation_of
 from malspark.extractors.attribution import build_family_attribution
 from malspark.extractors.capability_matrix import build_capability_matrix, unmapped_behaviours
 from malspark.memory.attck_defense import defense_for, release_for
@@ -725,7 +725,8 @@ def _reputation_answers(ledger: list[LedgerEntry]) -> list[ReputationAnswer]:
     for entry in ledger:
         answer = reputation_of(entry)
         if answer is not None and answer.says_something():
-            out.append(ReputationAnswer(entry_id=entry.id, tool=entry.tool, **answer.model_dump()))
+            held = answer.model_dump(exclude=set(LEDGER_ONLY))
+            out.append(ReputationAnswer(entry_id=entry.id, tool=entry.tool, **held))
     return out
 
 

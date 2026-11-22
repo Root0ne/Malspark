@@ -198,7 +198,19 @@ def test_a_rest_shaped_answer_reads_the_labels_dates_and_counts_the_former_paths
     output = json.dumps(REST_ANSWER)
     old = read_answer(former, output=output)
     new = read_answer(read, output=output, server="VirusTotal MCP")
-    assert new == old
+    assert new.model_dump(exclude={"names"}) == old.model_dump(exclude={"names"})
+    # Each reader names the keys it read a count under: the shape reader every
+    # key from the answer's top, a declared path the keys after its last wildcard.
+    assert new.names == {
+        "stats": "data.attributes.last_analysis_stats",
+        "malicious": "data.attributes.last_analysis_stats.malicious",
+        "suspicious": "data.attributes.last_analysis_stats.suspicious",
+    }
+    assert old.names == {
+        "stats": "last_analysis_stats",
+        "malicious": "last_analysis_stats.malicious",
+        "suspicious": "last_analysis_stats.suspicious",
+    }
     assert new.labels == ["trojan.latrodectus/icedid", "latrodectus", "icedid", "trojan"]
     assert (new.first_seen, new.last_seen) == ("2024-05-31T00:00:00Z", "2024-08-23T08:03:36Z")
     assert (new.malicious, new.suspicious, new.total) == (52, 1, 69)

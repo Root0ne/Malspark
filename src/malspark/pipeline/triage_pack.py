@@ -167,7 +167,12 @@ from malspark.core.pack_steps import (
     template_placeholders,
     written_for,
 )
-from malspark.core.reputation import ReputationRecord, is_lookup_entry, reputation_of
+from malspark.core.reputation import (
+    ReputationRecord,
+    counts_line,
+    is_lookup_entry,
+    reputation_of,
+)
 from malspark.core.tool_declarations import PACK, ToolFacts, first, select
 from malspark.pipeline.conditions import TriageFacts, pack_state, rule_match_hits
 from malspark.pipeline.sandbox_status import (
@@ -6274,28 +6279,52 @@ def _reputation_facts(entry: LedgerEntry, answer: ReputationRecord) -> str:
 
     The record is the answer as its lookup's declaration read it
     (``core.reputation``), from any server. A structured answer that gave its
-    engine counts is stated in words with its labels and detection labels; any
-    other answer is the service's own text, with the count its declared
-    patterns found in it. Neither is graded here.
+    engine counts, or one whose text is gone, is stated by the one wording of
+    a record's counts (``core.reputation.counts_line``: the flagged and the
+    engine count first, then its labels and detection labels, then every
+    member of its counts object, so the run-state block's cut loses members
+    first); any other answer is the service's own text, with the count its
+    declared patterns found in it. Neither is graded here.
     """
     service = answer.service or str(entry.server or REPUTATION_STEP)
     if (isinstance(entry.structured, dict | list) or not entry.output) and answer.total is not None:
-        # In words, never as a fraction. "0/75 malicious" is a score shape a
-        # model reads either way round: a benign control's summary turned
-        # it into "verified clean by 75/75 AV engines".
-        parts = [
-            f"{service}: {int(answer.malicious or 0)} of {answer.total} engines flag it "
-            "as malicious"
-        ]
-        if answer.labels:
-            parts.append(f"labels {_sample_names(answer.labels)}")
-        detections = _detection_labels(answer.detections)
-        if detections:
-            parts.append(detections)
-        return ", ".join(parts)
+        counted = _reputation_counts(entry, answer)
+        if counted:
+            return counted
     text = _sample(_one_line(entry.output or answer.summary))
+    if not text:
+        # The answer's text is gone (a budget dropped it) or was empty: the
+        # record, read from the whole answer, says what it held.
+        counted = _reputation_counts(entry, answer)
+        if counted:
+            return counted
     count = answer.malicious
     return f"{service} {count} malicious ({text})" if count is not None else f"{service}: {text}"
+
+
+def _reputation_counts(entry: LedgerEntry, answer: ReputationRecord) -> str:
+    """The record's counts in words with its labels, never as a fraction, or ``""``.
+
+    "0/75 malicious" is a score shape a model reads either way round: a benign
+    control's summary turned it into "verified clean by 75/75 AV engines".
+    So no "of" and no sum (``core.reputation.counts_line``): each count under
+    the key it was read under, or, for a record that stores no keys, under the
+    record's own name, said to be the record's. The service's name and the
+    answer's keys are written as any answer's text in the pack.
+    """
+    labels: list[str] = []
+    if answer.labels:
+        labels.append(f"labels {_sample_names(answer.labels)}")
+    detections = _detection_labels(answer.detections)
+    if detections:
+        labels.append(detections)
+    return counts_line(
+        answer,
+        unnamed=str(entry.server or REPUTATION_STEP),
+        written=_sample,
+        every_member=True,
+        between=labels,
+    )
 
 
 def _detection_labels(labels: list[str]) -> str:

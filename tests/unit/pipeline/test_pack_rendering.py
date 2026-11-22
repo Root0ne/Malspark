@@ -186,8 +186,9 @@ class TestTheLines:
     def test_the_virustotal_answer_is_read_for_its_counts_and_labels(self) -> None:
         entry = _entry("get_file_report", VT_ANSWER, server="virustotal")
         assert render_pack([entry], 0) == (
-            "[ev_0001] reputation: VirusTotal: 31 of 75 engines flag it as malicious, "
-            "labels trojan.filisto/agent, Filisto"
+            "[ev_0001] reputation: VirusTotal, read from the lookup's answer: "
+            "last_analysis_stats.malicious 31; labels trojan.filisto/agent, Filisto; "
+            "counts read from last_analysis_stats: undetected 40, harmless 4"
         )
 
     def test_no_detection_is_said_in_words_and_not_as_a_fraction(self) -> None:
@@ -201,8 +202,13 @@ class TestTheLines:
 
         line = render_pack([entry], 0)
 
-        assert line == "[ev_0001] reputation: VirusTotal: 0 of 75 engines flag it as malicious"
-        assert "/75" not in line
+        # Each count under the key it was read under; their sum is never printed.
+        assert line == (
+            "[ev_0001] reputation: VirusTotal, read from the lookup's answer: "
+            "last_analysis_stats.malicious 0; "
+            "counts read from last_analysis_stats: undetected 71, type-unsupported 4"
+        )
+        assert "75" not in line
 
     def test_the_detection_labels_the_answer_carries_are_stated_with_their_counts(
         self,
@@ -219,7 +225,8 @@ class TestTheLines:
 
         # With no bound every distinct label is on the line.
         assert line.startswith(
-            "[ev_0017] reputation: VirusTotal: 52 of 75 engines flag it as malicious, "
+            "[ev_0017] reputation: VirusTotal, read from the lookup's answer: "
+            "last_analysis_stats.malicious 52; coverage.engines 75; "
             "52 detection labels, "
             "47 distinct (engines per label, most first): "
             "Gen:Variant.Ulise.482338 ×4, Trojan ( 005ef6721 ) ×2, Troj/Loader-CB ×2, "
@@ -227,11 +234,17 @@ class TestTheLines:
         )
         assert "more distinct labels" not in line
         assert len(line.split("most first): ", 1)[1].split(" ×")) - 1 == 47
+        # The members of the counts object come last, so a cut loses them first.
+        members = (
+            "; counts read from last_analysis_stats: suspicious 0, undetected 15, harmless 0, "
+            "timeout 1, confirmed-timeout 0, failure 3, type-unsupported 4"
+        )
+        assert line.endswith(members)
 
         # Within a room that cannot hold them all, as many as fit, the rest counted.
         bounded = render_pack([entry], len(line) // 2)
         assert len(bounded) <= len(line) // 2
-        assert bounded.endswith("more distinct labels)")
+        assert bounded.endswith("more distinct labels)" + members)
         assert "shown): Gen:Variant.Ulise.482338" in bounded
 
     def test_every_label_is_shown_when_they_fit_the_bound(self) -> None:
@@ -244,9 +257,10 @@ class TestTheLines:
         entry = _entry("get_file_report", answer, server="virustotal")
 
         assert render_pack([entry], 0) == (
-            "[ev_0001] reputation: VirusTotal: 3 of 10 engines flag it as malicious, "
-            "3 detection labels, "
-            "2 distinct (engines per label, most first): Trojan.Example ×2, Other.Label ×1"
+            "[ev_0001] reputation: VirusTotal, read from the lookup's answer: "
+            "last_analysis_stats.malicious 3; 3 detection labels, "
+            "2 distinct (engines per label, most first): Trojan.Example ×2, Other.Label ×1; "
+            "counts read from last_analysis_stats: undetected 7"
         )
 
     def test_each_label_is_bounded_as_well_as_their_number(self) -> None:
@@ -259,13 +273,14 @@ class TestTheLines:
         }
         entry = _entry("get_file_report", answer, server="virustotal")
         whole = render_pack([entry], 0)
-        assert whole.split("most first): ", 1)[1] == f"{long_label} ×2"
+        members = "; counts read from last_analysis_stats: undetected 8"
+        assert whole.split("most first): ", 1)[1] == f"{long_label} ×2{members}"
 
         line = render_pack([entry], 300)
 
         assert len(line) <= 300
         shown = line.split("most first): ", 1)[1]
-        assert shown.endswith("… ×2")
+        assert shown.endswith(f"… ×2{members}")
 
     def test_the_threat_intel_answer_is_read_for_its_count(self) -> None:
         entry = _entry(
@@ -278,7 +293,9 @@ class TestTheLines:
         line = render_pack([entry], 0)
         # Named by the lookup's declared display name, and read from its counts.
         assert line == (
-            "[ev_0001] reputation: Threat intelligence: 55 of 70 engines flag it as malicious"
+            "[ev_0001] reputation: Threat intelligence, read from the lookup's answer: "
+            "last_analysis_stats.malicious 55; "
+            "counts read from last_analysis_stats: suspicious 0, undetected 15"
         )
 
     def test_a_skipped_reputation_says_why(self) -> None:
