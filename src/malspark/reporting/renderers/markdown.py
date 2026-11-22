@@ -8563,13 +8563,15 @@ def _one_line(value: Any) -> str:
 # every one is. The page is laid out for a reader; the JSON report (the same
 # report's structured form) and the evidence ledger hold every value whole.
 LEFT_OUT_LINE = "_{rest:,} more {what} not shown here; the JSON report carries every one._"
-# Said once, in the methodology appendix, of a table cell that ends in the cut
-# mark: only Appendix A has one.
+# Said once, in the methodology appendix, of the cuts the page makes for which
+# the JSON report holds the text cut from: an Appendix A table value
+# (``_evidence_rows``), a judge's reason in the ATT&CK table (``judge_reasons``,
+# from ``capability_matrix``) and a code listing figure (``figures``, from
+# ``technical_evidence``).
 CUT_CELL_SENTENCE = (
-    "No table value in the body of the report is cut. A table value in Appendix A that "
-    "ends in … is cut to fit the page; the JSON report and the evidence ledger (Appendix "
-    "A's ids) carry it whole. Code is never cut to fit the page: Appendix A draws each "
-    "function's code whole, as a listing."
+    "Where the page cuts a table value in Appendix A or a judge's reason in the ATT&CK "
+    "table to fit, the cut ends in …; a code listing cut to fit says so in its legend. "
+    "The JSON report holds the text each of these was cut from."
 )
 
 

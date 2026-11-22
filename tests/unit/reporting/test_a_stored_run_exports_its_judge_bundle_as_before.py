@@ -160,7 +160,9 @@ STORED_EXPORTS = {
 # binary (T-845): the note is the only change; the STIX did not change.
 # haiku4's Markdown and HTML re-pinned when the line over an analyst's table of values came to
 # count the rows of that table (C15): that line is the only change; the STIX did not change.
-HAIKU4_RENDERS = ("032077946d1ea8bb", "62cd181ee29bd65c", "713fdef84ebda218")
+# The Markdown and HTML digests also move with the methodology's sentence on where the JSON
+# report holds the text a page cut was made from (T-780).
+HAIKU4_RENDERS = ("64e26fb96e5c3137", "5e0813fe8eaebb50", "713fdef84ebda218")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

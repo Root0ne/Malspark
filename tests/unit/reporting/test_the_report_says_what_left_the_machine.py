@@ -334,12 +334,14 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # came to name the sources that table marks (T-845: that note, each run), and the line over an
 # analyst's table of values came to count the rows of that table (C15: that line, haiku4, local8,
 # run5 and run7). Those are the only changes.
+# The Markdown and HTML digests also move with the methodology's sentence on where the JSON
+# report holds the text a page cut was made from (T-780).
 STORED_RENDERS = {
-    "run7": ("4f2ab549807c9e1e", "970dc30156608cc3"),
-    "run5": ("c884f14d25247892", "e36a9f91a7c2bd90"),
-    "run4": ("502a231af6a028ec", "d83e0bbf3fb37551"),
-    "local8": ("c730ed9407fa869f", "7e1ca8903d143422"),
-    "haiku4": ("032077946d1ea8bb", "62cd181ee29bd65c"),
+    "run7": ("0fa6d90795af6c94", "039aa1c655330794"),
+    "run5": ("492bc0e0d0838254", "e1a4ceea3e359fda"),
+    "run4": ("4142ffee296025e6", "346c5d707e423707"),
+    "local8": ("d283231f24eb19e8", "8f6117a4d3376aa1"),
+    "haiku4": ("64e26fb96e5c3137", "5e0813fe8eaebb50"),
 }
 
 

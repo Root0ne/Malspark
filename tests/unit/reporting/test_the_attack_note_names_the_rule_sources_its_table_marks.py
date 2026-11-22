@@ -2,8 +2,7 @@
 
 The table marks `(rule match)` beside every deterministic source that asserted a technique
 (a sandbox's signatures, Sigma, YARA, a capability-rule tool) and beside every rule hit over
-the binary. The note under it named only the rules over the binary and said a rule match
-came "with no sandbox". It now names each source the table marks, read from the rows it
+the binary. The note under it names each source the table marks, read from the rows it
 printed, and says "with no sandbox" only of the rules over the binary, whose names the
 Procedure cell carries.
 """

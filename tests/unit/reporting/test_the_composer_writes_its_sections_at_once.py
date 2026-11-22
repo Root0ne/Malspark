@@ -561,7 +561,9 @@ class TestAgainstTheSequentialBase:
     clause on the judge's STIX bundle is said from the counts of the two bundles (T-780).
     Those are the only changes, and the requests did not move. The Markdown and HTML digests
     were re-pinned when a row the host test refuses came to say the test's own reason
-    (T-782a): the one refused domain row's answer is the only change.
+    (T-782a): the one refused domain row's answer is the only change. The Markdown and HTML
+    digests also move with the methodology's sentence on where the JSON report holds the text
+    a page cut was made from (T-780).
     """
 
     def test_the_requests_and_the_report_are_those_of_the_base(self) -> None:
