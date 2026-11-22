@@ -21,7 +21,8 @@ A form row keeps its kind: the kind stays the key of every lookup and match
 (the publish answers, the judge's match, the defang). Only the edges that
 print the kind print the form instead (:func:`string_row_forms`), and an
 export carries the form as the row's kind (:func:`exported_form`); the kind
-the row is keyed on is not exported. Nothing
+the row is keyed on is not exported. A form row's value is the text its
+entries hold, never a host's folded case (:func:`written_texts`). Nothing
 here reads a list of names, suffixes or tools: only the row's source, its
 kind, its form and the run's other readers of the same value.
 """
@@ -175,6 +176,36 @@ def string_row_forms(report: Any, rows: Iterable[Any]) -> dict[tuple[str, str], 
             if form is not None:
                 out.setdefault((str(row.kind), value_key(str(row.kind), row.value)), form)
     return out
+
+
+def written_texts(report: Any, row: Any) -> list[str]:
+    """The texts a form row is exported as: each text its entries hold it as, once, in order.
+
+    A form row is no host name, so its case is not folded: the network block
+    reads a dotted name as a host and lower-cases it, and the row's own reason
+    names the entries that hold it. Read from the rows of the file's strings
+    (``static.interesting_strings``) of the row's kind whose value is the
+    row's but for letter case, so one name the strings hold in two cases
+    gives both texts; where no such row holds it, the spelling the recovering
+    tool gave (:func:`_spelled`); else the row's own value.
+    """
+    kind = str(getattr(row, "kind", None) or "")
+    folded = str(row.value or "").strip().lower()
+    static = getattr(report, "static", None)
+    texts = list(
+        dict.fromkeys(
+            text
+            for held in getattr(static, "interesting_strings", None) or []
+            if str(held.kind or "") == kind
+            and (text := str(held.value or "").strip())
+            and text.lower() == folded
+        )
+    )
+    if texts:
+        return texts
+    if getattr(row, "recovered_by", None):
+        return [_spelled(report, row.value).strip() or str(row.value)]
+    return [str(row.value)]
 
 
 def exported_form(row: Any, forms: dict[tuple[str, str], str]) -> tuple[str, str] | None:

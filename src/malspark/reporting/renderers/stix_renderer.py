@@ -7080,6 +7080,48 @@ def second_source_reads(
     return reads
 
 
+def reads_as_held(
+    reads: Iterable[SecondSourceRead],
+    texts: Iterable[str],
+    ledger: Iterable[Any],
+    corpus: Any = None,
+) -> list[SecondSourceRead]:
+    """``reads`` with each of ``texts`` a read holds given as its entry's text spells it.
+
+    :func:`second_source_reads` finds a value in an entry's text without
+    regard to case and records it lower case, the key the publish rule's
+    lookup reads. A value exported as the text its entry holds (a form row,
+    ``reporting.string_row_form``) is recorded as each spelling the entry's
+    own text (:func:`_entry_text`) holds it in at a place the search finds
+    it; a value the entry's text cannot be read back for keeps its key. No
+    decision reads a spelling: the lookup lowers what it reads
+    (:func:`_corroborating_values`).
+    """
+    wanted = {str(text or "").strip().lower() for text in texts} - {""}
+    entries = {str(getattr(entry, "id", "") or ""): entry for entry in ledger or ()}
+    out: list[SecondSourceRead] = []
+    for read in reads:
+        held = [value for value in read.holds if value in wanted]
+        entry = entries.get(read.entry)
+        if not held or entry is None:
+            out.append(read)
+            continue
+        text = _entry_text(entry, corpus)
+        low = text.lower()
+        spelled: list[str] = []
+        for value in read.holds:
+            # A text whose case-folding changes its length cannot be read back
+            # place for place: the key stays.
+            found = (
+                [text[at : at + len(value)] for at in whole_value_starts(value, low)]
+                if value in held and len(low) == len(text)
+                else []
+            )
+            spelled.extend(dict.fromkeys(found or [value]))
+        out.append(read.model_copy(update={"holds": list(dict.fromkeys(spelled))}))
+    return out
+
+
 def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
     """Everything that could confirm a value taken from the file's text, built once.
 
@@ -7128,8 +7170,15 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
     uncited: list[tuple[str, str]] = []
     cited = _cited_entries(report)
     recorded = getattr(report, "second_source_reads", None)
+    # A value is held under its key: a spelling the record keeps (``reads_as_held``) is lowered.
     reads = tuple(
-        (read.entry, read.tool, read.standing, read.cited, frozenset(read.holds))
+        (
+            read.entry,
+            read.tool,
+            read.standing,
+            read.cited,
+            frozenset(str(value).lower() for value in read.holds),
+        )
         for read in recorded or ()
     )
     sections = list(getattr(report, "sections", None) or []) if recorded is None else []
