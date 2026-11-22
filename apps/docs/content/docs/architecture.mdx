@@ -5885,10 +5885,16 @@ is assembled from what the run gathered rather than recomputed beside it:
   (outside its tree, the launcher's, not listed, or disputed) only when every
   record names a process of another lineage; a record naming none leaves the
   value as decided without one, and so does a value with no record at all.
-  A view read in pages, or shortened, can only show that a record is the
-  sample's: there a record naming another lineage counts as naming none, for
-  the three kinds alike, and `unlisted_processes` is set from whole views
-  only; a name the report gives part of its resolved addresses
+  A view is a page only where its answer shows it holds part of the view:
+  its own paging markers (a flag, a next field, a count bound to a list it
+  does not reach, a page number, a start past the first row), the platform's
+  shortening, a call's `offset` placing it after the first row, or a list
+  exactly as long as a bounding argument of the call with no marker beside
+  it; a call's row limit alone makes no page, and an answer holding every
+  row is the whole view. A page, or a shortened view, can only show that a
+  record is the sample's: there a record naming another lineage counts as
+  naming none, for the three kinds alike, and `unlisted_processes` is set
+  from whole views only; a name the report gives part of its resolved addresses
   (`resolved_ips_partial`) reads the flows to those addresses the same way.
   A flow to an address several names resolved to counts for each of them,
   which errs toward hiding nothing.
@@ -6996,7 +7002,11 @@ Two halves, in this order:
   (`StringIOC.cut_from`, recorded by the build from the sample's own text,
   never in a tool's answer) is confirmed only where an observation holds it
   as a whole token of its own, by the sweep's token test; a fragment the
-  observation also holds only inside a longer token stays refused. A refusal
+  observation also holds only inside a longer token stays refused. A path is
+  held only as a whole value: a record that holds it only as the leading
+  directory of a longer path (`C:\Temp` inside `C:\Temp\x.exe`) does not
+  hold it, while a file name that is a recorded path's last component is
+  held; a value of another kind keeps the boundary rule. A refusal
   names what held the value and confirms nothing — a re-reading, an entry no
   claim cites — and a cut's refusal says so in its first clause and quotes
   the token after it.
