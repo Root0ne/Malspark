@@ -543,6 +543,9 @@ class EntryRoots:
     roots: list[str] = field(default_factory=list)
     reason: str = ""
     by_rva: dict[int, str] = field(default_factory=dict)
+    # Where a text a ``strings`` pattern matched inside a run starts in the
+    # file (the row's ``match_offsets``), with the root of the run holding it.
+    by_match_offset: dict[int, str] = field(default_factory=dict)
     by_value: dict[str, set[str]] = field(default_factory=dict)
     by_word: dict[str, set[str]] = field(default_factory=dict)
     # The same names as written, for a statement naming one as an identifier.
@@ -1352,6 +1355,14 @@ def _offset_root(found: EntryRoots, offset: int, **kwargs: Any) -> bool:
     return True
 
 
+def _offset_label(found: EntryRoots, offset: int) -> str:
+    """The root :func:`_offset_root` placed a file offset at, as the entry names it."""
+    rva = found.layout.rva_of_offset(offset)
+    if rva is not None:
+        return found.named(found.layout.label(rva))
+    return found.named(FILE_OFFSET_ROOT.format(offset=f"{offset:#x}"))
+
+
 def _read_pe_info(found: EntryRoots, data: Mapping[str, Any]) -> None:
     found.add(PE_HEADER)
     imports = _rows(data, "imports")
@@ -1673,8 +1684,14 @@ def _read_entry(entry: Any, found: EntryRoots, joins: _Joins) -> EntryRoots:
         found.coordinate = "offset"
         for row in _rows(data, "strings"):
             offset = _hex(row.get("offset"))
-            if offset is not None:
-                _offset_root(found, offset, values=(row.get("text"),))
+            if offset is not None and _offset_root(found, offset, values=(row.get("text"),)):
+                # A text the pattern matched inside the run is the run's text:
+                # where it starts names the run's root as the run's start does.
+                inner = row.get("match_offsets")
+                for at in inner if isinstance(inner, list) else ():
+                    number = _hex(at)
+                    if number is not None:
+                        found.by_match_offset.setdefault(number, _offset_label(found, offset))
     elif branch == "emulated_strings_with_call_sites":
         for row in _rows(data, "strings"):
             text = row.get("string")
@@ -1933,7 +1950,8 @@ class RunRoots:
 
         A number written is read in the coordinate the entry's rows state (a
         file offset for a strings or YARA row, an address otherwise); one that
-        names one row so and another in the other coordinate names neither.
+        names one row so and another in the other coordinate names neither. A
+        strings row's ``match_offsets`` are offsets of that row's text.
         A quoted or backticked value or name, or a name written as an
         identifier in its own case, picks out a root only when that root
         alone holds it; a prose word picks out nothing.
@@ -1955,6 +1973,7 @@ class RunRoots:
                 for label in (
                     found.named(layout.label(offset)) if offset is not None else "",
                     found.named(FILE_OFFSET_ROOT.format(offset=f"{value:#x}")),
+                    found.by_match_offset.get(value, ""),
                 ):
                     if label and label in found.order:
                         by_offset.add(label)

@@ -1050,13 +1050,16 @@ def _match_starts(pattern: str | None) -> Callable[[str], list[int]]:
     """Where in a run's text each text ``pattern`` matches begins, read as :func:`_matcher` reads.
 
     A bare string is found case-insensitively, each find after the end of the
-    one before; an ``re:`` expression where each of its matches begins.
+    one before; an ``re:`` expression where each of its matches that holds a
+    character begins. An empty match holds no text, so it is no match here.
     """
     if not pattern:
         return lambda _text: []
     if pattern.startswith("re:"):
         compiled = re.compile(pattern[3:], re.IGNORECASE)
-        return lambda text: [found.start() for found in compiled.finditer(text)]
+        return lambda text: [
+            found.start() for found in compiled.finditer(text) if found.end() > found.start()
+        ]
     needle = pattern.lower()
 
     def starts(text: str) -> list[int]:
