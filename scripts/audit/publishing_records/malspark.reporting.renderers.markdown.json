@@ -65,6 +65,20 @@
     "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_a_table_that_marks_no_source_says_so"
    ],
    "text_digest": "04ef5c5de84535d67e11c32d0df8ffacf6ac101cb8352d39876f76cebadf31b8"
+  },
+  {
+   "function": "malspark.reporting.renderers.markdown:analyst_list_note",
+   "condition": "the line over an analyst's table in Appendix A: a model's table, not a tool's output; for a table of values, 'Each value it types as an indicator is in §9 as the analyst's' where every value read from it is, 'The report reads no value of it as an indicator.' where none is read, and otherwise a count of the table's rows by where the indicator section holds the values each gives (only as the analyst's, only under another source, only not in §9, more than one of these, no value); for a persistence table where its rows are shown",
+   "basis": [
+    "the table's rows, read as the report builder reads them (listed_non_network_values, kept_network_values), one row at a time",
+    "the indicator section's rows and their sources, and the host identifiers"
+   ],
+   "test": [
+    "tests/unit/reporting/test_the_list_note_counts_the_rows_of_its_table.py::TestTheWordsOfEachForm::test_rows_of_each_kind_are_counted",
+    "tests/unit/reporting/test_the_list_note_counts_the_rows_of_its_table.py::TestTheWordsOfEachForm::test_a_table_of_one_row",
+    "tests/unit/reporting/test_the_list_note_counts_the_rows_of_its_table.py::test_a_url_row_and_its_host_count_as_one_row"
+   ],
+   "text_digest": "6ec477db0dd1da718375ed431ae07dcc09cf0b8fe6364b8f127b99b93179c7fd"
   }
  ]
 }

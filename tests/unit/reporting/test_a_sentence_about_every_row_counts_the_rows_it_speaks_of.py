@@ -213,7 +213,7 @@ def test_the_analyst_scope_says_no_judge_stated_a_verdict_on_a_stopped_run() -> 
 
 
 def test_every_typed_value_shown_as_the_analyst_s_keeps_the_sentence() -> None:
-    note = analyst_list_note(["static"], "iocs", (2, 2, 0))
+    note = analyst_list_note(["static"], "iocs", [{"analyst"}, {"analyst"}])
     where = section_reference(INDICATORS_TITLE)
 
     assert analyst_list_note(["static"], "iocs") == note
@@ -221,20 +221,21 @@ def test_every_typed_value_shown_as_the_analyst_s_keeps_the_sentence() -> None:
 
 
 def test_values_shown_under_another_source_or_not_at_all_are_counted() -> None:
-    note = analyst_list_note(["static"], "iocs", (4, 1, 2))
-    one = analyst_list_note(["static"], "iocs", (1, 0, 1))
+    note = analyst_list_note(["static"], "iocs", [{"analyst"}, {"other"}, {"other"}, {"absent"}])
+    one = analyst_list_note(["static"], "iocs", [{"other"}])
     where = section_reference(INDICATORS_TITLE)
 
     assert "Each value" not in note
     assert (
-        f"Of the 4 values it types as an indicator, 1 is in {where} as the analyst's, with the "
-        f"publish rule's answer; 2 are in {where} under another source; 1 is not in {where}."
+        f"Of its 4 rows, 1 gives only values in {where} as the analyst's, with the publish "
+        f"rule's answer; 2 give only values in {where} under another source; 1 gives only values "
+        f"not in {where}."
     ) in note
-    assert f"The value it types as an indicator is in {where} under another source." in one
+    assert f"Its one row gives only values in {where} under another source." in one
 
 
 def test_a_table_the_report_reads_no_value_of_says_so() -> None:
-    note = analyst_list_note(["static"], "iocs", (0, 0, 0))
+    note = analyst_list_note(["static"], "iocs", [set()])
 
     assert "it types as an indicator" not in note
     assert "The report reads no value of it as an indicator." in note
@@ -281,8 +282,8 @@ def test_the_count_is_read_from_the_table_and_the_indicator_rows() -> None:
 
     assert "Each value it types as an indicator is in §9 as the analyst's" in alone
     assert (
-        "Of the 3 values it types as an indicator, 1 is in §9 as the analyst's, with the publish "
-        "rule's answer; 2 are in §9 under another source."
+        "Of its 3 rows, 1 gives only values in §9 as the analyst's, with the publish rule's "
+        "answer; 2 give only values in §9 under another source."
     ) in shared
 
 
