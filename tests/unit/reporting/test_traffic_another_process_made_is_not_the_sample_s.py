@@ -615,6 +615,64 @@ class TestAPageShowsOnlyThatARecordIsTheSampleS:
             assert publishes(publish_answer(kind, value, "sandbox", None, **kwargs))
 
 
+def _view_read(
+    facts: dict[str, Any], args: dict[str, Any], markers: dict[str, Any] | None = None
+) -> MalwareReport:
+    """:func:`_view_of`'s view, called with ``args``, its rows answered beside ``markers``."""
+    view = {
+        "dns": [{"request": PAGE_NAME, "type": "A", "answers": [{"data": PAGE_ADDRESS}]}],
+        "http": [{"host": PAGE_NAME, "uri": "/g", "method": "GET", "port": 80, **facts}],
+        "tcp": [{"dst": PAGE_ADDRESS, "dport": 80, **facts}],
+        **(markers or {}),
+    }
+    entry = build_entry(
+        entry_id="ev_0001",
+        seq=1,
+        agent="dynamic",
+        tool="sandbox_network",
+        args=args,
+        server=None,
+        output=json.dumps(view),
+    )
+    return MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256=SHA256)),
+        verdict="Malware",
+        overall_confidence=0.9,
+        network=network_from_ledger([entry]),
+    )
+
+
+class TestAViewIsAPageOnlyWhereItsAnswerShowsItWasCut:
+    """A call's row limit makes no page: an answer holding every row is the whole view."""
+
+    def test_an_answer_within_its_row_limit_is_the_whole_view(self) -> None:
+        report = _view_read(UNLISTED_ROW, {"offset": 0, "limit": 40})
+        (url,) = report.network.urls
+        assert url.sample_process_tree is False
+        assert url.made_by is not None and url.made_by.unlisted == ["procid 46"]
+        assert _url_answer(report, PAGE_URL) == _url_answer(
+            _view_of(UNLISTED_ROW, page=False), PAGE_URL
+        )
+
+    @pytest.mark.parametrize(
+        ("args", "markers"),
+        [
+            ({"limit": 1}, {"http_total": 2, "http_next_offset": 1}),
+            ({}, {"has_more": True}),
+            ({}, {"next_cursor": "c2"}),
+            ({"offset": 1}, {}),
+            ({"limit": 1}, {}),
+        ],
+        ids=["count", "flag", "next-field", "offset-argument", "list-filling-its-limit"],
+    )
+    def test_an_answer_that_shows_or_cannot_rule_out_a_cut_is_a_page(
+        self, args: dict[str, Any], markers: dict[str, Any]
+    ) -> None:
+        report = _view_read(UNLISTED_ROW, args, markers)
+        (url,) = report.network.urls
+        assert url.sample_process_tree is None and url.made_by is None
+
+
 class TestAnAddressNamesItsProcessByTheNeutralKey:
     """The address's reason names a process by the one key, an older stored row by its field."""
 

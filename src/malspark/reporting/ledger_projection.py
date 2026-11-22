@@ -3233,18 +3233,32 @@ def _ledger_views(
 
 
 def _view_paged(entry: LedgerEntry, data: dict[str, Any]) -> bool:
-    """Whether a network view's call or answer marks it a page or a shortened answer."""
+    """Whether a network view's answer shows it holds part of the view: a page or a shortened one.
+
+    Read from the answer itself, as every entry is read (``schemas.entry_reading``):
+    its own paging markers (a flag, a next field, a count bound to a list it
+    does not reach, a page number, a start past the first row), the platform's
+    shortening, or a paging the answer cannot settle (only the call's
+    ``offset`` places it after the first row). A call's row limit alone makes
+    no page: an answer that holds every row is the whole view, whatever the
+    call asked for. Where a list of the answer is exactly as long as a
+    bounding argument of the call (``output_shortening.bounding_arguments``)
+    and no marker says more, the answer cannot show whether rows were left
+    out, and it is read as a page.
+    """
+    from malspark.agents.output_shortening import bounding_arguments
+    from malspark.schemas.entry_reading import ONE_PAGE, SHORTENED, entry_reading
+
+    reading = entry_reading(entry)
+    if reading.paging_unknown or {ONE_PAGE, SHORTENED} & set(reading.states):
+        return True
     args = entry.args if isinstance(entry.args, dict) else {}
-    return any(_as_int(args.get(k)) for k in ("offset", "limit")) or any(
-        str(k).endswith("_total") or k in ("next_offset", "shortened", "truncated") for k in data
-    )
-
-
-def _as_int(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
+    bounds = {
+        value
+        for name in bounding_arguments([name for name in args if isinstance(name, str)])
+        if isinstance(value := args.get(name), int) and not isinstance(value, bool) and value > 0
+    }
+    return any(isinstance(rows, list) and len(rows) in bounds for rows in data.values())
 
 
 def network_from_sandbox_report(
