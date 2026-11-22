@@ -1355,6 +1355,19 @@ def _offset_root(found: EntryRoots, offset: int, **kwargs: Any) -> bool:
     return True
 
 
+def _match_offsets_root(found: EntryRoots, row: Mapping[str, Any], offset: int) -> None:
+    """Tie each of a strings row's ``match_offsets`` to the root its run's ``offset`` placed.
+
+    A text the pattern matched inside the run is the run's text: where it
+    starts names the run's root as the run's start does.
+    """
+    inner = row.get("match_offsets")
+    for at in inner if isinstance(inner, list) else ():
+        number = _hex(at)
+        if number is not None:
+            found.by_match_offset.setdefault(number, _offset_label(found, offset))
+
+
 def _offset_label(found: EntryRoots, offset: int) -> str:
     """The root :func:`_offset_root` placed a file offset at, as the entry names it."""
     rva = found.layout.rva_of_offset(offset)
@@ -1685,13 +1698,7 @@ def _read_entry(entry: Any, found: EntryRoots, joins: _Joins) -> EntryRoots:
         for row in _rows(data, "strings"):
             offset = _hex(row.get("offset"))
             if offset is not None and _offset_root(found, offset, values=(row.get("text"),)):
-                # A text the pattern matched inside the run is the run's text:
-                # where it starts names the run's root as the run's start does.
-                inner = row.get("match_offsets")
-                for at in inner if isinstance(inner, list) else ():
-                    number = _hex(at)
-                    if number is not None:
-                        found.by_match_offset.setdefault(number, _offset_label(found, offset))
+                _match_offsets_root(found, row, offset)
     elif branch == "emulated_strings_with_call_sites":
         for row in _rows(data, "strings"):
             text = row.get("string")
