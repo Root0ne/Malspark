@@ -4818,10 +4818,11 @@ def _judge_index(report: Any) -> frozenset[tuple[str, str]]:
 def judge_names_none_of(report: Any, kind: str, value: str) -> bool:
     """Whether the judge's indicators were read and none names the value.
 
-    Read where the judge left a bundle (``stix_bundle_extended`` holding an
-    ``objects`` list) or the report keeps its values (``judge_indicators``):
-    the values of both, each under its key and as written lower-cased. With
-    neither, nothing of the judge was read and nothing is said of it.
+    Read where the report holds a bundle (``stix_bundle_extended`` with an
+    ``objects`` list: the judge's at build, the export once it is rendered)
+    or keeps the judge's values (``judge_indicators``): the values of both,
+    each under its key and as written lower-cased. With neither, nothing of
+    the judge was read and nothing is said of it.
     """
     bundle = _field(report, "stix_bundle_extended")
     objects = bundle.get("objects") if isinstance(bundle, dict) else None

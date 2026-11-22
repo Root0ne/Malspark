@@ -2055,8 +2055,8 @@ def tool_sightings(
 
     Two maps: the sightings, and the entries set apart because their call's
     arguments hold the value whole — such an answer may hold it only because
-    the call passed it. The second is kept so the report names every answer
-    that holds the value, set apart or not.
+    the call passed it. The second is kept so the report names the answers it
+    set apart where the search found the value in none.
 
     Every successful entry is read — its structured answer's strings and its
     text — and a value is found only as a value of its own

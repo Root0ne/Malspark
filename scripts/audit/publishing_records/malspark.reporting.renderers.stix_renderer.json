@@ -239,7 +239,7 @@
   },
   {
    "constant": "malspark.reporting.renderers.stix_renderer:NO_SECTION_TO_SEARCH",
-   "condition": "the fact after the refusal of a listed value on a report stored before the whole-value search of the ledger was run, where the report keeps no tool section for the search of its sections to read, in place of \"found it in none\"",
+   "condition": "the fact after the refusal of a listed value where the report's whole-value search of the ledger holds no result for the value and the report keeps no tool section for the search of its sections to read, in place of \"found it in none\"",
    "basis": [
     "the stored report's sections whose source is a tool (none)"
    ],
