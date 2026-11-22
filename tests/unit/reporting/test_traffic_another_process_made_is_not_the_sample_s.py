@@ -581,18 +581,31 @@ def _view_of(facts: dict[str, Any], *, page: bool) -> MalwareReport:
 
 
 class TestAPageShowsOnlyThatARecordIsTheSampleS:
-    """A page cannot show that no record of a value is the sample's: it may be on another."""
+    """A page cannot show that no record of a value is the sample's: it may be on another.
+
+    A process of another lineage a page names is unplaced: a URL or a name whose
+    records name only such processes is unattributed, as an undecided address is.
+    """
 
     @pytest.mark.parametrize("facts", [LAUNCHER_ROW, UNLISTED_ROW], ids=["launcher", "unlisted"])
-    def test_another_lineage_s_records_leave_the_three_kinds_as_without_them(
+    def test_another_lineage_s_records_place_their_process_neither_in_nor_outside_the_tree(
         self, facts: dict[str, Any]
     ) -> None:
         report = _view_of(facts, page=True)
-        assert _url_answer(report, PAGE_URL) == publish_answer("url", PAGE_URL, "sandbox", None)
+        (url,) = report.network.urls
+        assert url.sample_process_tree is None and url.made_by is None
+        assert url.unplaced is not None
+        assert _url_answer(report, PAGE_URL).startswith(
+            "no: the publish rule read only part of the network view and did not place the "
+            "process the requests to it name by id"
+        )
         domain = publish_answer(
             "domain", PAGE_NAME, "sandbox", None, **sandbox_row_kwargs(report, "domain", PAGE_NAME)
         )
-        assert domain == publish_answer("domain", PAGE_NAME, "sandbox", None)
+        assert domain.startswith(
+            "no: the publish rule read only part of the network view and did not place the "
+            "process the traffic records to it name by id"
+        )
         address = publish_answer(
             "ip", PAGE_ADDRESS, "sandbox", None, **sandbox_row_kwargs(report, "ip", PAGE_ADDRESS)
         )

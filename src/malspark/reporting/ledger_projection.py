@@ -34,7 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
-from malspark.analysis.detonation_reads import later_detonation_name
+from malspark.analysis.detonation_reads import later_detonation_name, own_detonation_read
 from malspark.analysis.directed_text import KIND as DIRECTED_TEXT_KIND
 from malspark.analysis.technique_ids import (
     api_capability_hits,
@@ -70,6 +70,7 @@ from malspark.reporting.models import (
     StaticAnalysis,
     StringIOC,
     TrafficMakers,
+    UnplacedTraffic,
 )
 from malspark.schemas.evidence import build_entry, format_entry_id
 from malspark.schemas.sandbox_document import LINEAGE_KEY, joined_url, pid_of, signature_pids
@@ -242,10 +243,13 @@ class _MakerTally:
     """What the records of one value's traffic say of the processes that made it.
 
     Each record's answer (:func:`traffic_maker`) is added once; a value's
-    attribution is read off the whole (:meth:`state`).
+    attribution is read off the whole (:meth:`state`). A record a part of a
+    view holds that names a process of another lineage is added as an
+    unplaced process (:meth:`add_unplaced`): the part cannot show that no
+    other record is the sample's.
     """
 
-    __slots__ = ("named", "more", "sample", "seen", "unstated")
+    __slots__ = ("named", "more", "sample", "seen", "unplaced", "unstated", "views")
 
     def __init__(self) -> None:
         self.sample = False
@@ -253,6 +257,9 @@ class _MakerTally:
         self.unstated = False
         self.named: dict[str, list[str]] = {}
         self.seen: set[tuple[str, str]] = set()
+        # The processes records of parts of a view name, and those parts' detonations.
+        self.unplaced: list[str] = []
+        self.views: list[str] = []
         # Processes of the addresses' flows left unnamed here (``_ADDRESS_MAKERS_NAMED``).
         self.more = False
 
@@ -266,35 +273,62 @@ class _MakerTally:
         else:
             self.unstated = True
 
+    def add_unplaced(self, named: str, view: str) -> None:
+        """A part of a view's record naming ``named``, a process of another lineage, in ``view``."""
+        if named not in self.unplaced:
+            self.unplaced.append(named)
+        if view not in self.views:
+            self.views.append(view)
+
     def take(self, other: _MakerTally, limit: int | None = None, *, in_part: bool = False) -> None:
         """Add another tally's facts, and its names, up to ``limit`` per kind where one is given.
 
         ``in_part``: the other tally is read as a page's, which can only show
-        that a record is the sample's; its records of another lineage count
-        as naming no process.
+        that a record is the sample's; its records of another lineage, placed
+        or not, count as naming no process.
         """
         self.sample |= other.sample
         if in_part:
-            self.unstated |= other.unstated or bool(other.named)
+            self.unstated |= other.unstated or bool(other.named) or bool(other.unplaced)
             return
         self.unstated |= other.unstated
         for kind, names in other.named.items():
             for named in names[:limit]:
                 self.add((kind, named))
             self.more |= limit is not None and len(names) > limit
+        for named in other.unplaced[:limit]:
+            if named not in self.unplaced:
+                self.unplaced.append(named)
+        self.more |= limit is not None and len(other.unplaced) > limit
+        for view in other.views:
+            if view not in self.views:
+                self.views.append(view)
         self.more |= other.more
 
     def state(self, row: NetworkDomain | NetworkURL) -> None:
         """The value's attribution: the sample's when any record came from its tree.
 
-        Another lineage's only when every record names a process and none is
-        the sample's: a record that names no process leaves the value as it is
-        decided without one, and so does a value with no record at all.
+        A record that names no process leaves the value as it is decided
+        without one, and so does a value with no record at all. Where every
+        record names a process and none is the sample's: unplaced
+        (``UnplacedTraffic``) where some of them stand only in parts of a
+        view, so the value is unattributed; another lineage's otherwise.
         """
         if self.sample:
             row.sample_process_tree = True
             return
-        if self.unstated or not self.named:
+        if self.unstated:
+            return
+        if self.unplaced:
+            placed = TrafficMakers.model_validate(self.named) if self.named else None
+            row.unplaced = UnplacedTraffic(
+                processes=list(self.unplaced),
+                views=list(self.views),
+                placed=placed,
+                more=self.more,
+            )
+            return
+        if not self.named:
             return
         row.sample_process_tree = False
         row.made_by = TrafficMakers.model_validate({**self.named, "more": self.more})
@@ -1619,14 +1653,24 @@ def network_from_ledger(
         source: str = "",
     ) -> None:
         # A page of a view can only show that a record is the sample's: one
-        # naming another lineage counts as naming none, as the sample's may
-        # be on another page. One rule for the three kinds.
-        if not whole and isinstance(answer, tuple):
-            answer = None
-        makers.setdefault((kind, key), []).append(answer)
-        tallies.setdefault((kind, key), _MakerTally()).add(answer)
-        if source:
-            source_tallies.setdefault((source, key), _MakerTally()).add(answer)
+        # naming another lineage places its process neither in the tree nor
+        # outside it, as the sample's may be on another page. An address's
+        # own reading counts such a record as naming none.
+        unplaced = not whole and isinstance(answer, tuple)
+        makers.setdefault((kind, key), []).append(None if unplaced else answer)
+        if not whole and answer is not True and viewing[0] in whole_read:
+            # A part never overrides the whole view of its own detonation: the
+            # whole view's reading of who made the traffic decides, and the
+            # part adds only a record of the sample's tree.
+            return
+        for tally in (
+            tallies.setdefault((kind, key), _MakerTally()),
+            *([source_tallies.setdefault((source, key), _MakerTally())] if source else []),
+        ):
+            if unplaced and isinstance(answer, tuple):
+                tally.add_unplaced(answer[1], viewing[1])
+            else:
+                tally.add(answer)
 
     # The names a DNS or HTTP view named, and the names only the capture's TLS
     # list recorded: a TLS name says nothing about which process made the
@@ -1649,9 +1693,27 @@ def network_from_ledger(
     # What the flow rows to each address name, as the rule reads them: the
     # words of its sentence (``NetworkIP.flow_reading``), never its decision.
     flow_tally = _FlowTally(read, _blanked_views(ledger))
+    # The detonations whose whole view the rule read; and, for the view in
+    # hand, its detonation and the name a part of it is said under (its
+    # detonation where the run read a further one's view and the platform's
+    # reading gives it, as ``_FlowTally`` names a part).
+    whole_read = {view.mark.detonation for view in read if view.whole}
+    later_read = any(view.mark.detonation != FIRST_DETONATION for view in read)
+    viewing = ["", ""]
     for index, (data, whole, mark, view_entry) in enumerate(read):
         read_by = reading if view_entry is None or not later_detonation(view_entry) else None
         marking[0] = mark
+        viewing[0] = mark.detonation
+        viewing[1] = (
+            mark.detonation
+            if later_read
+            and (
+                view_entry is None
+                or mark.detonation != FIRST_DETONATION
+                or own_detonation_read(view_entry)
+            )
+            else ""
+        )
         # Each DNS question reads the answers for its own name, and a request's
         # unnamed answers, within the request's own size. A ``domains`` row is
         # no DNS question: it reads its own answers, as dev read it, whatever

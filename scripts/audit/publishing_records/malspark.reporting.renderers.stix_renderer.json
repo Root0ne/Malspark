@@ -248,6 +248,54 @@
     "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheSearchAndWhatItReadAgree::test_a_stored_report_with_no_tool_section_says_it_keeps_none"
    ],
    "text_digest": "b037f98cd24c1f2b49a2afcaecd237d904817f183c7def3e8437b77d88bc905c"
+  },
+  {
+   "function": "malspark.reporting.renderers.stix_renderer:unplaced_traffic_reason",
+   "condition": "the publish answer, the context of its refusal and the judge's question of a sandbox URL or name row whose records all name a process, none of the sample's tree, and some stand only in parts of a network view no whole view of their detonation stands beside, so the process they name is not placed",
+   "basis": [
+    "the row's unplaced (processes, views, placed, more)",
+    "the row's sample_process_tree"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_process_a_part_of_a_view_names_is_unplaced.py::TestPartsAlone::test_a_url_and_its_name_are_unattributed",
+    "tests/unit/reporting/test_a_process_a_part_of_a_view_names_is_unplaced.py::TestPartsAlone::test_the_judge_is_asked_with_the_fact",
+    "tests/unit/reporting/test_a_process_a_part_of_a_view_names_is_unplaced.py::TestTheSentence::test_records_placed_elsewhere_are_counted_before_the_processes_not_placed"
+   ],
+   "text_digest": "55daa6f80052e617783ac9058d4c674154bce4f5433c7aa932c7539fa66e761a"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:TRAFFIC_RECORDS",
+   "condition": "in unplaced_traffic_reason's sentence on a name row: the publish answer, the context of its refusal and the judge's question of a sandbox URL or name row whose records all name a process, none of the sample's tree, and some stand only in parts of a network view no whole view of their detonation stands beside, so the process they name is not placed",
+   "basis": [
+    "the row's unplaced (processes, views, placed, more)",
+    "the row's sample_process_tree"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_process_a_part_of_a_view_names_is_unplaced.py::TestPartsAlone::test_a_url_and_its_name_are_unattributed"
+   ],
+   "text_digest": "d1ae413fc05f3ea051c3dfdbcdf0f0e9334dda2c73a684e278db330551a40c3c"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:TRAFFIC_COUNTED_SOME",
+   "condition": "in unplaced_traffic_reason's sentence where the value's other records name processes the rule placed under a kind of another lineage: the publish answer, the context of its refusal and the judge's question of a sandbox URL or name row whose records all name a process, none of the sample's tree, and some stand only in parts of a network view no whole view of their detonation stands beside, so the process they name is not placed",
+   "basis": [
+    "the row's unplaced.placed"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_process_a_part_of_a_view_names_is_unplaced.py::TestTheSentence::test_records_placed_elsewhere_are_counted_before_the_processes_not_placed"
+   ],
+   "text_digest": "cd1ca4e18f5febafc973fd2f791704696e4938ffd6a398ea14326b06e14b8254"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:TRAFFIC_MORE",
+   "condition": "in unplaced_traffic_reason's sentence where the records name more processes than the row keeps: the publish answer, the context of its refusal and the judge's question of a sandbox URL or name row whose records all name a process, none of the sample's tree, and some stand only in parts of a network view no whole view of their detonation stands beside, so the process they name is not placed",
+   "basis": [
+    "the row's unplaced.more"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_process_a_part_of_a_view_names_is_unplaced.py::TestTheSentence::test_records_placed_elsewhere_are_counted_before_the_processes_not_placed"
+   ],
+   "text_digest": "b44895a64e250871889a6083769ae1cfad6cf0bfdabab37bcc0116a69dd1ae26"
   }
  ]
 }

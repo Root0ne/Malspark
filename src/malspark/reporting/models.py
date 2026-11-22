@@ -531,6 +531,30 @@ class TrafficMakers(BaseModel):
     sources: list[MakerSource] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
+class UnplacedTraffic(BaseModel):
+    """The processes a part of a network view names for some traffic, which the rule did not place.
+
+    A part of a view (a page, or an answer cut short) can only show that a
+    record is the sample's: the sample's may stand in the part not read, so a
+    record of it naming a process of another lineage places that process
+    neither in the sample's tree nor outside it. Set where every record of the
+    value names a process, none is the sample's, and some stand only in such
+    parts. ``processes`` each process those records name, as
+    :class:`TrafficMakers` names one; ``views`` the detonation of each view
+    read as a part they stood in (``""`` where the run read no further
+    detonation's view); ``placed`` the processes the value's other records name,
+    placed under a kind of another lineage, ``None`` where there are none;
+    ``more``: the records name more processes than are listed here.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    processes: list[str] = Field(default_factory=list)
+    views: list[str] = Field(default_factory=list)
+    placed: TrafficMakers | None = Field(default=None, exclude_if=lambda value: value is None)
+    more: bool = Field(default=False, exclude_if=lambda value: not value)
+
+
 class NetworkDomain(BaseModel):
     """Observed FQDN (DNS query / HTTP host / SNI)."""
 
@@ -587,6 +611,11 @@ class NetworkDomain(BaseModel):
     # was written.
     sample_process_tree: bool | None = Field(default=None, exclude_if=lambda value: value is None)
     made_by: TrafficMakers | None = Field(default=None, exclude_if=lambda value: value is None)
+    # Where a part of a view names processes for its traffic that the rule did
+    # not place, and no record is the sample's or names no process
+    # (``UnplacedTraffic``): the name is unattributed. Left out of a dump where
+    # unset, so a stored report reads as it was written.
+    unplaced: UnplacedTraffic | None = Field(default=None, exclude_if=lambda value: value is None)
     # The detonations the name was observed in (``ObservedIn``).
     observed_in: list[ObservedIn] = _observed_in()
 
@@ -765,6 +794,8 @@ class NetworkURL(BaseModel):
     # none, so a stored report reads as it was written.
     sample_process_tree: bool | None = Field(default=None, exclude_if=lambda value: value is None)
     made_by: TrafficMakers | None = Field(default=None, exclude_if=lambda value: value is None)
+    # As a name's (``NetworkDomain.unplaced``): the request is unattributed.
+    unplaced: UnplacedTraffic | None = Field(default=None, exclude_if=lambda value: value is None)
     # The detonations the request was observed in (``ObservedIn``).
     observed_in: list[ObservedIn] = _observed_in()
 

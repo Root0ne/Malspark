@@ -4510,7 +4510,7 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
             return said
         if row is None or _field(row, "source") != "sandbox":
             return {}
-        why = url_made_by_reason(_field(row, "made_by"))
+        why = url_made_by_reason(_field(row, "made_by")) or unplaced_traffic_reason(row, "url")
         if not why or _field(row, "sample_process_tree") is True:
             return {}
     elif kind == "ip":
@@ -4526,7 +4526,7 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
     else:
         if row is None or _field(row, "source") != "sandbox":
             return {}
-        made = name_made_by_reason(_field(row, "made_by"))
+        made = name_made_by_reason(_field(row, "made_by")) or unplaced_traffic_reason(row, "domain")
         if made and _field(row, "sample_process_tree") is not True:
             why = made
         elif _field(row, "capture_only"):
@@ -4659,6 +4659,60 @@ def _address_made_by(
         else _flows_word(max(1, len(names)), True)
     )
     return FLOW_RULE + _part_read(reading) + FLOW_MADE_BY.format(flows=flows, whose=whose)
+
+
+# Why a sandbox URL or name row is not the sample's where parts of a network
+# view name processes for its traffic that the rule did not place
+# (``NetworkURL.unplaced``, :func:`unplaced_traffic_reason`): the address
+# sentence's words (:data:`FLOW_PART_READ`, :data:`FLOW_UNPLACED`), a URL's
+# requests or a name's traffic records in place of the flows to an address.
+TRAFFIC_REQUESTS = "requests"
+TRAFFIC_RECORDS = "traffic records"
+TRAFFIC_COUNTED_SOME = "counted {records} to it as made by {whose}"
+# Beside the processes not placed where the records name more than are kept.
+TRAFFIC_MORE = " (and further processes the records name)"
+
+
+def unplaced_traffic_reason(row: Any, kind: str, word: Callable[[str], str] = str) -> str:
+    """Why a sandbox URL or name row is unattributed where parts of a view name its processes.
+
+    What the publish rule read and what the reading gave, in the address
+    rule's words (:func:`unplaced_flow_reason`): the views it read only part
+    of, the processes of another lineage the value's other records name
+    (``placed``), and the processes the records in those parts name, which it
+    did not place. ``kind`` ``"url"`` says the requests to it, a name its
+    traffic records (its requests, its lookups that state their process and
+    the flows to the addresses it resolved to). ``""`` for a row the sample's
+    tree made or one with no such processes.
+    """
+    from types import SimpleNamespace
+
+    unplaced = _field(row, "unplaced")
+    if unplaced is None or _field(row, "sample_process_tree") is True:
+        return ""
+    processes = [str(p) for p in _field(unplaced, "processes") or [] if str(p)]
+    if not processes:
+        return ""
+    records = TRAFFIC_REQUESTS if kind == "url" else TRAFFIC_RECORDS
+    views = [{"detonation": str(view)} for view in _field(unplaced, "views") or []]
+    clauses = []
+    placed = _field(unplaced, "placed")
+    parts = []
+    for made, whose in MADE_BY_WHOM.items():
+        named = [str(p) for p in (_field(placed, made) or []) if str(p)]
+        if named:
+            parts.append(FLOW_LISTED.format(said=whose, processes=", ".join(map(word, named))))
+    if parts:
+        clauses.append(TRAFFIC_COUNTED_SOME.format(records=records, whose=" and by ".join(parts)))
+    clause = FLOW_UNPLACED.format(
+        processes="processes" if len(processes) > 1 else "process",
+        flows=f"the other {records}" if parts else f"the {records}",
+        name="name",
+    )
+    clause = FLOW_LISTED.format(said=clause, processes=" and ".join(map(word, processes)))
+    more = TRAFFIC_MORE if _field(unplaced, "more") else ""
+    lead = FLOW_RULE + _part_read(SimpleNamespace(part_views=views))
+    return lead + " and ".join(clauses + [clause]) + more
 
 
 def url_made_by_reason(makers: Any, word: Callable[[str], str] = str) -> str:
