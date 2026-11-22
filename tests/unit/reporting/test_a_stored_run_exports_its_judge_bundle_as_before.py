@@ -155,7 +155,10 @@ STORED_EXPORTS = {
 # haiku4's Markdown and HTML re-pinned when a held sandbox report's rows came to be counted by
 # the list each was read from (C49, C47): its two sandbox lines now count rows of the
 # dropped-files list. Those are the only changes; the STIX did not change.
-HAIKU4_RENDERS = ("b8b7ca17c34239f7", "4cf582f1416eaa29", "713fdef84ebda218")
+# haiku4's Markdown and HTML re-pinned when the ATT&CK table's note on `(rule match)` came to
+# name the sources that table marks and to say "with no sandbox" only of the rules over the
+# binary (T-845): the note is the only change; the STIX did not change.
+HAIKU4_RENDERS = ("6dd3f5a059779987", "9a995ebfe1ac521a", "713fdef84ebda218")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

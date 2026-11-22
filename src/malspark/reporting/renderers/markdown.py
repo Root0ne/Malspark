@@ -1819,19 +1819,7 @@ class MarkdownRenderer:
             lines.append(_rule_only_row(tid, folded, mappings, capability_ids))
         lines.extend(_resolved_only_lines(sorted(cells, key=_tactic_key), rules_by_tid, ctx))
         if hits:
-            lines.extend(
-                [
-                    "",
-                    "_A source marked `(rule match)` or `pipeline:` is a rule that fired over "
-                    f"the binary — {_capability_owner(report)} over its code, the knowledge "
-                    "table's over its imports "
-                    "— with no sandbox and no model. The rule names are in the Procedure cell, "
-                    "each with its base rate: how much ordinary software it fires on, over the "
-                    "corpus it names. It says nothing about how likely this sample is to be "
-                    "benign, and `not measured` means the rule has no measurement, not that it "
-                    "never fires._",
-                ]
-            )
+            lines.extend(["", _rule_match_note(report, cells, mappings, rules_by_tid, ctx)])
         held, cut = _not_published_lines(report, ctx)
         cuts += cut
         noted = judge_cut_note(cuts, report)
@@ -7027,6 +7015,24 @@ def _finding_technique(row: dict[str, Any]) -> str:
     return match.group(1).upper() if match else ""
 
 
+def _rule_labels(asserted: list[str], rules: list[dict[str, Any]]) -> dict[str, str]:
+    """The label the ATT&CK table prints beside each deterministic source of a technique's
+    row, by source, in the row's order: the sources that asserted it and the sources of the
+    rule hits folded into it, ``rule match``, or the runtime-only label for a source all of
+    whose hits matched only names resolved at runtime."""
+    rule_sources = [str(hit.get("source") or "rule") for hit in rules]
+    runtime_only = {
+        str(hit.get("source") or "rule")
+        for hit in rules
+        if _resolved_only(hit)
+        and all(_resolved_only(h) for h in rules if h.get("source") == hit.get("source"))
+    }
+    return {
+        source: RESOLVED_ONLY_RULE_LABEL if source in runtime_only else "rule match"
+        for source in dict.fromkeys(asserted + rule_sources)
+    }
+
+
 def _stated(value: float | None, producer: str) -> str:
     """A stated confidence with its producer, or that the producer is not recorded.
 
@@ -7058,17 +7064,9 @@ def _attack_row(
     # asserted it, the analysts that claimed it, and the matrix's own layers —
     # the judge's verdict among them — which the corroboration does not count.
     # A rule that matched only names resolved at runtime says so in its label.
-    runtime_only = {
-        str(hit.get("source") or "rule")
-        for hit in rules
-        if _resolved_only(hit)
-        and all(_resolved_only(h) for h in rules if h.get("source") == hit.get("source"))
-    }
     # Each producer's name is a tool's or the operator's text, by the inline rule.
     named = [
-        f"{ctx.value(source)} "
-        f"({RESOLVED_ONLY_RULE_LABEL if source in runtime_only else 'rule match'})"
-        for source in dict.fromkeys(asserted + rule_sources)
+        f"{ctx.value(source)} ({label})" for source, label in _rule_labels(asserted, rules).items()
     ]
     named += [
         ctx.value(str(x))
@@ -7540,6 +7538,72 @@ def _capability_tool(report: MalwareReport) -> str:
             if named:
                 return " and ".join(named)
     return ""
+
+
+def _rule_match_note(
+    report: MalwareReport,
+    cells: list[CapabilityCell],
+    mappings: dict[str, Any],
+    rules_by_tid: dict[str, list[dict[str, Any]]],
+    ctx: _Context,
+) -> str:
+    """The note under the ATT&CK table on the sources it marks ``(rule match)`` (T-845).
+
+    It names each source the table's rows print with that mark, read as the rows read it
+    (:func:`_rule_labels`; a technique only rules named prints each hit's source so), and
+    ``pipeline:`` only where a source cell prints one. "with no sandbox" is said only of the
+    rules that fired over the binary, whose names and base rates the Procedure cell
+    carries: a capability-rule tool's over its code, the knowledge table's over its imports,
+    or over names it resolved at runtime where each of its hits matched only those."""
+    corroboration = (report.run_summary or {}).get("corroboration") or {}
+    marked: dict[str, None] = {}
+    layers: list[str] = []
+    seen: set[str] = set()
+    for cell in cells:
+        seen.add(cell.technique_id)
+        row = corroboration.get(cell.technique_id)
+        asserted = list(row.get("asserted_by") or []) if isinstance(row, dict) else []
+        claimed = list(row.get("claimed_by") or []) if isinstance(row, dict) else []
+        labels = _rule_labels(asserted, rules_by_tid.get(cell.technique_id, []))
+        marked.update(dict.fromkeys(s for s, label in labels.items() if label == "rule match"))
+        layers += [str(x) for x in [*claimed, *cell.contributing_layers] if x not in labels]
+    for tid, mapping in mappings.items():
+        if tid not in seen:
+            seen.add(tid)
+            layers += [str(x) for x in mapping.contributing_layers]
+    for tid, folded in rules_by_tid.items():
+        if tid not in seen:
+            marked.update(dict.fromkeys(str(hit.get("source") or "rule") for hit in folded))
+    piped = [x for x in dict.fromkeys(layers) if x.startswith("pipeline:")]
+    names = sorted(ctx.value(source) for source in [*marked, *piped])
+    lead = (
+        f"_A source marked `(rule match)`{' or `pipeline:`' if piped else ''} is a rule that "
+        f"fired, with no model; this table marks {_joined(names)}."
+        if names
+        else "_No source in this table is marked `(rule match)`."
+    )
+    hits = [hit for folded in rules_by_tid.values() for hit in folded]
+    others = [hit for hit in hits if not _capability_rule_hit(hit)]
+    over: list[str] = []
+    if any(_capability_rule_hit(hit) for hit in hits):
+        over.append(f"{_capability_owner(report)} over its code")
+    imports = [hit for hit in others if not _resolved_only(hit)]
+    if imports and len(imports) < len(others):
+        over.append("the knowledge table's over its imports and over names resolved at runtime")
+    elif others:
+        over.append(
+            "the knowledge table's over its imports"
+            if imports
+            else "the knowledge table's over names resolved at runtime"
+        )
+    capped = ", at most four a row," if any(len(f) > 4 for f in rules_by_tid.values()) else ""
+    return (
+        f"{lead} The Procedure cell names the rules that fired over the binary{capped} with no "
+        f"sandbox — {', '.join(over)} — each with its base rate: how much ordinary software it "
+        "fires on, over the corpus it names. It says nothing about how likely this sample is to "
+        "be benign, and `not measured` means the rule has no measurement, not that it never "
+        "fires._"
+    )
 
 
 def _capability_owner(report: MalwareReport) -> str:

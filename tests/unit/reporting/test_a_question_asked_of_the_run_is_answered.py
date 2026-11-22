@@ -574,8 +574,10 @@ class TestTheReport:
         # reading, and the Markdown holds none. Re-pinned when a held sandbox report's rows
         # came to be counted by the list each was read from (C49, C47): the Markdown of the
         # rich and hostile shapes, its two sandbox lines, now count one row of the
-        # dropped-files list and one mutex name; the dump did not move. Those are the only
-        # changes.
+        # dropped-files list and one mutex name; the dump did not move. Re-pinned when the
+        # ATT&CK table's note on `(rule match)` came to name the sources that table marks and
+        # to say "with no sandbox" only of the rules over the binary (T-845): that note of the
+        # rich and hostile Markdown; the dump did not move. Those are the only changes.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the

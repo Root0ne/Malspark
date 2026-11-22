@@ -165,11 +165,14 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # local8's Markdown and HTML re-pinned when a held sandbox report's rows came to be counted by
 # the list each was read from (C49, C47): its two sandbox lines now count rows of the
 # dropped-files list. Those are the only changes; the STIX did not change.
+# The Markdown and HTML re-pinned when the ATT&CK table's note on `(rule match)` came to name
+# the sources that table marks and to say "with no sandbox" only of the rules over the binary
+# (T-845): the note is the only change; the STIX did not change.
 STORED_RENDERS = {
-    "run7": ("05df01d163a3fc39", "28f9aefd57b6db32", "b15eda451166721a"),
-    "run5": ("94143f0e9b75f230", "a50eee57a3b2250f", "da124711a6423447"),
-    "run4": ("63ed48679c51edcf", "2497a07295eb3770", "c98bd74e8825a72a"),
-    "local8": ("ca52343edf814bae", "0525109f62801a10", "5ef0ca19f5e5ec42"),
+    "run7": ("c3bb06a69a94e5db", "61b3e2d4aa59715c", "b15eda451166721a"),
+    "run5": ("38196a8d18b426a7", "a3e4ed960ae63a31", "da124711a6423447"),
+    "run4": ("502a231af6a028ec", "d83e0bbf3fb37551", "c98bd74e8825a72a"),
+    "local8": ("7b0a7a7f136f3a81", "a15b3ffe20645d11", "5ef0ca19f5e5ec42"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
