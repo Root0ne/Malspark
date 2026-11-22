@@ -13,7 +13,9 @@ from malspark.reporting.detection_signatures import analyst_print_gate, rule_sta
 from malspark.reporting.models import ConsolidatedIOC, DetectionRule
 from malspark.reporting.renderers.stix_renderer import SAMPLE_DIGESTS, publishes, stated_verdict
 from malspark.reporting.run_diff import RunRecord, diff_runs
+from malspark.reporting.stated_host_values import listed_only
 from malspark.reporting.string_row_form import exported_form, string_row_forms
+from malspark.schemas.judgement import BENIGN_INDICATOR_TYPE, UNKNOWN_INDICATOR_TYPE
 from malspark.schemas.stix_models import tlp_name, with_current_property_names
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -153,11 +155,15 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     no row of the table holds is listed unpublished with its refusal
     (``builder.full_ioc_list``), so the default list is the table's published
     rows alone.
-    A domain or an address keeps the network block's suspicion flag and
-    reason. A row of the file's strings that nothing in the run reads as its
-    kind (a form row, ``reporting.string_row_form``) is served as its form:
-    the form as its ``kind`` (which a ``kind`` filter reads), the type §9
-    prints as its ``type``, and no suspicion flag or note. A stored report
+    ``is_suspicious`` is true where a detector or a reputation source flagged
+    the value in the network block (not on a form row), or the table
+    publishes the row under a type that claims activity (any but ``benign``
+    or ``unknown``, or none) and not as listed only (:func:`_claims_activity`).
+    A domain or an address keeps the network block's reason as its note. A
+    row of the file's strings that nothing in the run reads as its kind (a
+    form row, ``reporting.string_row_form``) is served as its form: the form
+    as its ``kind`` (which a ``kind`` filter reads), the type §9 prints as
+    its ``type``, and no note. A stored report
     the model cannot read serves the rows it stored.
     The sample's own digests, which the router established and no rule
     decides, are served even when the table cannot be read at all. A
@@ -199,7 +205,7 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
             {
                 "kind": served_kind,
                 "value": _feed_value(row_kind, row.type, row.value),
-                "is_suspicious": bool(listed.get("is_suspicious")),
+                "is_suspicious": bool(listed.get("is_suspicious")) or _claims_activity(row),
                 # An analyst's mutex, path, key, task or service carries the
                 # rule's refusal as its note, as it always has.
                 "notes": listed.get("reason")
@@ -224,6 +230,34 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
             }
         )
     return out
+
+
+# The export types that claim no activity: the sample's own word under a
+# Benign verdict, and the vocabulary's word for a claim nobody is making.
+_NO_ACTIVITY_TYPES = frozenset({BENIGN_INDICATOR_TYPE, UNKNOWN_INDICATOR_TYPE})
+
+
+def _claims_activity(row: ConsolidatedIOC) -> bool:
+    """Whether the table publishes ``row`` under a type that claims activity.
+
+    Read from the one record that decides the row's publication (its publish
+    answer and the type the table set with it), whatever case or surrounding
+    space the type was written with: ``benign`` and ``unknown`` claim none,
+    every other type and a published row with no type do. A row the answer
+    publishes as listed only (``stated_host_values.listed_only``, the test
+    every export that makes matchers asks) claims none by its publication.
+    A feed row's flag is this or the network block's flag (a detector or a
+    reputation source flagged the value), so a row published under a type
+    that claims activity, and not as listed only, is never served as not
+    suspicious, and a flag the network block holds is never lost by a
+    withholding.
+    """
+    written = str(row.indicator_type or "").strip().lower()
+    return (
+        publishes(row.published)
+        and not listed_only(row.published)
+        and written not in _NO_ACTIVITY_TYPES
+    )
 
 
 def _forms(report: Any) -> dict[tuple[str, str], str]:
