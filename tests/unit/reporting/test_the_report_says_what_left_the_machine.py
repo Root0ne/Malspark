@@ -329,12 +329,17 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # (T-811): that row's answer and context cell are the only change.
 # run7's Markdown and HTML re-pinned when the line under an analyst's table the report reads no
 # value of came to say so (T-780): that line is the only change.
+# Re-pinned when a held sandbox report's rows came to be counted by the list each was read from
+# (C49, C47: haiku4's and local8's two sandbox lines), the ATT&CK table's note on `(rule match)`
+# came to name the sources that table marks (T-845: that note, each run), and the line over an
+# analyst's table of values came to count the rows of that table (C15: that line, haiku4, local8,
+# run5 and run7). Those are the only changes.
 STORED_RENDERS = {
-    "run7": ("05df01d163a3fc39", "28f9aefd57b6db32"),
-    "run5": ("94143f0e9b75f230", "a50eee57a3b2250f"),
-    "run4": ("63ed48679c51edcf", "2497a07295eb3770"),
-    "local8": ("142eb3d0937a8e74", "0c9d8845fc7107b4"),
-    "haiku4": ("6fe2d4d8cee337ac", "40947280fbb55747"),
+    "run7": ("4f2ab549807c9e1e", "970dc30156608cc3"),
+    "run5": ("c884f14d25247892", "e36a9f91a7c2bd90"),
+    "run4": ("502a231af6a028ec", "d83e0bbf3fb37551"),
+    "local8": ("c730ed9407fa869f", "7e1ca8903d143422"),
+    "haiku4": ("032077946d1ea8bb", "62cd181ee29bd65c"),
 }
 
 
