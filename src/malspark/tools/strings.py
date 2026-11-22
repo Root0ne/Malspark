@@ -952,6 +952,11 @@ def strings(
     means "nothing matched" or "you asked past the end". ``next_offset`` is the
     offset of the following page, or ``None`` when this one ended the set — a
     caller that reads it never has to guess at a stride.
+
+    A row's ``offset`` is where its run starts. A run can hold many texts one
+    after another, so where ``pattern`` matched a text that begins inside the
+    run, the row also carries ``match_offsets``: where each matched text starts
+    in the file (:func:`_match_offsets`).
     """
     target = Path(path)
     if not target.is_file():
@@ -965,6 +970,7 @@ def strings(
         return {"error": f"unknown encodings {list(encodings)}; known: {known}", "tool": "strings"}
     try:
         matches = _matcher(pattern)
+        starts = _match_starts(pattern)
     except re.error as exc:
         return {"error": f"bad pattern {pattern!r}: {exc}", "tool": "strings"}
     lower = 0 if start is None else max(0, int(start))
@@ -988,7 +994,14 @@ def strings(
             matched += 1
             if matched <= offset or len(rows) >= limit:
                 continue
-            rows.append({"offset": at, "enc": enc, "text": decoded})
+            rows.append(
+                {
+                    "offset": at,
+                    **_match_offsets(at, 2 if enc == "utf16le" else 1, starts(decoded)),
+                    "enc": enc,
+                    "text": decoded,
+                }
+            )
     # ``more and rows``, not ``more`` alone: ``limit=0`` keeps every match out
     # of the page while leaving matches behind it, and an offset that does not
     # advance is a caller paging on ``next_offset`` forever.
@@ -1005,6 +1018,56 @@ def strings(
         "next_offset": offset + len(rows) if more else None,
         "truncated": more,
     }
+
+
+# How many matched texts of one run a row gives the offset of: a pattern that
+# matches almost every character of a long run would otherwise answer with a
+# number per character.
+_MAX_MATCH_OFFSETS = 16
+
+
+def _match_offsets(at: int, width: int, starts: list[int]) -> dict[str, Any]:
+    """Where each text the pattern matched in a run starts in the file, or ``{}``.
+
+    ``at`` is the run's first byte, ``width`` the bytes one character of the
+    run takes there, ``starts`` the matched texts' indexes in the run's text.
+    Given only where a matched text begins after the run's start, since there
+    the run's ``offset`` is not that text's; at most :data:`_MAX_MATCH_OFFSETS`
+    of them, with ``match_count`` saying how many the run holds when it holds
+    more.
+    """
+    if not starts or starts == [0]:
+        return {}
+    given: dict[str, Any] = {
+        "match_offsets": [at + width * index for index in starts[:_MAX_MATCH_OFFSETS]]
+    }
+    if len(starts) > _MAX_MATCH_OFFSETS:
+        given["match_count"] = len(starts)
+    return given
+
+
+def _match_starts(pattern: str | None) -> Callable[[str], list[int]]:
+    """Where in a run's text each text ``pattern`` matches begins, read as :func:`_matcher` reads.
+
+    A bare string is found case-insensitively, each find after the end of the
+    one before; an ``re:`` expression where each of its matches begins.
+    """
+    if not pattern:
+        return lambda _text: []
+    if pattern.startswith("re:"):
+        compiled = re.compile(pattern[3:], re.IGNORECASE)
+        return lambda text: [found.start() for found in compiled.finditer(text)]
+    needle = pattern.lower()
+
+    def starts(text: str) -> list[int]:
+        lowered, found = text.lower(), []
+        at = lowered.find(needle)
+        while at >= 0:
+            found.append(at)
+            at = lowered.find(needle, at + len(needle))
+        return found
+
+    return starts
 
 
 def _matcher(pattern: str | None) -> Callable[[str], bool]:
