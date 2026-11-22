@@ -13,6 +13,7 @@ from malspark.reporting.detection_signatures import analyst_print_gate, rule_sta
 from malspark.reporting.models import ConsolidatedIOC, DetectionRule
 from malspark.reporting.renderers.stix_renderer import SAMPLE_DIGESTS, publishes, stated_verdict
 from malspark.reporting.run_diff import RunRecord, diff_runs
+from malspark.reporting.stated_host_values import listed_only
 from malspark.reporting.string_row_form import exported_form, string_row_forms
 from malspark.schemas.judgement import BENIGN_INDICATOR_TYPE, UNKNOWN_INDICATOR_TYPE
 from malspark.schemas.stix_models import tlp_name, with_current_property_names
@@ -155,9 +156,10 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     (``builder.full_ioc_list``), so the default list is the table's published
     rows alone.
     ``is_suspicious`` is true where a detector or a reputation source flagged
-    the value in the network block, or the table publishes the row under a
-    type that claims activity (:func:`_claims_activity`). A domain or an
-    address keeps the network block's reason as its note. A
+    the value in the network block (not on a form row), or the table
+    publishes the row under a type that claims activity (any but ``benign``
+    or ``unknown``, or none) and not as listed only (:func:`_claims_activity`).
+    A domain or an address keeps the network block's reason as its note. A
     row of the file's strings that nothing in the run reads as its kind (a
     form row, ``reporting.string_row_form``) is served as its form: the form
     as its ``kind`` (which a ``kind`` filter reads), the type §9 prints as
@@ -241,14 +243,21 @@ def _claims_activity(row: ConsolidatedIOC) -> bool:
     Read from the one record that decides the row's publication (its publish
     answer and the type the table set with it), whatever case or surrounding
     space the type was written with: ``benign`` and ``unknown`` claim none,
-    every other type and a published row with no type do. A feed row's flag
-    is this or the network block's flag (a detector or a reputation source
-    flagged the value), so a published row is never served as not suspicious
-    beside its own publication, and a flag the network block holds is never
-    lost by a withholding.
+    every other type and a published row with no type do. A row the answer
+    publishes as listed only (``stated_host_values.listed_only``, the test
+    every export that makes matchers asks) claims none by its publication.
+    A feed row's flag is this or the network block's flag (a detector or a
+    reputation source flagged the value), so a row published under a type
+    that claims activity, and not as listed only, is never served as not
+    suspicious, and a flag the network block holds is never lost by a
+    withholding.
     """
     written = str(row.indicator_type or "").strip().lower()
-    return publishes(row.published) and written not in _NO_ACTIVITY_TYPES
+    return (
+        publishes(row.published)
+        and not listed_only(row.published)
+        and written not in _NO_ACTIVITY_TYPES
+    )
 
 
 def _forms(report: Any) -> dict[tuple[str, str], str]:

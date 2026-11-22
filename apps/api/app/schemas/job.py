@@ -538,8 +538,10 @@ class IOCEntry(BaseModel):
     kind: str
     value: str
     # True where a detector or a reputation source flagged the value in the
-    # report's network block, or the IOC table publishes the row under a type
-    # that claims activity (any ``indicator_type`` but ``benign`` or ``unknown``).
+    # report's network block (never on a row served as its form, which is no
+    # host name), or the IOC table publishes the row under a type that claims
+    # activity (any ``indicator_type`` but ``benign`` or ``unknown``, or none)
+    # and not as listed only (``stated_host_values.listed_only``).
     is_suspicious: bool = False
     notes: str | None = None
     # Where the row came from: ``sandbox`` for something the sample resolved,

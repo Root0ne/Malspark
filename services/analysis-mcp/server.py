@@ -954,7 +954,8 @@ def strings(
     than paging through everything.
 
     A row's ``offset`` is where its run starts; where ``pattern`` matched text
-    inside a run, ``match_offsets`` gives where each match starts in the file.
+    that begins after a run's start, ``match_offsets`` gives where each match
+    in that run starts in the file.
     At most 16 are given, and ``match_count`` then says how many the run holds.
     """
     return _guard(

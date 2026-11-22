@@ -4,10 +4,14 @@
 value in the report's network block, or the IOC table publishes the row under
 a type that claims activity: any type but ``benign`` or ``unknown`` (the
 vocabulary's words for no claim of activity), read whatever its case or
-surrounding space, and a published row with no type. So a published row is
-never served as not suspicious beside its own publication, and a flag the
-network block holds is never lost by a withholding. A form row is no domain:
-the network block's flag, read of it as one, does not stand on it.
+surrounding space, and a published row with no type. A row the table
+publishes as listed only (``stated_host_values.listed_only``, the test every
+export that makes matchers asks) claims no activity by its publication: its
+flag is the network block's alone. So a row published under a type that
+claims activity, and not as listed only, is never served as not suspicious,
+and a flag the network block holds is never lost by a withholding. A form row
+is no domain: the network block's flag, read of it as one, does not stand on
+it.
 """
 
 from __future__ import annotations
@@ -16,8 +20,10 @@ from typing import Any
 
 import pytest
 
+from app.services import report_service
 from app.services.report_service import _claims_activity, ioc_feed_rows
 from malspark.reporting.models import ConsolidatedIOC
+from malspark.reporting.stated_host_values import GENERIC_NOTE, NO_STIX_OBJECT
 
 # A URL the sample requested, its host, an address in the sample's process
 # tree, an address no flow of the tree reaches that a reputation source
@@ -198,6 +204,76 @@ class TestTheTypeIsReadWhateverItsCase:
         )
 
         assert _claims_activity(row) is False
+
+
+# A publish answer for a value the analysis stated, of a kind STIX has no
+# object for, and the same answer for a name ordinary software also uses.
+STATED = "yes: stated by the analysis (task, persistence), found whole in E1"
+NO_PATTERN = f"{STATED}; {NO_STIX_OBJECT}"
+LISTED_ONLY = f"{NO_PATTERN}; {GENERIC_NOTE}"
+
+
+def _table_row(kind: str, value: str, published: str) -> ConsolidatedIOC:
+    return ConsolidatedIOC(
+        type=kind,
+        value=value,
+        kind=kind,
+        source="analysis",
+        published=published,
+        role="listed",
+        indicator_type=None,
+    )
+
+
+def _served(
+    monkeypatch: pytest.MonkeyPatch, table: list[ConsolidatedIOC], network: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    monkeypatch.setattr(report_service, "full_ioc_list", lambda _typed: table)
+    return _by_value(ioc_feed_rows({**_report("Malware"), "network": network}))
+
+
+def _flagging(flag: bool) -> dict[str, Any]:
+    return {**NETWORK, "domains": [{**NETWORK["domains"][0], "is_suspicious": flag}]}
+
+
+class TestARowPublishedAsListedOnly:
+    def test_a_listed_only_row_claims_no_activity_by_its_publication(self) -> None:
+        row = _table_row("scheduled_task", "ExampleUpdateTask", LISTED_ONLY)
+
+        assert _claims_activity(row) is False
+
+    def test_a_listed_only_row_is_served_as_not_suspicious(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        table = [_table_row("scheduled_task", "ExampleUpdateTask", LISTED_ONLY)]
+
+        row = _served(monkeypatch, table, NETWORK)["ExampleUpdateTask"]
+
+        assert row["published"] is True
+        assert row["is_suspicious"] is False
+
+    def test_a_listed_only_row_carries_the_network_block_s_flag_alone(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        table = [_table_row("domain", "c2.example.com", LISTED_ONLY)]
+
+        unflagged = _served(monkeypatch, table, _flagging(False))["c2.example.com"]
+        flagged = _served(monkeypatch, table, _flagging(True))["c2.example.com"]
+
+        assert unflagged["published"] is flagged["published"] is True
+        assert unflagged["is_suspicious"] is False
+        assert flagged["is_suspicious"] is True
+
+    def test_a_published_row_of_a_kind_without_a_pattern_still_claims_activity(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        table = [_table_row("scheduled_task", "ExampleUpdateTask", NO_PATTERN)]
+
+        row = _served(monkeypatch, table, NETWORK)["ExampleUpdateTask"]
+
+        assert _claims_activity(table[0]) is True
+        assert row["published"] is True
+        assert row["is_suspicious"] is True
 
 
 class TestNoOtherFieldMoves:
