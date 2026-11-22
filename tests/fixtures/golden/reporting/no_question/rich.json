@@ -801,7 +801,8 @@
      "flow_reading": {
       "part_views": [],
       "processes": [],
-      "unnamed": 0
+      "unnamed": 0,
+      "views_read": 1
      },
      "geo": null,
      "is_suspicious": false,

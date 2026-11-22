@@ -170,6 +170,29 @@ class TestAStatedState:
 
         assert _found(body) == []
 
+    @pytest.mark.parametrize(
+        "reason",
+        [
+            "the publish rule read the sandbox's network view and found no flow row to it",
+            "the publish rule read the sandbox's network views and found no flow row to it",
+            "the publish rule read the sandbox's network view and found no flow row to it while "
+            "the capture recorded a conversation with it",
+            "the publish rule read no network view of the sandbox while the capture recorded a "
+            "conversation with it",
+            "the publish rule read only part of the network view and found no flow row to it "
+            "while the capture recorded a conversation with it",
+        ],
+    )
+    def test_each_form_naming_the_view_read_restated_word_for_word_is_a_state(
+        self, reason: str
+    ) -> None:
+        # The forms of a reading of no flow row (T-842), in a bracket and outside one.
+        def answers(_kind: str, value: str) -> str:
+            return f"no: {reason}" if value == ADDRESS else ""
+
+        for body in (f"It holds {ADDRESS} ({reason}).", f"It holds {ADDRESS}: {reason}."):
+            assert unpublished_value_violations(_body(body), answers) == [], body
+
     def test_a_reason_restated_in_part_is_no_state(self) -> None:
         (found,) = _found(f"It holds {ADDRESS} (the capture names its flows).")
 

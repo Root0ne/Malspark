@@ -1782,12 +1782,18 @@ def network_from_ledger(
 
     # The job's own capture is of its own detonation.
     marking[0] = ObservedIn(detonation=FIRST_DETONATION)
+    # The addresses a conversation of the capture is with, which the rule's
+    # sentence on an address no flow row reaches states beside it.
+    captured: set[str] = set()
     for _entry, data in _payloads(ledger, "pcap"):
         for row in data.get("conversations") or []:
             # A host that only sent to the sandbox was not contacted by it.
             if isinstance(row, dict) and row.get("inbound_only"):
                 continue
-            _add("ip", address_key(_first_str(row, "dst", "ip", "address")), "sandbox")
+            address = address_key(_first_str(row, "dst", "ip", "address"))
+            _add("ip", address, "sandbox")
+            if address:
+                captured.add(address)
         sni = data.get("sni")
         for name in sni if isinstance(sni, dict | list) else []:
             _add("domain", str(name), "sandbox")
@@ -1895,7 +1901,7 @@ def network_from_ledger(
             # Only where every flow to it names such a host, as for the
             # processes the task does not list.
             ip.launcher_unsettled_processes = list(unsettled[ip.address])
-        ip.flow_reading = flow_tally.reading(ip.address)
+        ip.flow_reading = flow_tally.reading(ip.address, captured=ip.address in captured)
     _state_who_kept(network, kept, isrs)
     for ip in network.ips:
         ip.observed_in = stated_marks(observed.get(("ip", ip.address), ()))
@@ -2986,6 +2992,11 @@ class _FlowTally:
             part = FlowPartView(detonation=mark.detonation if later and named else "")
             if part not in self.parts:
                 self.parts.append(part)
+        # How many detonations' network views the rule read, whole or as a part.
+        self.read = len(
+            {view.mark.detonation for view in views}
+            | {observed_mark(entry).detonation for entry in blanked}
+        )
         # address -> process key -> [kind, {view: rows}, named, [images]]
         self.keys: dict[str, dict[tuple[Any, ...], list[Any]]] = {}
         # The addresses a flow row the rule placed in the sample's tree goes to.
@@ -3036,8 +3047,13 @@ class _FlowTally:
         if image and image not in held_key[3]:
             held_key[3].append(image)
 
-    def reading(self, address: str) -> FlowReading:
-        """The rule's reading of the flow rows to ``address``; empty where none was read."""
+    def reading(self, address: str, *, captured: bool = False) -> FlowReading:
+        """The rule's reading of the flow rows to ``address``; empty where none was read.
+
+        A reading of no flow row records how many detonations' views the rule
+        read (``views_read``) and, from ``captured``, whether a conversation of
+        the job's capture is with the address (``capture_conversation``).
+        """
         processes: list[FlowProcess] = []
         unnamed = 0
         unnamed_counted = True
@@ -3063,11 +3079,14 @@ class _FlowTally:
                     counted=counted,
                 )
             )
+        empty = not processes and not unnamed
         return FlowReading(
             processes=processes,
             unnamed=unnamed,
             unnamed_counted=unnamed_counted,
             part_views=list(self.parts),
+            views_read=self.read if empty else None,
+            capture_conversation=empty and captured,
         )
 
 

@@ -568,7 +568,10 @@ class TestTheReport:
         # flow rows to it (T-811): the dump of the rich and hostile shapes, each address
         # row's empty reading; the Markdown did not move. Re-pinned when a row the host test
         # refuses came to say the test's own reason (T-782a): the hostile Markdown's two
-        # rows of its dotted name; the dump did not move. Those are the only changes.
+        # rows of its dotted name; the dump did not move. Re-pinned when a reading of no flow
+        # row came to record how many detonations' network views the rule read (T-842): the
+        # dump of the rich and hostile shapes, each address row's empty reading; the Markdown
+        # did not move. Those are the only changes.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the

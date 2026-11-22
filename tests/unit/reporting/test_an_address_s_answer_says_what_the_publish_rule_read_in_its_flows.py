@@ -128,7 +128,11 @@ class TestWhatTheRuleRead:
             {"tcp": []},
             ({"conversations": [{"dst": ADDRESS, "dport": 80}]}, {"tool": "pcap_summary"}),
         )
-        assert said == RULE + "found no flow row to it"
+        # The view it read, and beside it the capture's conversation (T-842).
+        assert said == (
+            RULE + "read the sandbox's network view and found no flow row to it while the "
+            "capture recorded a conversation with it"
+        )
 
     def test_a_flow_that_names_a_process_by_image_only(self) -> None:
         assert _said({"tcp": [_flow(**{FLOW_PROCESS_KEY: "svchost.exe"})]}) == (
@@ -258,7 +262,10 @@ class TestAViewReadAsAPart:
             ({"tcp": [{"dst": "198.51.100.9"}], "tcp_total": 9}, {"args": {"offset": 0}}),
             ({"conversations": [{"dst": ADDRESS, "dport": 80}]}, {"tool": "pcap_summary"}),
         )
-        assert said == RULE + "read only part of the network view and found no flow row to it"
+        assert said == (
+            RULE + "read only part of the network view and found no flow row to it while the "
+            "capture recorded a conversation with it"
+        )
 
     def test_a_view_cut_as_text_was_read_as_a_part(self) -> None:
         view = {"tcp": [_flow(pid=2756)], "pad": "x" * 600}
@@ -409,7 +416,8 @@ class TestAReadingNeverTakenIsKeptApart:
         assert network is not None
         (row,) = [ip for ip in network.ips if ip.address == ADDRESS]
         assert address_flow_reason(row) == (
-            RULE + "read only part of the network view and found no flow row to it"
+            RULE + "read only part of the network view and found no flow row to it while the "
+            "capture recorded a conversation with it"
         )
         whole = network_from_ledger([*_ledger({"tcp": [_flow()]}), blank])
         assert whole is not None

@@ -3626,11 +3626,19 @@ TENANT_NAME_IN_A_URL = (
 # is disputed, so "flows to it", which claims nothing of the others. Where the
 # rows of a count were read in more than one part view and in no whole one, the
 # count is no count of flows: the sentence says "flow rows" or "any flow row",
-# never "a flow" or "the flow". A word for word restatement of each form passes
-# the restatement check (no two words it reads stand more than its gap apart).
+# never "a flow" or "the flow". Where it read no flow row to the address, the
+# sentence names the view it read, by the reading's record of the views read,
+# and states beside it, from the same record, that the capture recorded a
+# conversation with the address; a reading recorded before the views it read
+# were names neither view nor capture. A word for word restatement of each
+# form passes the restatement check (no two words it reads stand more than its
+# gap apart, so the capture's fact follows "while", which it reads).
 FLOW_NOT_PLACED = "the publish rule placed no flow to it inside the sample's process tree"
 FLOW_RULE = "the publish rule "
 FLOW_NO_ROW = "found no flow row to it"
+FLOW_VIEW_READ = "read the sandbox's network {views} and "
+FLOW_NO_VIEW = "read no network view of the sandbox"
+FLOW_CAPTURED = " while the capture recorded a conversation with it"
 FLOW_NO_ID = "read no process id from {flows} to it"
 FLOW_NO_ID_UNCOUNTED = "any flow row"
 FLOW_MADE_BY = "found {flows} to it made by {whose}"
@@ -4137,7 +4145,8 @@ def unplaced_flow_reason(row: Any, word: Callable[[str], str] = str, *, names: b
     detonation where the platform's reading names more than the job's own;
     ``names`` false leaves every list of processes out. A row with no reading
     (one read from a report stored before it was recorded) is said by the
-    decision alone (:data:`FLOW_NOT_PLACED`).
+    decision alone (:data:`FLOW_NOT_PLACED`). A reading of no flow row says
+    the view it read (:func:`_no_flow_row`).
     """
     reading = _field(row, "flow_reading")
     if reading is None:
@@ -4146,13 +4155,34 @@ def unplaced_flow_reason(row: Any, word: Callable[[str], str] = str, *, names: b
     unnamed = int(_field(reading, "unnamed") or 0)
     lead = FLOW_RULE + _part_read(reading)
     if not processes and not unnamed:
-        return lead + FLOW_NO_ROW
+        return _no_flow_row(reading, lead)
     if not processes:
         if not _unnamed_counted(reading):
             return lead + FLOW_NO_ID.format(flows=FLOW_NO_ID_UNCOUNTED)
         return lead + FLOW_NO_ID.format(flows=f"the {_flows_noun(unnamed)}")
     clauses = _reading_clauses(processes, reading, processes, word, other=False, names=names)
     return lead + " and ".join(clauses)
+
+
+def _no_flow_row(reading: Any, lead: str) -> str:
+    """The rule's sentence on an address it read no flow row to, each half from the reading.
+
+    The view by the views the reading records it read (``views_read``): none
+    (:data:`FLOW_NO_VIEW`), one detonation's or several detonations'
+    (:data:`FLOW_VIEW_READ`), or the views it read as a part, which ``lead``
+    names; a reading that records no count of views read (one recorded
+    before it was) names no view beyond ``lead``. Beside it, where the
+    reading records a conversation of the capture with the address
+    (``capture_conversation``), :data:`FLOW_CAPTURED`.
+    """
+    read = _field(reading, "views_read")
+    if read is not None and not read:
+        said = FLOW_RULE + FLOW_NO_VIEW
+    elif read and lead == FLOW_RULE:
+        said = lead + FLOW_VIEW_READ.format(views="view" if read == 1 else "views") + FLOW_NO_ROW
+    else:
+        said = lead + FLOW_NO_ROW
+    return said + FLOW_CAPTURED if _field(reading, "capture_conversation") else said
 
 
 def _reading_clauses(

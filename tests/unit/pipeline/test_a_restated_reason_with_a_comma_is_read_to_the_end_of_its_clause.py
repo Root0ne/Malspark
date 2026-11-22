@@ -25,12 +25,31 @@ TWO_PARTS = ("the publish rule found no flow row to it", "no model kept it as an
 TWO_REASON = ", and ".join(TWO_PARTS)
 RESOLVER = "8.8.8.8"
 RESOLVER_REASON = "a public DNS resolver, which this run never publishes, whoever names it"
+# The forms that name the view the rule read and, beside it, the capture's conversation (T-842).
+CAPTURED = "198.51.100.40"
+CAPTURED_PARTS = (
+    "the publish rule read the sandbox's network view and found no flow row to it while the "
+    "capture recorded a conversation with it",
+    "no model kept it as an indicator",
+)
+UNVIEWED = "198.51.100.41"
+UNVIEWED_PARTS = (
+    "the publish rule read no network view of the sandbox while the capture recorded a "
+    "conversation with it",
+    "no model kept it as an indicator",
+)
 
 ANSWERS = {
     ONION: refused(ONION_REASON),
     NAME: refused(*TWO_PARTS),
     RESOLVER: refused(RESOLVER_REASON),
+    CAPTURED: refused(*CAPTURED_PARTS),
+    UNVIEWED: refused(*UNVIEWED_PARTS),
 }
+VIEW_FORMS = [
+    (CAPTURED, ", and ".join(CAPTURED_PARTS)),
+    (UNVIEWED, ", and ".join(UNVIEWED_PARTS)),
+]
 
 
 def _flagged(sentence: str) -> list[str]:
@@ -41,7 +60,9 @@ def _answer(_kind: str, value: str) -> str:
     return ANSWERS.get(value, "no: not in this table")
 
 
-@pytest.mark.parametrize(("value", "reason"), [(ONION, ONION_REASON), (NAME, TWO_REASON)])
+@pytest.mark.parametrize(
+    ("value", "reason"), [(ONION, ONION_REASON), (NAME, TWO_REASON), *VIEW_FORMS]
+)
 @pytest.mark.parametrize(
     "form",
     [
@@ -56,7 +77,9 @@ def test_a_restatement_outside_brackets_states_the_value_s_state(
     assert _flagged(form.format(value=value, reason=reason)) == []
 
 
-@pytest.mark.parametrize(("value", "reason"), [(ONION, ONION_REASON), (NAME, TWO_REASON)])
+@pytest.mark.parametrize(
+    ("value", "reason"), [(ONION, ONION_REASON), (NAME, TWO_REASON), *VIEW_FORMS]
+)
 def test_a_reason_that_begins_in_a_later_clause_states_no_state(value: str, reason: str) -> None:
     assert _flagged(f"{value} is the C2, and {reason}.") == [value]
 

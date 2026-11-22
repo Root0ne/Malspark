@@ -1,6 +1,19 @@
 {
  "entries": [
   {
+   "constant": "malspark.reporting.renderers.stix_renderer:FLOW_CAPTURED",
+   "condition": "the publish answer, the context cell, the judge's question and the flow-voice fact of a sandbox address row none of whose flows the rule placed in the sample's process tree, where the rule read no flow row to it and its reading records that a conversation of the job's capture is with it; beside each of the forms of a reading of no flow row",
+   "basis": [
+    "the row's flow_reading: processes, unnamed and capture_conversation (set by the network block from the capture's conversations that are not inbound only)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_the_refusal_on_an_address_no_flow_row_reaches_names_the_view_read.py::TestEachHalfIsReadFromTheRowsRecord::test_an_address_only_the_capture_recorded",
+    "tests/unit/reporting/test_the_refusal_on_an_address_no_flow_row_reaches_names_the_view_read.py::TestEachHalfIsReadFromTheRowsRecord::test_no_network_view_read",
+    "tests/unit/reporting/test_the_refusal_on_an_address_no_flow_row_reaches_names_the_view_read.py::TestEachHalfIsReadFromTheRowsRecord::test_a_capture_read_only_in_part_still_recorded_the_conversation"
+   ],
+   "text_digest": "2fba37df937531fd5a47d90a9a8f31fbec73c3edb18178f6cefa79f6b7fe8ece"
+  },
+  {
    "constant": "malspark.reporting.renderers.stix_renderer:FLOW_COUNTED",
    "condition": "the publish answer and context cell of a sandbox address row the publish rule puts on a lineage whose list is set only where every flow to it is of that kind (outside the sample's process tree, a process the report does not list, a script host naming the launcher) that holds no reading of its flow rows: a row of a report stored before the reading was recorded, on the surfaces served or packaged from that stored report (the report and its HTML, the IOC list, the evidence bundle, the job package) with no job entry that agrees with its stored decision; on the build path every address row carries its reading, so the form reaches no judge fact, flow-voice fact or capture line",
    "basis": [
@@ -32,6 +45,27 @@
    "text_digest": "505873f7dec10ae73ec2b3b76d1cb20164518193201b59346b83841d9e0927b6"
   },
   {
+   "constant": "malspark.reporting.renderers.stix_renderer:FLOW_NO_ROW",
+   "condition": "the publish answer, the context cell, the judge's question and the flow-voice fact of a sandbox address row none of whose flows the rule placed in the sample's process tree, where the rule read no flow row to it: after the clause naming the views it read as a part, or alone on a reading recorded before the views it read were (a row of a report stored before them, on the surfaces served from it)",
+   "basis": [
+    "the row's flow_reading: processes, unnamed, part_views and views_read"
+   ],
+   "test": [
+    "tests/unit/reporting/test_the_refusal_on_an_address_no_flow_row_reaches_names_the_view_read.py::TestEachHalfIsReadFromTheRowsRecord::test_a_page_of_the_view_is_said_as_a_part",
+    "tests/unit/reporting/test_the_refusal_on_an_address_no_flow_row_reaches_names_the_view_read.py::TestAReadingRecordedBeforeTheViewsRead::test_names_neither_view_nor_capture"
+   ],
+   "text_digest": "5004bc6c3b6efb60c96b089472d56bf1b334b658a3c22adb3ec19d866121d100"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:FLOW_NO_VIEW",
+   "condition": "the publish answer, the context cell, the judge's question and the flow-voice fact of a sandbox address row none of whose flows the rule placed in the sample's process tree, where the rule read no flow row to it and its reading records that it read no network view of the sandbox",
+   "basis": [
+    "the row's flow_reading: processes, unnamed and views_read 0"
+   ],
+   "test": "tests/unit/reporting/test_the_refusal_on_an_address_no_flow_row_reaches_names_the_view_read.py::TestEachHalfIsReadFromTheRowsRecord::test_no_network_view_read",
+   "text_digest": "b7c88ee5846abd1de0e34f1aa4bbaef9b9c871269ece512fcb15f0f73be5adc1"
+  },
+  {
    "constant": "malspark.reporting.renderers.stix_renderer:FLOW_OTHER_NO_ID_UNCOUNTED",
    "condition": "in the publish answer and the words beside it of a sandbox address row whose sentence names processes first, where its other flow rows name no process id and were read in more than one part view of one detonation and in no whole one",
    "basis": [
@@ -51,6 +85,18 @@
     "tests/unit/reporting/test_an_address_s_answer_says_what_the_publish_rule_read_in_its_flows.py::TestACountOverPagesIsNoCount::test_a_disputed_process_over_two_pages"
    ],
    "text_digest": "b2927418bf228d58486a2c98204192467728f88b63ed5090f51eba20f0ba8127"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:FLOW_VIEW_READ",
+   "condition": "the publish answer, the context cell, the judge's question and the flow-voice fact of a sandbox address row none of whose flows the rule placed in the sample's process tree, where the rule read no flow row to it, read no view as a part, and its reading records that it read the network view of one detonation (view) or of several (views)",
+   "basis": [
+    "the row's flow_reading: processes, unnamed, part_views and views_read"
+   ],
+   "test": [
+    "tests/unit/reporting/test_the_refusal_on_an_address_no_flow_row_reaches_names_the_view_read.py::TestEachHalfIsReadFromTheRowsRecord::test_an_address_with_neither_a_flow_row_nor_a_conversation_claims_neither",
+    "tests/unit/reporting/test_the_refusal_on_an_address_no_flow_row_reaches_names_the_view_read.py::TestEachHalfIsReadFromTheRowsRecord::test_two_detonations_views_are_named_as_views"
+   ],
+   "text_digest": "34b779f0fbcad3a6725d7efe495b33542aff2dc6adccbaecca9cc6b7c01444c0"
   }
  ]
 }
