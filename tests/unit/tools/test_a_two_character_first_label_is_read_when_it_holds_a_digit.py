@@ -89,7 +89,7 @@ class TestALabelOfTwoLetters:
         payload = {"body": sentence, "evidence_refs": []}
         assert unpublished_value_violations(payload, lambda kind, value: "") == []
 
-        held = {("domain", "ab.ru"): "no: seen only in the text of ev_0002 (strings)"}
+        held = {("domain", "ab.ru"): "no: the row from strings (ev_0002) holds it"}
         (found,) = unpublished_value_violations(
             payload, lambda kind, value: held.get((kind, value), "")
         )

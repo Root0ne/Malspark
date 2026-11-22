@@ -367,7 +367,7 @@ class TestThePublishRule:
 
         answer = _answer(_report(network), "ip", LISTED, source="analyst")
 
-        assert answer.startswith("no: named only by an analyst")
+        assert answer.startswith("no: its row is an analyst's listing")
         assert "an artifact of the network analyst" in answer
 
     def test_the_judge_s_named_address_publishes(self) -> None:

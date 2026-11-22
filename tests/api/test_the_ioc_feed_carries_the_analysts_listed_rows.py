@@ -75,7 +75,7 @@ def test_the_whole_feed_carries_the_analyst_s_mutex_refused(client: TestClient) 
     (row,) = [row for row in _rows(client, "?include=all") if row["value"] == MUTEX]
 
     assert (row["kind"], row["source"], row["published"]) == ("mutex", "analyst", False)
-    assert str(row["notes"]).startswith("no: named only by an analyst")
+    assert str(row["notes"]).startswith("no: its row is an analyst's listing")
 
 
 def test_the_published_feed_does_not(client: TestClient) -> None:
@@ -106,7 +106,7 @@ def test_an_old_report_s_stored_table_does_not_decide_the_feed() -> None:
     out = [r for r in ioc_feed_rows(stored.model_dump(mode="json")) if r["source"] == "analyst"]
 
     assert [row["value"] for row in out] == [MUTEX]
-    assert str(out[0]["notes"]).startswith("no: named only by an analyst")
+    assert str(out[0]["notes"]).startswith("no: its row is an analyst's listing")
     assert "relay-mutex-7f3c" in MarkdownRenderer().render(stored)
 
 

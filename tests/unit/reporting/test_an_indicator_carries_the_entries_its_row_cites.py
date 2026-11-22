@@ -83,8 +83,9 @@ def test_an_analyst_row_carries_the_entries_its_listing_cites_that_the_index_hol
         "source": "analyst",
         "context": "listed by the dynamic analyst",
         "published": (
-            "no: named only by an analyst (an artifact of the dynamic analyst); no tool answer "
-            "this report keeps holds it, and the judge did not keep it as an indicator"
+            "no: its row is an analyst's listing (an artifact of the dynamic analyst) and the "
+            "publish rule takes no listing as a source; the publish rule's whole-value search of "
+            "the tool sections this report keeps found it in none"
         ),
         "role": "listed",
         "indicator_type": None,

@@ -29,6 +29,13 @@ NAME = "relay-alpha-7f3c.top"
 ADDRESS = "185.199.110.77"
 
 
+# What the publish rule's whole-value search for a listed value read, as its fact names it.
+SEARCH = (
+    "the publish rule's whole-value search of the kept text of the run's successful tool "
+    "answers, which sets apart an answer to a query for it,"
+)
+
+
 def _entry(entry_id: str, tool: str, structured: dict[str, Any]) -> LedgerEntry:
     return LedgerEntry(id=entry_id, agent="dynamic", tool=tool, structured=structured)
 
@@ -217,7 +224,8 @@ class TestEveryOtherText:
             assert _sources(report)[value] == "strings", value
             answer = _published(report, value)
             assert not publishes(answer), value
-            assert answer.startswith(f"no: seen only in the text of {entry.id} ({entry.tool})")
+            assert answer.startswith("no: its row's source is strings and ")
+            assert f"{SEARCH} found it in {entry.id} ({entry.tool})" in answer
 
     def test_a_signature_answer_holding_it_in_its_description_too_is_one(self) -> None:
         entry = _indicator_entry()
@@ -233,7 +241,7 @@ class TestEveryOtherText:
         report = _build([_strings_entry(), _indicator_entry()])
 
         assert _sources(report) == {NAME: "strings", ADDRESS: "analyst"}
-        assert _published(report, NAME).startswith("no: seen only in the text of ev_0002 (strings)")
+        assert f"{SEARCH} found it in ev_0002 (strings)" in _published(report, NAME)
 
 
 def _live_document(indicator: dict[str, Any]) -> dict[str, Any]:

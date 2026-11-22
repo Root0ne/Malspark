@@ -27,7 +27,17 @@ from malspark.reporting.models import (
 from malspark.schemas.evidence import build_entry
 
 NAME = "only-judge.example.net"
-SEEN = "no: seen only in the text of ev_0007 (floss), and no second source in this run records it"
+# A judge's value with no row of its own, refused as the string sweep's would be; what the
+# whole-value search found is a fact after it.
+REFUSED_AS_A_STRING = (
+    "no: the judge's indicator names it and no row of the string sweep holds it and the publish "
+    "rule found no recovery of it and read no reputation record for it"
+)
+SEEN = (
+    f"{REFUSED_AS_A_STRING}; the publish rule's whole-value search of the kept text of the run's "
+    "successful tool answers, which sets apart an answer to a query for it, found it in ev_0007 "
+    "(floss)"
+)
 NOTHING = (
     "no: named only by the judge's indicator; no tool answer in this run holds it, and no "
     "second source records it"
@@ -157,8 +167,8 @@ def test_a_stored_report_names_the_kept_section_that_holds_it() -> None:
     answer = _answer(_stored(kept))
 
     assert answer == (
-        "no: seen only in the text of ev_0007 (floss), as the tool sections this stored report "
-        "keeps show it, and no second source in this run records it"
+        f"{REFUSED_AS_A_STRING}; the publish rule's whole-value search of the tool sections this "
+        "report keeps found it in ev_0007 (floss)"
     )
 
 
