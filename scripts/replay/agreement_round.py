@@ -22,7 +22,10 @@ place of the model:
   each passage's text is put back to what the first request showed (with the ids a rewrite
   added to its record's list taken out again, and the round's own flagged statements left
   out), and the round's own ``passages_of`` builds its passages, with their cites,
-  addresses, values, checks and writers, from it. The debate's mediations are read off the
+  addresses, values, checks and writers, from it. A quoted passage's shown form may read
+  more than one way (an escape, or a backslash before text): the stored text is kept where
+  it is one of the readings, and otherwise the first reading is put back and the passage
+  named (``passages_read_more_than_one_way``). The debate's mediations are read off the
   request. The reconstruction is checked: the prompt the round's code builds from it must
   equal the logged one, and where it does not the first differing position is said.
 
@@ -113,7 +116,7 @@ import re
 import subprocess  # nosec B404 — the harness itself over a ref's tree, an argument list
 import sys
 from collections import Counter
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -188,7 +191,10 @@ LIMITS = (
     "answer is recovered only where the retry request repeats it, and the model's raw answer "
     "text is fed only where the log holds it: an answer only the record keeps is fed "
     "re-serialised from its parsed form, which need not be the text the round read, and the "
-    "run is marked answer_reserialised; a text the prompt does not show is the stored one; "
+    "run is marked answer_reserialised; a text the prompt does not show is the stored one, "
+    "and so is a quoted text whose shown form reads as the stored one among other readings, "
+    "while one whose shown form reads more than one way, none the stored text, is put back "
+    "as its first reading and marked passages_read_more_than_one_way; "
     "the facts are rebuilt from the shortened stored ledger (the ledger after its byte "
     "budget), and no sandbox report or evidence corpus is stored; where the rebuilt prompt "
     "or the retry turn the round sends is not the logged one the round acts on an input the "
@@ -207,6 +213,7 @@ MARKS = (
     "prompt_reproduced",
     "first_difference",
     "passages_differing",
+    "passages_read_more_than_one_way",
     "facts_differing",
     "blocks_differing",
     "first_turn_sent_reproduced",
@@ -362,13 +369,24 @@ class Shown:
     text: str
     cites: frozenset[str]
     marked: bool
+    # A quoted text: its form as shown, and each text it reads as (``agreement_names._readings``),
+    # ``text`` the first; empty for a text shown as written.
+    quoted: str = ""
+    readings: tuple[str, ...] = ()
+
+    def reads_as(self, text: str) -> bool:
+        """Whether the prompt shows ``text`` as this passage: the text itself, or a text the
+        round's quoting writes in the shown form."""
+        from scripts.replay.agreement_names import _reads_as
+
+        return text == self.text or bool(self.quoted) and _reads_as(self.quoted, text)
 
 
 def shown_of(prompt: str) -> dict[str, Shown]:
     """Every passage the prompt shows, by id: its kind, its text as the round held it (a
     quoted text read back), the ids it cites, and whether it is marked read only or
     verbatim."""
-    from scripts.replay.agreement_names import _KINDS, _PASSAGE, _unquoted
+    from scripts.replay.agreement_names import _KINDS, _PASSAGE, _readings
 
     kind = ""
     out: dict[str, Shown] = {}
@@ -382,11 +400,15 @@ def shown_of(prompt: str) -> dict[str, Shown]:
         pid, _label, text = found.groups()
         head = line.split(": ", 1)[0]
         cited = _CITES.search(line[: len(line) - len(text)])
+        written = kind in ("fact", "judge")
+        readings = (text,) if written else _readings(text)
         out[pid] = Shown(
             kind=kind,
-            text=text if kind in ("fact", "judge") else _unquoted(text),
+            text=readings[0],
             cites=frozenset(c.strip() for c in cited.group(1).split(",")) if cited else frozenset(),
             marked="(read only)" in head or "(verbatim" in head,
+            quoted="" if written else text,
+            readings=readings,
         )
     return out
 
@@ -541,6 +563,7 @@ class PreRound:
     not_writable: list[str] = field(default_factory=list)
     ids_taken_out: list[str] = field(default_factory=list)
     flagged_left_out: int = 0
+    read_more_than_one_way: list[str] = field(default_factory=list)
 
 
 def _passages(report: Any, narrative_written: bool, discussion: Any) -> list[Any]:
@@ -591,7 +614,10 @@ def pre_round_report(stored: Mapping[str, Any], prompt: str) -> PreRound:
         passage = live.get(pid)
         if passage is None:
             pre.not_found.append(pid)
-        elif passage.text != said.text:
+        elif not said.reads_as(passage.text):
+            # No reading is the stored text: the one put back is not known to be the shown one.
+            if len(said.readings) > 1:
+                pre.read_more_than_one_way.append(pid)
             if passage.write is None:
                 pre.not_writable.append(pid)
             else:
@@ -629,6 +655,9 @@ class Recovery:
     first_difference: int | None = None
     difference_context: tuple[str, str] = ("", "")
     passages_differing: list[str] = field(default_factory=list)
+    # The written passages whose quoted form reads more than one way, none of the readings
+    # the stored text: each is put back as its first reading.
+    passages_read_more_than_one_way: list[str] = field(default_factory=list)
     # The fact, judge and debate blocks that differ, and every differing block by kind.
     facts_differing: list[str] = field(default_factory=list)
     blocks_differing: dict[str, dict[str, list[str]]] = field(default_factory=dict)
@@ -781,6 +810,7 @@ def recover(run: Path, name: str | None = None, *, allow_differing: bool = False
     pre = pre_round_report(stored.report, prompt)
     found.not_found, found.not_writable = pre.not_found, pre.not_writable
     found.ids_taken_out = pre.ids_taken_out
+    found.passages_read_more_than_one_way = pre.read_more_than_one_way
     rebuilt = rebuilt_prompt(pre, run)
     # Every block as shown in the two prompts, by kind: a prompt an older build wrote
     # differs in its facts wherever the facts' code changed since, and the round reads its
@@ -1220,6 +1250,13 @@ def mark_text(record: Mapping[str, Any]) -> str:
             said.append(f"{len(record['passages_differing'])} written passage(s) differ")
         if record.get("facts_differing"):
             said.append(f"{len(record['facts_differing'])} fact, judge or debate block(s) differ")
+    if record.get("passages_read_more_than_one_way"):
+        said.append(
+            f"{len(record['passages_read_more_than_one_way'])} written passage(s) read more "
+            "than one way, the first reading taken ("
+            + ", ".join(record["passages_read_more_than_one_way"])
+            + ")"
+        )
     if record.get("first_turn_sent_reproduced") is False:
         said.append("the first turn this tree's round sends is not the logged one")
     if record.get("retry_reproduced") is False:
@@ -1309,7 +1346,9 @@ def _cut(text: str, at: int) -> str:
 def against_stored(run: Path, case: Mapping[str, Any], record: Mapping[str, Any]) -> list[str]:
     """Every difference between the replay and the round as the run stored it: each passage's
     final text, each outcome record in order, the codes counted, the counts and the flagged
-    statements. Empty where the replay reproduces the stored round exactly."""
+    statements. Empty where the replay reproduces the stored round exactly. Where a passage
+    was put back as the first of its readings (``passages_read_more_than_one_way``), a text
+    the quoted form prints as the stored one is another reading of it, no difference."""
     from malspark.reporting.models import MalwareReport
 
     stored = json.loads((run / "report.json").read_bytes())
@@ -1317,9 +1356,10 @@ def against_stored(run: Path, case: Mapping[str, Any], record: Mapping[str, Any]
     texts = texts_of(report, bool(case.get("narrative_written", True)), case.get("discussion"))
     out: list[str] = []
     after = record["after"]
+    alike = _printed_alike if case.get("passages_read_more_than_one_way") else None
     for pid in sorted(set(texts) | set(after)):
         a, b = (after.get(pid) or {}).get("text"), (texts.get(pid) or {}).get("text")
-        if a == b:
+        if a == b or (alike is not None and alike(a, b)):
             continue
         if a is None or b is None:
             out.append(f"passage {pid}: {'only stored' if a is None else 'only replayed'}")
@@ -1383,18 +1423,34 @@ def against_stored(run: Path, case: Mapping[str, Any], record: Mapping[str, Any]
     else:
         out.extend(
             f"report {where}: {what}"
-            for where, what in _dump_differences(record["report"], report.model_dump(mode="json"))
+            for where, what in _dump_differences(
+                record["report"], report.model_dump(mode="json"), alike=alike
+            )
         )
     return out
 
 
-def _dump_differences(a: Any, b: Any, where: str = "", limit: int = 20) -> list[tuple[str, str]]:
+def _printed_alike(a: Any, b: Any) -> bool:
+    """Whether two texts are readings of one quoted form: the round's quoting prints them
+    alike."""
+    from malspark.agents.tool_fence import quoted_value
+
+    return isinstance(a, str) and isinstance(b, str) and quoted_value(a) == quoted_value(b)
+
+
+def _dump_differences(
+    a: Any,
+    b: Any,
+    where: str = "",
+    limit: int = 20,
+    alike: Callable[[Any, Any], bool] | None = None,
+) -> list[tuple[str, str]]:
     """Where two dumps differ, by path, the first ``limit`` of them (replay ``a``, stored
-    ``b``)."""
+    ``b``); two values ``alike`` holds the same are no difference."""
     out: list[tuple[str, str]] = []
 
     def walk(one: Any, two: Any, at: str) -> None:
-        if len(out) >= limit or one == two:
+        if len(out) >= limit or one == two or (alike is not None and alike(one, two)):
             return
         if isinstance(one, dict) and isinstance(two, dict):
             for key in sorted(set(one) | set(two), key=str):

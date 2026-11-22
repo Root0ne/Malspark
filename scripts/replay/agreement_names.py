@@ -72,14 +72,49 @@ def _request_text(log: Path) -> str:
     return ""
 
 
-def _unquoted(text: str) -> str:
-    from malspark.utils.written_forms import pack_reads
+def _unquoted(text: str, stored: str | None = None) -> str:
+    """A passage's text read back from its quoted form: ``stored`` where it is one of the
+    form's readings, the first reading otherwise (:func:`_readings`)."""
+    if stored is not None and _reads_as(text, stored):
+        return stored
+    return _readings(text)[0]
 
-    text = text.strip()
-    if len(text) >= 2 and text[0] == '"' and text[-1] == '"':
-        text = text[1:-1]
-    read = pack_reads(text)
-    return read[0] if read else text
+
+def _readings(text: str) -> tuple[str, ...]:
+    """Each text a passage shown in its quoted form may hold, the one taken where nothing
+    says which first: the quoted form escapes a control character and leaves a backslash
+    bare, so an escape may also read as a backslash before text. Asked are the pack's readings
+    (``pack_reads``), the text as shown, and each escape read alone or left alone; each is
+    kept where the round's quoting (``quoted_value``) writes it back as shown. A text whose
+    quoted form is the shown one is a reading too (:func:`_reads_as`), also where it reads
+    several escapes each way."""
+    from malspark.utils.written_forms import _PACK_ESCAPE_RE, pack_reads
+
+    def read(part: str) -> str:
+        return next(iter(pack_reads(part)), part)
+
+    shown = text.strip()
+    inner = shown[1:-1] if _quoted(shown) else shown
+    first = read(inner)
+    asked = [first, *pack_reads(inner), inner]
+    for escape in _PACK_ESCAPE_RE.finditer(inner):
+        at, end = escape.span()
+        asked.append(read(inner[:at]) + "\\" + read(inner[at + 1 :]))
+        asked.append(inner[:at] + read(inner[at:end]) + inner[end:])
+    held = tuple(dict.fromkeys(t for t in asked if _reads_as(shown, t)))
+    return held or (first,)
+
+
+def _quoted(text: str) -> bool:
+    return len(text) >= 2 and text[0] == '"' and text[-1] == '"'
+
+
+def _reads_as(shown: str, text: str) -> bool:
+    """Whether ``text`` is a reading of a passage shown as ``shown``: the round's quoting
+    writes it as shown."""
+    from malspark.agents.tool_fence import quoted_value
+
+    return _quoted(shown.strip()) and quoted_value(text) == shown.strip()
 
 
 def _passages(prompt: str, rebuilt: Mapping[str, Any] | None = None) -> list[Any]:
@@ -116,7 +151,10 @@ def _passages(prompt: str, rebuilt: Mapping[str, Any] | None = None) -> list[Any
                 id=pid,
                 label=label,
                 # A fact and a judge passage are shown as written; every other text quoted.
-                text=text if kind in ("fact", "judge") else _unquoted(text),
+                # The stored text where the quoted form reads as it, among other readings.
+                text=text
+                if kind in ("fact", "judge")
+                else _unquoted(text, getattr(same, "text", None)),
                 kind=kind,
                 write=(lambda _text: None) if writable else None,
                 closing=pid in _CLOSING,
