@@ -1133,29 +1133,24 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
     seen = False
 
     # Every call reads the same sandbox task: the pack's call and an analyst's
-    # answer the same processes and signatures, and each is one row.
-    processes: list[ProcessNode] = []
-    for _entry, data in _payloads(ledger, "sandbox_processes"):
-        nodes = [
-            ProcessNode(
-                pid=_int(row.get("pid")),
-                ppid=_int(row.get("ppid")),
-                name=str(row.get("name") or ""),
-                command_line=str(row.get("command_line") or ""),
-                marked=row.get("marked") is True,
-                task=str(row.get("task") or ""),
-                staged_by_sandbox=row.get(STAGED_KEY) is True,
-            )
-            for row in data.get("processes") or []
-            if isinstance(row, dict)
-        ]
+    # answer the same processes and signatures, and each is one row. Each
+    # detonation's processes are read apart, the job's own as the process
+    # tree and each further one's as its own tree (``detonation_trees``), and
+    # each takes the guest pids its own detonation's answers state.
+    listed: dict[str, list[ProcessNode]] = {}
+    for entry, data in _payloads(ledger, "sandbox_processes", detonations=True):
+        nodes = _process_nodes(data)
         if nodes:
             seen = True
-            processes.extend(nodes)
-    # A report of several tasks gives each task's processes ids of the task's own.
-    processes = _once(processes, lambda node: (process_identity(node), node.task))
-    _with_guest_pids(processes, ledger)
-    dynamic.process_tree = _as_tree(processes)
+            listed.setdefault(later_detonation_name(entry), []).extend(nodes)
+    for name in ("", *sorted(key for key in listed if key)):
+        # A report of several tasks gives each task's processes ids of the task's own.
+        processes = _once(listed.get(name, []), lambda node: (process_identity(node), node.task))
+        _with_guest_pids(processes, [e for e in ledger if later_detonation_name(e) == name])
+        if name:
+            dynamic.detonation_trees[name] = _as_tree(processes)
+        else:
+            dynamic.process_tree = _as_tree(processes)
 
     for entry, data in _payloads(ledger, "sandbox_signatures", detonations=True):
         later = [observed_mark(entry)] if later_detonation(entry) else []
@@ -1310,6 +1305,23 @@ def _registry_operation(value: Any) -> str:
     """One of the four operations the typed model knows; anything else is a query."""
     operation = str(value or "").strip().lower()
     return operation if operation in _REGISTRY_OPERATIONS else "query"
+
+
+def _process_nodes(data: dict[str, Any]) -> list[ProcessNode]:
+    """The processes one process view's answer lists, as the report's nodes."""
+    return [
+        ProcessNode(
+            pid=_int(row.get("pid")),
+            ppid=_int(row.get("ppid")),
+            name=str(row.get("name") or ""),
+            command_line=str(row.get("command_line") or ""),
+            marked=row.get("marked") is True,
+            task=str(row.get("task") or ""),
+            staged_by_sandbox=row.get(STAGED_KEY) is True,
+        )
+        for row in data.get("processes") or []
+        if isinstance(row, dict)
+    ]
 
 
 def _with_guest_pids(nodes: list[ProcessNode], ledger: list[LedgerEntry]) -> None:

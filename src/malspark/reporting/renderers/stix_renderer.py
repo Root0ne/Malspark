@@ -3978,29 +3978,59 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
     names no process, so its key is not attributed. Otherwise the first
     definite reason a record gives, and where every record is unattributed,
     what the rule found over every record of the value
-    (:func:`_host_unattributed`).
+    (:func:`_host_unattributed`), against each detonation's tree.
+
+    Each record is placed against the process tree of the detonation it was
+    observed in (``observed_in``): the job's own (``process_tree``) or a
+    further one's (``detonation_trees``), never another detonation's. A record
+    several detonations observed is placed in each of them. In a launched
+    detonation the launcher is not the sample: neither the submitted file nor
+    the sandbox's mark names it, so a record of its process is placed outside
+    the sample's tree.
     """
+    from malspark.reporting.ledger_projection import FIRST_DETONATION, marks_of
 
     def _build() -> dict[tuple[str, str], str]:
         dynamic = _field(report, "dynamic")
         if dynamic is None:
             return {}
         identity = _field(report, "identity")
-        tree = sample_process_trees(
-            list(_field(dynamic, "process_tree") or []),
-            str(_field(identity, "file_name") or ""),
-            str(_field(_field(identity, "hashes"), "sha256") or ""),
-        )
-        held: dict[tuple[str, str], tuple[str, list[Any], list[str | None]]] = {}
+        named = str(_field(identity, "file_name") or "")
+        sha256 = str(_field(_field(identity, "hashes"), "sha256") or "")
+        listings: dict[str, list[Any]] = {
+            FIRST_DETONATION: list(_field(dynamic, "process_tree") or []),
+            **{
+                str(name): list(nodes or [])
+                for name, nodes in (_field(dynamic, "detonation_trees") or {}).items()
+            },
+        }
+        trees: dict[str, ProcessTrees] = {}
+
+        def _tree(detonation: str) -> ProcessTrees:
+            if detonation not in trees:
+                trees[detonation] = sample_process_trees(
+                    listings.get(detonation, []), named, sha256
+                )
+            return trees[detonation]
+
+        held: dict[tuple[str, str], tuple[str, list[str | None]]] = {}
+        # The records of each value, by the detonation each is placed in.
+        placed: dict[tuple[str, str], dict[str, list[Any]]] = {}
 
         def _put(kind: str, value: Any, record: Any, did: str) -> None:
             text = str(value or "").strip()
             if not text:
                 return
             key = (kind, _value_key(kind, text))
-            _did, records, whys = held.setdefault(key, (did, [], []))
-            records.append(record)
-            whys.append(_not_the_sample_s(record, tree, did))
+            _did, whys = held.setdefault(key, (did, []))
+            try:
+                marks = marks_of(record)
+            except ValueError:
+                # A mark of no detonation's form names none: the job's own.
+                marks = []
+            for mark in dict.fromkeys(one.detonation for one in marks) or [FIRST_DETONATION]:
+                placed.setdefault(key, {}).setdefault(mark, []).append(record)
+                whys.append(_not_the_sample_s(record, _tree(mark), did))
 
         for op in list(_field(dynamic, "file_operations") or []):
             if not isinstance(op, dict):
@@ -4014,12 +4044,17 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
             if _field(mod, "operation") in ("create", "modify"):
                 _put("registry", _field(mod, "key"), {"pids": _field(mod, "pids")}, "wrote")
         out: dict[tuple[str, str], str] = {}
-        for key, (did, records, whys) in held.items():
+        for key, (did, whys) in held.items():
             if "" in whys:
                 out[key] = ""
                 continue
             definite = next((why for why in whys if why), None)
-            out[key] = definite or _host_unattributed(records, tree, did)
+            out[key] = definite or " and ".join(
+                dict.fromkeys(
+                    _host_unattributed(records, _tree(mark), did)
+                    for mark, records in placed[key].items()
+                )
+            )
         return out
 
     index: dict[tuple[str, str], str] = _memo(report, "sandbox_host_index", _build)

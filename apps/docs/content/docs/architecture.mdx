@@ -5845,7 +5845,16 @@ is assembled from what the run gathered rather than recomputed beside it:
   report's id, or by a number that is the guest's pid any answer of the run
   states for a listed process (the process tree keeps each process's `task`
   and `guest_pid`, a child nested under the parent of its own task), and the
-  tree is read per task (`sample_process_trees`). A writer outside its task's
+  tree is read per task (`sample_process_trees`). Each record is placed
+  against the process tree of the detonation it was observed in: the job's
+  own detonation's processes are the report's process tree, each further
+  detonation's are a tree of their own (`dynamic.detonation_trees`, with the
+  guest pids that detonation's answers state), and a record several
+  detonations observed is placed in each, never in another detonation's
+  tree, where the same task and id may name another process. In a launched
+  detonation the launcher is not the sample: neither the submitted file nor
+  the sandbox's mark names it, so a record of the launcher's process is
+  outside the sample's tree. A writer outside its task's
   tree is outside it, one the listing does not settle (a disputed lineage, or
   a number two listed processes answer to) is unattributed, and one named by
   a number no listed process answers to is refused as so named where every
