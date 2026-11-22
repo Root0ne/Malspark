@@ -53,7 +53,7 @@ STRINGS_ROW = (
 )
 SEARCH = (
     "the publish rule's whole-value search of the kept text of the run's successful tool "
-    "answers, which sets apart an answer to a query for it,"
+    "answers, which sets apart an answer to a call whose arguments hold it,"
 )
 
 
@@ -204,7 +204,7 @@ class TestAnAnswerToAQueryForTheValue:
         assert answer == (
             "no: its row is an analyst's listing (an artifact of the network analyst) and the "
             "publish rule takes no listing as a source, and the judge did not keep it as an "
-            f"indicator; {SEARCH} found it in none and set apart ev_0004 get_domain_report"
+            f"indicator; {SEARCH} found it in none and set apart ev_0004 (get_domain_report)"
         )
 
     def test_a_search_that_returns_the_match_from_the_file_is_named_too(self) -> None:
@@ -216,7 +216,7 @@ class TestAnAnswerToAQueryForTheValue:
         )
         answer = _row(_build([search], _listed(["domain", NAME])), NAME).published
 
-        assert answer.endswith(f"{SEARCH} found it in none and set apart ev_0005 search_strings")
+        assert answer.endswith(f"{SEARCH} found it in none and set apart ev_0005 (search_strings)")
 
 
 class TestOneKeyOnBothSides:

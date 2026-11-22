@@ -2759,6 +2759,7 @@ def indicator_publish_reason(
     spelled: str = "",
     digest: str = "",
     judge_s_value: bool = False,
+    judge_names_none: bool = False,
 ) -> str | None:
     """Why this run may publish one indicator of ``kind``, or ``None``.
 
@@ -3429,9 +3430,13 @@ LISTING_IS_NO_SOURCE = "the publish rule takes no listing as a source"
 
 
 # What the search for a listed value covered: the run's whole ledger, or only
-# the tool sections a stored report keeps.
+# the tool sections a stored report keeps; and each of them with nothing for
+# the search to read (a run whose record holds no successful tool answer, a
+# stored report that keeps no tool section).
 SEARCHED_THE_RUN = "run"
 SEARCHED_THE_REPORT = "report"
+SEARCHED_NO_ANSWER = "run:none"
+SEARCHED_NO_SECTION = "report:none"
 # The publish rule's whole-value search for a listed value, by what it read:
 # the kept text of every answer of the run that did not fail
 # (``ledger_projection.tool_sightings``), or the tool sections a stored report
@@ -3442,7 +3447,12 @@ SEARCH_OF_THE_RUN = (
 SEARCH_OF_THE_REPORT = (
     "the publish rule's whole-value search of the tool sections this report keeps"
 )
-QUERY_ANSWERS_APART = "which sets apart an answer to a query for it"
+QUERY_ANSWERS_APART = "which sets apart an answer to a call whose arguments hold it"
+# A search that read nothing gives no result: it says what it had to read.
+SEARCH_READ_NO_ANSWER = (
+    "the publish rule's whole-value search read no successful tool answer of the run"
+)
+NO_SECTION_TO_SEARCH = "this report keeps no tool section for the publish rule's search to read"
 
 
 def search_found(seen_in: str, searched: str = SEARCHED_THE_RUN, asked_in: str = "") -> str:
@@ -3450,15 +3460,23 @@ def search_found(seen_in: str, searched: str = SEARCHED_THE_RUN, asked_in: str =
 
     The entries it found the value in (``seen_in``, as
     :func:`listed_value_sightings` writes them), or none; where it found it in
-    none and set apart answers to a query for it (``asked_in``,
-    :func:`query_answers`), those answers by name. The search of the run's
-    ledger says that it sets such answers apart, so a list of the entries it
-    found claims nothing of an answer it set apart. It says what was searched
-    and what the search gave, never what the run or a tool holds: the search
-    reads whole values in the kept text of answers that did not fail.
+    none and set apart answers to calls whose arguments hold the value whole
+    (``asked_in``, :func:`query_answers`), those answers by name, written as
+    the found ones are. The search of the run's ledger says that it sets such
+    answers apart, so a list of the entries it found claims nothing of an
+    answer it set apart. It says what was searched and what the search gave,
+    never what the run or a tool holds: the search reads whole values in the
+    kept text of answers that did not fail. A search that had nothing to read
+    (``SEARCHED_NO_ANSWER``, ``SEARCHED_NO_SECTION``) gives no result and
+    says so; "found it in none" is said only where it read an answer or a
+    section.
     """
-    # The search of the run's ledger sets apart an answer to a query for the
-    # value, whose call asked about it; that of a stored report's sections does not.
+    if searched == SEARCHED_NO_ANSWER:
+        return SEARCH_READ_NO_ANSWER
+    if searched == SEARCHED_NO_SECTION:
+        return NO_SECTION_TO_SEARCH
+    # The search of the run's ledger sets apart an answer to a call whose
+    # arguments hold the value whole; that of a stored report's sections does not.
     search = (
         f"{SEARCH_OF_THE_RUN}, {QUERY_ANSWERS_APART},"
         if searched == SEARCHED_THE_RUN
@@ -3477,20 +3495,28 @@ def listing_reason(
     seen_in: str = "",
     searched: str = SEARCHED_THE_RUN,
     asked_in: str = "",
+    *,
+    judge_names_none: bool = False,
 ) -> PublishAnswer:
     """The ``no:`` a row an analyst's listing gave reads (source ``analyst``).
 
     Refusing parts: the listing, by whose it is, and the test that refuses
     it (a listing is no source); for a domain, an address or a URL, which the
-    rule then asks as the string sweep's, the judge's keep as well. Fact: what
-    the publish rule's whole-value search for the value found
-    (:func:`search_found`), which decides nothing.
+    rule then asks as the string sweep's, the judge's keep as well. Facts:
+    for any other kind, that the judge did not keep it, where the judge's
+    indicators were read and none names it (``judge_names_none``,
+    :func:`judge_names_none_of`); then what the publish rule's whole-value
+    search for the value found (:func:`search_found`). Neither decides.
     """
     who = f" ({listed_by})" if listed_by else ""
+    network = kind in NETWORK_KINDS
     return refused(
         f"{ANALYST_LISTING}{who} and {LISTING_IS_NO_SOURCE}",
-        JUDGE_DID_NOT_KEEP if kind in NETWORK_KINDS else "",
-        facts=(search_found(seen_in, searched, asked_in),),
+        JUDGE_DID_NOT_KEEP if network else "",
+        facts=(
+            JUDGE_DID_NOT_KEEP if judge_names_none and not network else "",
+            search_found(seen_in, searched, asked_in),
+        ),
     )
 
 
@@ -3520,7 +3546,10 @@ def listed_value_sightings(report: Any, kind: str, value: str) -> tuple[str, str
     written ``ev_0002 (decompile_function)``, or ``""``; and whether the
     search covered the run's whole ledger (the report's ``tool_sightings``,
     built at build time) or only the tool sections a stored report keeps,
-    which :func:`search_found` names.
+    which :func:`search_found` names. A search that found nothing and had
+    nothing to read says that instead: no answer of the run the search reads
+    (:func:`answers_the_search_reads`), or no tool section the report keeps
+    (:func:`_tool_section_texts`, the texts the section search reads).
     """
     from malspark.reporting.ledger_projection import searched_spelling, sighting_keys
 
@@ -3530,9 +3559,35 @@ def listed_value_sightings(report: Any, kind: str, value: str) -> tuple[str, str
         key = next((k for k in sighting_keys(kind, value) if k in stored), None)
         if key is not None:
             seen = [(str(eid), str(tool)) for eid, tool in stored[key]]
-            return "; ".join(f"{eid} ({tool})" for eid, tool in seen), SEARCHED_THE_RUN
+            words = "; ".join(f"{eid} ({tool})" for eid, tool in seen)
+            read = bool(words or answers_the_search_reads(report))
+            return words, SEARCHED_THE_RUN if read else SEARCHED_NO_ANSWER
     held = _section_sightings(report, searched_spelling(kind, value))
-    return "; ".join(f"{ids} ({tool})" for ids, tool in held), SEARCHED_THE_REPORT
+    words = "; ".join(f"{ids} ({tool})" for ids, tool in held)
+    read = bool(words or _tool_section_texts(report))
+    return words, SEARCHED_THE_REPORT if read else SEARCHED_NO_SECTION
+
+
+def answers_the_search_reads(report: Any) -> list[str]:
+    """The ids of the answers the run's whole-value search reads, from the report's index.
+
+    The search (``ledger_projection.tool_sightings``) reads every entry of
+    the ledger that repeats no earlier one and did not fail; the index
+    (``builder.evidence_index_row``) keeps one row per entry of that same
+    ledger with both facts, so this reads what the search read.
+    """
+    return [
+        str(_field(row, "id"))
+        for row in _field(report, "evidence_index") or []
+        if _field(row, "ok") and not _field(row, "repeated_of")
+    ]
+
+
+def _searched_where(searched: str) -> str:
+    """The record a search read: the run's ledger or a stored report's sections, held or empty."""
+    return {SEARCHED_NO_ANSWER: SEARCHED_THE_RUN, SEARCHED_NO_SECTION: SEARCHED_THE_REPORT}.get(
+        searched, searched
+    )
 
 
 def _tool_section_texts(report: Any) -> list[tuple[str, str, str]]:
@@ -3617,21 +3672,27 @@ def _listing_kwargs(report: Any, kind: str, key: str, row: Any) -> dict[str, str
     if seen:
         said["seen_in"] = seen
     else:
-        asked = query_answers(report, kind, key)
+        asked = query_answers(report, kind, key, as_found=True)
         if asked:
             said["asked_in"] = asked
     return said
 
 
-def query_answers(report: Any, kind: str, value: str) -> str:
-    """The entries whose answer holds a listed value only because a query asked about it."""
+def query_answers(report: Any, kind: str, value: str, *, as_found: bool = False) -> str:
+    """The entries whose answer holds a listed value whose call's arguments hold it whole.
+
+    Written ``ev_0004 get_domain_report``, or, ``as_found``, as the search's
+    found entries are (``ev_0004 (get_domain_report)``,
+    :func:`listed_value_sightings`).
+    """
     from malspark.reporting.ledger_projection import sighting_keys
 
     queried = _field(report, "tool_queries")
     if not isinstance(queried, dict):
         return ""
     key = next((k for k in sighting_keys(kind, value) if k in queried), "")
-    return "; ".join(f"{eid} {tool}" for eid, tool in queried.get(key) or [])
+    form = "{} ({})" if as_found else "{} {}"
+    return "; ".join(form.format(eid, tool) for eid, tool in queried.get(key) or [])
 
 
 # What the rule says of a well-known benign name a published URL carries.
@@ -4754,6 +4815,41 @@ def _judge_index(report: Any) -> frozenset[tuple[str, str]]:
     return _memo(report, "judge_index", _build)  # type: ignore[no-any-return]
 
 
+def judge_names_none_of(report: Any, kind: str, value: str) -> bool:
+    """Whether the judge's indicators were read and none names the value.
+
+    Read where the judge left a bundle (``stix_bundle_extended`` holding an
+    ``objects`` list) or the report keeps its values (``judge_indicators``):
+    the values of both, each under its key and as written lower-cased. With
+    neither, nothing of the judge was read and nothing is said of it.
+    """
+    bundle = _field(report, "stix_bundle_extended")
+    objects = bundle.get("objects") if isinstance(bundle, dict) else None
+    stored = _field(report, "judge_indicators") or []
+    if not isinstance(objects, list) and not stored:
+        return False
+
+    def _build() -> frozenset[tuple[str, str]]:
+        named = [
+            (str(_field(item, "kind") or ""), str(_field(item, "value") or "")) for item in stored
+        ]
+        named += [(held.kind, held.value) for held in exported_indicator_values(bundle)]
+        return frozenset(
+            spelled
+            for held_kind, held in named
+            for spelled in (
+                (held_kind, _value_key(held_kind, held)),
+                (held_kind, held.strip().lower()),
+            )
+        )
+
+    names: frozenset[tuple[str, str]] = _memo(report, "judge_names", _build)
+    return (kind, _value_key(kind, value)) not in names and (
+        kind,
+        str(value or "").strip().lower(),
+    ) not in names
+
+
 def _judge_url_hosts(report: Any) -> frozenset[tuple[str, str]]:
     """The ``(kind, key)`` of the host — address or name — of every URL the judge kept.
 
@@ -5713,6 +5809,7 @@ def publish_answer(
     spelled: str = "",
     digest: str = "",
     judge_s_value: bool = False,
+    judge_names_none: bool = False,
 ) -> str:
     """The publish rule's answer for one row, as the report prints it.
 
@@ -5857,7 +5954,14 @@ def publish_answer(
     if recovered and kind == "url" and on_a_denied_url_host(text):
         return refused(f"{recovered}, but it is on a developer or package-registry host")
     if listed_only_by_an_analyst(kind, source):
-        return listing_reason(kind, listed_by, seen_in, tool_search or SEARCHED_THE_RUN, asked_in)
+        return listing_reason(
+            kind,
+            listed_by,
+            seen_in,
+            tool_search or SEARCHED_THE_RUN,
+            asked_in,
+            judge_names_none=judge_names_none,
+        )
     if kind == "command":
         return refused("a command line is not an indicator this run publishes")
     if kind in BOUND_ONLY_KINDS:
@@ -6024,8 +6128,9 @@ def judge_value_answer(
         if seen:
             sourced["seen_in"] = seen
         else:
+            where = _searched_where(searched)
             sourced["judge_only"] = judge_only_reason(
-                searched, "" if searched != SEARCHED_THE_RUN else query_answers(report, kind, text)
+                where, "" if where != SEARCHED_THE_RUN else query_answers(report, kind, text)
             )
     return publish_answer(
         kind,

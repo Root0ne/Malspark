@@ -86,9 +86,9 @@ class TestAnIocList:
         assert row.context == "listed by the dynamic analyst"
         assert str(row.published) == (
             "no: its row is an analyst's listing (an artifact of the dynamic analyst) and the "
-            "publish rule takes no listing as a source; the publish rule's whole-value search of "
-            "the kept text of the run's successful tool answers, which sets apart an answer to a "
-            "query for it, found it in none"
+            "publish rule takes no listing as a source; the judge did not keep it as an "
+            "indicator; the publish rule's whole-value search read no successful tool answer of "
+            "the run"
         )
 
     def test_it_stays_the_analyst_s_in_appendix_a(self) -> None:

@@ -35,8 +35,8 @@ REFUSED_AS_A_STRING = (
 )
 SEEN = (
     f"{REFUSED_AS_A_STRING}; the publish rule's whole-value search of the kept text of the run's "
-    "successful tool answers, which sets apart an answer to a query for it, found it in ev_0007 "
-    "(floss)"
+    "successful tool answers, which sets apart an answer to a call whose arguments hold it, "
+    "found it in ev_0007 (floss)"
 )
 NOTHING = (
     "no: named only by the judge's indicator; no tool answer in this run holds it, and no "

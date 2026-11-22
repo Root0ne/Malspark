@@ -32,7 +32,7 @@ ADDRESS = "185.199.110.77"
 # What the publish rule's whole-value search for a listed value read, as its fact names it.
 SEARCH = (
     "the publish rule's whole-value search of the kept text of the run's successful tool "
-    "answers, which sets apart an answer to a query for it,"
+    "answers, which sets apart an answer to a call whose arguments hold it,"
 )
 
 
@@ -241,6 +241,7 @@ class TestEveryOtherText:
         report = _build([_strings_entry(), _indicator_entry()])
 
         assert _sources(report) == {NAME: "strings", ADDRESS: "analyst"}
+        assert _published(report, NAME).startswith("no: its row's source is strings and ")
         assert f"{SEARCH} found it in ev_0002 (strings)" in _published(report, NAME)
 
 

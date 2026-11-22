@@ -140,13 +140,15 @@
   },
   {
    "function": "malspark.reporting.renderers.stix_renderer:search_found",
-   "condition": "the fact after the refusal of a listed value, and of a value of another source or a judge's value that the search found: what the whole-value search read (and, for the run's ledger, that it sets apart an answer to a query for the value), then the entries it found the value in, or none, or none and the answers to a query for it it set apart, named",
+   "condition": "the fact after the refusal of a listed value, and of a value of another source or a judge's value that the search found: what the whole-value search read (and, for the run's ledger, that it sets apart an answer to a call whose arguments hold the value whole), then the entries it found the value in, or none, or none and the set-apart answers, named as the found ones are; where the search had nothing to read (no successful tool answer of the run, or no tool section the stored report keeps), that alone",
    "basis": [
-    "the report's tool_sightings and tool_queries for the value's key, or the stored report's kept tool sections"
+    "the report's tool_sightings and tool_queries for the value's key, or the stored report's kept tool sections",
+    "the report's evidence index (an entry that did not fail and repeats no earlier one), or the stored report's tool sections, for whether the search read anything"
    ],
    "test": [
     "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheBuiltInputs::test_the_search_clause_names_exactly_what_the_search_found",
-    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_query_s_answer_the_search_set_apart_is_named"
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_call_s_answer_the_search_set_apart_is_named",
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheBuiltInputs::test_each_form_of_the_clause_is_true_of_its_input"
    ],
    "text_digest": "13d6365146333c89fe08d673c1d34372035b93d2bcef5cbd2bc413e25bed46f6"
   },
@@ -198,7 +200,7 @@
   },
   {
    "function": "malspark.reporting.renderers.stix_renderer:publish_answer",
-   "condition": "every row's publish answer and every judge value's, on every surface that prints or reads it: yes with the evidence reason, or no with each refusing test as its own part and the facts after them; a listed value's answer gives the listing's test, the judge's keep for a network value, and what the whole-value search found as a fact; a row of another source the search found is refused by its own tests with the search's entries and who lists it as facts",
+   "condition": "every row's publish answer and every judge value's, on every surface that prints or reads it: yes with the evidence reason, or no with each refusing test as its own part and the facts after them; a listed value's answer gives the listing's test and the judge's keep for a network value, and, as facts, that the judge did not keep any other kind where the judge's indicators were read and none names it, and what the whole-value search found; a row of another source the search found is refused by its own tests with the search's entries and who lists it as facts",
    "basis": [
     "the row's kind, value, source and reputation",
     "the run's second-source record, recovery and verdict",
@@ -213,15 +215,39 @@
   },
   {
    "constant": "malspark.reporting.renderers.stix_renderer:QUERY_ANSWERS_APART",
-   "condition": "in the fact after the refusal of a listed value or a judge's value where the whole-value search of the run's ledger was run for it, right after what the search read: that the search sets apart an answer to a query for the value",
+   "condition": "in the fact after the refusal of a listed value or a judge's value where the whole-value search of the run's ledger was run for it and read at least one successful answer, right after what the search read: that the search sets apart an answer to a call whose arguments hold the value whole",
    "basis": [
     "ledger_projection.tool_sightings: an entry whose call arguments hold the value is kept apart, in tool_queries"
    ],
    "test": [
-    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_query_s_answer_the_search_set_apart_is_named",
-    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheBuiltInputs::test_the_search_clause_names_exactly_what_the_search_found"
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_call_s_answer_the_search_set_apart_is_named",
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheBuiltInputs::test_each_form_of_the_clause_is_true_of_its_input"
    ],
-   "text_digest": "40dfb24d34a93bb85fd280cedbaea6bc65b1b49f352fab71bac67f8e1fb0e32d"
+   "text_digest": "cac7785b16e59d45efd5f164b2922086853085392468358908c447d1d770aa92"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:SEARCH_READ_NO_ANSWER",
+   "condition": "the fact after the refusal of a listed value whose whole-value search of the run's ledger found it in no answer, where the run's record holds no successful tool answer for the search to read, in place of \"found it in none\"",
+   "basis": [
+    "the report's evidence index: no entry that did not fail and repeats no earlier one (the entries ledger_projection.tool_sightings reads)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_search_that_read_no_answer_gives_no_result",
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheSearchAndWhatItReadAgree::test_the_row_says_the_search_read_nothing_exactly_where_it_read_nothing"
+   ],
+   "text_digest": "071dc41dd162af389459c1751dbce02feb7b47a9d280a1f5152f83f3eb464c37"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:NO_SECTION_TO_SEARCH",
+   "condition": "the fact after the refusal of a listed value on a report stored before the whole-value search of the ledger was run, where the report keeps no tool section for the search of its sections to read, in place of \"found it in none\"",
+   "basis": [
+    "the stored report's sections whose source is a tool (none)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_report_that_keeps_no_tool_section_gives_no_result",
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheSearchAndWhatItReadAgree::test_a_stored_report_with_no_tool_section_says_it_keeps_none"
+   ],
+   "text_digest": "b037f98cd24c1f2b49a2afcaecd237d904817f183c7def3e8437b77d88bc905c"
   }
  ]
 }

@@ -146,9 +146,8 @@ class TestAListedValueIsLookedForInEveryToolAnswer:
             "no: its row's source is strings and no row of the string sweep holds it and the "
             "publish rule found no recovery of it and read no reputation record for it; the "
             "publish rule's whole-value search of the kept text of the run's successful tool "
-            "answers, which sets apart an answer to a query for it, found it in ev_0002 "
-            "(decompile_function); an artifact of the network "
-            "analyst lists it"
+            "answers, which sets apart an answer to a call whose arguments hold it, found it in "
+            "ev_0002 (decompile_function); an artifact of the network analyst lists it"
         )
 
     def test_a_value_the_search_finds_in_no_answer_is_refused_as_an_analyst_s_listing(
@@ -160,8 +159,8 @@ class TestAListedValueIsLookedForInEveryToolAnswer:
             "no: its row is an analyst's listing (an artifact of the network analyst) and the "
             "publish rule takes no listing as a source, and the judge did not keep it as an "
             "indicator; the publish rule's whole-value search of the kept text of the run's "
-            "successful tool answers, which sets apart an answer to a query for it, found it in "
-            "none"
+            "successful tool answers, which sets apart an answer to a call whose arguments hold "
+            "it, found it in none"
         )
 
 
@@ -215,7 +214,6 @@ class TestAStoredReport:
         assert answer == (
             "no: its row is an analyst's listing (an artifact of the network analyst) and the "
             "publish rule takes no listing as a source, and the judge did not keep it as an "
-            "indicator; the publish rule's whole-value search of the tool sections this report "
-            "keeps found it in none"
+            "indicator; this report keeps no tool section for the publish rule's search to read"
         )
-        assert "kept text of the run's" not in answer
+        assert "kept text of the run's" not in answer and "found it" not in answer

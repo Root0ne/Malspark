@@ -255,7 +255,7 @@ FORMS: list[tuple[str, str, str, str, dict[str, Any], tuple[str, ...], tuple[str
     (
         "six sightings, a lister",
         "domain",
-        "tox.chat",
+        "relay-chat.example.net",
         "analyst",
         {"seen_in": SIX_ENTRIES, "listed_by": LISTER},
         (f"{S.ANALYST_LISTING} ({LISTER}) and {S.LISTING_IS_NO_SOURCE}", S.JUDGE_DID_NOT_KEEP),

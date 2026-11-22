@@ -4,12 +4,18 @@ A value an analyst listed is looked for, whole, in the kept text of every tool
 answer of the run that did not fail (``ledger_projection.tool_sightings``). The
 search decides nothing: it is a fact after the refusal, saying what it read and
 what it gave ("found it in none", or the entries it names), never that no tool
-saw the value or that no second source records it, and with no "only".
+saw the value or that no second source records it, and with no "only". It sets
+apart an answer to a call whose arguments hold the value whole, and says so in
+those words. A search that read nothing gives no result: where the run's record
+holds no successful tool answer, or a stored report keeps no tool section, it
+says that, read from the same record the search reads.
 
 * A row an analyst's listing gave (source ``analyst``) is refused by the test
   that refuses a listing: the publish rule takes no listing as a source. A
   domain, an address or a URL is then asked as the string sweep's, and the
-  judge's keep is refused as well.
+  judge's keep is refused as well. For any other kind the judge's keep is a
+  fact after the refusal, said only where the judge's indicators were read and
+  none names the value.
 * A row of another source that the search found the value in is refused by its
   own tests (the strings refusal), the search's entries and who lists it after.
 * A judge's value with no row of its own is refused as the string sweep's
@@ -31,7 +37,8 @@ from malspark.pipeline.validation import (
     recommendation_indicator_violations,
     unpublished_value_violations,
 )
-from malspark.reporting.builder import MalwareReportBuilder
+from malspark.reporting import builder
+from malspark.reporting.builder import MalwareReportBuilder, evidence_index_row
 from malspark.reporting.ledger_projection import tool_sightings, value_key
 from malspark.reporting.misp import build_misp_attributes
 from malspark.reporting.models import ConsolidatedIOC, MalwareReport
@@ -47,10 +54,14 @@ ROOT = Path(__file__).resolve().parents[3]
 LISTER = "an artifact of the dynamic analyst"
 SEARCH = (
     "the publish rule's whole-value search of the kept text of the run's successful tool "
-    "answers, which sets apart an answer to a query for it,"
+    "answers, which sets apart an answer to a call whose arguments hold it,"
 )
-# The search of a stored report's sections sets no query's answer apart.
+# The search of a stored report's sections sets no call's answer apart.
 REPORT_SEARCH = "the publish rule's whole-value search of the tool sections this report keeps"
+# What a search that had nothing to read says in place of a result.
+READ_NONE = "the publish rule's whole-value search read no successful tool answer of the run"
+NO_SECTION = "this report keeps no tool section for the publish rule's search to read"
+JUDGE = "the judge did not keep it as an indicator"
 LISTING = (
     f"its row is an analyst's listing ({LISTER}) and the publish rule takes no listing as a source"
 )
@@ -61,6 +72,7 @@ RETIRED = (
     "seen only in the text of",
     "no second source in this run records it",
     "named only by an analyst",
+    "sets apart an answer to a query for it",
 )
 
 
@@ -86,12 +98,42 @@ class TestTheWords:
         )
         assert answer.refusing == (LISTING, S.JUDGE_DID_NOT_KEEP)
 
-    def test_a_query_s_answer_the_search_set_apart_is_named(self) -> None:
-        answer = S.listing_reason("mutex", LISTER, asked_in="ev_0004 get_domain_report")
+    def test_a_call_s_answer_the_search_set_apart_is_named(self) -> None:
+        answer = S.listing_reason("mutex", LISTER, asked_in="ev_0004 (get_domain_report)")
 
         assert answer == (
-            f"no: {LISTING}; {SEARCH} found it in none and set apart ev_0004 get_domain_report"
+            f"no: {LISTING}; {SEARCH} found it in none and set apart ev_0004 (get_domain_report)"
         )
+
+    def test_a_search_that_read_no_answer_gives_no_result(self) -> None:
+        answer = S.listing_reason("mutex", LISTER, searched=S.SEARCHED_NO_ANSWER)
+
+        assert answer == f"no: {LISTING}; {READ_NONE}"
+        assert answer.facts == (READ_NONE,)
+        assert "found it" not in answer
+
+    def test_a_report_that_keeps_no_tool_section_gives_no_result(self) -> None:
+        answer = S.listing_reason("mutex", LISTER, searched=S.SEARCHED_NO_SECTION)
+
+        assert answer == f"no: {LISTING}; {NO_SECTION}"
+        assert "found it" not in answer
+
+    def test_the_judge_s_keep_is_a_fact_where_the_judge_named_none(self) -> None:
+        told = S.listing_reason("mutex", LISTER, judge_names_none=True)
+        untold = S.listing_reason("mutex", LISTER)
+
+        assert told == f"no: {LISTING}; {JUDGE}; {SEARCH} found it in none"
+        assert (told.refusing, told.facts) == ((LISTING,), (JUDGE, f"{SEARCH} found it in none"))
+        # The state, what a writer restates, is the refusal alone either way.
+        assert answer_state(told) == answer_state(untold) == f"no: {LISTING}"
+        assert JUDGE not in untold
+
+    @pytest.mark.parametrize("kind", ["domain", "ip", "url"])
+    def test_a_network_listing_keeps_the_judge_s_keep_as_its_part_alone(self, kind: str) -> None:
+        answer = S.listing_reason(kind, LISTER, judge_names_none=True)
+
+        assert answer.refusing == (LISTING, S.JUDGE_DID_NOT_KEEP)
+        assert answer.facts == (f"{SEARCH} found it in none",)
 
     def test_a_stored_report_s_search_names_its_kept_sections(self) -> None:
         found = S.listing_reason("mutex", LISTER, "ev_0006 (iocs_from_file)", S.SEARCHED_THE_REPORT)
@@ -155,7 +197,8 @@ class TestTheWords:
         for answer in (
             S.listing_reason("mutex", LISTER),
             S.listing_reason("domain", LISTER, ENTRIES),
-            S.listing_reason("mutex", asked_in="ev_0004 get_domain_report"),
+            S.listing_reason("mutex", asked_in="ev_0004 (get_domain_report)"),
+            S.listing_reason("mutex", searched=S.SEARCHED_NO_ANSWER),
             S.publish_answer("domain", "relay.example.net", "strings", seen_in=ENTRIES),
         ):
             assert not [word for word in RETIRED if word in answer], answer
@@ -181,6 +224,7 @@ def _entry(
     ok: bool = True,
     truncated: bool = False,
     dropped: int = 0,
+    repeated_of: str | None = None,
 ) -> LedgerEntry:
     return LedgerEntry(
         id=f"ev_{number:04d}",
@@ -191,35 +235,36 @@ def _entry(
         ok=ok,
         truncated=truncated,
         chars_dropped=dropped,
+        repeated_of=repeated_of,
     )
 
 
-POOL = "--silentGupdateSGupdateUfdrespubupnphostfirewall"
+POOL = "--quietKsyncAKsyncBprintspoolbitsdhcp"
 # (label, kind, value, ledger, the entries the search finds it in)
 BUILT: list[tuple[str, str, str, list[LedgerEntry], list[str]]] = [
     (
         "B1 inside a longer run of text",
         "scheduled_task",
-        "UpdateSystem",
-        [_entry(1, "strings", structured={"strings": [{"text": "Ia2UpdateSystemNetapi32.dll"}]})],
+        "RefreshAgent",
+        [_entry(1, "strings", structured={"strings": [{"text": "Lb3RefreshAgentShell.dll"}]})],
         [],
     ),
     (
         "B2 inside a short run of a string pool",
         "registry",
-        "GupdateU",
+        "KsyncB",
         [_entry(1, "strings", structured={"strings": [{"text": POOL}]})],
         [],
     ),
     (
         "B3 the bytes of a memory read",
         "scheduled_task",
-        "UpdateUser",
+        "RefreshUser",
         [
             _entry(
                 1,
                 "read_memory",
-                structured={"data": list(b"UpdateUser"), "hex": b"UpdateUser".hex()},
+                structured={"data": list(b"RefreshUser"), "hex": b"RefreshUser".hex()},
             )
         ],
         [],
@@ -241,21 +286,24 @@ BUILT: list[tuple[str, str, str, list[LedgerEntry], list[str]]] = [
     (
         "B5 UTF-16 text",
         "mutex",
-        "GentlemenMutex01",
-        [_entry(1, "carve", output="x " + "\x00".join("GentlemenMutex01") + "\x00 y")],
+        "RelayMutex01",
+        [_entry(1, "carve", output="x " + "\x00".join("RelayMutex01") + "\x00 y")],
         [],
     ),
     (
         "B6 a query's answer beside a whole holder",
         "domain",
-        "tox.chat",
+        "relay-chat.example.net",
         [
-            _entry(1, "extract_iocs", structured={"domains": ["tox.chat"]}),
+            _entry(1, "extract_iocs", structured={"domains": ["relay-chat.example.net"]}),
             _entry(
                 2,
                 "strings",
-                structured={"pattern": "tox.chat", "strings": [{"text": "https://tox.chat/x"}]},
-                args={"pattern": "tox.chat"},
+                structured={
+                    "pattern": "relay-chat.example.net",
+                    "strings": [{"text": "https://relay-chat.example.net/x"}],
+                },
+                args={"pattern": "relay-chat.example.net"},
             ),
         ],
         ["ev_0001 (extract_iocs)"],
@@ -263,7 +311,7 @@ BUILT: list[tuple[str, str, str, list[LedgerEntry], list[str]]] = [
     (
         "B7 only the cut part of a shortened answer",
         "mutex",
-        "GentlemenMutex01",
+        "RelayMutex01",
         [
             _entry(
                 1, "strings", output="(first 4000 characters kept)", truncated=True, dropped=50000
@@ -274,8 +322,8 @@ BUILT: list[tuple[str, str, str, list[LedgerEntry], list[str]]] = [
     (
         "B8 only a failed call's text",
         "mutex",
-        "GentlemenMutex01",
-        [_entry(1, "strings", output="error after printing GentlemenMutex01", ok=False)],
+        "RelayMutex01",
+        [_entry(1, "strings", output="error after printing RelayMutex01", ok=False)],
         [],
     ),
     (
@@ -288,15 +336,15 @@ BUILT: list[tuple[str, str, str, list[LedgerEntry], list[str]]] = [
     (
         "B10 a bare component between separators",
         "mutex",
-        "gentlemenlock",
-        [_entry(1, "strings", output="C:\\ProgramData\\gentlemenlock\\x.dat")],
+        "relaylock",
+        [_entry(1, "strings", output="C:\\ProgramData\\relaylock\\x.dat")],
         [],
     ),
     (
         "B11 B1 under a tool nobody declared",
         "scheduled_task",
-        "UpdateSystem",
-        [_entry(1, "mytool", structured={"rows": ["Ia2UpdateSystemNetapi32.dll"]})],
+        "RefreshAgent",
+        [_entry(1, "mytool", structured={"rows": ["Lb3RefreshAgentShell.dll"]})],
         [],
     ),
     (
@@ -309,27 +357,98 @@ BUILT: list[tuple[str, str, str, list[LedgerEntry], list[str]]] = [
     (
         "B13 a whole holder",
         "scheduled_task",
-        "UpdateSystem",
-        [_entry(1, "strings", structured={"strings": [{"text": "UpdateSystem"}]})],
+        "RefreshAgent",
+        [_entry(1, "strings", structured={"strings": [{"text": "RefreshAgent"}]})],
         ["ev_0001 (strings)"],
     ),
 ]
 
 
+# Built inputs on which a form of the search's clause could be untrue:
+# (label, kind, value, ledger, the clause the answer must carry)
+BUILT_FORMS: list[tuple[str, str, str, list[LedgerEntry], str]] = [
+    (
+        "F1 an operation on the value, not a query for it",
+        "mutex",
+        "RelayMutex01",
+        [
+            _entry(
+                1,
+                "transform_bytes",
+                output="RelayMutex01 xored",
+                args={"data": "RelayMutex01", "op": "xor"},
+            )
+        ],
+        f"{SEARCH} found it in none and set apart ev_0001 (transform_bytes)",
+    ),
+    ("F2 an empty ledger", "mutex", "RelayMutex01", [], READ_NONE),
+    (
+        "F3 only failed answers",
+        "mutex",
+        "RelayMutex01",
+        [
+            _entry(1, "strings", output="RelayMutex01", ok=False),
+            _entry(2, "carve", output="RelayMutex01", ok=False),
+        ],
+        READ_NONE,
+    ),
+    (
+        "F4 failed answers and one successful",
+        "mutex",
+        "RelayMutex01",
+        [
+            _entry(1, "strings", output="RelayMutex01", ok=False),
+            _entry(2, "carve", output="unrelated"),
+        ],
+        f"{SEARCH} found it in none",
+    ),
+    (
+        "F5 answers that succeeded and kept no text",
+        "mutex",
+        "RelayMutex01",
+        [_entry(1, "strings"), _entry(2, "carve")],
+        f"{SEARCH} found it in none",
+    ),
+    (
+        "F6 only set-apart answers",
+        "mutex",
+        "RelayMutex01",
+        [_entry(1, "lookup", output="RelayMutex01 unknown", args={"q": "RelayMutex01"})],
+        f"{SEARCH} found it in none and set apart ev_0001 (lookup)",
+    ),
+    (
+        "F7 only a repeated call's entry",
+        "mutex",
+        "RelayMutex01",
+        [_entry(2, "strings", output="RelayMutex01", repeated_of="ev_0001")],
+        READ_NONE,
+    ),
+]
+
+
+def _search_record(ledger: list[LedgerEntry], kind: str, value: str) -> dict[str, Any]:
+    """The search's record as the builder stores it: the sightings of the entries
+    that repeat no earlier one, and the index of every entry."""
+    seen, queried = tool_sightings([e for e in ledger if not e.repeated_of], [(kind, value)])
+    return {
+        "tool_sightings": seen,
+        "tool_queries": queried,
+        "evidence_index": [evidence_index_row(entry) for entry in ledger],
+    }
+
+
 def _built_answer(kind: str, value: str, ledger: list[LedgerEntry]) -> PublishAnswer:
     """The answer the table's listed path gives, with the sightings the run's search gives."""
-    seen, queried = tool_sightings(ledger, [(kind, value)])
-    key = value_key(kind, value)
-    sighted = "; ".join(f"{eid} ({tool})" for eid, tool in seen.get(key, []))
-    asked = "" if sighted else "; ".join(f"{eid} {tool}" for eid, tool in queried.get(key, []))
+    record = _search_record(ledger, kind, value)
+    sighted, searched = S.listed_value_sightings(record, kind, value)
     answer = S.publish_answer(
         kind,
         value,
         "analyst",
         listed_by=LISTER,
         seen_in=sighted,
-        tool_search=S.SEARCHED_THE_RUN,
-        asked_in=asked,
+        tool_search=searched,
+        asked_in="" if sighted else S.query_answers(record, kind, value, as_found=True),
     )
     assert isinstance(answer, PublishAnswer)
     return answer
@@ -347,11 +466,27 @@ class TestTheBuiltInputs:
         named = [f"{eid} ({tool})" for eid, tool in seen[value_key(kind, value)]]
 
         assert named == found
-        clause = f"{SEARCH} found it in {'; '.join(named) if named else 'none'}"
+        read = any(entry.ok for entry in ledger)
+        clause = (
+            f"{SEARCH} found it in {'; '.join(named) if named else 'none'}" if read else READ_NONE
+        )
         assert answer.facts == (clause,)
         assert answer.refusing[0] == LISTING
         assert not S.publishes(answer)
         assert not [word for word in RETIRED if word in answer]
+
+    @pytest.mark.parametrize(
+        ("label", "kind", "value", "ledger", "clause"),
+        BUILT_FORMS,
+        ids=[b[0] for b in BUILT_FORMS],
+    )
+    def test_each_form_of_the_clause_is_true_of_its_input(
+        self, label: str, kind: str, value: str, ledger: list[LedgerEntry], clause: str
+    ) -> None:
+        answer = _built_answer(kind, value, ledger)
+
+        assert answer.facts == (clause,)
+        assert not S.publishes(answer)
 
     def test_a_tool_nobody_declared_is_answered_as_a_declared_one(self) -> None:
         by_label = {b[0]: b for b in BUILT}
@@ -361,16 +496,15 @@ class TestTheBuiltInputs:
         assert undeclared == declared
         assert (undeclared.refusing, undeclared.facts) == (declared.refusing, declared.facts)
 
-    @pytest.mark.parametrize(
-        "label", ["B7 only the cut part of a shortened answer", "B8 only a failed call's text"]
-    )
-    def test_an_answer_the_search_does_not_read_whole_is_no_absence_over_the_run(
-        self, label: str
-    ) -> None:
-        answer = _built_answer(*{b[0]: b for b in BUILT}[label][1:4])
+    def test_an_answer_the_search_does_not_read_whole_is_no_absence_over_the_run(self) -> None:
+        by_label = {b[0]: b for b in BUILT}
+        cut = _built_answer(*by_label["B7 only the cut part of a shortened answer"][1:4])
+        failed = _built_answer(*by_label["B8 only a failed call's text"][1:4])
 
-        assert answer.facts == (f"{SEARCH} found it in none",)
-        assert "this run" not in answer and "no tool" not in answer
+        assert cut.facts == (f"{SEARCH} found it in none",)
+        assert failed.facts == (READ_NONE,)
+        for answer in (cut, failed):
+            assert "this run" not in answer and "no tool" not in answer
 
     def test_the_controls_keep_their_meaning(self) -> None:
         by_label = {b[0]: b for b in BUILT}
@@ -384,7 +518,7 @@ class TestTheBuiltInputs:
 MUTEX = "Global\\relay-mutex-7f3c"
 
 
-def _report(ledger: list[LedgerEntry]) -> MalwareReport:
+def _report(ledger: list[LedgerEntry], judge_bundle: dict[str, Any] | None = None) -> MalwareReport:
     isrs = {
         "dynamic": AgentISR(
             agent_id="dynamic",
@@ -408,7 +542,7 @@ def _report(ledger: list[LedgerEntry]) -> MalwareReport:
         sandbox_report={},
         reports={},
         isr_reports=isrs,
-        stix_output={"objects": []},
+        stix_output={"objects": []} if judge_bundle is None else judge_bundle,
         run_summary={},
         discussion_history=[],
         final_decision="Malware",
@@ -417,6 +551,126 @@ def _report(ledger: list[LedgerEntry]) -> MalwareReport:
         sample_file_type="PE",
         evidence_ledger=ledger,
     ).build_deterministic()
+
+
+def _mutex_row(report: MalwareReport) -> ConsolidatedIOC:
+    (row,) = [r for r in builder.ioc_table(report) if r.value == MUTEX]
+    return row
+
+
+# Ledgers of every mix of what the search reads and leaves: a failed answer, a
+# successful one, a repeated call's entry.
+LEDGERS: list[tuple[str, list[LedgerEntry]]] = [
+    ("empty", []),
+    ("one failed", [_entry(1, "strings", output=MUTEX, ok=False)]),
+    ("one successful", [_entry(1, "strings", output=MUTEX)]),
+    (
+        "failed and successful",
+        [_entry(1, "strings", output=MUTEX, ok=False), _entry(2, "carve", output=MUTEX)],
+    ),
+    ("a repeat alone", [_entry(2, "strings", output=MUTEX, repeated_of="ev_0001")]),
+    (
+        "a successful, a repeat and a failed",
+        [
+            _entry(1, "strings", output=MUTEX),
+            _entry(2, "strings", output=MUTEX, repeated_of="ev_0001"),
+            _entry(3, "carve", output=MUTEX, ok=False),
+        ],
+    ),
+    (
+        "a repeat that failed and a successful",
+        [
+            _entry(1, "carve", output=MUTEX),
+            _entry(2, "carve", output=MUTEX, ok=False, repeated_of="ev_0001"),
+        ],
+    ),
+]
+
+
+class TestTheSearchAndWhatItReadAgree:
+    """The read-nothing form is read from the index of the same ledger the search reads."""
+
+    @pytest.mark.parametrize("ledger", [h for _n, h in LEDGERS], ids=[n for n, _h in LEDGERS])
+    def test_the_answers_counted_read_are_the_answers_the_search_read(
+        self, ledger: list[LedgerEntry]
+    ) -> None:
+        report = _report(ledger)
+        # Every entry's text holds the value whole, so the search names every
+        # answer it read.
+        searched = [eid for eid, _tool in report.tool_sightings[value_key("mutex", MUTEX)]]
+
+        assert S.answers_the_search_reads(report) == searched
+
+    @pytest.mark.parametrize("ledger", [h for _n, h in LEDGERS], ids=[n for n, _h in LEDGERS])
+    def test_the_row_says_the_search_read_nothing_exactly_where_it_read_nothing(
+        self, ledger: list[LedgerEntry]
+    ) -> None:
+        emptied = [e.model_copy(update={"output": "unrelated"}) for e in ledger]
+        report = _report(emptied)
+        facts = _mutex_row(report).published.facts
+        read = S.answers_the_search_reads(report)
+
+        assert facts[-1] == (f"{SEARCH} found it in none" if read else READ_NONE)
+
+    def test_a_stored_report_with_no_tool_section_says_it_keeps_none(self) -> None:
+        report = _report([_entry(1, "strings", output=MUTEX)])
+        stored = report.model_dump(mode="json")
+        stored["tool_sightings"] = None
+        stored["tool_queries"] = None
+        kept = MalwareReport.model_validate(stored)
+        stored["sections"] = [
+            s for s in stored["sections"] if not str(s.get("source") or "").startswith("tool:")
+        ]
+        bare = MalwareReport.model_validate(stored)
+
+        assert _mutex_row(kept).published.facts[-1].startswith(f"{REPORT_SEARCH} found it in ")
+        assert _mutex_row(bare).published.facts[-1] == NO_SECTION
+
+
+class TestTheJudgeSKeepIsAFactWhereItWasRead:
+    def test_a_judge_that_named_other_values_did_not_keep_it(self) -> None:
+        bundle = {
+            "objects": [
+                {
+                    "type": "indicator",
+                    "pattern": "[mutex:name = 'OtherMutex02']",
+                    "pattern_type": "stix",
+                    "indicator_types": ["malicious-activity"],
+                }
+            ]
+        }
+        row = _mutex_row(_report([_entry(1, "strings", output=MUTEX)], bundle))
+
+        assert row.published.facts[0] == JUDGE
+        assert answer_state(row.published) == f"no: {LISTING}"
+
+    def test_no_judge_bundle_says_nothing_of_the_judge(self) -> None:
+        row = _mutex_row(_report([_entry(1, "strings", output=MUTEX)], {}))
+
+        assert JUDGE not in row.published
+        assert row.published.facts == (f"{SEARCH} found it in ev_0001 (strings)",)
+
+    def test_the_fact_reads_the_judge_s_own_bundle(self) -> None:
+        bundle = {
+            "objects": [
+                {
+                    "type": "indicator",
+                    "pattern": f"[mutex:name = '{MUTEX}']",
+                    "pattern_type": "stix",
+                    "indicator_types": ["malicious-activity"],
+                }
+            ]
+        }
+        report = _report([_entry(1, "strings", output=MUTEX)])
+        stored = report.model_dump(mode="json")
+        # A report whose stored reading of the judge's values is empty while
+        # its bundle names the value.
+        stored["stix_bundle_extended"] = bundle
+        stored["judge_indicators"] = []
+
+        assert not S.judge_names_none_of(MalwareReport.model_validate(stored), "mutex", MUTEX)
+        assert S.judge_names_none_of(report, "mutex", MUTEX)
+        assert not S.judge_names_none_of({"stix_bundle_extended": {}}, "mutex", MUTEX)
 
 
 class TestEveryReaderComposesFromTheParts:
@@ -438,7 +692,7 @@ class TestEveryReaderComposesFromTheParts:
         row = self._row(self.REPORT())
 
         assert isinstance(row.published, PublishAnswer)
-        assert row.published == f"no: {LISTING}; {SEARCH} found it in ev_0001 (strings)"
+        assert row.published == (f"no: {LISTING}; {JUDGE}; {SEARCH} found it in ev_0001 (strings)")
 
     def test_the_writers_table_answer_keeps_the_parts(self) -> None:
         report = self.REPORT()
@@ -447,7 +701,7 @@ class TestEveryReaderComposesFromTheParts:
         assert isinstance(answer, PublishAnswer)
         assert (answer.refusing, answer.facts) == (
             (LISTING,),
-            (f"{SEARCH} found it in ev_0001 (strings)",),
+            (JUDGE, f"{SEARCH} found it in ev_0001 (strings)"),
         )
 
     def test_the_writer_s_feedback_and_the_mark_carry_the_state(self) -> None:
