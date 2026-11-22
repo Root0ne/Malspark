@@ -3260,16 +3260,25 @@ class _Context:
         with Markdown's own characters escaped (:func:`_inline_safe`). Fails
         closed: a table that cannot be read states every value refused for
         that reason, and a lookup that fails says the state is unknown.
+
+        A cell whose whole text is the value of its own indicator row, where
+        the reader of its values did not find that row (a URL is read as its
+        host), prints that row's own answer (:meth:`_own_row_state`); a cell
+        that prints no state otherwise prints none.
         """
         try:
             from malspark.reporting.defang import defang
 
+            unstated = self._unstated(text)
+            if not unstated:
+                return ""
+            own = self._own_row_state(text, unstated)
+            if own is not None:
+                return own
             found = [
                 (kind, value, self._cell_state(kind, value, state))
-                for kind, value, state in self._unstated(text)
+                for kind, value, state in unstated
             ]
-            if not found:
-                return ""
             if len(found) == 1:
                 said = found[0][2]
             else:
@@ -3278,6 +3287,43 @@ class _Context:
         except Exception as exc:  # noqa: BLE001 — the cell says what is not known
             logger.debug("markdown: a cell's publish state was not read (%s).", exc)
             return f" ({STATE_UNKNOWN})" if _names_a_network_value(text) else ""
+
+    def _own_row_state(self, text: Any, unstated: list[tuple[str, str, str]]) -> str | None:
+        """What a cell prints by its own row's answer, or ``None`` where the reader decides.
+
+        The cell's own row is the indicator row whose value is the cell's whole
+        text (one spelling, ``value_key``). Where the reader of the cell's
+        values found that row, or no row or rows of more than one answer hold
+        the text, or the row has no answer, the reader's values decide
+        (``None``). Otherwise the cell
+        prints that row's answer: nothing where the row is published, its
+        state where it is not (:meth:`_cell_state`).
+        """
+        from malspark.reporting.ledger_projection import value_key
+        from malspark.reporting.publish_parts import answer_state
+        from malspark.reporting.renderers.stix_renderer import publishes
+
+        whole = str(text or "").strip()
+        kinds = dict.fromkeys(
+            str(row.kind)
+            for row in self.iocs
+            if row.kind and value_key(str(row.kind), row.value) == value_key(str(row.kind), whole)
+        )
+        if not kinds:
+            return None
+        found = {(kind, value_key(kind, value)) for kind, value, _state in unstated}
+        if any((kind, value_key(kind, whole)) in found for kind in kinds):
+            return None
+        answers = {kind: self._answers(kind, whole) for kind in kinds}
+        if len({str(answer) for answer in answers.values()}) != 1:
+            return None
+        kind, answer = next(iter(answers.items()))
+        if not answer:
+            return None
+        if publishes(answer):
+            return ""
+        said = self._cell_state(kind, whole, answer_state(answer))
+        return f" ({_inline_safe(said, pipes=False, plain=self.plain)})"
 
     def _cell_state(self, kind: str, value: str, state: str) -> str:
         """What a cell prints beside one unpublished value: its state, or its whole answer
