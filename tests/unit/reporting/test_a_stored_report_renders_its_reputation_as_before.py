@@ -162,22 +162,16 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # The STIX re-pinned when the indicator of the sample's similarity digests came to be described
 # by the digests its pattern holds (T-785), and run7's Markdown and HTML when the line under an
 # analyst's table the report reads no value of came to say so (T-780): the only changes.
-# local8's Markdown and HTML re-pinned when a held sandbox report's rows came to be counted by
-# the list each was read from (C49, C47): its two sandbox lines now count rows of the
-# dropped-files list. Those are the only changes; the STIX did not change.
-# The Markdown and HTML re-pinned when the ATT&CK table's note on `(rule match)` came to name
-# the sources that table marks and to say "with no sandbox" only of the rules over the binary
-# (T-845): the note is the only change; the STIX did not change.
-# run7's, run5's and local8's Markdown and HTML re-pinned when the line over an analyst's table
-# of values came to count the rows of that table (C15): that line is the only change; the STIX
-# did not change.
-# The Markdown and HTML digests also move with the methodology's sentence on where the JSON
-# report holds the text a page cut was made from (T-780).
+# The Markdown and HTML digests also move with the sandbox lines, which count the rows of the
+# list each was read from (C49, C47), the ATT&CK table's note on the sources that table marks
+# `(rule match)` (T-845), the line over an analyst's table of values, which counts its rows by
+# where the values it types as an indicator are (C15), and the methodology's sentence on where
+# the JSON report holds the text a page cut was made from (T-780); the STIX does not.
 STORED_RENDERS = {
-    "run7": ("0fa6d90795af6c94", "039aa1c655330794", "b15eda451166721a"),
-    "run5": ("492bc0e0d0838254", "e1a4ceea3e359fda", "da124711a6423447"),
+    "run7": ("0e069ba49a5c6f03", "c1ef647839eb8368", "b15eda451166721a"),
+    "run5": ("1630a64187441867", "0d564f60a9856e15", "da124711a6423447"),
     "run4": ("4142ffee296025e6", "346c5d707e423707", "c98bd74e8825a72a"),
-    "local8": ("d283231f24eb19e8", "8f6117a4d3376aa1", "5ef0ca19f5e5ec42"),
+    "local8": ("24fa7a43d8606b6e", "ec2ed9879be550b4", "5ef0ca19f5e5ec42"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

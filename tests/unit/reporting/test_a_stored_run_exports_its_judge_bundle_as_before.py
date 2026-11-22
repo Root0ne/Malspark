@@ -152,17 +152,12 @@ STORED_EXPORTS = {
 # (T-811): that row's answer and context cell are the only change; the STIX did not change.
 # The STIX re-pinned when the indicator of the sample's similarity digests came to be described
 # by the digests its pattern holds (T-785): its description is the only change.
-# haiku4's Markdown and HTML re-pinned when a held sandbox report's rows came to be counted by
-# the list each was read from (C49, C47): its two sandbox lines now count rows of the
-# dropped-files list. Those are the only changes; the STIX did not change.
-# haiku4's Markdown and HTML re-pinned when the ATT&CK table's note on `(rule match)` came to
-# name the sources that table marks and to say "with no sandbox" only of the rules over the
-# binary (T-845): the note is the only change; the STIX did not change.
-# haiku4's Markdown and HTML re-pinned when the line over an analyst's table of values came to
-# count the rows of that table (C15): that line is the only change; the STIX did not change.
-# The Markdown and HTML digests also move with the methodology's sentence on where the JSON
-# report holds the text a page cut was made from (T-780).
-HAIKU4_RENDERS = ("64e26fb96e5c3137", "5e0813fe8eaebb50", "713fdef84ebda218")
+# The Markdown and HTML digests also move with the sandbox lines, which count the rows of the
+# list each was read from (C49, C47), the ATT&CK table's note on the sources that table marks
+# `(rule match)` (T-845), the line over an analyst's table of values, which counts its rows by
+# where the values it types as an indicator are (C15), and the methodology's sentence on where
+# the JSON report holds the text a page cut was made from (T-780); the STIX does not.
+HAIKU4_RENDERS = ("545e013bf79b3641", "f7d6e5f46c07308c", "713fdef84ebda218")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

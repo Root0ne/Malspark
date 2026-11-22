@@ -6245,8 +6245,9 @@ def analyst_list_note(
     ``typed`` gives, for each row of a table of values, where the indicator section holds the
     values the row gives (:func:`_typed_values_shown`). Where every value is the analyst's row
     there, the line says so; where the report reads none, it says so; otherwise it counts the
-    table's rows, each by where its values are (C15): two numbers in one sentence are counts
-    over the same rows."""
+    table's rows, each by where the values it types as an indicator are, and a row of more
+    than one kind by the places the counted rows show (C15): two numbers in one sentence are
+    counts over the same rows."""
     who = ", ".join(f"the {_one_line(name)} analyst" for name in analysts)
     indicators = section_reference(INDICATORS_TITLE)
     values = (
@@ -6258,17 +6259,31 @@ def analyst_list_note(
         # said of where its values are.
         values = " The report reads no value of it as an indicator."
     elif typed is not None and any(row - {_AS_THE_ANALYSTS} for row in typed):
+        # A row is classed by the values the reading types as an indicator in
+        # it; its other cells are not read, so the words name those values.
+        typed_values = "values it types as an indicator"
         cases = [
             (
                 {_AS_THE_ANALYSTS},
-                f"only values in {indicators} as the analyst's, with the publish rule's answer",
+                f"{typed_values}, each in {indicators} as the analyst's, with the publish "
+                "rule's answer",
             ),
-            ({_UNDER_ANOTHER_SOURCE}, f"only values in {indicators} under another source"),
-            ({_NOT_IN_THE_SECTION}, f"only values not in {indicators}"),
+            ({_UNDER_ANOTHER_SOURCE}, f"{typed_values}, each in {indicators} under another source"),
+            ({_NOT_IN_THE_SECTION}, f"{typed_values}, none of them in {indicators}"),
         ]
-        mixed = (
-            f"values of more than one kind: in {indicators} as the analyst's, in {indicators} "
-            f"under another source, or not in {indicators}"
+        # The places a row of more than one kind names: those the counted rows show.
+        shown_places = set().union(*(row for row in typed if len(row) > 1))
+        places = [
+            said
+            for held, said in (
+                (_AS_THE_ANALYSTS, f"in {indicators} as the analyst's"),
+                (_UNDER_ANOTHER_SOURCE, f"in {indicators} under another source"),
+                (_NOT_IN_THE_SECTION, f"not in {indicators}"),
+            )
+            if held in shown_places
+        ]
+        mixed = "values of more than one kind: " + (
+            " or ".join(places) if len(places) < 3 else f"{places[0]}, {places[1]}, or {places[2]}"
         )
         counted = [(sum(1 for row in typed if row == held), said) for held, said in cases]
         counted.append((sum(1 for row in typed if len(row) > 1), mixed))
@@ -7642,7 +7657,8 @@ def _rule_match_note(
         asserted = list(row.get("asserted_by") or []) if isinstance(row, dict) else []
         claimed = list(row.get("claimed_by") or []) if isinstance(row, dict) else []
         labels = _rule_labels(asserted, rules_by_tid.get(cell.technique_id, []))
-        marked.update(dict.fromkeys(s for s, label in labels.items() if label == "rule match"))
+        # Every label the row prints beside a rule source is a rule-match mark.
+        marked.update(dict.fromkeys(labels))
         layers += [str(x) for x in [*claimed, *cell.contributing_layers] if x not in labels]
     for tid, mapping in mappings.items():
         if tid not in seen:

@@ -54,9 +54,9 @@ def _report(
 # A finding a check left on a configuration row's value under the ids that row cites: the
 # row carries it; another row with the same text under other ids does not.
 _ON_CONFIG = FlaggedStatement(
-    sentence="--fast [ev_0006]",
+    sentence="--alpha [ev_0101]",
     code="report.citation_wrong_entry",
-    label='"--fast" was not found whole in ev_0006',
+    label='"--alpha" was not found whole in ev_0101',
 )
 
 
@@ -108,14 +108,14 @@ class TestTheWordsOfEachForm:
 class TestTheLineIsTrueOfTheRows:
     def test_a_command_and_a_flag_row_matched_by_text_carry_no_finding(self) -> None:
         report = _report(
-            configuration=[ConfigItem(key="Mode flag", value="--fast", evidence_refs=["ev_0006"])],
+            configuration=[ConfigItem(key="Switch", value="--alpha", evidence_refs=["ev_0101"])],
             commands=[
-                CommandRow(id="--fast", name="fast", evidence_refs=["ev_0034"]),
-                CommandRow(id="--full", name="full", evidence_refs=["ev_0034"]),
+                CommandRow(id="--alpha", name="alpha", evidence_refs=["ev_0201"]),
+                CommandRow(id="--omega", name="omega", evidence_refs=["ev_0201"]),
             ],
             flags=[
-                CliFlag(flag="--fast", description="Sets the ratio.", evidence_ref="ev_0089"),
-                CliFlag(flag="--full", description="Full scope.", evidence_ref="ev_0089"),
+                CliFlag(flag="--alpha", description="Sets the pace.", evidence_ref="ev_0301"),
+                CliFlag(flag="--omega", description="Wide pass.", evidence_ref="ev_0301"),
             ],
             flagged=[_ON_CONFIG],
         )
@@ -132,20 +132,20 @@ class TestTheLineIsTrueOfTheRows:
         # and flag rows with none.
         bundle = MarkdownRenderer(layout=BUNDLE).render(report)
         config_row = next(
-            ln for ln in _section(bundle, "Configuration").splitlines() if "Mode flag" in ln
+            ln for ln in _section(bundle, "Configuration").splitlines() if "Switch" in ln
         )
         assert "cited to an entry it was not found whole in" in config_row
         commands = _section(bundle, "Commands and capabilities")
-        command_row = next(ln for ln in commands.splitlines() if ln.startswith("| --fast"))
-        flag_row = next(ln for ln in commands.splitlines() if ln.startswith("| `--fast`"))
+        command_row = next(ln for ln in commands.splitlines() if ln.startswith("| --alpha"))
+        flag_row = next(ln for ln in commands.splitlines() if ln.startswith("| `--alpha`"))
         assert "**[" not in command_row and "**[" not in flag_row
 
     def test_a_row_that_carries_the_finding_under_its_own_citations(self) -> None:
         report = _report(
             commands=[
-                CommandRow(id="--fast", name="fast", evidence_refs=["ev_0006"]),
-                CommandRow(id="--fast", name="fast", evidence_refs=["ev_0034"]),
-                CommandRow(id="--full", name="full", evidence_refs=["ev_0034"]),
+                CommandRow(id="--alpha", name="alpha", evidence_refs=["ev_0101"]),
+                CommandRow(id="--alpha", name="alpha", evidence_refs=["ev_0201"]),
+                CommandRow(id="--omega", name="omega", evidence_refs=["ev_0201"]),
             ],
             flagged=[_ON_CONFIG],
         )
@@ -157,9 +157,9 @@ class TestTheLineIsTrueOfTheRows:
             "bundle lists it."
         ]
         bundle = MarkdownRenderer(layout=BUNDLE).render(report)
-        rows = [ln for ln in bundle.splitlines() if ln.startswith("| --fast")]
+        rows = [ln for ln in bundle.splitlines() if ln.startswith("| --alpha")]
         assert len(rows) == 2
-        assert "**[" in rows[0] and "ev_0006" in rows[0]
+        assert "**[" in rows[0] and "ev_0101" in rows[0]
         assert "**[" not in rows[1]
 
     def test_rows_named_by_a_finding_s_number_carry_it(self) -> None:
@@ -167,7 +167,7 @@ class TestTheLineIsTrueOfTheRows:
             identifiers=[
                 HostIdentifier(kind="Mutex", value="gate-one", purpose="a gate"),
                 HostIdentifier(
-                    kind="Mutex", value="--fast", purpose="a gate", evidence_refs=["ev_0034"]
+                    kind="Mutex", value="--alpha", purpose="a gate", evidence_refs=["ev_0201"]
                 ),
             ],
             flagged=[_ON_CONFIG],

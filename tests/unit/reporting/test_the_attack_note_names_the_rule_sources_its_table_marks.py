@@ -119,15 +119,25 @@ def test_no_absence_of_a_source_the_table_shows() -> None:
     assert marked == set(named) == {"capa", "sandbox", "sigma"}
 
 
-def test_a_table_that_marks_no_source_says_so() -> None:
+def test_a_source_marked_by_a_rule_match_on_resolved_names_is_named() -> None:
     resolved = {**_TABLE, "resolved_apis": ["DeleteVolumeShadow"]}
     report = _report([resolved], {})
     report.capability_matrix = [_cell("T1490", "Inhibit System Recovery")]
+    table = MarkdownRenderer(layout=BUNDLE).render(report).split("## 8.", 1)[1]
+    assert "api_capability (rule match on names resolved at runtime" in table
     assert _note(report).startswith(
-        "_No source in this table is marked `(rule match)`. The Procedure cell names the rules "
-        "that fired over the binary with no sandbox — the knowledge table's over names resolved "
-        "at runtime —"
+        "_A source marked `(rule match)` is a rule that fired, with no model; this table marks "
+        "api_capability. The Procedure cell names the rules that fired over the binary with no "
+        "sandbox — the knowledge table's over names resolved at runtime —"
     )
+
+
+def test_a_table_that_marks_no_source_says_so() -> None:
+    from malspark.reporting.renderers.markdown import _Context, _rule_match_note
+
+    report = _report([], {})
+    note = _rule_match_note(report, report.capability_matrix, {}, {}, _Context.of(report))
+    assert note.startswith("_No source in this table is marked `(rule match)`.")
 
 
 def test_no_model_reads_the_note() -> None:

@@ -220,18 +220,21 @@ def test_every_typed_value_shown_as_the_analyst_s_keeps_the_sentence() -> None:
     assert f"Each value it types as an indicator is in {where} as the analyst's" in note
 
 
-def test_values_shown_under_another_source_or_not_at_all_are_counted() -> None:
+def test_the_rows_are_counted_by_where_the_values_they_type_are() -> None:
     note = analyst_list_note(["static"], "iocs", [{"analyst"}, {"other"}, {"other"}, {"absent"}])
     one = analyst_list_note(["static"], "iocs", [{"other"}])
     where = section_reference(INDICATORS_TITLE)
 
     assert "Each value" not in note
     assert (
-        f"Of its 4 rows, 1 gives only values in {where} as the analyst's, with the publish "
-        f"rule's answer; 2 give only values in {where} under another source; 1 gives only values "
-        f"not in {where}."
+        f"Of its 4 rows, 1 gives values it types as an indicator, each in {where} as the "
+        f"analyst's, with the publish rule's answer; 2 give values it types as an indicator, each "
+        f"in {where} under another source; 1 gives values it types as an indicator, none of them "
+        f"in {where}."
     ) in note
-    assert f"Its one row gives only values in {where} under another source." in one
+    assert (
+        f"Its one row gives values it types as an indicator, each in {where} under another source."
+    ) in one
 
 
 def test_a_table_the_report_reads_no_value_of_says_so() -> None:
@@ -282,8 +285,9 @@ def test_the_count_is_read_from_the_table_and_the_indicator_rows() -> None:
 
     assert "Each value it types as an indicator is in §9 as the analyst's" in alone
     assert (
-        "Of its 3 rows, 1 gives only values in §9 as the analyst's, with the publish rule's "
-        "answer; 2 give only values in §9 under another source."
+        "Of its 3 rows, 1 gives values it types as an indicator, each in §9 as the analyst's, "
+        "with the publish rule's answer; 2 give values it types as an indicator, each in §9 under "
+        "another source."
     ) in shared
 
 
