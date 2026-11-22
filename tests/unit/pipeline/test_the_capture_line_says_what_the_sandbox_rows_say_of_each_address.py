@@ -172,6 +172,28 @@ class TestAViewNotReadWholeSaysNothing:
         shortened = _view(_flows(shortened=True, tcp_total=9))
         assert _capture_line(shortened) == _capture_line(reader=False)
 
+    @pytest.mark.parametrize(
+        ("network", "args"),
+        [
+            (None, {"offset": "2"}),
+            (None, {"offset": -1}),
+            ({"tcp": _flows()["tcp"]}, {"limit": "3"}),
+            (_flows(shortened=True), None),
+            (_flows(flows_total=9), None),
+        ],
+        ids=[
+            "offset-as-text",
+            "offset-below-zero",
+            "limit-as-text-filled",
+            "own-shortened-mark-alone",
+            "total-naming-no-list",
+        ],
+    )
+    def test_an_answer_cut_in_any_spelling_says_nothing_of_any_address(
+        self, network: dict[str, Any] | None, args: dict[str, Any] | None
+    ) -> None:
+        assert _capture_line(_view(network, args=args)) == _capture_line(reader=False)
+
     def test_a_truncated_entry_says_nothing_of_any_address(self) -> None:
         truncated = _view().model_copy(update={"truncated": True})
         assert _capture_line(truncated) == _capture_line(reader=False)

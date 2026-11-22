@@ -6010,7 +6010,9 @@ def publish_answer(
         return judge_only
     network = kind in NETWORK_KINDS
     holders = (
-        second_source_refusal_parts(text, corroborating, network=network) if from_strings else ()
+        second_source_refusal_parts(text, corroborating, network=network, path=kind == "path")
+        if from_strings
+        else ()
     )
     # Where the publish rule searched for a listed value, what the search
     # found and who lists it are facts after the refusal its own tests give:
@@ -7068,12 +7070,14 @@ def whole_as_held(value: str, text: str, cut: bool, *, path: bool = False) -> bo
     return stands_as_a_token(value, text, starts(value.lower(), text))
 
 
-def second_source_refusal(value: Any, corroborating: Any, *, network: bool = False) -> str:
+def second_source_refusal(
+    value: Any, corroborating: Any, *, network: bool = False, path: bool = False
+) -> str:
     """Which holders an analyst section cites hold a value the rule did not publish, in words.
 
     ``""`` for no such holder: :func:`second_source_refusal_parts`, joined.
     """
-    return "; ".join(second_source_refusal_parts(value, corroborating, network=network))
+    return "; ".join(second_source_refusal_parts(value, corroborating, network=network, path=path))
 
 
 # How a holder clause says a citation, as the rule's lookup reads one
@@ -7089,7 +7093,7 @@ _NETWORK_RULE_DOES_NOT_ASK = "the publish rule does not ask which entries hold a
 
 
 def second_source_refusal_parts(
-    value: Any, corroborating: Any, *, network: bool = False
+    value: Any, corroborating: Any, *, network: bool = False, path: bool = False
 ) -> tuple[str, ...]:
     """:func:`second_source_refusal`'s clauses, each whole: the cut reason and the string as
     the record keeps it, or each holder an analyst section cites; ``()`` for none.
@@ -7102,7 +7106,9 @@ def second_source_refusal_parts(
     On a ``network`` row no holder's kind is asked: every cited entry (of
     whatever kind), every cited section and the section beside an uncited
     entry is named with :data:`_NETWORK_RULE_DOES_NOT_ASK`, never with a
-    kind's standing. An entry no analyst section cites is not named.
+    kind's standing. An entry no analyst section cites is not named. A
+    section holds a ``path`` value only as a whole path (:func:`whole_path_in`),
+    never as the leading directory of a longer one, as the rule reads it.
     """
     record = _as_record(corroborating)
     text = str(value or "").strip()
@@ -7113,7 +7119,8 @@ def second_source_refusal_parts(
         return (CUT_REASON, f'the string reads "{_quoted_token(token)}"')
 
     def holders(held: tuple[tuple[str, str], ...]) -> list[str]:
-        return list(dict.fromkeys(tool for tool, part in held if whole_value_in(text, part)))
+        holds_it = whole_path_in if path else whole_value_in
+        return list(dict.fromkeys(tool for tool, part in held if holds_it(text, part)))
 
     def cited_entries(standings: tuple[str, ...]) -> list[tuple[str, str]]:
         return [

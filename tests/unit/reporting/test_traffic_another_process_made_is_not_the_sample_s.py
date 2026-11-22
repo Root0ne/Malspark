@@ -662,8 +662,24 @@ class TestAViewIsAPageOnlyWhereItsAnswerShowsItWasCut:
             ({}, {"next_cursor": "c2"}),
             ({"offset": 1}, {}),
             ({"limit": 1}, {}),
+            ({"offset": "2"}, {}),
+            ({"offset": -1}, {}),
+            ({"limit": "1"}, {}),
+            ({}, {"shortened": True}),
+            ({}, {"flows_total": 9}),
         ],
-        ids=["count", "flag", "next-field", "offset-argument", "list-filling-its-limit"],
+        ids=[
+            "count",
+            "flag",
+            "next-field",
+            "offset-argument",
+            "list-filling-its-limit",
+            "offset-as-text",
+            "offset-below-zero",
+            "limit-as-text-filled",
+            "own-shortened-mark-alone",
+            "total-naming-no-list",
+        ],
     )
     def test_an_answer_that_shows_or_cannot_rule_out_a_cut_is_a_page(
         self, args: dict[str, Any], markers: dict[str, Any]

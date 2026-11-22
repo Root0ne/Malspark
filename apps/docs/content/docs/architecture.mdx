@@ -5897,10 +5897,13 @@ is assembled from what the run gathered rather than recomputed beside it:
   A view is a page only where its answer shows it holds part of the view:
   its own paging markers (a flag, a next field, a count bound to a list it
   does not reach, a page number, a start past the first row), the platform's
-  shortening, a call's `offset` placing it after the first row, or a list
-  exactly as long as a bounding argument of the call with no marker beside
-  it; a call's row limit alone makes no page, and an answer holding every
-  row is the whole view. A page, or a shortened view, can only show that a
+  shortening, the tool's own top-level mark that it was shortened or
+  truncated (a set `shortened` or `truncated` key that is not the platform
+  shortener's map), a `<name>_total` count that names no list of the answer,
+  a call's `offset` that is not zero, or a list exactly as long as a
+  bounding argument of the call with no marker beside it, an argument read
+  as a number whatever its spelling (`"2"`, `-1`); a call's row limit alone
+  makes no page, and an answer holding every row is the whole view. A page, or a shortened view, can only show that a
   record is the sample's: there a record naming another lineage counts as
   naming none, for the three kinds alike, and `unlisted_processes` is set
   from whole views only; a name the report gives part of its resolved addresses
@@ -7015,7 +7018,12 @@ Two halves, in this order:
   held only as a whole value: a record that holds it only as the leading
   directory of a longer path (`C:\Temp` inside `C:\Temp\x.exe`) does not
   hold it, while a file name that is a recorded path's last component is
-  held; a value of another kind keeps the boundary rule. A refusal
+  held. A further component is whatever follows the separator, unless it is
+  white space or one of `"` `'` `<` `>` `|` `*` `?` `;` `,`, so a component
+  opening with a brace, a dollar sign, a bracket or a letter outside ASCII
+  makes the path a leading directory like any other; the refusal's clauses
+  on the sections that hold a path read it the same way. A value of another
+  kind keeps the boundary rule. A refusal
   names what held the value and confirms nothing — a re-reading, an entry no
   claim cites — and a cut's refusal says so in its first clause and quotes
   the token after it.

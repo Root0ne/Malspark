@@ -3251,26 +3251,57 @@ def _view_paged(entry: LedgerEntry, data: dict[str, Any]) -> bool:
     its own paging markers (a flag, a next field, a count bound to a list it
     does not reach, a page number, a start past the first row), the platform's
     shortening, or a paging the answer cannot settle (only the call's
-    ``offset`` places it after the first row). A call's row limit alone makes
-    no page: an answer that holds every row is the whole view, whatever the
-    call asked for. Where a list of the answer is exactly as long as a
-    bounding argument of the call (``output_shortening.bounding_arguments``)
-    and no marker says more, the answer cannot show whether rows were left
-    out, and it is read as a page.
+    ``offset`` places it after the first row). Beside them, read as numbers
+    whatever their spelling (``"2"``, ``-1``): a call's ``offset`` that is not
+    zero; the tool's own top-level mark that the answer was shortened or
+    truncated (a ``shortened`` or ``truncated`` key that is set and is not the
+    platform shortener's map); and a ``<name>_total`` count that names no list
+    of the answer. A call's row limit alone makes no page: an answer that
+    holds every row is the whole view, whatever the call asked for. Where a
+    list of the answer is exactly as long as a bounding argument of the call
+    (``output_shortening.bounding_arguments``, in any spelling) and no marker
+    says more, the answer cannot show whether rows were left out, and it is
+    read as a page.
     """
-    from malspark.agents.output_shortening import bounding_arguments
+    from malspark.agents.output_shortening import bounding_arguments, our_key_in
     from malspark.schemas.entry_reading import ONE_PAGE, SHORTENED, entry_reading
 
     reading = entry_reading(entry)
     if reading.paging_unknown or {ONE_PAGE, SHORTENED} & set(reading.states):
         return True
     args = entry.args if isinstance(entry.args, dict) else {}
+    if _as_number(args.get("offset")):
+        return True
+    ours = our_key_in(data)
+    for key, value in data.items():
+        if key in ("shortened", "truncated") and key != ours and value:
+            return True
+        if (
+            isinstance(key, str)
+            and key.endswith("_total")
+            and not isinstance(data.get(key.removesuffix("_total")), list)
+        ):
+            return True
     bounds = {
         value
         for name in bounding_arguments([name for name in args if isinstance(name, str)])
-        if isinstance(value := args.get(name), int) and not isinstance(value, bool) and value > 0
+        if (value := _as_number(args.get(name))) > 0
     }
     return any(isinstance(rows, list) and len(rows) in bounds for rows in data.values())
+
+
+def _as_number(value: Any) -> int:
+    """A call argument read as a whole number whatever its spelling; ``0`` for none.
+
+    ``3``, ``"3"`` and ``3.0`` are three; a flag, text that is no number and
+    an empty value are none.
+    """
+    if isinstance(value, bool) or value is None:
+        return 0
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError, OverflowError):
+        return 0
 
 
 def network_from_sandbox_report(
@@ -3325,7 +3356,7 @@ def address_flow_facts(
     whatever a DNS answer or a host list holds; a value that does not parse as
     an address is said nothing of. ``None``, and so no words for any address,
     where the ledger holds no such answer or any answer read is not the whole
-    view (a page, a bounded or shortened answer): no words are derived from
+    view (a page, an answer that fills its bound, or a shortened one): no words are derived from
     part of a view.
     """
     from malspark.reporting.renderers.stix_renderer import address_flow_words

@@ -3,12 +3,18 @@
 A path that stands in a record only as the leading directory of a longer path
 names that directory, and the record does not hold it: it is no second source
 of the path. A file name that is the last component of a recorded path is held
-(the boundary rule's own case). The build's record of each entry and the
-publish rule's reading of an observation read a path the same way; a value of
-another kind keeps the boundary rule as it is.
+(the boundary rule's own case). A further component is whatever follows the
+separator, unless it is white space or a character no component starts with in
+a quoted or listed path; a component opening with a brace, a dollar sign, a
+bracket or a letter outside ASCII makes the path a leading directory like any
+other. The build's record of each entry, the publish rule's reading of an
+observation and the refusal's holder clauses read a path the same way; a value
+of another kind keeps the boundary rule as it is.
 """
 
 from __future__ import annotations
+
+import pytest
 
 from malspark.agents._indicator_denylists import whole_path_in, whole_value_in
 from malspark.reporting.builder import build_consolidated_iocs
@@ -34,6 +40,17 @@ DIRECTORY = "C:\\Staging"
 LONGER = "C:\\Staging\\relay.exe"
 FILE_NAME = "relay.exe"
 KEY = "HKCU\\Software\\Vendor"
+# Further components that open with a character outside a label's.
+FURTHER = [
+    "{0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d}\\relay.exe",
+    "\u00dcn\u00ee\\relay.exe",
+    "$tmp\\relay.exe",
+    "(1)\\relay.exe",
+    "#x",
+    "&x",
+    "!x",
+    "=x",
+]
 
 
 class TestTheTest:
@@ -51,6 +68,20 @@ class TestTheTest:
     def test_a_directory_written_as_itself_is_held(self) -> None:
         assert whole_path_in(DIRECTORY, f"cwd {DIRECTORY.lower()} set")
         assert whole_path_in(DIRECTORY, f"cwd {DIRECTORY.lower()}\\ set")
+
+    @pytest.mark.parametrize("further", FURTHER)
+    def test_a_further_component_opening_with_any_character_makes_a_leading_directory(
+        self, further: str
+    ) -> None:
+        text = f"{DIRECTORY}\\{further}".lower()
+        assert not whole_path_in(DIRECTORY, text)
+        assert not whole_path_in(DIRECTORY, text.replace("\\", "/"))
+
+    @pytest.mark.parametrize("after", [" ", "\t", '"', "'", "<", ">", "|", "*", "?", ";", ","])
+    def test_a_separator_before_a_character_no_component_starts_with_joins_nothing(
+        self, after: str
+    ) -> None:
+        assert whole_path_in(DIRECTORY, f"cwd {DIRECTORY.lower()}\\{after}x")
 
     def test_another_kind_keeps_the_boundary_rule(self) -> None:
         assert whole_value_in(KEY.lower(), f"{KEY.lower()}\\run")
@@ -74,6 +105,35 @@ class TestThePublishRule:
             corroborating=SecondSources(observed=f"{DIRECTORY.lower()} {LONGER.lower()}"),
         )
         assert publishes(answer)
+
+    @pytest.mark.parametrize("further", FURTHER[:2])
+    def test_an_observation_naming_a_further_component_of_any_letter_is_no_second_source(
+        self, further: str
+    ) -> None:
+        observed = f"{DIRECTORY}\\{further}".lower()
+        answer = publish_answer(
+            "path", DIRECTORY, "strings", None, corroborating=SecondSources(observed=observed)
+        )
+        assert not publishes(answer)
+
+    def test_a_section_holding_it_only_as_a_leading_directory_is_not_said_to_print_it(
+        self,
+    ) -> None:
+        held = (("reader", LONGER.lower()),)
+        answer = publish_answer(
+            "path",
+            DIRECTORY,
+            "strings",
+            None,
+            corroborating=SecondSources(rereads=held, uncited=held),
+        )
+        assert not publishes(answer)
+        assert "prints it" not in answer
+        whole = (("reader", f"{DIRECTORY.lower()} {LONGER.lower()}"),)
+        said = publish_answer(
+            "path", DIRECTORY, "strings", None, corroborating=SecondSources(rereads=whole)
+        )
+        assert "reader prints it in a section" in said
 
     def test_a_registry_key_held_as_the_start_of_a_longer_key_stays_held(self) -> None:
         answer = publish_answer(

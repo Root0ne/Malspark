@@ -410,13 +410,21 @@ def whole_path_starts(literal: str, haystack: str) -> Iterator[int]:
             yield start
 
 
+# The characters that close or join a quoted or listed path rather than open a
+# component of it: after a separator they join nothing to the value before it.
+_OPENS_NO_COMPONENT = frozenset("\"'<>|*?;,")
+
+
 def _leads_a_longer_path(haystack: str, end: int) -> bool:
     """Whether a path separator at ``end`` joins a further component to the value before it.
 
     A backslash that opens an escape (``\\n`` after a value in JSON text) ends
     the value; one written as an escape of a separator (``\\\\``, ``\\/``) is
-    a separator. Separators followed by nothing that continues a component
-    (a trailing ``\\``) join nothing.
+    a separator. A further component is whatever follows the separators,
+    unless it is nothing (a trailing ``\\``), white space, or a character no
+    component starts with in a quoted or listed path
+    (:data:`_OPENS_NO_COMPONENT`): a component opening with a brace, a dollar
+    sign, a bracket or a letter outside ASCII is a component like any other.
     """
     after = haystack[end : end + 1]
     if after not in ("\\", "/"):
@@ -430,7 +438,8 @@ def _leads_a_longer_path(haystack: str, end: int) -> bool:
     at = end
     while haystack[at : at + 1] in ("\\", "/"):
         at += 1
-    return _CONTINUES_A_LABEL_RE.match(haystack[at : at + 1]) is not None
+    following = haystack[at : at + 1]
+    return bool(following) and not following.isspace() and following not in _OPENS_NO_COMPONENT
 
 
 _HOST_NAME_RE = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+")
