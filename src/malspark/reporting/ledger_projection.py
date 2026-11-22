@@ -1784,16 +1784,11 @@ def network_from_ledger(
     marking[0] = ObservedIn(detonation=FIRST_DETONATION)
     # The addresses a conversation of the capture is with, which the rule's
     # sentence on an address no flow row reaches states beside it.
-    captured: set[str] = set()
+    conversations = _capture_conversation_addresses(ledger)
+    for address in conversations:
+        _add("ip", address, "sandbox")
+    captured = set(conversations)
     for _entry, data in _payloads(ledger, "pcap"):
-        for row in data.get("conversations") or []:
-            # A host that only sent to the sandbox was not contacted by it.
-            if isinstance(row, dict) and row.get("inbound_only"):
-                continue
-            address = address_key(_first_str(row, "dst", "ip", "address"))
-            _add("ip", address, "sandbox")
-            if address:
-                captured.add(address)
         sni = data.get("sni")
         for name in sni if isinstance(sni, dict | list) else []:
             _add("domain", str(name), "sandbox")
@@ -1910,6 +1905,24 @@ def network_from_ledger(
     for request in network.urls:
         request.observed_in = stated_marks(observed.get(("url", request.url), ()))
     return network if (network.domains or network.ips or network.urls) else None
+
+
+def _capture_conversation_addresses(ledger: list[LedgerEntry]) -> list[str]:
+    """The address of each conversation of the job's capture, in the order the capture holds them.
+
+    Read from the capture of the job's own detonation (:func:`_payloads`); a
+    conversation whose host only sent to the sandbox is left out, since the
+    sandbox did not contact it.
+    """
+    addresses: list[str] = []
+    for _entry, data in _payloads(ledger, "pcap"):
+        for row in data.get("conversations") or []:
+            if isinstance(row, dict) and row.get("inbound_only"):
+                continue
+            address = address_key(_first_str(row, "dst", "ip", "address"))
+            if address:
+                addresses.append(address)
+    return addresses
 
 
 def _record_parts(entry: LedgerEntry) -> tuple[str, ...]:
@@ -3164,10 +3177,12 @@ def with_flow_readings(document: Any, ledger: list[LedgerEntry] | None) -> Any:
 
     Only the words of the rule's sentence are taken from the job's stored
     network entries (``ledger``), as the pack's capture line takes them
-    (:func:`address_flow_facts`); every decision stays the stored row's. A row
-    takes the reading of its address only where the reading agrees with the
-    row's stored decision (:func:`_reading_agrees`): where the two disagree,
-    the row keeps no reading and says the decision alone. A row that already carries its
+    (:func:`address_flow_facts`), the capture's conversations read from the
+    same entries as the build reads them (:func:`_capture_conversation_addresses`);
+    every decision stays the stored row's. A row takes the reading of its
+    address only where the reading agrees with the row's stored decision
+    (:func:`_reading_agrees`): where the two disagree, the row keeps no
+    reading and says the decision alone. A row that already carries its
     reading keeps it. Where ``ledger`` holds no whole, uncut network view of
     the job's own detonation (a capture alone, a page, a view whose structure
     is no object), or ``document`` no address row, the document is returned as
@@ -3183,11 +3198,12 @@ def with_flow_readings(document: Any, ledger: list[LedgerEntry] | None) -> Any:
         for view, exact in zip(tally.views, tally.exact, strict=True)
     ):
         return document
+    captured = set(_capture_conversation_addresses(ledger))
     rows = []
     for row in ips:
         if isinstance(row, Mapping) and row.get("flow_reading") is None:
             address = address_key(row.get("address"))
-            reading = tally.reading(address)
+            reading = tally.reading(address, captured=address in captured)
             if _reading_agrees(row, reading, address in tally.tree):
                 row = {**row, "flow_reading": reading.model_dump(mode="json")}
         rows.append(row)
