@@ -22,6 +22,34 @@
     "tests/unit/reporting/test_mitre_json_describes_a_technique_as_the_attack_table_prints_it.py::test_a_report_that_publishes_no_technique_says_so_and_describes_none"
    ],
    "text_digest": "0a8238bcec341a550dd93cf87a10a4ec14a53b8dd5edfe91afba3672b7cac47d"
+  },
+  {
+   "function": "malspark.reporting.renderers.analyst:_Analyst.c2",
+   "condition": "section 6 of the analyst report: the protocol and endpoints subsection, the configuration table and the commands and flags tables, each table followed by the line counting the rows it leaves out, split by whether each row carries a finding the bundle marks it with, where any is left out",
+   "basis": [
+    "the technical analysis's channels, configuration, commands and flags",
+    "the unresolved findings naming a configuration row",
+    "the flagged statements and the rows' own citations"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_row_left_out_is_given_the_reason_its_row_gives.py::TestTheLineIsTrueOfTheRows::test_a_command_and_a_flag_row_matched_by_text_carry_no_finding",
+    "tests/unit/reporting/test_a_row_left_out_is_given_the_reason_its_row_gives.py::TestTheLineIsTrueOfTheRows::test_a_row_that_carries_the_finding_under_its_own_citations"
+   ],
+   "text_digest": "b227d5be403536b675bf526bc42f766e54a8260b5f1dfd7af6a26d6d1573681d"
+  },
+  {
+   "function": "malspark.reporting.renderers.analyst:_left_out_rows",
+   "condition": "the line under a table of the analyst report some of whose rows only the bundle prints: 'a check left a finding on' a row only where the row carries one (the bundle prints its mark), and 'its text is that of a statement a check left a finding on, and the row itself carries none' for a row left out for its text alone; both counted where both occur",
+   "basis": [
+    "the rows left out that carry a finding (a finding naming the row's number, one recorded under the row's own citations, or a flagged sentence standing in a cell the bundle marks)",
+    "the rows left out only because their text is a flagged statement's"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_row_left_out_is_given_the_reason_its_row_gives.py::TestTheWordsOfEachForm::test_rows_that_each_carry_a_finding",
+    "tests/unit/reporting/test_a_row_left_out_is_given_the_reason_its_row_gives.py::TestTheWordsOfEachForm::test_rows_left_out_for_their_text_alone",
+    "tests/unit/reporting/test_a_row_left_out_is_given_the_reason_its_row_gives.py::TestTheWordsOfEachForm::test_rows_of_both_kinds"
+   ],
+   "text_digest": "8d3ec679cb0d7c9ecbe0042c19e21f916a9d332a9c8b03814f333247f0e31f37"
   }
  ]
 }

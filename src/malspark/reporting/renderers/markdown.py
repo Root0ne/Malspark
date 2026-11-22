@@ -3501,10 +3501,16 @@ class _Context:
         whole = self._defang(raw)
         if self.cell_citations is not None:
             whole = self.cell_citations(whole)
-        marks = list(
+        marks = self.cell_marks(raw)
+        return f"{whole} {' '.join(marks)}" if marks else whole
+
+    def cell_marks(self, text: Any) -> list[str]:
+        """The marks :meth:`cell` prints after a cell's text: each flagged sentence's that
+        stands in it, once."""
+        raw = str(text or "")
+        return list(
             dict.fromkeys(mark for sentence, mark in self.flagged if self.places(sentence, raw))
         )
-        return f"{whole} {' '.join(marks)}" if marks else whole
 
     def sandbox_sentence(self) -> str:
         """What the run knows about a sandbox, as one sentence, in the run's own voice.
