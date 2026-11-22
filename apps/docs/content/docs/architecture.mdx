@@ -6049,16 +6049,22 @@ is assembled from what the run gathered rather than recomputed beside it:
   (the string sweep, a recovering tool) by that source; a listing never lifts
   a row a tool recorded (`ledger_projection._DOMAIN_SOURCE_RANK` ranks
   `analyst` below `strings`). Every value an analyst lists is looked for,
-  whole, in every tool answer of the run at build time
-  (`ledger_projection.tool_sightings`, stored as `tool_sightings`, keyed on
-  both sides with `ledger_projection.value_key`, so a bracketed or
-  capitalised address is found). An entry whose call arguments hold the value
-  is no sighting of it: a lookup's answer repeats its question, and a search
-  returns the match it was asked for. Such entries are kept apart
-  (`tool_queries`), and a value only they hold reads `no: named only by an
-  analyst (<artifact>); only the answer to a query for it holds it (ev_NNNN
-  <tool>), ...`, so "no tool in this run saw it" is said only when no answer
-  holds the value at all. A row only an
+  whole, in the kept text of every tool answer of the run that did not fail,
+  at build time (`ledger_projection.tool_sightings`, stored as
+  `tool_sightings`, keyed on both sides with `ledger_projection.value_key`, so
+  a bracketed or capitalised address is found). An entry whose call arguments
+  hold the value is no sighting of it: a lookup's answer repeats its question,
+  and a search returns the match it was asked for. Such entries are set apart
+  (`tool_queries`). The search decides nothing: what it gave is a fact after
+  the refusal (`stix_renderer.search_found`), `the publish rule's whole-value
+  search of the kept text of the run's successful tool answers, which sets
+  apart an answer to a call whose arguments hold it, found it in <entry>
+  (<tool>); ...`, or `found it in none`, or, where only such answers hold it,
+  `found it in none and set apart ev_NNNN (<tool>); ...`. It says what was
+  searched and what the search gave, never what the run or a tool holds. A
+  search with nothing to read gives no result and says so: `the publish
+  rule's whole-value search read no successful tool answer of the run` where
+  the run's record holds none (`answers_the_search_reads`). A row only an
   artifact created and some answer's text holds takes the string sweep's
   standing (`strings`), whichever tool printed the text — a sandbox
   signature's description, a command line and the sample's strings a sandbox
@@ -6082,18 +6088,26 @@ is assembled from what the run gathered rather than recomputed beside it:
   job's reader, which the report's build takes from the job's record
   (`network_from_ledger(..., normalised_by=...)`, the builder's
   `sandbox_normalised_by`); a later detonation's request by `user_agent`.
-  A name's DNS answers are its `resolved_ips`. Such a value, with no second source, reads `no: seen only in the text
-  of <entry> (<tool>), and no second source in this run records it;
-  <artifact> lists it`. A value no answer
-  holds (source `analyst`) is asked the string sweep's questions and
-  otherwise reads `no: named only by an analyst (<artifact>); no tool in this
-  run saw it, and the judge did not keep it as an indicator` — said only
-  after that search. A stored report without the search is searched in the
-  tool sections it keeps: a value its kept capture or flow-table section
-  holds is answered as a fresh build answers it (an unattributed address, a
-  capture-only name); a value another kept section holds is answered as
-  `strings`, the reason saying it is read from the sections the stored report
-  keeps; otherwise it says only that no tool answer it keeps holds it.
+  A name's DNS answers are its `resolved_ips`. Such a value, with no second source, is refused by the string sweep's
+  tests (`no: its row's source is strings and ...`, `strings_refusal`), what
+  the search found and `<artifact> lists it` following as facts. A row an
+  analyst's listing gave (source `analyst`), of any kind, reads `no: its row
+  is an analyst's listing (<artifact>) and the publish rule takes no listing
+  as a source` (`stix_renderer.listing_reason`); a domain, an address or a
+  URL is asked the string sweep's questions and otherwise adds `, and the
+  judge did not keep it as an indicator` to that refusal. For any other kind
+  `the judge did not keep it as an indicator` is a fact after the refusal,
+  said only where the judge's indicators were read (the judge's bundle or the
+  report's `judge_indicators`) and none names the value
+  (`judge_names_none_of`); what the search found is the last fact. A stored
+  report without the search is searched in the tool sections it keeps: a
+  value its kept capture or flow-table section holds is answered as a fresh
+  build answers it (an unattributed address, a capture-only name); a value
+  another kept section holds is answered as `strings`; the search's fact
+  reads `the publish rule's whole-value search of the tool sections this
+  report keeps found it in <entry> (<tool>)`, or `found it in none`, and a
+  stored report that keeps no tool section reads `this report keeps no tool
+  section for the publish rule's search to read`.
   `/iocs?include=all` carries the analysts' listed non-network rows exactly
   as the report's IOC table shows them, both read by one reader
   (`builder.ioc_table`: rebuilt from the stored report, the stored rows only

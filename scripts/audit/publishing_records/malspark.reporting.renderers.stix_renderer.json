@@ -97,6 +97,157 @@
     "tests/unit/reporting/test_the_refusal_on_an_address_no_flow_row_reaches_names_the_view_read.py::TestEachHalfIsReadFromTheRowsRecord::test_two_detonations_views_are_named_as_views"
    ],
    "text_digest": "34b779f0fbcad3a6725d7efe495b33542aff2dc6adccbaecca9cc6b7c01444c0"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:ANALYST_LISTING",
+   "condition": "the first refusing part of the publish answer of a row an analyst's listing gave (source analyst), of any kind, followed by whose listing it is where the row names an analyst, on every surface that prints or reads the answer (the indicator table, a cell beside a value, the mark of an unpublished value, the writers' table answers and their retry feedback, the export's decline, the job package)",
+   "basis": [
+    "the row's source (analyst)",
+    "the listing's analyst, as the table's listed path names it (listed_by)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_listed_mutex_the_search_found_in_none",
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_listing_with_no_lister_named"
+   ],
+   "text_digest": "9e0595ff53d8b3d8d2bb96d6b9de962c5624f5c779bbee55395384b784708dd4"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:LISTING_IS_NO_SOURCE",
+   "condition": "in the first refusing part of the publish answer of a row an analyst's listing gave, after whose listing it is: the test that refuses such a row (the publish rule's evidence reason gives a listing no source)",
+   "basis": [
+    "the row's source (analyst), which the evidence reason refuses as a source for every kind"
+   ],
+   "test": "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_listed_mutex_the_search_found_in_none",
+   "text_digest": "05ac8b5db28df05f8fbd098473b6abdc16aecc56d3d5c7c23fa90fbc7d21df2a"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:SEARCH_OF_THE_RUN",
+   "condition": "the fact after the refusal of a listed value or a judge's value, where the whole-value search of the run's ledger was run for it (the report's tool_sightings): what the search read",
+   "basis": [
+    "the report's tool_sightings (ledger_projection.tool_sightings: the kept text of every entry with ok set)"
+   ],
+   "test": "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheBuiltInputs::test_the_search_clause_names_exactly_what_the_search_found",
+   "text_digest": "adb6fe0cc88190b88b77fd461d9eaa44501bc4d7a7bac8f7b9781187d6547289"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:SEARCH_OF_THE_REPORT",
+   "condition": "the fact after the refusal of a listed value or a judge's value on a report stored before the whole-value search of the ledger was run (no tool_sightings): what the search of the kept tool sections read",
+   "basis": [
+    "the stored report's sections whose source is a tool, searched whole-value"
+   ],
+   "test": "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_stored_report_s_search_names_its_kept_sections",
+   "text_digest": "ec6458e05df9ec334c3e44233d103cf4a7f4fbd10f22dca88e3b69fb05b488ed"
+  },
+  {
+   "function": "malspark.reporting.renderers.stix_renderer:search_found",
+   "condition": "the fact after the refusal of a listed value, and of a value of another source or a judge's value that the search found: what the whole-value search read (and, for the run's ledger, that it sets apart an answer to a call whose arguments hold the value whole), then the entries it found the value in, or none, or none and the set-apart answers, named as the found ones are; where the search had nothing to read (no successful tool answer of the run, or no tool section the stored report keeps), that alone",
+   "basis": [
+    "the report's tool_sightings and tool_queries for the value's key, or the stored report's kept tool sections",
+    "the report's evidence index (an entry that did not fail and repeats no earlier one), or the stored report's tool sections, for whether the search read anything"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheBuiltInputs::test_the_search_clause_names_exactly_what_the_search_found",
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_call_s_answer_the_search_set_apart_is_named",
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheBuiltInputs::test_each_form_of_the_clause_is_true_of_its_input"
+   ],
+   "text_digest": "13d6365146333c89fe08d673c1d34372035b93d2bcef5cbd2bc413e25bed46f6"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:JUDGE_S_INDICATOR",
+   "condition": "in the refusing part of the answer for a value the judge's indicator names that no row holds and the whole-value search found in a tool answer: what names it, in place of a row",
+   "basis": [
+    "the judge's indicators (judge_value_answer: no static string row holds the value)"
+   ],
+   "test": "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_judge_s_value_with_no_row_names_the_judge_s_indicator",
+   "text_digest": "153108ddf24ba8e24798780b76b75ccec3957ebb75e474019871273980d03837"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:NO_SWEEP_ROW_NAMED_BY",
+   "condition": "the first half of the strings refusal of a judge's value with no row of its own that the whole-value search found in a tool answer, where no row of the string sweep holds it",
+   "basis": [
+    "the run's second-source record (SecondSources.swept) holds no row for the value",
+    "the judge's indicators"
+   ],
+   "test": "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_judge_s_value_with_no_row_names_the_judge_s_indicator",
+   "text_digest": "454d2040396ee11ad89e04869c0e9fa1cd879666580a45c52ce9897ada4de184"
+  },
+  {
+   "function": "malspark.reporting.renderers.stix_renderer:strings_source",
+   "condition": "the first half of the refusing part of a value asked as the string sweep's that nothing admitted: the rows that hold it by tool and entry, a row with no entry by its source, or a value no row holds by its row's source or, for a judge's value with no row, by the judge's indicator",
+   "basis": [
+    "the run's second-source record (SecondSources.swept)",
+    "the row's source",
+    "the judge's indicators"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_strings_row_the_search_found_is_refused_by_its_own_tests",
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_judge_s_value_with_no_row_names_the_judge_s_indicator"
+   ],
+   "text_digest": "ed2ae4d7836e4879d95714c395dcb96dff25c9f485788f14fc9e174becdc48cf"
+  },
+  {
+   "function": "malspark.reporting.renderers.stix_renderer:strings_refusal",
+   "condition": "the refusing part of a value asked as the string sweep's that nothing admitted, a row the whole-value search found the value in among them: where it is from (strings_source), then what the deciding test found (a recovery and a reputation record for a network value, the second-source lookup for any other)",
+   "basis": [
+    "the run's second-source record",
+    "the row's reputation record and recovery"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_strings_row_the_search_found_is_refused_by_its_own_tests",
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_strings_mutex_the_search_found_is_refused_by_its_own_tests"
+   ],
+   "text_digest": "7389a3cce4080c3b6486d77b33886b64b0984dd1aa7dbb86471e962505c7dca5"
+  },
+  {
+   "function": "malspark.reporting.renderers.stix_renderer:publish_answer",
+   "condition": "every row's publish answer and every judge value's, on every surface that prints or reads it: yes with the evidence reason, or no with each refusing test as its own part and the facts after them; a listed value's answer gives the listing's test and the judge's keep for a network value, and, as facts, that the judge did not keep any other kind where the judge's indicators were read and none names it, and what the whole-value search found; a row of another source the search found is refused by its own tests with the search's entries and who lists it as facts",
+   "basis": [
+    "the row's kind, value, source and reputation",
+    "the run's second-source record, recovery and verdict",
+    "the sandbox's facts, the judge's keep and who lists or mentions the value",
+    "the report's tool_sightings and tool_queries"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestEveryReaderComposesFromTheParts::test_the_indicator_table_prints_the_composition",
+    "tests/unit/reporting/test_a_stated_publish_state_is_not_marked_again.py::TestAListingStateRestatedWordForWord::test_it_states_the_value_s_publish_state"
+   ],
+   "text_digest": "f6f176ccf86403c465fbd5842669da1f02113df97bc15afe86ee23c174c503c8"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:QUERY_ANSWERS_APART",
+   "condition": "in the fact after the refusal of a listed value or a judge's value where the whole-value search of the run's ledger was run for it and read at least one successful answer, right after what the search read: that the search sets apart an answer to a call whose arguments hold the value whole",
+   "basis": [
+    "ledger_projection.tool_sightings: an entry whose call arguments hold the value is kept apart, in tool_queries"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_call_s_answer_the_search_set_apart_is_named",
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheBuiltInputs::test_each_form_of_the_clause_is_true_of_its_input"
+   ],
+   "text_digest": "cac7785b16e59d45efd5f164b2922086853085392468358908c447d1d770aa92"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:SEARCH_READ_NO_ANSWER",
+   "condition": "the fact after the refusal of a listed value whose whole-value search of the run's ledger found it in no answer, where the run's record holds no successful tool answer for the search to read, in place of \"found it in none\"",
+   "basis": [
+    "the report's evidence index: no entry that did not fail and repeats no earlier one (the entries ledger_projection.tool_sightings reads)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_search_that_read_no_answer_gives_no_result",
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheSearchAndWhatItReadAgree::test_the_row_says_the_search_read_nothing_exactly_where_it_read_nothing"
+   ],
+   "text_digest": "071dc41dd162af389459c1751dbce02feb7b47a9d280a1f5152f83f3eb464c37"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:NO_SECTION_TO_SEARCH",
+   "condition": "the fact after the refusal of a listed value where the report's whole-value search of the ledger holds no result for the value and the report keeps no tool section for the search of its sections to read, in place of \"found it in none\"",
+   "basis": [
+    "the stored report's sections whose source is a tool (none)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheWords::test_a_report_that_keeps_no_tool_section_gives_no_result",
+    "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestTheSearchAndWhatItReadAgree::test_a_stored_report_with_no_tool_section_says_it_keeps_none"
+   ],
+   "text_digest": "b037f98cd24c1f2b49a2afcaecd237d904817f183c7def3e8437b77d88bc905c"
   }
  ]
 }

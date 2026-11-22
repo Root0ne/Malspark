@@ -342,10 +342,10 @@ from malspark.reporting.renderers.stix_renderer import (
     disputed_flow_reason,
     judge_not_told,
     judge_only_reason,
-    named_only_reason,
+    listing_reason,
     not_kept_reason,
     public_resolver_reason,
-    seen_in_reason,
+    publish_answer,
     yes_because,
 )
 from malspark.reporting.stated_host_values import host_kinds
@@ -2575,16 +2575,29 @@ PROMPTS: dict[str, str] = {
             public_resolver_reason(
                 FLOW_NOT_PLACED, "an artifact of the network analyst", "a claim by the x analyst"
             ),
-            named_only_reason("an artifact of the network analyst"),
-            named_only_reason(),
-            named_only_reason("an artifact of the network analyst", SEARCHED_THE_REPORT),
-            named_only_reason(
+            listing_reason("domain", "an artifact of the network analyst"),
+            listing_reason("mutex"),
+            listing_reason(
+                "domain", "an artifact of the network analyst", searched=SEARCHED_THE_REPORT
+            ),
+            listing_reason(
+                "domain",
                 "an artifact of the network analyst",
                 asked_in="ev_0004 get_domain_report",
             ),
-            seen_in_reason("ev_0002 (decompile_function)", "an artifact of the network analyst"),
-            seen_in_reason(
-                "ev_0006 (iocs_from_file), as the tool sections this stored report keeps show it"
+            listing_reason(
+                "domain", "an artifact of the network analyst", "ev_0002 (decompile_function)"
+            ),
+            listing_reason("mutex", "", "ev_0006 (iocs_from_file)", searched=SEARCHED_THE_REPORT),
+            publish_answer(
+                "domain",
+                "relay.example.net",
+                "strings",
+                listed_by="an analyst artifact",
+                seen_in="ev_0006 (iocs_from_file)",
+            ),
+            publish_answer(
+                "mutex", "Global\\x", "strings", seen_in="ev_0007 (floss)", judge_s_value=True
             ),
             not_kept_reason(CAPTURE_TLS_NAME),
         ]

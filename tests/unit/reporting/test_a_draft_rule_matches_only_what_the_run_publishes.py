@@ -365,7 +365,7 @@ class TestSigma:
                 kind="registry",
                 value=self.RUN_KEY,
                 source="analyst",
-                published="no: named only by an analyst",
+                published="no: its row is an analyst's listing",
             )
         ]
 

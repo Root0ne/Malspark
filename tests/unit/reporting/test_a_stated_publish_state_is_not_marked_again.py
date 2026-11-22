@@ -229,7 +229,7 @@ class TestAStatedState:
 
 
 # A second value with a reason of its own, for the claims that turn a reason around.
-ANALYST_REASON = "named only by an analyst"
+ANALYST_REASON = "its row is an analyst's listing"
 
 
 def _two_answers(kind: str, value: str) -> str:
@@ -413,3 +413,79 @@ class TestTheComposer:
         assert len(llm.sent) == 1
         assert result is not None and result.body == sentence
         assert report.flagged_statements == []
+
+
+def _listing_states() -> list[tuple[str, Any]]:
+    """Each state the refusal of a listed value writes (T-843), as its answer."""
+    from malspark.reporting.renderers import stix_renderer as S
+
+    lister = "an artifact of the network analyst"
+    entries = "ev_0006 (iocs_from_file); ev_0055 (extract_iocs)"
+    return [
+        ("a listed mutex the search found in none", S.listing_reason("mutex", lister)),
+        ("a listed mutex the search found", S.listing_reason("mutex", lister, entries)),
+        ("a listed domain the search found in none", S.listing_reason("domain", lister)),
+        ("a listed domain the search found", S.listing_reason("domain", lister, entries)),
+        (
+            "a listed domain only a query's answer holds",
+            S.listing_reason("domain", lister, asked_in="ev_0004 get_domain_report"),
+        ),
+        (
+            "a listed domain a stored report keeps",
+            S.listing_reason("domain", lister, entries, S.SEARCHED_THE_REPORT),
+        ),
+        ("a listing with no lister named", S.listing_reason("registry")),
+        (
+            "a strings row the search found",
+            S.publish_answer(
+                "domain", OTHER_NAME, "strings", listed_by="an analyst artifact", seen_in=entries
+            ),
+        ),
+        (
+            "a judge's value the search found",
+            S.publish_answer("domain", OTHER_NAME, "strings", seen_in=entries, judge_s_value=True),
+        ),
+    ]
+
+
+# A name the listing states are written after.
+OTHER_NAME = "relay-gate.example.net"
+LISTING_STATES = _listing_states()
+
+
+class TestAListingStateRestatedWordForWord:
+    """A word-for-word restatement of each state a listed value's refusal writes states it."""
+
+    @pytest.mark.parametrize("how", ["no", "bare", "named"])
+    @pytest.mark.parametrize(
+        ("form", "answer"), LISTING_STATES, ids=[form for form, _answer in LISTING_STATES]
+    )
+    def test_it_states_the_value_s_publish_state(self, how: str, form: str, answer: Any) -> None:
+        from malspark.pipeline.validation import _unstated_values
+        from malspark.reporting.publish_parts import answer_state
+
+        state = str(answer_state(answer))
+        body = state[len("no: ") :]
+        written = {
+            "no": f"({state})",
+            "bare": f"({body})",
+            "named": f"(publish state: {body})",
+        }[how]
+        sentence = f"The sample reaches {OTHER_NAME} {written} during the run."
+
+        def answers(kind: str, value: str) -> str:
+            return answer if value == OTHER_NAME else ""
+
+        assert _unstated_values(sentence, answers) == []
+        assert unpublished_value_violations(_body(sentence), answers) == []
+
+    @pytest.mark.parametrize(
+        ("form", "answer"), LISTING_STATES, ids=[form for form, _answer in LISTING_STATES]
+    )
+    def test_the_value_alone_is_still_asked_about(self, form: str, answer: Any) -> None:
+        sentence = f"The sample reaches {OTHER_NAME} during the run."
+
+        (found,) = unpublished_value_violations(
+            _body(sentence), lambda kind, value: answer if value == OTHER_NAME else ""
+        )
+        assert OTHER_NAME in found.message

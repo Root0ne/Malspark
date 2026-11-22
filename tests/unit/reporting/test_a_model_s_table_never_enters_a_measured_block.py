@@ -84,9 +84,11 @@ class TestAnIocList:
         (row,) = [row for row in report.consolidated_iocs if row.value == MUTEX]
         assert (row.kind, row.source) == ("mutex", "analyst")
         assert row.context == "listed by the dynamic analyst"
-        assert str(row.published).startswith(
-            "no: named only by an analyst (an artifact of the dynamic analyst); "
-            "no tool in this run saw it"
+        assert str(row.published) == (
+            "no: its row is an analyst's listing (an artifact of the dynamic analyst) and the "
+            "publish rule takes no listing as a source; the judge did not keep it as an "
+            "indicator; the publish rule's whole-value search read no successful tool answer of "
+            "the run"
         )
 
     def test_it_stays_the_analyst_s_in_appendix_a(self) -> None:
@@ -147,7 +149,7 @@ class TestAPersistenceList:
         (row,) = [r for r in _build(self.ISRS()).consolidated_iocs if r.value == RUN_KEY]
 
         assert (row.kind, row.source) == ("registry", "analyst")
-        assert str(row.published).startswith("no: named only by an analyst")
+        assert str(row.published).startswith("no: its row is an analyst's listing")
 
     def test_it_stays_the_analyst_s_in_appendix_a(self) -> None:
         table = _appendix_table(MarkdownRenderer().render(_build(self.ISRS())), "Persistence")

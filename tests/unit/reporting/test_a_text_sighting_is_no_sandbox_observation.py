@@ -46,6 +46,17 @@ ADDRESS = "185.199.110.77"
 V6 = "2a00:1450:4001:82b::2011"
 
 
+# The refusal a strings row with no sweep row reads, and the search's fact after it.
+STRINGS_ROW = (
+    "no: its row's source is strings and no row of the string sweep holds it and the publish "
+    "rule found no recovery of it and read no reputation record for it; "
+)
+SEARCH = (
+    "the publish rule's whole-value search of the kept text of the run's successful tool "
+    "answers, which sets apart an answer to a call whose arguments hold it,"
+)
+
+
 def _entry(entry_id: str, tool: str, structured: dict[str, Any], **args: Any) -> LedgerEntry:
     return LedgerEntry(id=entry_id, agent="dynamic", tool=tool, structured=structured, args=args)
 
@@ -127,7 +138,8 @@ class TestATextSightingInASandboxAnswer:
             tool = entry.tool
             for value in (NAME, ADDRESS):
                 answer = _row(report, value).published
-                assert answer.startswith(f"no: seen only in the text of ev_0003 ({tool})"), what
+                assert answer.startswith(STRINGS_ROW), what
+                assert f"{SEARCH} found it in ev_0003 ({tool}); " in answer, what
                 assert "flows to it" not in answer, what
 
 
@@ -177,7 +189,8 @@ class TestACaptureOnlyName:
 
 
 class TestAnAnswerToAQueryForTheValue:
-    """Not a sighting of it, and not nothing: the reason says only a query's answer holds it."""
+    """Not a sighting of it, and not nothing: the reason names the query's answer the search
+    set apart."""
 
     def test_a_lookup_echo_is_named_as_the_answer_to_a_query(self) -> None:
         lookup = _entry(
@@ -189,9 +202,9 @@ class TestAnAnswerToAQueryForTheValue:
         assert report.tool_queries == {NAME: [("ev_0004", "get_domain_report")]}
         answer = _row(report, NAME).published
         assert answer == (
-            "no: named only by an analyst (an artifact of the network analyst); only the "
-            "answer to a query for it holds it (ev_0004 get_domain_report), and the judge "
-            "did not keep it as an indicator"
+            "no: its row is an analyst's listing (an artifact of the network analyst) and the "
+            "publish rule takes no listing as a source, and the judge did not keep it as an "
+            f"indicator; {SEARCH} found it in none and set apart ev_0004 (get_domain_report)"
         )
 
     def test_a_search_that_returns_the_match_from_the_file_is_named_too(self) -> None:
@@ -203,8 +216,7 @@ class TestAnAnswerToAQueryForTheValue:
         )
         answer = _row(_build([search], _listed(["domain", NAME])), NAME).published
 
-        assert "only the answer to a query for it holds it (ev_0005 search_strings)" in answer
-        assert "no tool in this run saw it" not in answer
+        assert answer.endswith(f"{SEARCH} found it in none and set apart ev_0005 (search_strings)")
 
 
 class TestOneKeyOnBothSides:
@@ -215,9 +227,8 @@ class TestOneKeyOnBothSides:
         assert report.network is not None
         (ip,) = report.network.ips
         assert (ip.address, ip.source) == (V6, "strings")
-        assert _row(report, V6).published.startswith(
-            "no: seen only in the text of ev_0002 (decompile_function)"
-        )
+        assert _row(report, V6).published.startswith(STRINGS_ROW)
+        assert f"{SEARCH} found it in ev_0002 (decompile_function)" in _row(report, V6).published
 
 
 class TestAStoredReportsCaptureHeldValue:

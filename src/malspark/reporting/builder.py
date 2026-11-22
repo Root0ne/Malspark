@@ -903,6 +903,7 @@ def _build_consolidated_iocs(
         digest_label,
         emulation_kwargs,
         emulation_record,
+        judge_names_none_of,
         listed_value_sightings,
         path_names_a_file,
         persistence_run_keys,
@@ -1283,7 +1284,10 @@ def _build_consolidated_iocs(
                         listed_by=listed,
                         seen_in=sighted,
                         tool_search=searched,
-                        asked_in="" if sighted else query_answers(report, ioc_kind, value),
+                        asked_in=""
+                        if sighted
+                        else query_answers(report, ioc_kind, value, as_found=True),
+                        judge_names_none=judge_names_none_of(report, ioc_kind, value),
                     ),
                     evidence=cited.split(","),
                 )

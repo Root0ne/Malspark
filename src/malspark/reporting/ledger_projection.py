@@ -2053,18 +2053,18 @@ def tool_sightings(
 ) -> tuple[dict[str, list[tuple[str, str]]], dict[str, list[tuple[str, str]]]]:
     """For each ``(kind, value)``, keyed by :func:`value_key`: the entries whose answer holds it.
 
-    Two maps: the sightings, and the entries set apart because the value is
-    in their call arguments — the answer to a query for it, which holds it
-    because it was asked about it. The second is kept so the report never
-    says no tool saw a value some answer holds.
+    Two maps: the sightings, and the entries set apart because their call's
+    arguments hold the value whole — such an answer may hold it only because
+    the call passed it. The second is kept so the report names the answers it
+    set apart where the search found the value in none.
 
     Every successful entry is read — its structured answer's strings and its
     text — and a value is found only as a value of its own
     (``whole_value_in``), so a longer token that happens to contain it does
     not count. An entry whose call arguments hold the value is not a sighting
     of it: a lookup's answer repeats the question it was asked. A value no
-    answer holds maps to an empty list: the search ran and found nothing,
-    which is what lets the report say no tool saw it.
+    answer holds maps to an empty list: the search read the answers it
+    reads and found the value in none, which is all the report says of it.
     """
     from malspark.agents._indicator_denylists import whole_value_in
 
