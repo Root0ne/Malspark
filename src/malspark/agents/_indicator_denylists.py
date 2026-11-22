@@ -389,6 +389,50 @@ def whole_value_in(literal: str, haystack: str) -> bool:
     return next(whole_value_starts(literal, haystack), None) is not None
 
 
+def whole_path_in(literal: str, haystack: str) -> bool:
+    """Whether ``haystack`` holds the path ``literal`` as a whole value.
+
+    :func:`whole_value_in`'s places, each but those where a path separator
+    joins a further component to the value: a path found only as the leading
+    directory of a longer path (``c:\\temp`` in ``c:\\temp\\x.exe``) names
+    that directory, not a path the text holds. The last component of a longer
+    path stays a place of its own (``x.exe`` in ``c:\\temp\\x.exe``), as the
+    boundary rule finds it.
+    """
+    return any(True for _start in whole_path_starts(literal, haystack))
+
+
+def whole_path_starts(literal: str, haystack: str) -> Iterator[int]:
+    """Where :func:`whole_path_in` finds ``literal`` in ``haystack``, left to right."""
+    lowered = str(literal or "").lower()
+    for start in whole_value_starts(lowered, haystack):
+        if not _leads_a_longer_path(haystack, start + len(lowered)):
+            yield start
+
+
+def _leads_a_longer_path(haystack: str, end: int) -> bool:
+    """Whether a path separator at ``end`` joins a further component to the value before it.
+
+    A backslash that opens an escape (``\\n`` after a value in JSON text) ends
+    the value; one written as an escape of a separator (``\\\\``, ``\\/``) is
+    a separator. Separators followed by nothing that continues a component
+    (a trailing ``\\``) join nothing.
+    """
+    after = haystack[end : end + 1]
+    if after not in ("\\", "/"):
+        return False
+    if (
+        after == "\\"
+        and haystack[end + 1 : end + 2] not in ("\\", "/")
+        and _is_an_escape(haystack, end)
+    ):
+        return False
+    at = end
+    while haystack[at : at + 1] in ("\\", "/"):
+        at += 1
+    return _CONTINUES_A_LABEL_RE.match(haystack[at : at + 1]) is not None
+
+
 _HOST_NAME_RE = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+")
 
 

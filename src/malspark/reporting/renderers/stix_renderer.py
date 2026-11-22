@@ -44,6 +44,8 @@ from malspark.agents._indicator_denylists import (
     first_holders,
     malformed_hash_in,
     on_a_denied_url_host,
+    whole_path_in,
+    whole_path_starts,
     whole_value_in,
     whole_value_starts,
 )
@@ -5831,7 +5833,7 @@ def publish_answer(
     """
     text = str(value or "").strip()
     from_strings = str(source or "").strip().lower() in ("", "strings")
-    corroborated = second_source(text, corroborating) if from_strings else ""
+    corroborated = second_source(text, corroborating, path=kind == "path") if from_strings else ""
     admitted = (
         "identity"
         if digest
@@ -6940,7 +6942,7 @@ def _as_record(corroborating: Any) -> SecondSources:
     return SecondSources(observed=str(corroborating or "").lower())
 
 
-def second_source(value: Any, corroborating: Any) -> str:
+def second_source(value: Any, corroborating: Any, *, path: bool = False) -> str:
     """:data:`SECOND_SOURCE` when an independent observation holds this value whole, else ``""``.
 
     The one test of a value taken from the file's text (a string row, a value
@@ -6957,6 +6959,11 @@ def second_source(value: Any, corroborating: Any) -> str:
       declare it;
     * nothing else does — another reading of the same bytes, or an entry no
       claim cites.
+
+    A value asked as a ``path`` is held only as a whole path (:func:`whole_as_held`):
+    a text holding it only as the leading directory of a longer path does not
+    hold it. The build's record of each entry reads it the same way
+    (:func:`second_source_reads`).
     """
     record = _as_record(corroborating)
     text = str(value or "").strip()
@@ -6964,7 +6971,7 @@ def second_source(value: Any, corroborating: Any) -> str:
     if not text:
         return ""
     cut = low in record.cut
-    if whole_as_held(text, record.observed, cut) or low.rstrip(".") in record.recovered:
+    if whole_as_held(text, record.observed, cut, path=path) or low.rstrip(".") in record.recovered:
         return SECOND_SOURCE
     held = [
         (tool, standing)
@@ -6977,7 +6984,11 @@ def second_source(value: Any, corroborating: Any) -> str:
         dict.fromkeys(
             [
                 *(tool for tool, standing in held if standing == tool_kinds.UNDECLARED),
-                *(tool for tool, part in record.undeclared if whole_as_held(text, part, cut)),
+                *(
+                    tool
+                    for tool, part in record.undeclared
+                    if whole_as_held(text, part, cut, path=path)
+                ),
             ]
         )
     )
@@ -7004,19 +7015,22 @@ def confirmed_only_by_undeclared(answer: Any) -> bool:
     return said.startswith(f"yes: {SECOND_SOURCE}; ") and said.endswith(f" {_NO_KIND}")
 
 
-def whole_as_held(value: str, text: str, cut: bool) -> bool:
+def whole_as_held(value: str, text: str, cut: bool, *, path: bool = False) -> bool:
     """Whether ``text`` holds ``value`` whole: as :func:`whole_value_in` finds a value.
 
     A value the string sweep cut out of a longer token (``cut``) is held
     whole only where one of its places in ``text`` is also a whole token by
     the sweep's own token test (``tools.strings.token_cuts``): a fragment an
-    observation also holds only inside a longer token stays a fragment.
+    observation also holds only inside a longer token stays a fragment. A
+    ``path`` is held only as a whole path (:func:`whole_path_in`), never as
+    the leading directory of a longer one.
     """
     if not cut:
-        return whole_value_in(value, text)
+        return whole_path_in(value, text) if path else whole_value_in(value, text)
     from malspark.tools.strings import stands_as_a_token
 
-    return stands_as_a_token(value, text, whole_value_starts(value.lower(), text))
+    starts = whole_path_starts if path else whole_value_starts
+    return stands_as_a_token(value, text, starts(value.lower(), text))
 
 
 def second_source_refusal(value: Any, corroborating: Any, *, network: bool = False) -> str:
@@ -7150,6 +7164,24 @@ def _asked_values(report: Any) -> list[str]:
     return list(dict.fromkeys(value.strip().lower() for value in asked if value.strip()))
 
 
+def _asked_paths(report: Any) -> frozenset[str]:
+    """The values of :func:`_asked_values` the publish rule asks as a ``path``, lower case.
+
+    A string row's and a judge's indicator's of that kind: held by an entry
+    only as a whole path (:func:`whole_path_in`).
+    """
+    static = getattr(report, "static", None)
+    rows = [
+        *(getattr(static, "interesting_strings", None) or []),
+        *(getattr(report, "judge_indicators", None) or []),
+    ]
+    return frozenset(
+        str(row.value or "").strip().lower()
+        for row in rows
+        if str(getattr(row, "kind", None) or getattr(row, "type", None) or "") == "path"
+    )
+
+
 def _entry_text(entry: Any, corpus: Any) -> str:
     """What the run saw of one entry, as text a value is found whole in.
 
@@ -7231,6 +7263,7 @@ def second_source_reads(
     asked = _asked_values(report)
     if not asked:
         return []
+    paths = _asked_paths(report)
     entries = list(ledger or ())
     cited = _cited_entries(report)
     # A claim citing a repeat the guard answered from an earlier entry stands
@@ -7260,7 +7293,8 @@ def second_source_reads(
         holds = sorted(
             value
             for value in first_holders(asked, [text])
-            if value not in cut or whole_as_held(value, text, True)
+            if (value not in cut or whole_as_held(value, text, True, path=value in paths))
+            and (value not in paths or whole_path_in(value, text))
         )
         if not holds:
             continue
