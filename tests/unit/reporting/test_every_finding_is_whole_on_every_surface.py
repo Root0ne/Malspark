@@ -44,6 +44,7 @@ from malspark.reporting.models import (
     TechnicalAnalysis,
 )
 from malspark.reporting.renderers import HtmlRenderer, MarkdownRenderer
+from malspark.reporting.renderers.markdown import CUT_CELL_SENTENCE
 from malspark.reporting.renderers.pdf import PdfRenderer, PdfUnavailableError
 from malspark.reporting.renderers.stix_renderer import (
     PLATFORM_INDICATES_EDGE,
@@ -152,10 +153,10 @@ class TestABodyCellIsWhole:
         assert cut and all("ENDMARK" not in line and "…" in line for line in cut)
         assert "is cut to fit the page" in appendix
 
-    def test_the_methodology_says_the_body_cuts_no_table_value(self) -> None:
+    def test_the_methodology_says_where_the_text_a_cut_was_made_from_is_held(self) -> None:
         markdown = MarkdownRenderer().render(_report())
 
-        assert "No table value in the body of the report is cut." in markdown
+        assert CUT_CELL_SENTENCE in markdown
 
 
 def _network_report(verdict: str = "Malware") -> MalwareReport:

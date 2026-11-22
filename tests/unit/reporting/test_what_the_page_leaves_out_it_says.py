@@ -32,10 +32,13 @@ class TestAListShownInPart:
 
 
 class TestACutValue:
-    def test_the_methodology_says_where_it_is_whole(self) -> None:
+    def test_the_methodology_says_where_the_text_a_cut_was_made_from_is_held(self) -> None:
         assert "ends in …" in CUT_CELL_SENTENCE
-        assert "JSON report" in CUT_CELL_SENTENCE and "evidence ledger" in CUT_CELL_SENTENCE
-        assert "Code is never cut to fit the page" in CUT_CELL_SENTENCE
+        assert "The JSON report holds the text each of these was cut from." in CUT_CELL_SENTENCE
+
+    def test_the_methodology_states_no_universal_over_the_cuts(self) -> None:
+        words = CUT_CELL_SENTENCE.lower().split()
+        assert not {"no", "never", "every", "whole"} & {w.strip(".,;:") for w in words}
 
 
 class TestAFigure:
@@ -50,3 +53,17 @@ class TestADraftedRule:
         said = LEFT_OUT_COMMENT.format(rest=7, what="domains")
         assert said.startswith("7 more published domains are not in this draft")
         assert "IOC table" in said
+
+
+def test_no_model_reads_the_methodology_s_cut_sentence() -> None:
+    """The sentence is written by the report renderer only: no module of the pipeline, the
+    agents, the prompts or the model-facing reporting code names it."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    readers = sorted(
+        str(path.relative_to(root))
+        for path in (root / "src").rglob("*.py")
+        if "CUT_CELL_SENTENCE" in path.read_text(encoding="utf-8")
+    )
+    assert readers == ["src/malspark/reporting/renderers/markdown.py"]

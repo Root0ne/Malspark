@@ -162,11 +162,16 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # The STIX re-pinned when the indicator of the sample's similarity digests came to be described
 # by the digests its pattern holds (T-785), and run7's Markdown and HTML when the line under an
 # analyst's table the report reads no value of came to say so (T-780): the only changes.
+# The Markdown and HTML digests also move with the sandbox lines, which count the rows of the
+# list each was read from (C49, C47), the ATT&CK table's note on the sources that table marks
+# `(rule match)` (T-845), the line over an analyst's table of values, which counts its rows by
+# where the values it types as an indicator are (C15), and the methodology's sentence on where
+# the JSON report holds the text a page cut was made from (T-780); the STIX does not.
 STORED_RENDERS = {
-    "run7": ("05df01d163a3fc39", "28f9aefd57b6db32", "b15eda451166721a"),
-    "run5": ("94143f0e9b75f230", "a50eee57a3b2250f", "da124711a6423447"),
-    "run4": ("63ed48679c51edcf", "2497a07295eb3770", "c98bd74e8825a72a"),
-    "local8": ("142eb3d0937a8e74", "0c9d8845fc7107b4", "5ef0ca19f5e5ec42"),
+    "run7": ("0e069ba49a5c6f03", "c1ef647839eb8368", "b15eda451166721a"),
+    "run5": ("1630a64187441867", "0d564f60a9856e15", "da124711a6423447"),
+    "run4": ("4142ffee296025e6", "346c5d707e423707", "c98bd74e8825a72a"),
+    "local8": ("24fa7a43d8606b6e", "ec2ed9879be550b4", "5ef0ca19f5e5ec42"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

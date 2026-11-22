@@ -902,14 +902,46 @@ def _value_words(value: str) -> str:
     return ", then ".join(said)
 
 
-def _left_out_rows(count: int, what: str) -> str:
-    """The line under a table some of whose rows only the bundle prints (T-555)."""
+def _left_out_rows(carried: int, matched: int, what: str) -> str:
+    """The line under a table some of whose rows only the bundle prints (T-555, T-844).
+
+    ``carried`` counts the rows left out that carry a finding, which the bundle prints with
+    its mark; ``matched`` the rows left out only because their text is the text of a sentence
+    a check left a finding on, which carry none themselves and which the bundle prints with
+    no mark. A finding is said only of a row that carries one."""
+    count = carried + matched
     one = count == 1
-    return (
-        f"{count} further {what}{'' if one else 's'} {'is' if one else 'are'} not printed "
-        f"here: a check left a finding on {'it' if one else 'each'}; the bundle lists "
-        f"{'it' if one else 'each'} with the reason."
+    head = f"{count} further {what}{'' if one else 's'} {'is' if one else 'are'} not printed here"
+    if not matched:
+        return (
+            f"{head}: a check left a finding on {'it' if one else 'each'}; the bundle lists "
+            f"{'it' if one else 'each'} with the reason."
+        )
+    if not carried:
+        if one:
+            return (
+                f"{head}: its text is that of a statement a check left a finding on, and the "
+                "row itself carries none; the bundle lists it."
+            )
+        return (
+            f"{head}: the text of each is that of a statement a check left a finding on, and "
+            "none of these rows carries one itself; the bundle lists each."
+        )
+    found = (
+        f"A check left a finding on {carried} of them, and the bundle lists "
+        f"{'it' if carried == 1 else 'each'} with the reason."
     )
+    if matched == 1:
+        rest = (
+            "The other one's text is that of a statement a check left a finding on, and that "
+            "row carries none itself; the bundle lists it."
+        )
+    else:
+        rest = (
+            f"The text of each of the other {matched} is that of a statement a check left a "
+            "finding on, and none of those rows carries one itself; the bundle lists each."
+        )
+    return f"{head}. {found} {rest}"
 
 
 # Citation brackets right after a flagged text, read past to its end.
@@ -1420,6 +1452,13 @@ class _Analyst:
     def _kept_sentences(self, text: str) -> list[str]:
         """The sentences of replaced text that stay (:meth:`_keeps`), as written, in order."""
         return [sentence for sentence in sentences(text) if self._keeps(sentence)]
+
+    def _carries_finding(self, row: Any, *cells: Any) -> bool:
+        """Whether the bundle prints a finding's mark on a table row it prints and this report
+        leaves out (T-844): a finding recorded under the row's own citations
+        (``_Context.cited_row_mark``), or a flagged sentence standing in one of ``cells``,
+        the cells the bundle writes with ``_Context.cell`` (``_Context.cell_marks``)."""
+        return bool(self.ctx.cited_row_mark(row)) or any(self.ctx.cell_marks(c) for c in cells)
 
     def _flagged_whole(self, text: Any) -> bool:
         """Whether nothing of ``text`` is left once its flagged sentences are left out."""
@@ -2002,22 +2041,24 @@ class _Analyst:
             blocks.extend(self._subsection("6.1", "Protocol and endpoints", prose, protocol))
         if ta is not None and ta.configuration:
             body = [_row("Key", "Value", "How obtained"), _divider(3)]
-            left = 0
+            carried = matched = 0
             for index, item in enumerate(ta.configuration, start=1):
                 # A row that cites nothing, or whose value none of its cited
                 # entries holds whole, is the bundle's, which prints it with the
                 # finding (T-555), and so is one inside a longer run never asked;
                 # one kept after the run was shown is printed with its mark. The
-                # IOC table's state of each value stays.
+                # IOC table's state of each value stays. A row whose text is a
+                # flagged sentence's is the bundle's too, and is counted by whether
+                # it carries the finding itself (T-844).
                 inside = ctx.config_inside.get(index)
-                if (
-                    index in ctx.config_findings
-                    or index in ctx.config_unheld
-                    or inside is False
-                    or self._flagged_whole(item.key)
-                    or self._flagged_whole(item.value)
-                ):
-                    left += 1
+                numbered = (
+                    index in ctx.config_findings or index in ctx.config_unheld or inside is False
+                )
+                if numbered or self._flagged_whole(item.key) or self._flagged_whole(item.value):
+                    if numbered or self._carries_finding(item, item.key, item.value):
+                        carried += 1
+                    else:
+                        matched += 1
                     continue
                 body.append(
                     _row(
@@ -2032,8 +2073,8 @@ class _Analyst:
                         item.how_obtained,
                     )
                 )
-            if left:
-                said = _left_out_rows(left, "configuration row")
+            if carried or matched:
+                said = _left_out_rows(carried, matched, "configuration row")
                 # Every row the bundle's: the line alone, with no empty table.
                 body = [*body, "", said] if len(body) > 2 else [said]
             blocks.extend([_subheading("6.2", "Configuration"), "", *body, ""])
@@ -2058,7 +2099,14 @@ class _Analyst:
                     )
                 body.append("")
             if len(commands) < len(ta.commands):
-                body.extend([_left_out_rows(len(ta.commands) - len(commands), "command row"), ""])
+                kept = {id(cmd) for cmd in commands}
+                out = [cmd for cmd in ta.commands if id(cmd) not in kept]
+                carried = sum(
+                    1
+                    for cmd in out
+                    if self._carries_finding(cmd, cmd.id or "-", cmd.name, cmd.description or "-")
+                )
+                body.extend([_left_out_rows(carried, len(out) - carried, "command row"), ""])
             flags = [flag for flag in ta.cli_flags if not self._flagged_whole(flag.flag)]
             if flags:
                 body.extend(["Command-line flags:", "", _row("Flag", "Meaning"), _divider(2)])
@@ -2071,7 +2119,12 @@ class _Analyst:
                     )
                 body.append("")
             if len(flags) < len(ta.cli_flags):
-                body.extend([_left_out_rows(len(ta.cli_flags) - len(flags), "flag row"), ""])
+                kept = {id(flag) for flag in flags}
+                out_flags = [flag for flag in ta.cli_flags if id(flag) not in kept]
+                carried = sum(
+                    1 for flag in out_flags if self._carries_finding(flag, flag.description or "-")
+                )
+                body.extend([_left_out_rows(carried, len(out_flags) - carried, "flag row"), ""])
             blocks.extend([_subheading("6.3", "Commands"), "", *body])
         lines = [_heading(6, "Command and control"), ""]
         lines.extend(
@@ -2382,7 +2435,7 @@ class _Analyst:
             rows.append((ctx.value(ioc.type), value, role or "-"))
         identifiers = list(self.ta.host_identifiers) if self.ta is not None else []
         answers = _identifier_answers(report)
-        left = 0
+        carried = matched = 0
         for index, item in enumerate(identifiers, start=1):
             answer = answers[index - 1] if index <= len(answers) else ""
             # A row the rule publishes is the IOC table's row above.
@@ -2391,15 +2444,22 @@ class _Analyst:
             # A row that cites nothing, or whose value none of its cited entries
             # holds whole, is the bundle's, which prints it with the finding (T-555),
             # and so is one inside a longer run never asked; one kept after the run
-            # was shown is printed with its mark.
+            # was shown is printed with its mark. A row whose value is a flagged
+            # sentence's text is the bundle's too, and is counted by whether it
+            # carries the finding itself (T-844).
             inside = ctx.identifier_inside.get(index)
-            if (
+            numbered = (
                 index in ctx.identifier_findings
                 or index in ctx.identifier_unheld
                 or inside is False
-                or self._flagged_whole(item.value)
-            ):
-                left += 1
+            )
+            if numbered or self._flagged_whole(item.value):
+                if numbered or self._carries_finding(
+                    item, item.kind, *([item.purpose] if item.purpose.strip() else [])
+                ):
+                    carried += 1
+                else:
+                    matched += 1
                 continue
             seen.add(item.value.strip().lower())
             role = self._line(item.purpose, item.evidence_refs) if item.purpose.strip() else "-"
@@ -2424,8 +2484,8 @@ class _Analyst:
             for kind, value, role in rows:
                 lines.append(_row(kind, _code_span(value), role))
             lines.append("")
-        if left:
-            lines.extend([_left_out_rows(left, "host identifier row"), ""])
+        if carried or matched:
+            lines.extend([_left_out_rows(carried, matched, "host identifier row"), ""])
         if recorded:
             # Named by the source the indicator table records for each (T-780).
             count = sum(recorded.values())

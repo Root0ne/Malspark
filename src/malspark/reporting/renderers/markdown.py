@@ -1819,19 +1819,7 @@ class MarkdownRenderer:
             lines.append(_rule_only_row(tid, folded, mappings, capability_ids))
         lines.extend(_resolved_only_lines(sorted(cells, key=_tactic_key), rules_by_tid, ctx))
         if hits:
-            lines.extend(
-                [
-                    "",
-                    "_A source marked `(rule match)` or `pipeline:` is a rule that fired over "
-                    f"the binary — {_capability_owner(report)} over its code, the knowledge "
-                    "table's over its imports "
-                    "— with no sandbox and no model. The rule names are in the Procedure cell, "
-                    "each with its base rate: how much ordinary software it fires on, over the "
-                    "corpus it names. It says nothing about how likely this sample is to be "
-                    "benign, and `not measured` means the rule has no measurement, not that it "
-                    "never fires._",
-                ]
-            )
+            lines.extend(["", _rule_match_note(report, cells, mappings, rules_by_tid, ctx)])
         held, cut = _not_published_lines(report, ctx)
         cuts += cut
         noted = judge_cut_note(cuts, report)
@@ -3272,16 +3260,25 @@ class _Context:
         with Markdown's own characters escaped (:func:`_inline_safe`). Fails
         closed: a table that cannot be read states every value refused for
         that reason, and a lookup that fails says the state is unknown.
+
+        A cell whose whole text is the value of its own indicator row, where
+        the reader of its values did not find that row (a URL is read as its
+        host), prints that row's own answer (:meth:`_own_row_state`); a cell
+        that prints no state otherwise prints none.
         """
         try:
             from malspark.reporting.defang import defang
 
+            unstated = self._unstated(text)
+            if not unstated:
+                return ""
+            own = self._own_row_state(text, unstated)
+            if own is not None:
+                return own
             found = [
                 (kind, value, self._cell_state(kind, value, state))
-                for kind, value, state in self._unstated(text)
+                for kind, value, state in unstated
             ]
-            if not found:
-                return ""
             if len(found) == 1:
                 said = found[0][2]
             else:
@@ -3290,6 +3287,43 @@ class _Context:
         except Exception as exc:  # noqa: BLE001 — the cell says what is not known
             logger.debug("markdown: a cell's publish state was not read (%s).", exc)
             return f" ({STATE_UNKNOWN})" if _names_a_network_value(text) else ""
+
+    def _own_row_state(self, text: Any, unstated: list[tuple[str, str, str]]) -> str | None:
+        """What a cell prints by its own row's answer, or ``None`` where the reader decides.
+
+        The cell's own row is the indicator row whose value is the cell's whole
+        text (one spelling, ``value_key``). Where the reader of the cell's
+        values found that row, or no row or rows of more than one answer hold
+        the text, or the row has no answer, the reader's values decide
+        (``None``). Otherwise the cell
+        prints that row's answer: nothing where the row is published, its
+        state where it is not (:meth:`_cell_state`).
+        """
+        from malspark.reporting.ledger_projection import value_key
+        from malspark.reporting.publish_parts import answer_state
+        from malspark.reporting.renderers.stix_renderer import publishes
+
+        whole = str(text or "").strip()
+        kinds = dict.fromkeys(
+            str(row.kind)
+            for row in self.iocs
+            if row.kind and value_key(str(row.kind), row.value) == value_key(str(row.kind), whole)
+        )
+        if not kinds:
+            return None
+        found = {(kind, value_key(kind, value)) for kind, value, _state in unstated}
+        if any((kind, value_key(kind, whole)) in found for kind in kinds):
+            return None
+        answers = {kind: self._answers(kind, whole) for kind in kinds}
+        if len({str(answer) for answer in answers.values()}) != 1:
+            return None
+        kind, answer = next(iter(answers.items()))
+        if not answer:
+            return None
+        if publishes(answer):
+            return ""
+        said = self._cell_state(kind, whole, answer_state(answer))
+        return f" ({_inline_safe(said, pipes=False, plain=self.plain)})"
 
     def _cell_state(self, kind: str, value: str, state: str) -> str:
         """What a cell prints beside one unpublished value: its state, or its whole answer
@@ -3501,10 +3535,16 @@ class _Context:
         whole = self._defang(raw)
         if self.cell_citations is not None:
             whole = self.cell_citations(whole)
-        marks = list(
+        marks = self.cell_marks(raw)
+        return f"{whole} {' '.join(marks)}" if marks else whole
+
+    def cell_marks(self, text: Any) -> list[str]:
+        """The marks :meth:`cell` prints after a cell's text: each flagged sentence's that
+        stands in it, once."""
+        raw = str(text or "")
+        return list(
             dict.fromkeys(mark for sentence, mark in self.flagged if self.places(sentence, raw))
         )
-        return f"{whole} {' '.join(marks)}" if marks else whole
 
     def sandbox_sentence(self) -> str:
         """What the run knows about a sandbox, as one sentence, in the run's own voice.
@@ -3689,8 +3729,12 @@ def _objects(count: int) -> str:
 
 def _sandbox_held(report: MalwareReport) -> list[str]:
     """What the report holds from a sandbox, as counts of its rows: the sandbox report's
-    processes, signatures, file operations and registry rows, and the network rows the sandbox
-    is the source of. Each is counted as held, whichever process it names (T-780)."""
+    processes, signatures, the rows of its dropped-files list and of its mutex list, any other
+    file-operation row and its registry rows, and the network rows the sandbox is the source
+    of. Each is counted as held, whichever process it names (T-780), and the rows of
+    ``file_operations`` by the list each was read from (``operation`` ``write`` or ``mutex``,
+    ``ledger_projection``): a row of the dropped-files list is no file operation the record
+    shows."""
     out: list[str] = []
     dyn = report.dynamic
     if dyn is not None:
@@ -3698,17 +3742,32 @@ def _sandbox_held(report: MalwareReport) -> list[str]:
         def processes(nodes: Iterable[ProcessNode]) -> int:
             return sum(1 + processes(node.children) for node in nodes)
 
+        def operations(name: str) -> int:
+            return sum(
+                1
+                for op in dyn.file_operations
+                if isinstance(op, dict) and op.get("operation") == name
+            )
+
+        dropped, mutexes = operations("write"), operations("mutex")
         counted = (
             (processes(dyn.process_tree), "process", "processes"),
             (len(dyn.sandbox_signatures), "signature", "signatures"),
-            (len(dyn.file_operations), "file-operation row", "file-operation rows"),
+            (dropped, "row of its dropped-files list", "rows of its dropped-files list"),
+            (mutexes, "mutex name", "mutex names"),
+            (
+                len(dyn.file_operations) - dropped - mutexes,
+                "file-operation row",
+                "file-operation rows",
+            ),
             (len(dyn.registry_mods), "registry row", "registry rows"),
         )
         listed = [f"{n} {one if n == 1 else many}" for n, one, many in counted if n]
         out.append(
             f"a report is held listing {_joined(listed)}"
             if listed
-            else "a report is held listing no process, signature, file operation or registry row"
+            else "a report is held listing no process, signature, dropped-files row, mutex "
+            "name, file-operation row or registry row"
         )
     net = report.network
     rows = [*(net.domains if net else []), *(net.ips if net else []), *(net.urls if net else [])]
@@ -6128,11 +6187,19 @@ def _evidence_heading(section: Any, plain: Callable[[str], str] = _defanged_text
     return f"{_plain_heading(_inline_safe(section.title, plain=plain))} · _{voice}_"
 
 
-def _typed_values_shown(section: Any, kind: str, ctx: _Context) -> tuple[int, int, int] | None:
-    """For an analyst's table of values, the values it types as an indicator, read as the
-    report builder reads the table (``listed_non_network_values``, ``kept_network_values``),
-    each once: how many, how many the indicator section's tables hold as the analyst's row, and
-    how many they hold under another source. ``None`` for any other table."""
+# Where the indicator section holds a value an analyst's table gives (:func:`_typed_values_shown`).
+_AS_THE_ANALYSTS = "analyst"
+_UNDER_ANOTHER_SOURCE = "other"
+_NOT_IN_THE_SECTION = "absent"
+
+
+def _typed_values_shown(section: Any, kind: str, ctx: _Context) -> list[set[str]] | None:
+    """For an analyst's table of values, one entry per row of the table: where the indicator
+    section's tables hold the values the row gives, read as the report builder reads the
+    table (``listed_non_network_values``, ``kept_network_values``) — as the analyst's row,
+    under another source, or not at all — and an empty set for a row that gives none (a row
+    the reading of a merged table does not read among them). ``None`` for any other table
+    (C15: the line counts the table's rows)."""
     from malspark.reporting.ledger_projection import kept_network_values, listed_non_network_values
     from malspark.reporting.ledger_report import listed_headings, listed_rows
 
@@ -6140,9 +6207,6 @@ def _typed_values_shown(section: Any, kind: str, ctx: _Context) -> tuple[int, in
         return None
     headings = listed_headings(section)
     cells = [row for _analyst, _cited, row in listed_rows(section)]
-    values = [value for _kind, value, _payload in listed_non_network_values(kind, cells, headings)]
-    table = SimpleNamespace(kind=kind, rows=cells, columns=headings, value=None)
-    values += [value for _kind, value in kept_network_values(table)]
 
     def key(value: Any) -> str:
         return str(value or "").strip().lower().rstrip(".")
@@ -6153,43 +6217,84 @@ def _typed_values_shown(section: Any, kind: str, ctx: _Context) -> tuple[int, in
     ta = ctx.report.technical_analysis
     for item in ta.host_identifiers if ta is not None else []:
         sources.setdefault(key(item.value), set()).add("")
-    keys = list(dict.fromkeys(key(value) for value in values if key(value)))
-    theirs = sum(1 for k in keys if "analyst" in sources.get(k, ()))
-    other = sum(1 for k in keys if k in sources and "analyst" not in sources[k])
-    return len(keys), theirs, other
+    places: list[set[str]] = []
+    for listed in cells:
+        values = [value for _kind, value, _p in listed_non_network_values(kind, [listed], headings)]
+        table = SimpleNamespace(kind=kind, rows=[listed], columns=headings, value=None)
+        values += [value for _kind, value in kept_network_values(table)]
+        places.append(
+            {
+                _AS_THE_ANALYSTS
+                if "analyst" in sources.get(k, ())
+                else _UNDER_ANOTHER_SOURCE
+                if k in sources
+                else _NOT_IN_THE_SECTION
+                for k in (key(value) for value in values)
+                if k
+            }
+        )
+    unread = len(getattr(section, "rows", None) or []) - len(cells)
+    return places + [set() for _ in range(max(unread, 0))]
 
 
 def analyst_list_note(
-    analysts: list[str], kind: str = "", typed: tuple[int, int, int] | None = None
+    analysts: list[str], kind: str = "", typed: list[set[str]] | None = None
 ) -> str:
     """The line an analyst's table is printed under in Appendix A, saying where else it is shown.
 
-    ``typed`` counts the values a table of values types as an indicator: how many, how many
-    the indicator section holds as the analyst's row, and how many it holds under another
-    source (:func:`_typed_values_shown`); where not each of them is the analyst's row there,
-    the line counts each case (T-780), and where the report reads none it says so."""
+    ``typed`` gives, for each row of a table of values, where the indicator section holds the
+    values the row gives (:func:`_typed_values_shown`). Where every value is the analyst's row
+    there, the line says so; where the report reads none, it says so; otherwise it counts the
+    table's rows, each by where the values it types as an indicator are, and a row of more
+    than one kind by the places the counted rows show (C15): two numbers in one sentence are
+    counts over the same rows."""
     who = ", ".join(f"the {_one_line(name)} analyst" for name in analysts)
     indicators = section_reference(INDICATORS_TITLE)
     values = (
         f" Each value it types as an indicator is in {indicators} as the analyst's, with the "
         "publish rule's answer."
     )
-    if typed is not None and not typed[0]:
+    if typed is not None and not any(typed):
         # Read as the builder reads it, the table gives no value: nothing is
         # said of where its values are.
         values = " The report reads no value of it as an indicator."
-    elif typed is not None and typed[1] != typed[0]:
-        total, theirs, other = typed
+    elif typed is not None and any(row - {_AS_THE_ANALYSTS} for row in typed):
+        # A row is classed by the values the reading types as an indicator in
+        # it; its other cells are not read, so the words name those values.
+        typed_values = "values it types as an indicator"
         cases = [
-            (theirs, f"in {indicators} as the analyst's, with the publish rule's answer"),
-            (other, f"in {indicators} under another source"),
-            (total - theirs - other, f"not in {indicators}"),
+            (
+                {_AS_THE_ANALYSTS},
+                f"{typed_values}, each in {indicators} as the analyst's, with the publish "
+                "rule's answer",
+            ),
+            ({_UNDER_ANOTHER_SOURCE}, f"{typed_values}, each in {indicators} under another source"),
+            ({_NOT_IN_THE_SECTION}, f"{typed_values}, none of them in {indicators}"),
         ]
+        # The places a row of more than one kind names: those the counted rows show.
+        shown_places = set().union(*(row for row in typed if len(row) > 1))
+        places = [
+            said
+            for held, said in (
+                (_AS_THE_ANALYSTS, f"in {indicators} as the analyst's"),
+                (_UNDER_ANOTHER_SOURCE, f"in {indicators} under another source"),
+                (_NOT_IN_THE_SECTION, f"not in {indicators}"),
+            )
+            if held in shown_places
+        ]
+        mixed = "values of more than one kind: " + (
+            " or ".join(places) if len(places) < 3 else f"{places[0]}, {places[1]}, or {places[2]}"
+        )
+        counted = [(sum(1 for row in typed if row == held), said) for held, said in cases]
+        counted.append((sum(1 for row in typed if len(row) > 1), mixed))
+        counted.append(
+            (sum(1 for row in typed if not row), "no value the report reads as an indicator")
+        )
         values = (
-            f" The value it types as an indicator is {next(said for n, said in cases if n)}."
-            if total == 1
-            else f" Of the {total} values it types as an indicator, "
-            + "; ".join(f"{n} {'is' if n == 1 else 'are'} {said}" for n, said in cases if n)
+            f" Its one row gives {next(said for n, said in counted if n)}."
+            if len(typed) == 1
+            else f" Of its {len(typed)} rows, "
+            + "; ".join(f"{n} {'gives' if n == 1 else 'give'} {said}" for n, said in counted if n)
             + "."
         )
     shown = {
@@ -7002,6 +7107,24 @@ def _finding_technique(row: dict[str, Any]) -> str:
     return match.group(1).upper() if match else ""
 
 
+def _rule_labels(asserted: list[str], rules: list[dict[str, Any]]) -> dict[str, str]:
+    """The label the ATT&CK table prints beside each deterministic source of a technique's
+    row, by source, in the row's order: the sources that asserted it and the sources of the
+    rule hits folded into it, ``rule match``, or the runtime-only label for a source all of
+    whose hits matched only names resolved at runtime."""
+    rule_sources = [str(hit.get("source") or "rule") for hit in rules]
+    runtime_only = {
+        str(hit.get("source") or "rule")
+        for hit in rules
+        if _resolved_only(hit)
+        and all(_resolved_only(h) for h in rules if h.get("source") == hit.get("source"))
+    }
+    return {
+        source: RESOLVED_ONLY_RULE_LABEL if source in runtime_only else "rule match"
+        for source in dict.fromkeys(asserted + rule_sources)
+    }
+
+
 def _stated(value: float | None, producer: str) -> str:
     """A stated confidence with its producer, or that the producer is not recorded.
 
@@ -7033,17 +7156,9 @@ def _attack_row(
     # asserted it, the analysts that claimed it, and the matrix's own layers —
     # the judge's verdict among them — which the corroboration does not count.
     # A rule that matched only names resolved at runtime says so in its label.
-    runtime_only = {
-        str(hit.get("source") or "rule")
-        for hit in rules
-        if _resolved_only(hit)
-        and all(_resolved_only(h) for h in rules if h.get("source") == hit.get("source"))
-    }
     # Each producer's name is a tool's or the operator's text, by the inline rule.
     named = [
-        f"{ctx.value(source)} "
-        f"({RESOLVED_ONLY_RULE_LABEL if source in runtime_only else 'rule match'})"
-        for source in dict.fromkeys(asserted + rule_sources)
+        f"{ctx.value(source)} ({label})" for source, label in _rule_labels(asserted, rules).items()
     ]
     named += [
         ctx.value(str(x))
@@ -7515,6 +7630,73 @@ def _capability_tool(report: MalwareReport) -> str:
             if named:
                 return " and ".join(named)
     return ""
+
+
+def _rule_match_note(
+    report: MalwareReport,
+    cells: list[CapabilityCell],
+    mappings: dict[str, Any],
+    rules_by_tid: dict[str, list[dict[str, Any]]],
+    ctx: _Context,
+) -> str:
+    """The note under the ATT&CK table on the sources it marks ``(rule match)`` (T-845).
+
+    It names each source the table's rows print with that mark, read as the rows read it
+    (:func:`_rule_labels`; a technique only rules named prints each hit's source so), and
+    ``pipeline:`` only where a source cell prints one. "with no sandbox" is said only of the
+    rules that fired over the binary, whose names and base rates the Procedure cell
+    carries: a capability-rule tool's over its code, the knowledge table's over its imports,
+    or over names it resolved at runtime where each of its hits matched only those."""
+    corroboration = (report.run_summary or {}).get("corroboration") or {}
+    marked: dict[str, None] = {}
+    layers: list[str] = []
+    seen: set[str] = set()
+    for cell in cells:
+        seen.add(cell.technique_id)
+        row = corroboration.get(cell.technique_id)
+        asserted = list(row.get("asserted_by") or []) if isinstance(row, dict) else []
+        claimed = list(row.get("claimed_by") or []) if isinstance(row, dict) else []
+        labels = _rule_labels(asserted, rules_by_tid.get(cell.technique_id, []))
+        # Every label the row prints beside a rule source is a rule-match mark.
+        marked.update(dict.fromkeys(labels))
+        layers += [str(x) for x in [*claimed, *cell.contributing_layers] if x not in labels]
+    for tid, mapping in mappings.items():
+        if tid not in seen:
+            seen.add(tid)
+            layers += [str(x) for x in mapping.contributing_layers]
+    for tid, folded in rules_by_tid.items():
+        if tid not in seen:
+            marked.update(dict.fromkeys(str(hit.get("source") or "rule") for hit in folded))
+    piped = [x for x in dict.fromkeys(layers) if x.startswith("pipeline:")]
+    names = sorted(ctx.value(source) for source in [*marked, *piped])
+    lead = (
+        f"_A source marked `(rule match)`{' or `pipeline:`' if piped else ''} is a rule that "
+        f"fired, with no model; this table marks {_joined(names)}."
+        if names
+        else "_No source in this table is marked `(rule match)`."
+    )
+    hits = [hit for folded in rules_by_tid.values() for hit in folded]
+    others = [hit for hit in hits if not _capability_rule_hit(hit)]
+    over: list[str] = []
+    if any(_capability_rule_hit(hit) for hit in hits):
+        over.append(f"{_capability_owner(report)} over its code")
+    imports = [hit for hit in others if not _resolved_only(hit)]
+    if imports and len(imports) < len(others):
+        over.append("the knowledge table's over its imports and over names resolved at runtime")
+    elif others:
+        over.append(
+            "the knowledge table's over its imports"
+            if imports
+            else "the knowledge table's over names resolved at runtime"
+        )
+    capped = ", at most four a row," if any(len(f) > 4 for f in rules_by_tid.values()) else ""
+    return (
+        f"{lead} The Procedure cell names the rules that fired over the binary{capped} with no "
+        f"sandbox — {', '.join(over)} — each with its base rate: how much ordinary software it "
+        "fires on, over the corpus it names. It says nothing about how likely this sample is to "
+        "be benign, and `not measured` means the rule has no measurement, not that it never "
+        "fires._"
+    )
 
 
 def _capability_owner(report: MalwareReport) -> str:
@@ -8397,13 +8579,15 @@ def _one_line(value: Any) -> str:
 # every one is. The page is laid out for a reader; the JSON report (the same
 # report's structured form) and the evidence ledger hold every value whole.
 LEFT_OUT_LINE = "_{rest:,} more {what} not shown here; the JSON report carries every one._"
-# Said once, in the methodology appendix, of a table cell that ends in the cut
-# mark: only Appendix A has one.
+# Said once, in the methodology appendix, of the cuts the page makes for which
+# the JSON report holds the text cut from: an Appendix A table value
+# (``_evidence_rows``), a judge's reason in the ATT&CK table (``judge_reasons``,
+# from ``capability_matrix``) and a code listing figure (``figures``, from
+# ``technical_evidence``).
 CUT_CELL_SENTENCE = (
-    "No table value in the body of the report is cut. A table value in Appendix A that "
-    "ends in … is cut to fit the page; the JSON report and the evidence ledger (Appendix "
-    "A's ids) carry it whole. Code is never cut to fit the page: Appendix A draws each "
-    "function's code whole, as a listing."
+    "Where the page cuts a table value in Appendix A or a judge's reason in the ATT&CK "
+    "table to fit, the cut ends in …; a code listing cut to fit says so in its legend. "
+    "The JSON report holds the text each of these was cut from."
 )
 
 

@@ -571,7 +571,11 @@ class TestTheReport:
         # rows of its dotted name; the dump did not move. An empty reading of the flow rows
         # to an address records how many detonations' network views the rule read: the dump
         # of the rich and hostile shapes holds that number in each address row's empty
-        # reading, and the Markdown holds none. Those are the only changes.
+        # reading, and the Markdown holds none. The Markdown of the rich and hostile shapes
+        # moves with its two sandbox lines, which count the rows of the list each was read from
+        # (C49, C47), with the ATT&CK table's note on the sources that table marks
+        # `(rule match)` (T-845), and, of every shape, with the methodology's sentence on where
+        # the JSON report holds the text a page cut was made from (T-780); the dump does not.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the

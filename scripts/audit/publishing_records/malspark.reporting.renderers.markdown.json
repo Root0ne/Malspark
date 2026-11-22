@@ -1,0 +1,86 @@
+{
+ "entries": [
+  {
+   "function": "malspark.reporting.renderers.markdown:_sandbox_held",
+   "condition": "what a held sandbox report lists, counted by kind: its processes, signatures, the rows of its dropped-files list (operation 'write'), its mutex names (operation 'mutex'), any other file-operation row and its registry rows, and the network rows the sandbox is the source of; 'listing no process, signature, dropped-files row, mutex name, file-operation row or registry row' where it lists none",
+   "basis": [
+    "the report's dynamic block: process tree, sandbox signatures, file_operations by operation, registry rows",
+    "the network rows whose source is the sandbox"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_sandbox_s_rows_are_named_by_the_list_they_come_from.py::test_rows_of_the_dropped_files_list_are_named_so",
+    "tests/unit/reporting/test_a_sandbox_s_rows_are_named_by_the_list_they_come_from.py::test_one_row_of_each_list_is_named_by_its_list",
+    "tests/unit/reporting/test_a_sandbox_s_rows_are_named_by_the_list_they_come_from.py::test_several_rows_of_each_list",
+    "tests/unit/reporting/test_a_sandbox_s_rows_are_named_by_the_list_they_come_from.py::test_a_report_listing_nothing_says_what_it_counted"
+   ],
+   "text_digest": "65b83fd6f6a844e95647463a08fc19a88e3485d4e1d650faf0e361d4f809ce4f"
+  },
+  {
+   "function": "malspark.reporting.renderers.markdown:MarkdownRenderer._section_attack",
+   "condition": "section 8 of the single-file report and the bundle: the ATT&CK table, one row per technique, then the note on `(rule match)` where any rule hit over the binary is held, the claims not published, the cut note, the behaviour-catalog and unmapped-behaviour lines",
+   "basis": [
+    "the capability matrix, the published mappings, the rule hits over the binary",
+    "the run summary's corroboration (asserted_by, claimed_by)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_no_absence_of_a_source_the_table_shows",
+    "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_every_source_the_table_marks_is_named"
+   ],
+   "text_digest": "080fe5a056b750ec63477d29e604d98ce03ddcba15a813043f22a643b8df3b9d"
+  },
+  {
+   "function": "malspark.reporting.renderers.markdown:_attack_row",
+   "condition": "one technique's row of the ATT&CK table: each deterministic source with the label `_rule_labels` gives it ('rule match', or the runtime-only label), each analyst and layer, the confidence, the status and the evidence",
+   "basis": [
+    "the capability cell",
+    "the corroboration row's asserted_by and claimed_by",
+    "the rule hits folded into the row"
+   ],
+   "test": "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_no_absence_of_a_source_the_table_shows",
+   "text_digest": "2143a26860829c070c01bec77a57be16b57383323648b23d90e5d64d374d7e91"
+  },
+  {
+   "function": "malspark.reporting.renderers.markdown:_rule_labels",
+   "condition": "the label beside each deterministic source of an ATT&CK row: 'rule match', or the runtime-only label where every hit of that source in the row matched only names resolved at runtime",
+   "basis": [
+    "the corroboration row's asserted_by",
+    "the rule hits folded into the row, their matched and resolved names"
+   ],
+   "test": [
+    "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_no_absence_of_a_source_the_table_shows",
+    "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_a_table_that_marks_no_source_says_so"
+   ],
+   "text_digest": "cd232c0311bca71588573fb05aa9e6be06576045b5017391816a5e0d66f1c30f"
+  },
+  {
+   "function": "malspark.reporting.renderers.markdown:_rule_match_note",
+   "condition": "the note under the ATT&CK table where a rule hit over the binary is held: names every source the table's rows mark `(rule match)` (and `pipeline:` only where a source cell prints one), or says no source is so marked; says 'with no sandbox' only of the rules over the binary, naming a capability-rule tool's over its code and the knowledge table's over its imports or over names resolved at runtime as the hits held give them, and 'at most four a row' where a row folds more rules than it names",
+   "basis": [
+    "the sources the table's rows print with the mark, read as the rows read them",
+    "the rule hits over the binary, their kind and resolved names, and how many a row folds"
+   ],
+   "test": [
+    "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_every_source_the_table_marks_is_named",
+    "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_the_knowledge_table_is_named_only_where_its_rules_fired",
+    "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_a_table_that_marks_no_source_says_so"
+   ],
+   "text_digest": "04ef5c5de84535d67e11c32d0df8ffacf6ac101cb8352d39876f76cebadf31b8"
+  },
+  {
+   "function": "malspark.reporting.renderers.markdown:analyst_list_note",
+   "condition": "the line over an analyst's table in Appendix A: a model's table, not a tool's output; for a table of values, 'Each value it types as an indicator is in §9 as the analyst's' where every value read from it is, 'The report reads no value of it as an indicator.' where none is read, and otherwise a count of the table's rows by where the indicator section holds the values each row gives that the reading types as an indicator (each as the analyst's, each under another source, none of them in §9, more than one of these, naming only the places those rows show, no value); for a persistence table where its rows are shown",
+   "basis": [
+    "the table's rows, read as the report builder reads them (listed_non_network_values, kept_network_values), one row at a time",
+    "the indicator section's rows and their sources, and the host identifiers"
+   ],
+   "test": [
+    "tests/unit/reporting/test_the_list_note_counts_the_rows_of_its_table.py::TestTheWordsOfEachForm::test_rows_of_each_kind_are_counted",
+    "tests/unit/reporting/test_the_list_note_counts_the_rows_of_its_table.py::TestTheWordsOfEachForm::test_a_table_of_one_row",
+    "tests/unit/reporting/test_the_list_note_counts_the_rows_of_its_table.py::test_a_url_row_and_its_host_count_as_one_row",
+    "tests/unit/reporting/test_the_list_note_counts_the_rows_of_its_table.py::test_a_row_s_cells_the_reading_does_not_type_are_not_said_to_be_in_the_section",
+    "tests/unit/reporting/test_the_list_note_counts_the_rows_of_its_table.py::TestTheWordsOfEachForm::test_a_row_of_more_than_one_kind_names_the_places_its_rows_show"
+   ],
+   "text_digest": "ddcdb160f226d0b7687da86e7843aa1049b2bc20f6dd8b8e51e0fb684e6e4d29"
+  }
+ ]
+}
