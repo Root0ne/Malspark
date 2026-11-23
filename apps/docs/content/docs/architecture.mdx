@@ -6505,10 +6505,9 @@ is assembled from what the run gathered rather than recomputed beside it:
   The draft's strings and clauses are declared once, and one function writes
   both the rule the report publishes and a probe ruleset from them: one rule
   per string (`condition: $a`, the draft's own text and modifiers), a reporter
-  rule per clause of the draft's condition (the sha256, the imphash when the
-  draft has one, and the strings clause as the draft's quantifier over the
-  probe string rules), and one reporter for the whole condition over those
-  parts. Once the draft compiles (includes refused by the engine, so no file
+  rule per clause of the draft's condition (the sha256, and the strings clause
+  as the draft's quantifier over the probe string rules), and one reporter for
+  the whole condition over those parts. Once the draft compiles (includes refused by the engine, so no file
   is opened at compile time), the same engine scans the probe ruleset over the
   file the run analysed, mapped read-only where it lies, in its fast mode and
   within `core.reporting.detection_rule_check_seconds` (the report node passes both, and
@@ -6534,11 +6533,12 @@ is assembled from what the run gathered rather than recomputed beside it:
   and the platform's processes pin `LC_CTYPE` so that this does not arise (see
   [Native runs pin `LC_CTYPE`](/docs/development/#native-runs-pin-lc_ctype)). A drafted
   rule carries the sample's own sha256, so it always matches by that clause
-  (but on an empty file, whose hash the engine leaves undefined). Its imphash
-  is pefile's, the identity table's value and the one external services
-  publish; for a sample that imports WSOCK32 by ordinal the engine names those
-  ordinals through its WS2_32 table and computes another import hash, so
-  `matched_by` then truthfully lacks `imphash`. Since the sha256 clause always
+  (but on an empty file, whose hash the engine leaves undefined). The sample's
+  import-table digest also matches files that are not the sample, so it is no
+  clause of the condition: the rule's `meta` carries its value (`imphash`), and
+  a rule that uses nothing of the `pe` module does not import it. A stored
+  record written when the digest was a clause may name `imphash` in
+  `matched_by` and prints as stored. Since the sha256 clause always
   holds, §10.2 and DETECTION say which clause held — "its strings match it (k of n
   strings found)", "the rule matches it by its sha256 only; its strings do
   not", "the draft declares no strings", "the rule does not match it" — with
