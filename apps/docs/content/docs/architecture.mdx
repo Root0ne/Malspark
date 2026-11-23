@@ -6278,7 +6278,13 @@ is assembled from what the run gathered rather than recomputed beside it:
   and nothing else: the value is exported as it would be without it, the
   platform's indicator where its shape stands and the judge's own where the
   export carries it. The reason states the shape where it is what refused a
-  value a second source holds.
+  value a second source holds. A path whose shape stands, and a judge's path
+  asked as the string sweep's, is then asked the declared catalogue the
+  analysis route asks (`stix_renderer.catalogue_path_reason`, below) before a
+  second source publishes it: the catalogue's reason refuses it, and every
+  fact the refusal it replaces carried is printed after the reason (the row
+  it is from, a second source that holds it or that the publish rule's lookup
+  found none, a recovery of it), so one value has one answer on both routes.
 * **A host value the analysis states is exported when code finds it whole.**
   The report model's host-identifier call types each row with a closed
   vocabulary (`data/host_identifier_kinds_v1.json`: mutex, file path, file
@@ -6292,15 +6298,38 @@ is assembled from what the run gathered rather than recomputed beside it:
   name, a folder or a file name is held only where both its ends are a value
   delimiter (a quote, the text's start or end, a line break, a path separator,
   a key-value mark; `stated_host_values.delimited_in`), never in running text
-  or inside a URL; a stream also after its file's name. The rule answers such
+  or inside a URL; a stream also after its file's name. Such a value is also
+  held as one whole argument of a process command line a cited entry records
+  in the platform's sandbox document (`stated_host_values.command_line_arguments`:
+  a process row, one object stating its process id, its parent's id and its
+  command line under the document's own fields, `PROCESS_ID_KEYS`,
+  `PROCESS_PARENT_KEYS` and `PROCESS_COMMAND_LINE_PATHS`, in any answer, a
+  tool nobody declared included; split as Windows splits a command line);
+  part of an argument, a value between spaces anywhere else, and an object
+  with an id and a command line but no parent (a configuration's entry, a
+  tool's echo of its arguments) are not. An entry that quotes a whole process
+  row is read as one. The same scan records, for a row no cited entry holds
+  whole, what the entries it read (the first `MAX_CITED`) hold instead
+  (`HostIdentifier.unheld_as`, never in the model's schema), and the refusal
+  says it: the text only inside a longer run of letters or digits, only
+  between spaces, or somewhere else not counted as the whole value; the
+  earlier words where no entry read holds the text at all (`nowhere`); and,
+  where the row cites more entries than were read, the count read and the
+  count cited. A row of a report stored before the scan recorded what it
+  found says only that no cited entry is recorded as holding its whole value
+  (`NOT_RECORDED_AS_HELD`). The rule answers such
   a row under source `analysis` (`indicator_publish_reason`'s `stated`): a
   typed kind with an object on some surface, created or written, held whole by
   a cited entry, no format placeholder, not in the declared catalogue of values
   every Windows host holds (`data/host_benign_locations_v1.json`, each list
-  with its criterion and source: known folders and their 8.3 short names,
-  files Windows ships in its system folders, keys and values every
-  installation has, Windows' own services, pipes and streams, object-manager
-  namespaces, task-definition words) nor the sample as the sandbox holds it
+  with its criterion and source: paths every component of which is a drive,
+  a name Windows gives one of its own folders (known folders and their 8.3
+  short names) or a user's profile name (right after the users folder under a
+  drive, or first in a path written without one), files Windows ships in its system
+  folders, keys and values every installation has, a service's key and a key
+  exactly one level below it named as Windows names the subkeys it keeps a
+  service's settings in (`service_settings_subkeys`), Windows' own services,
+  pipes and streams, object-manager namespaces, task-definition words) nor the sample as the sandbox holds it
   (named by its digest or its submitted name), and a verdict that publishes.
   The table adds a row for each one it publishes after every tool row, or
   turns a refused tool row of the same kind and value into it; section 9
@@ -6330,8 +6359,11 @@ is assembled from what the run gathered rather than recomputed beside it:
   (`stated_host_values.shipped_match`): the paths Windows ships are derived
   once from the catalogue's program names, system roots (with a drive or an
   environment name) and system folders, as a language read one character at a
-  time, and the keys from its keys and values; a value a shipped path ends
-  with (`endswith`), holds (`contains`) or is, is taken out. A path matched by
+  time, and the keys from its keys and values, each service's key and the
+  settings subkeys named under it (asked last); a value a shipped path ends
+  with (`endswith`), holds (`contains`) or is, is taken out, and one a
+  service's settings subkey matches says so in the catalogue's words for that
+  key, never that every installation has it. A path matched by
   `contains` that names no folder is taken out (`NO_FOLDER_REASON`); a `contains` value another
   selected value lies under, or a longer spelling of a selected `contains`
   value, is taken out for the narrower one, case and separators folded

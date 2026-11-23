@@ -44,6 +44,7 @@ from malspark.reporting.renderers.stix_renderer import (
 )
 from malspark.reporting.stated_host_values import (
     GENERIC_NOTE,
+    KNOWN_NAMES_REASON,
     benign_catalogue,
     benign_reason,
     held_in_cited,
@@ -413,7 +414,7 @@ class TestAKnownFolderAgainstAFakeSystemFolder:
 
     @pytest.mark.parametrize("value", MUST_REFUSE)
     def test_a_known_folder_is_refused(self, value: str) -> None:
-        assert benign_reason(typed_kind("folder"), value) == "a Windows known folder"
+        assert benign_reason(typed_kind("folder"), value) == KNOWN_NAMES_REASON
 
     @pytest.mark.parametrize("value", MUST_EXPORT)
     def test_a_fake_system_folder_is_exported(self, value: str) -> None:
@@ -579,7 +580,7 @@ class TestWhatEveryWindowsHostHolds:
         ],
     )
     def test_the_system_chain_from_its_declared_root_is_refused(self, value: str) -> None:
-        assert benign_reason(typed_kind("folder"), value) == "a Windows known folder"
+        assert benign_reason(typed_kind("folder"), value) == KNOWN_NAMES_REASON
 
     @pytest.mark.parametrize(
         "value",

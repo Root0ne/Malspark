@@ -2687,6 +2687,22 @@ NOT_A_FILE_SHAPE = (
 )
 
 
+def catalogue_path_reason(value: str) -> str:
+    """Why the catalogue calls a path every Windows host's, or ``""``: the analysis route's test.
+
+    The value asked as the analysis asks a file path it states
+    (``stated_host_values.benign_reason``), whose catalogue tests hold a
+    folder's: a path made only of drives, names Windows gives its own folders
+    and a profile name, a word of a task definition, and a file Windows ships
+    in the folder it keeps it in. The sample's own copy is not asked here: a
+    row of the file's text carries no sandbox's name for the sample.
+    """
+    from malspark.reporting.stated_host_values import benign_reason, typed_kind
+
+    kind = typed_kind("file path")
+    return benign_reason(kind, str(value or "").strip()) if kind is not None else ""
+
+
 def _string_path_shape(value: str) -> str:
     """Why a path the string sweep read is not the shape of a file the sample uses, or ``""``.
 
@@ -3017,6 +3033,10 @@ def _evidence_reason(
     ):
         # A path read out of the file's text is asked its shape before who
         # else saw it: the answer is about the value, not about its sources.
+        return None
+    if kind == "path" and _from_the_strings(source) and catalogue_path_reason(value):
+        # Then the catalogue the analysis route asks of the same value, before
+        # a second source publishes it: one value, one answer on both routes.
         return None
     if kind == "hash":
         # A digest is publishable when it is whole and somebody other than the
@@ -6052,6 +6072,47 @@ def publish_answer(
     # refused for that first, as before the shape was asked.
     if kind == "path" and corroborated and not judge_s_value and _string_path_shape(text):
         return refused(_string_path_shape(text))
+    # The catalogue refuses a path of the file's text whose shape stands (or
+    # is not asked), whatever holds it: its reason is the refusing part. What
+    # the record holds stays as facts after it, every fact the refusal it
+    # replaces carried: the row the value is from, a second source that holds
+    # it or, where none does, that the publish rule's lookup found none and
+    # each holder an analyst section cites; a recovery of the value; and what
+    # a search for a judge's value found.
+    catalogue = (
+        catalogue_path_reason(text)
+        if kind == "path" and from_strings and (judge_s_value or not _string_path_shape(text))
+        else ""
+    )
+    if catalogue:
+        found = (
+            (
+                search_found(seen_in, tool_search or SEARCHED_THE_RUN),
+                f"{listed_by} lists it" if listed_by else "",
+            )
+            if seen_in
+            else ()
+        )
+        return refused(
+            catalogue,
+            facts=(
+                strings_source(
+                    text,
+                    corroborating,
+                    source,
+                    named_by=JUDGE_S_INDICATOR if judge_s_value and seen_in else "",
+                ),
+                published_because(corroborated) if corroborated else LOOKUP_FOUND_NO_SECOND_SOURCE,
+                recovered,
+                *found[:1],
+                *(
+                    ()
+                    if corroborated
+                    else second_source_refusal_parts(text, corroborating, path=True)
+                ),
+                *found[1:],
+            ),
+        )
     if kind == "hash" and not _is_a_whole_digest(text):
         return refused("not a whole digest")
     if bound and _is_benign_verdict(verdict):

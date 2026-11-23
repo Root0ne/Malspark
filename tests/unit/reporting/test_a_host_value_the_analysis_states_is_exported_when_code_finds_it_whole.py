@@ -165,7 +165,13 @@ class TestTheRunsRowsThatAreRefused:
     @pytest.mark.parametrize(
         ("row", "reason"),
         [
-            (_row("folder", "AppData"), "no: a Windows known folder"),
+            (
+                _row("folder", "AppData"),
+                (
+                    "no: every component is a drive, a name Windows gives one of its own folders, "
+                    "or a user's profile name"
+                ),
+            ),
             (
                 _row("file path", "C:\\Windows\\System32\\cmd.exe"),
                 "no: a file Windows ships, in the folder Windows keeps it in",
@@ -221,9 +227,10 @@ class TestTheRunsRowsThatAreRefused:
         assert answer == reason
 
     def test_a_value_only_part_of_a_longer_one_in_the_cited_entry(self) -> None:
-        # ``update_data`` is inside ``\\update_data.dat``, never a value of its own.
+        # ``update_data`` is inside ``\\update_data.dat``, never a value of its own:
+        # the cited entry holds its text, but not as the whole value.
         assert _answer(_row("file name", "update_data")) == (
-            "no: its whole value is in none of the entries it cites"
+            "no: a cited entry holds its text, but nowhere this check counts as the whole value"
         )
 
     def test_a_value_whole_only_in_an_entry_the_row_does_not_cite(self) -> None:
@@ -361,7 +368,10 @@ class TestTheVocabulary:
         )
 
         assert "| Kind | Value | Purpose | Evidence | Published |" in text
-        assert "no: a Windows known folder" in text
+        assert (
+            "no: every component is a drive, a name Windows gives one of its own folders, "
+            "or a user's profile name"
+        ) in text
         assert "yes: stated by the analysis (folder, creates/writes)" in text
 
 

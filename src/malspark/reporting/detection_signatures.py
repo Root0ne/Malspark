@@ -2010,7 +2010,12 @@ def _why_not_specific(selection: str, field_name: str, value: str, stated: str) 
     ships matches under the field's operator fires on every host, and its
     reason says that (:data:`_SHIPPED_REASON`).
     """
-    from malspark.reporting.stated_host_values import benign_reason, shipped_match
+    from malspark.reporting.stated_host_values import (
+        SERVICE_SUBKEY_REASON,
+        SHIPPED_SUBKEY_REASON,
+        benign_reason,
+        shipped_match,
+    )
 
     kind = _selection_kind(selection)
     if kind is None:
@@ -2023,7 +2028,11 @@ def _why_not_specific(selection: str, field_name: str, value: str, stated: str) 
         # in its own words.
         return why
     operator = field_name.partition("|")[2]
-    if shipped_match(kind.shape, operator, value):
+    matched = shipped_match(kind.shape, operator, value)
+    if matched and kind.shape == "key" and benign_reason(kind, matched) == SERVICE_SUBKEY_REASON:
+        # A service's settings subkey the value matches: the catalogue's words for it.
+        return SHIPPED_SUBKEY_REASON[operator]
+    if matched:
         return _SHIPPED_REASON[kind.shape == "key"][operator]
     return ""
 

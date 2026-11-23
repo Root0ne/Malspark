@@ -25,9 +25,10 @@ one of these holds:
   URL's path; a path component and a stream after its file's name count.
 * **Not a template.** A value holding a format placeholder (``%x``, ``%s``,
   ``{0}``) is a pattern the code fills in, which no log records whole.
-* **Not every host's.** Not a known folder, a file Windows ships, a key or
-  value every installation has, Windows' own service, pipe or stream, an
-  object namespace or a word of a task definition
+* **Not every host's.** Not a path made only of drives, names Windows gives
+  its own folders and a profile name, a file Windows ships, a key or value
+  every installation has, a service's settings subkey, Windows' own service,
+  pipe or stream, an object namespace or a word of a task definition
   (``data/host_benign_locations_v1.json``, declared data about Windows itself,
   each list with its criterion), and not the sample as the sandbox holds it (a
   file named by its digest or by the name it was submitted under).
@@ -184,6 +185,8 @@ class Catalogue:
     windows_pipes: frozenset[str]
     registry_keys: frozenset[str]
     registry_values: frozenset[str]
+    # The names Windows gives the subkeys it keeps a service's settings in.
+    service_settings_subkeys: frozenset[str]
     submission_roots: frozenset[str]
     task_definition_words: frozenset[str]
     generic_names: frozenset[str]
@@ -232,6 +235,7 @@ def benign_catalogue(path: str = DEFAULT_CATALOGUE) -> Catalogue:
         windows_pipes=_set("windows_pipes"),
         registry_keys=_set("registry_keys"),
         registry_values=_set("registry_values"),
+        service_settings_subkeys=_set("service_settings_subkeys"),
         submission_roots=_set("submission_roots"),
         task_definition_words=_set("task_definition_words"),
         generic_names=_set("generic_names"),
@@ -344,9 +348,29 @@ def _known_component(part: str, previous: str, catalogue: Catalogue, chained: bo
 def _all_known(parts: Sequence[str], catalogue: Catalogue) -> bool:
     chain = _known_chain(parts, catalogue)
     return bool(parts) and all(
-        _known_component(part, parts[at - 1] if at else "", catalogue, chain[at])
+        _known_component(
+            part, "users" if _in_the_users_folder(parts, at) else "", catalogue, chain[at]
+        )
         for at, part in enumerate(parts)
     )
+
+
+# The environment names Windows defines for a drive (the catalogue's
+# ``environment_folders`` hold them), which stand where a drive letter does.
+_DRIVE_NAMES = frozenset({"%systemdrive%", "%homedrive%"})
+
+
+def _in_the_users_folder(parts: Sequence[str], at: int) -> bool:
+    """Whether component ``at`` stands where a profile's name does: right after a ``users``
+    component that is the users folder, directly under a drive (a letter or an environment
+    name for one) or the first component of a path written without one (``Users\\x``, as
+    the catalogue read it before). ``C:\\Temp\\Users\\x`` holds no profile's name."""
+    if at < 1 or parts[at - 1] != "users":
+        return False
+    if at == 1:
+        return True
+    under = parts[at - 2]
+    return at == 2 and (_DRIVE_RE.fullmatch(under) is not None or under in _DRIVE_NAMES)
 
 
 def past_known_folders(value: str) -> str:
@@ -390,6 +414,35 @@ def _hiveless(value: str) -> str:
     return "\\".join(_components(hiveless_key(value, value_suffix=False)))
 
 
+# Why a key exactly one level below the key of a service Windows installs is
+# every host's, where its name is one the catalogue lists for the subkeys a
+# service's settings are kept in. True of the key as written: the catalogue
+# knows the service and the name, not which service has which subkey.
+SERVICE_SUBKEY_REASON = (
+    "a key under the registry key of a service Windows installs, named as Windows names "
+    "the subkeys it keeps a service's settings in"
+)
+# Why a rule's selection is left out that a service's settings subkey matches
+# under the selection's operator (:func:`shipped_match`), by the operator: the
+# reason is the subject, its clause closed by a comma before the verb.
+SHIPPED_SUBKEY_REASON = {
+    "endswith": f"{SERVICE_SUBKEY_REASON}, ends with it",
+    "contains": f"{SERVICE_SUBKEY_REASON}, holds it",
+    "": f"it is {SERVICE_SUBKEY_REASON}",
+}
+# Why a path is every host's whose every component the catalogue reads by its
+# name (:func:`_all_known`): a drive, a name Windows gives one of its own
+# folders (a known folder, a folder of the system chain, its environment form,
+# its 8.3 short name, a known-folder constant) or the profile name in the
+# users folder (:func:`_in_the_users_folder`). It says what was matched, not
+# that the path is a known folder:
+# a drive's ``Temp`` is a folder named as one of Windows' own.
+KNOWN_NAMES_REASON = (
+    "every component is a drive, a name Windows gives one of its own folders, "
+    "or a user's profile name"
+)
+
+
 def benign_reason(
     kind: HostKind,
     value: str,
@@ -400,10 +453,14 @@ def benign_reason(
 
     Read against the catalogue (:func:`benign_catalogue`) by the value's shape:
     a key or value every installation has (a key under the Services key named
-    after a Windows service among them) for a registry key or value; an object
-    namespace, a word of a task definition, and Windows' own stream, service or
-    pipe for a name; a known folder, or a program Windows ships written bare
-    or in its system folders, for a folder, a file path or a file name; and
+    after a Windows service among them), and a key exactly one level below
+    such a service's key named as the catalogue's ``service_settings_subkeys``
+    (:data:`SERVICE_SUBKEY_REASON`; a key or value below it is not one), for a
+    registry key or value; an object namespace, a word of a task definition,
+    and Windows' own stream, service or pipe for a name; a path every
+    component of which is a name the catalogue reads (:data:`KNOWN_NAMES_REASON`),
+    or a program Windows ships written bare or in its system folders, for a
+    folder, a file path or a file name; and
     the sample itself as the sandbox holds it: a file named by the sample's
     digest or by the name it was submitted under.
     """
@@ -415,6 +472,8 @@ def benign_reason(
             return "a registry key or value every Windows installation has"
         if parent in _SERVICES_KEYS and last in catalogue.windows_services:
             return "the registry key of a service Windows installs"
+        if _a_service_settings_subkey(key, catalogue):
+            return SERVICE_SUBKEY_REASON
         return ""
     parts = _components(value)
     if not parts:
@@ -436,7 +495,7 @@ def benign_reason(
     if len(parts) == 1 and parts[0] in catalogue.task_definition_words:
         return "a word of the Task Scheduler's task definition, which every task carries"
     if _all_known(parts, catalogue):
-        return "a Windows known folder"
+        return KNOWN_NAMES_REASON
     if kind.shape == "folder":
         return ""
     name = parts[-1]
@@ -464,7 +523,9 @@ WHOLE = ""
 class _ShippedPaths:
     """The paths Windows ships, as the catalogue gives them: a program it ships, in the system
     root or in any run of the system folders under it, the root written with a drive or by
-    an environment name; and every key and value every installation has. Lower case.
+    an environment name; and every key and value every installation has, the key of each
+    service Windows installs and each subkey named as the catalogue's
+    ``service_settings_subkeys`` under it. Lower case.
 
     The files are a language, not a list (the system folders nest without a bound), held as
     the words each of its four parts is written with, ``\\`` closing each word that names a
@@ -494,6 +555,14 @@ def _shipped_paths() -> _ShippedPaths:
         for services in sorted(_SERVICES_KEYS)
         for service in sorted(catalogue.windows_services)
     ]
+    # A service's settings subkeys are asked after every other key, so a value
+    # a key above matches is answered by that key, as before they were listed.
+    subkeys = [
+        f"\\{services}\\{service}\\{subkey}\\"
+        for services in sorted(_SERVICES_KEYS)
+        for service in sorted(catalogue.windows_services)
+        for subkey in sorted(catalogue.service_settings_subkeys)
+    ]
     return _ShippedPaths(
         drives=tuple(f"{letter}:\\" for letter in "abcdefghijklmnopqrstuvwxyz"),
         roots=tuple(
@@ -504,7 +573,7 @@ def _shipped_paths() -> _ShippedPaths:
         ),
         folders=tuple(sorted(f"{folder}\\" for folder in catalogue.system_folders)),
         names=tuple(sorted(catalogue.system_binaries)),
-        keys=tuple(sorted(keys)),
+        keys=(*sorted(keys), *subkeys),
     )
 
 
@@ -519,7 +588,9 @@ def shipped_match(shape: str, operator: str, value: str) -> str:
     with the value, under ``contains`` it holds the value anywhere, even
     inside a name (``host.exe`` of ``svchost.exe``), and with no operator it
     is the value. A registry key (``shape`` ``key``) is asked of the keys and
-    values every installation has, each with the subkeys under it; a file
+    values every installation has, the key of each service Windows installs
+    and each settings subkey named under it, each with the subkeys under it,
+    the settings subkeys last; a file
     path or a folder of the files Windows ships (:class:`_ShippedPaths`).
     Case-insensitive, ``/`` read as ``\\``. The answer is one such path,
     written whole, which the reason a value is left out names.
@@ -619,6 +690,18 @@ _SERVICES_KEYS = frozenset(
 )
 
 
+def _a_service_settings_subkey(key: str, catalogue: Catalogue) -> bool:
+    """Whether a hiveless key, folded, is exactly one level below the key of a service
+    Windows installs and is named as the catalogue's ``service_settings_subkeys``."""
+    parent, _, last = key.rpartition("\\")
+    services, _, service = parent.rpartition("\\")
+    return (
+        services in _SERVICES_KEYS
+        and service in catalogue.windows_services
+        and last in catalogue.service_settings_subkeys
+    )
+
+
 def _article(noun: str) -> str:
     """``noun`` with the indefinite article its first sound takes (by its first letter)."""
     return f"{'an' if noun[:1] in 'aeiou' else 'a'} {noun}"
@@ -684,6 +767,13 @@ class StatedHostValue:
     sample_name: str = ""
     # The kind as the row writes it, which types a row of no vocabulary kind.
     written_kind: str = ""
+    # What the cited entries hold of a value none holds whole
+    # (``HostIdentifier.unheld_as``: :data:`NOWHERE` or one of :data:`UNHELD_WORDS`'
+    # keys), or ``""`` where the record holds no such word.
+    unheld_as: str = ""
+    # How many distinct entries the row cites, of which the check reads the
+    # first :data:`MAX_CITED`.
+    cited: int = 0
 
     @property
     def table_kind(self) -> str:
@@ -717,7 +807,29 @@ def read_stated(item: Any, report: Any = None, *, beyond_rows: bool = False) -> 
         sample_digests=_sample_digests(report),
         sample_name=_sample_name(report),
         written_kind=" ".join(str(getattr(item, "kind", "") or "").split()),
+        unheld_as=str(getattr(item, "unheld_as", None) or ""),
+        cited=len(_cited(getattr(item, "evidence_refs", None) or [], bound=None)),
     )
+
+
+def _unheld_refusal(stated: StatedHostValue) -> str:
+    """Why a row no cited entry holds whole is refused: what the scan that wrote ``held_in``
+    found, in its words (:data:`UNHELD_WORDS`, :data:`NOT_IN_THE_CITED`), the count it read
+    of the entries cited where it read fewer than all; and, where the record holds no word
+    of what the scan found (a report stored before it recorded one), what the record holds
+    (:data:`NOT_RECORDED_AS_HELD`)."""
+    read = min(stated.cited, MAX_CITED)
+    fewer = stated.cited > read
+    if stated.unheld_as == NOWHERE:
+        if fewer:
+            return NOT_IN_THE_READ.format(read=read, cited=stated.cited)
+        return NOT_IN_THE_CITED
+    words = UNHELD_WORDS.get(stated.unheld_as, "")
+    if not words:
+        return NOT_RECORDED_AS_HELD
+    if fewer:
+        return f"{words} ({READ_OF_THE_CITED.format(read=read, cited=stated.cited)})"
+    return words
 
 
 def stated_refusal(stated: StatedHostValue, verdict: Any) -> str:
@@ -758,7 +870,7 @@ def stated_refusal(stated: StatedHostValue, verdict: Any) -> str:
     if stated.held_in is None:
         return "no whole-value check against its cited entries is recorded for this row"
     if not stated.held_in:
-        return "its whole value is in none of the entries it cites"
+        return _unheld_refusal(stated)
     if is_template(stated.stated):
         return "it holds a format placeholder, so it is a template no log records whole"
     if kind.shape == "path" and not path_names_a_file(stated.value):
@@ -1032,8 +1144,59 @@ def _delimited_shape(kind: HostKind | None) -> bool:
     return kind is not None and kind.shape in ("name", "folder", "file_name")
 
 
+# What a refusal says of a value no cited entry holds whole, by what the one scan
+# that wrote ``held_in`` found (:class:`HeldScan`): the text only inside a longer
+# run of letters or digits, only between spaces, or somewhere this check does not
+# count as the value's whole. A value whose text no cited entry holds in any
+# spelling (:data:`NOWHERE`) keeps :data:`NOT_IN_THE_CITED`; a row whose record
+# holds no word of what the scan found (a report stored before the scan recorded
+# it) says only what its record holds (:data:`NOT_RECORDED_AS_HELD`).
+INSIDE_A_LONGER_RUN = "inside_a_longer_run"
+BETWEEN_SPACES = "between_spaces"
+NOT_WHOLE = "not_whole"
+NOWHERE = "nowhere"
+NOT_IN_THE_CITED = "its whole value is in none of the entries it cites"
+NOT_RECORDED_AS_HELD = "no cited entry is recorded as holding its whole value"
+# A row citing more entries than the check reads (:data:`MAX_CITED`) says so: in
+# place of :data:`NOT_IN_THE_CITED`, and after any other finding's words.
+NOT_IN_THE_READ = (
+    "its whole value is in none of the first {read} of the {cited} entries it cites, "
+    "which are the entries this check reads"
+)
+READ_OF_THE_CITED = "this check reads the first {read} of the {cited} entries it cites"
+UNHELD_WORDS = {
+    INSIDE_A_LONGER_RUN: (
+        "a cited entry holds its text only inside a longer run of letters or digits"
+    ),
+    BETWEEN_SPACES: (
+        "the cited entries hold it only between spaces, which this check does not count as "
+        "a value's ends"
+    ),
+    NOT_WHOLE: "a cited entry holds its text, but nowhere this check counts as the whole value",
+}
+
+
+@dataclass(frozen=True)
+class HeldScan:
+    """What one scan of a row's cited entries found: the entries holding its value whole, and,
+    where none does, what they hold of it instead (a key of :data:`UNHELD_WORDS`, or
+    :data:`NOWHERE` where no cited entry it read holds its text in any spelling; ``""`` where
+    the value was not read)."""
+
+    held: tuple[str, ...] = ()
+    unheld_as: str = ""
+
+
 def held_in_cited(entries: Any, item: Any) -> list[str]:
     """The entries a row cites that hold its value whole, as the row cites them.
+
+    :func:`scan_cited`'s entries.
+    """
+    return list(scan_cited(entries, item).held)
+
+
+def scan_cited(entries: Any, item: Any) -> HeldScan:
+    """One scan of the entries a row cites: which hold its value whole, and what the others hold.
 
     The value is read in every spelling a run's texts write it in
     (:func:`encodings`). A name, a folder or a file name counts only where it
@@ -1041,20 +1204,34 @@ def held_in_cited(entries: Any, item: Any) -> list[str]:
     key-value mark or, for a folder or a file name, a path separator; never
     running text and never a URL; a
     file name or folder written with leading separators is also read bare, as
-    a path component; a stream is read as the name after its file's colon. A
+    a path component; a stream is read as the name after its file's colon. Such
+    a value is also held where it is one whole argument of a process's command
+    line the entry records in the platform's sandbox document
+    (:func:`command_line_arguments`: a process row stating its id, its parent's
+    and its command line): a field of the platform's own document, whose
+    arguments white space separates. A
     file path and a registry key or value are found whole as any value is
     (``whole_value_in``). Only the cited entries the text index says may hold
-    the value are read (``EntryTexts.may_hold``), at most :data:`MAX_CITED`.
+    the value are read for a delimited value (``EntryTexts.may_hold``), at most
+    :data:`MAX_CITED`.
     A cited entry the index reads as a code listing stored as JSON
     (``EntryTexts.code_listings``) is also read in the spellings a C string
     literal inside it writes (``written_forms.code_literal_forms``), under the
     same delimiting.
+
+    Where no cited entry holds it whole, the same reading says what they hold
+    (:func:`_held_as`): an entry whose every place of the text has a letter or
+    a digit running on at an end holds it only inside a longer run; where every
+    place in every entry has a space at both ends, outside any recorded command
+    line that holds the text, they hold it only between spaces; any other place
+    is somewhere this check does not count as the whole value; and where no entry
+    read holds its text in any spelling, :data:`NOWHERE`.
     """
     from malspark.agents._indicator_denylists import whole_value_in
 
     value = str(getattr(item, "value", "") or "").strip()
     if not value or len(value) > MAX_VALUE_CHARS or entries is None:
-        return []
+        return HeldScan()
     kind = typed_kind(getattr(item, "kind", ""))
     lowered = value.lower()
     stream = ""
@@ -1074,29 +1251,208 @@ def held_in_cited(entries: Any, item: Any) -> list[str]:
     plain = spelt[False]
     for form in [*plain.forms, *plain.names, *([stream] if stream else [])]:
         candidates |= set(entries.may_hold(form))
+    # A command line's argument is compared with the value as itself, not as a
+    # text spells it: the document's field is read back into its own string.
+    arguments = {lowered, *([bare] if bare else [])}
     out: list[str] = []
+    found: list[str] = []
     for ref in cited:
-        if ref.lower() not in candidates and not _is_item(entries, ref):
-            continue
         text = entries.text_of(ref)
         if not text:
             continue
         read = spelt[ref.lower() in listings]
         paths = kind is not None and kind.shape in ("folder", "file_name")
-        if stream:
-            held = any(delimited_in(form, text, separators=False) for form in read.forms) or any(
-                delimited_in(form, text, after_colon=True, separators=False) for form in read.stream
-            )
-        elif _delimited_shape(kind):
-            held = any(
-                delimited_in(form, text, separators=paths, prefixes=read.prefixes)
-                for form in [*read.forms, *read.names]
-            )
-        else:
-            held = any(whole_value_in(form, text) for form in read.forms)
+        forms = [*read.forms, *read.names, *read.stream]
+        held = False
+        if ref.lower() in candidates or _is_item(entries, ref):
+            if stream:
+                held = any(
+                    delimited_in(form, text, separators=False) for form in read.forms
+                ) or any(
+                    delimited_in(form, text, after_colon=True, separators=False)
+                    for form in read.stream
+                )
+            elif _delimited_shape(kind):
+                held = any(
+                    delimited_in(form, text, separators=paths, prefixes=read.prefixes)
+                    for form in [*read.forms, *read.names]
+                )
+            else:
+                held = any(whole_value_in(form, text) for form in read.forms)
+        lines: list[tuple[str, ...]] = []
+        if not held and _delimited_shape(kind) and any(form in text for form in forms):
+            lines = _command_lines_of(entries, ref)
+            held = any(argument in arguments for line in lines for argument in line)
         if held:
             out.append(ref)
-    return out
+        elif not out:
+            # What this entry holds of the text, read only while no entry holds it.
+            in_a_line = any(
+                any(value_text in argument for argument in line)
+                for line in lines
+                for value_text in arguments
+            )
+            found.append(_held_as(text, forms, in_a_line))
+    if out:
+        return HeldScan(held=tuple(out))
+    return HeldScan(unheld_as=_unheld_as(found) or NOWHERE)
+
+
+# The escapes a text writes a line break with, which open a value as the break does.
+_ESCAPED_ENDS = ("\\n", "\\r", "\\t")
+
+
+def _held_as(text: str, forms: Sequence[str], in_a_line: bool) -> str:
+    """What one entry holds of a value it does not hold whole: ``""`` for nothing, else
+    :data:`INSIDE_A_LONGER_RUN` where a letter or a digit runs on at an end of every place
+    of its text, :data:`BETWEEN_SPACES` where a space stands at both ends of every place
+    (and no recorded command line of the entry holds the text), else :data:`NOT_WHOLE`."""
+    seen: set[str] = set()
+    for form in dict.fromkeys(form for form in forms if form):
+        start = text.find(form)
+        while start != -1:
+            end = start + len(form)
+            before = text[start - 1] if start else ""
+            if text[max(0, start - 2) : start] in _ESCAPED_ENDS:
+                before = "\n"
+            after = text[end] if end < len(text) else ""
+            if before.isalnum() or after.isalnum():
+                seen.add(INSIDE_A_LONGER_RUN)
+            elif before == " " and after == " " and not in_a_line:
+                seen.add(BETWEEN_SPACES)
+            else:
+                seen.add(NOT_WHOLE)
+            if NOT_WHOLE in seen:
+                return NOT_WHOLE
+            start = text.find(form, start + 1)
+    if len(seen) == 1:
+        return seen.pop()
+    return NOT_WHOLE if seen else ""
+
+
+def _unheld_as(found: Sequence[str]) -> str:
+    """What the cited entries hold of a value none holds whole, from each entry's reading:
+    an entry that holds it only inside a longer run says so; every entry that holds it
+    holding it only between spaces says that; nothing held says ``""``."""
+    held = [what for what in found if what]
+    if not held:
+        return ""
+    if INSIDE_A_LONGER_RUN in held:
+        return INSIDE_A_LONGER_RUN
+    if all(what == BETWEEN_SPACES for what in held):
+        return BETWEEN_SPACES
+    return NOT_WHOLE
+
+
+def _command_lines_of(entries: Any, ref: str) -> list[tuple[str, ...]]:
+    """The arguments of every process command line a cited entry's texts record, each text
+    read on its own (``EntryTexts.parts_of``, else its whole text)."""
+    parts_of = getattr(entries, "parts_of", None)
+    parts = parts_of(ref) if parts_of is not None else (entries.text_of(ref),)
+    return [line for part in parts for line in command_line_arguments(part)]
+
+
+@lru_cache(maxsize=64)
+def command_line_arguments(text: str) -> tuple[tuple[str, ...], ...]:
+    """The arguments of each process command line ``text`` records as the platform's sandbox
+    document writes a process row, in order; ``()`` for a text that records none.
+
+    A text is read only as a JSON document. A process row is one object stating
+    its own process id under one of the document's id fields
+    (``sandbox_document.PROCESS_ID_KEYS``), its parent's id under one of its
+    parent fields (``PROCESS_PARENT_KEYS``) and its command line under one of
+    its command-line fields (``PROCESS_COMMAND_LINE_PATHS``), the field names
+    compared case-insensitively, at any depth: where a tool's answer holds such
+    rows the field is the document's, whatever the tool, declared or not. An
+    object with an id and a command line and no parent is no process row (a
+    configuration's entry, a tool's echo of its own arguments). Nothing else is
+    a command line: a launch argument the document records beside the rows, a
+    signature's text, a strings entry. A command line is split as Windows
+    splits one (:func:`_arguments`).
+    """
+    from malspark.schemas.sandbox_document import (
+        PROCESS_COMMAND_LINE_PATHS,
+        PROCESS_ID_KEYS,
+        PROCESS_PARENT_KEYS,
+    )
+
+    try:
+        document = json.loads(text)
+    except (TypeError, ValueError, RecursionError):
+        return ()
+    ids = {key.lower() for key in PROCESS_ID_KEYS}
+    parents = {key.lower() for key in PROCESS_PARENT_KEYS}
+    paths = [tuple(step.lower() for step in path) for path in PROCESS_COMMAND_LINE_PATHS]
+    out: list[tuple[str, ...]] = []
+    stack: list[Any] = [document]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, list):
+            stack.extend(reversed(node))
+            continue
+        if not isinstance(node, dict):
+            continue
+        folded = {str(key).lower(): held for key, held in node.items()}
+        if ids & folded.keys() and parents & folded.keys():
+            for path in paths:
+                held: Any = folded
+                for step in path:
+                    held = (
+                        {str(k).lower(): v for k, v in held.items()}.get(step)
+                        if isinstance(held, dict)
+                        else None
+                    )
+                if isinstance(held, str) and held.strip():
+                    out.append(_arguments(held.lower()))
+        stack.extend(reversed(list(node.values())))
+    return tuple(out)
+
+
+def _arguments(line: str) -> tuple[str, ...]:
+    """A command line's arguments, as Windows splits one (``CommandLineToArgvW``).
+
+    White space outside quotes separates arguments; a double quote opens or
+    closes a quoted part, which is one argument with its spaces; ``2n``
+    backslashes before a quote are ``n`` and the quote is a mark, ``2n + 1``
+    are ``n`` and a quote of the text; ``""`` inside a quoted part is a quote.
+    One pass over the line.
+    """
+    out: list[str] = []
+    word: list[str] = []
+    started = quoted = False
+    slashes = 0
+    at = 0
+    while at < len(line):
+        char = line[at]
+        if char == "\\":
+            slashes += 1
+            started = True
+        elif char == '"':
+            word.append("\\" * (slashes // 2))
+            if slashes % 2:
+                word.append('"')
+            elif quoted and line[at + 1 : at + 2] == '"':
+                word.append('"')
+                at += 1
+            else:
+                quoted = not quoted
+            slashes = 0
+            started = True
+        else:
+            word.append("\\" * slashes)
+            slashes = 0
+            if char.isspace() and not quoted:
+                if started:
+                    out.append("".join(word))
+                word, started = [], False
+            else:
+                word.append(char)
+                started = True
+        at += 1
+    word.append("\\" * slashes)
+    if started:
+        out.append("".join(word))
+    return tuple(out)
 
 
 class _Spellings:
@@ -1153,7 +1509,8 @@ def encodings(value: str) -> list[str]:
     return forms
 
 
-def _cited(refs: Iterable[Any]) -> list[str]:
+def _cited(refs: Iterable[Any], bound: int | None = MAX_CITED) -> list[str]:
+    """The distinct entries a row cites, in its order, the first ``bound`` (all for ``None``)."""
     seen: set[str] = set()
     out: list[str] = []
     for ref in refs:
@@ -1161,7 +1518,7 @@ def _cited(refs: Iterable[Any]) -> list[str]:
         if text and text.lower() not in seen:
             seen.add(text.lower())
             out.append(text)
-        if len(out) >= MAX_CITED:
+        if bound is not None and len(out) >= bound:
             break
     return out
 
@@ -1174,14 +1531,16 @@ def _is_item(entries: Any, ref: str) -> bool:
 def with_held_in(rows: list[Any], entries: Any) -> list[Any]:
     """The rows with ``held_in`` written by code: the cited entries holding each value whole.
 
-    ``None`` on every row when the run holds no entry text to check against,
-    and on each row past :data:`MAX_STATED_ROWS`; whatever a model wrote there
-    is replaced.
+    And ``unheld_as``, from the same scan (:func:`scan_cited`): what the cited
+    entries hold of a value none holds whole. ``None`` on every row when the
+    run holds no entry text to check against, and on each row past
+    :data:`MAX_STATED_ROWS`; whatever a model wrote there is replaced.
     """
     for index, item in enumerate(rows):
-        item.held_in = (
-            held_in_cited(entries, item)
-            if entries is not None and index < MAX_STATED_ROWS
-            else None
+        scan = (
+            scan_cited(entries, item) if entries is not None and index < MAX_STATED_ROWS else None
         )
+        item.held_in = list(scan.held) if scan is not None else None
+        # What the same scan found where nothing holds it whole: the refusal's words.
+        item.unheld_as = (scan.unheld_as or None) if scan is not None else None
     return rows

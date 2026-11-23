@@ -1494,6 +1494,14 @@ class HostIdentifier(BaseModel):
     held_in: SkipJsonSchema[list[str] | None] = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    # Code's too, written by the same scan where ``held_in`` is empty: what the
+    # cited entries hold of the value instead (``stated_host_values.HeldScan``),
+    # which the refusal says (``nowhere`` where none holds its text at all).
+    # ``None`` where one holds it whole and on a report stored before the scan
+    # recorded it; left out of the dump then.
+    unheld_as: SkipJsonSchema[str | None] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class CommandRow(BaseModel):
