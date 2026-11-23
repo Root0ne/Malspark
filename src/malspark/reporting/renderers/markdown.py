@@ -1804,11 +1804,7 @@ class MarkdownRenderer:
                     "published"
                     + _corroborated_words(mapping, folded)
                     + (f"; {ctx.rule_only[tid]}" if tid in ctx.rule_only else "")
-                    + (
-                        f"; {_observed_cell(mapping.observed_in, ctx)}"
-                        if mapping.observed_in
-                        else ""
-                    ),
+                    + (f"; {_technique_mark_cell(mapping, ctx)}" if mapping.observed_in else ""),
                     _technique_evidence_cell(mapping, folded, capability_ids),
                 )
             )
@@ -7211,7 +7207,7 @@ def _attack_row(
     ]
     if notes:
         status += "; unresolved: " + ", ".join(dict.fromkeys(notes))
-    observed = _observed_cell(getattr(mapping, "observed_in", None), ctx)
+    observed = _technique_mark_cell(mapping, ctx)
     if observed:
         status += f"; {observed}"
     tactic = f"{cell.tactic_name} ({cell.tactic})" if cell.tactic else cell.tactic_name
@@ -8769,3 +8765,19 @@ def _observed_cell(marks: Any, ctx: Any) -> str:
     from malspark.reporting.detonation_marks import observed_words
 
     return observed_words(marks or (), lambda arguments: _code_span(ctx.plain(arguments)))
+
+
+def _technique_mark_cell(mapping: Any, ctx: Any) -> str:
+    """What a published technique's detonations' signatures tag, as a cell says it; ``""`` for
+    none.
+
+    ``detonation_marks.technique_words``, a further detonation's arguments and each
+    signature's name set as one code span with the run's network indicators defanged.
+    """
+    from malspark.reporting.detonation_marks import technique_words
+
+    return technique_words(
+        str(getattr(mapping, "technique_id", "") or ""),
+        getattr(mapping, "observed_in", None) or (),
+        lambda text: _code_span(ctx.plain(text)),
+    )

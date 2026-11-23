@@ -93,6 +93,7 @@ from malspark.reporting.renderers.markdown import (
     _row,
     _sample_check_line,
     _states_ransomware,
+    _technique_mark_cell,
     _title_heading,
     _titled_format,
     _value_parts,
@@ -2850,7 +2851,7 @@ class _Analyst:
         mapping = next(
             (m for m in self.report.ttp_mappings if m.technique_id == technique_id), None
         )
-        observed = _observed_cell(mapping.observed_in if mapping else None, self.ctx)
+        observed = _technique_mark_cell(mapping, self.ctx) if mapping else ""
         if observed:
             said.append(observed)
         return f" _({'; '.join(said)})_" if said else ""

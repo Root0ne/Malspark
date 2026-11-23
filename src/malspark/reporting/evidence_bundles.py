@@ -891,15 +891,16 @@ def technique_line(mapping: Any) -> str:
     """``<id> <name>``, a published technique as a bundle lists it, with its detonations' mark.
 
     A technique a further detonation's signatures tag says so in brackets,
-    in the words every surface writes a mark in
-    (``detonation_marks.observed_words``): the later detonation and its
-    launch, and the job's own detonation too where its signatures tag it.
-    One with no mark is its id and name alone.
+    in the words every surface writes a technique's mark in
+    (``detonation_marks.technique_words``): the later detonation and its
+    launch, and the job's own detonation too where its signatures tag it,
+    each with the signatures that tag it. One with no mark is its id and name
+    alone.
     """
-    from malspark.reporting.detonation_marks import observed_words
+    from malspark.reporting.detonation_marks import technique_words
 
     line = f"{mapping.technique_id} {mapping.technique_name}"
-    said = observed_words(getattr(mapping, "observed_in", None) or ())
+    said = technique_words(mapping.technique_id, getattr(mapping, "observed_in", None) or ())
     return f"{line} ({said})" if said else line
 
 

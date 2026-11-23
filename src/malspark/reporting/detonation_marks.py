@@ -7,10 +7,11 @@ each network, signature, dropped-file and mutex row with the detonations
 that observed it (``ledger_projection.observed_mark``); the evidence index
 marks each entry that is such a read (``EvidenceIndexRow.observed_in``). This
 module carries the marks onto the values the report publishes: an IOC-table
-row by its value and by the reads it rests on, and a published technique by
-the sandbox signatures that tag it and by the reads behind it, whatever the
-kind of the value. It also words a mark, once, for every surface that states
-it.
+row by its value and by the reads it rests on, whatever the kind of the
+value, and a published technique by the sandbox signatures that tag it and by
+nothing else. It also words a mark, once, for every surface that states it:
+an indicator's by what observed it (:func:`observed_words`), a technique's by
+what the sandbox's signatures tag (:func:`technique_words`).
 
 A row only the job's own detonation observed carries no mark (its
 ``observed_in`` is empty and left out of a dump), so a run with one
@@ -19,6 +20,7 @@ detonation reads, dumps and exports exactly as it did.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
@@ -32,6 +34,7 @@ from malspark.reporting.models import (
     ConsolidatedIOC,
     MalwareReport,
     ObservedIn,
+    TaggingSignature,
     TTPMapping,
 )
 
@@ -134,32 +137,89 @@ def with_value_marks(rows: list[ConsolidatedIOC], report: MalwareReport) -> list
     return out
 
 
-def _tags(technique_id: str, tagged: str) -> bool:
-    """Whether a signature's technique id ``tagged`` is ``technique_id`` or one under it."""
+# An ATT&CK technique id as a signature's tag must be written to credit a
+# technique: an id of another form names nothing the table can relate.
+_TECHNIQUE_ID_RE = re.compile(r"T\d{4}(?:\.\d{3})?")
+
+# How a credited signature's tag stands to the technique's id, closest first.
+_SAME, _SUB, _PARENT = "same", "sub-technique", "parent"
+_RELATIONS = (_SAME, _SUB, _PARENT)
+
+
+def _relation(technique_id: str, tagged: str) -> str | None:
+    """How the id ``tagged`` stands to ``technique_id``: the same, a sub-technique, its parent."""
     wanted, said = technique_id.strip().upper(), tagged.strip().upper()
-    return bool(wanted) and (said == wanted or said.startswith(f"{wanted}."))
+    if not _TECHNIQUE_ID_RE.fullmatch(wanted) or not _TECHNIQUE_ID_RE.fullmatch(said):
+        return None
+    if said == wanted:
+        return _SAME
+    if said.startswith(f"{wanted}."):
+        return _SUB
+    if wanted.startswith(f"{said}."):
+        return _PARENT
+    return None
+
+
+def _tagging(technique_id: str, name: str, tagged: Iterable[str]) -> TaggingSignature | None:
+    """The signature ``name`` as it credits ``technique_id`` by its own ids ``tagged``, or ``None``.
+
+    An id credits where it is the technique's, a sub-technique's or its
+    parent's, or where the vendored ATT&CK table says it was revoked in favour
+    of one of these (``attck_loader.revoked_by``); of several, the closest
+    (that order, an id as tagged before a revoked one), each in the
+    signature's own order.
+    """
+    from malspark.memory.attck_loader import revoked_by
+
+    held = [str(tid or "").strip().upper() for tid in tagged]
+    for relation in _RELATIONS:
+        for tid in held:
+            if _relation(technique_id, tid) == relation:
+                return TaggingSignature(name=name, technique_id=tid)
+    for relation in _RELATIONS:
+        for tid in held:
+            successor = revoked_by(tid) if _TECHNIQUE_ID_RE.fullmatch(tid) else None
+            if successor and _relation(technique_id, successor) == relation:
+                return TaggingSignature(name=name, technique_id=tid, revoked_by=successor)
+    return None
 
 
 def with_technique_marks(mappings: list[TTPMapping], report: MalwareReport) -> None:
-    """Each published technique a further detonation observed, marked in place.
+    """Each published technique a further detonation's sandbox signatures tag, marked in place.
 
-    Marked with every detonation whose signatures tag it (the job's own too,
-    where its signatures do) and every detonation the reads behind it
-    observed (``TTPMapping.sources``, :func:`entry_marks`), and only where a
-    further detonation is among them.
+    Marked with every detonation one of whose signatures carries in its own
+    technique ids the technique's id, a sub-technique's, its parent's, or an
+    id ATT&CK revoked in favour of one of these (:func:`_tagging`); each mark
+    lists those signatures with the id each tags. The job's own detonation is
+    among them where its signatures tag it, and a mark is stated only where a
+    further detonation is among them. The reads a technique cites and the
+    items it names credit no detonation: a read of a detonation holds what
+    that detonation recorded, which is not the technique's behaviour by being
+    cited. A sandbox whose signatures carry no technique ids credits none.
     """
     signatures = list(report.dynamic.sandbox_signatures) if report.dynamic else []
-    tagged = any(signature.observed_in for signature in signatures)
+    if not any(signature.observed_in for signature in signatures):
+        return
     for mapping in mappings:
-        marks = [
-            mark
-            for signature in (signatures if tagged else ())
-            if any(_tags(mapping.technique_id, tid) for tid in signature.technique_ids)
-            for mark in marks_of(signature)
-        ]
-        behind = entry_marks(mapping.sources, report)
-        if tagged or behind:
-            mapping.observed_in = stated_marks([*marks, *behind])
+        launches: dict[str, ObservedIn] = {}
+        tagging: dict[str, list[TaggingSignature]] = {}
+        for signature in signatures:
+            found = _tagging(mapping.technique_id, signature.name, signature.technique_ids)
+            if found is None:
+                continue
+            for mark in marks_of(signature):
+                launches.setdefault(mark.detonation, mark)
+                listed = tagging.setdefault(mark.detonation, [])
+                if found not in listed:
+                    listed.append(found)
+        mapping.observed_in = stated_marks(
+            ObservedIn(
+                detonation=name,
+                launched_with=mark.launched_with,
+                signatures=tagging[name],
+            )
+            for name, mark in launches.items()
+        )
 
 
 # The longest launch text a surface writes; the record keeps the whole.
@@ -234,6 +294,103 @@ def observed_words(
         said = code(arguments) if code is not None else f"`{arguments}`"
         parts.append(f"detonation {number}, launched with {said}")
     return f"observed in {' and in '.join(parts)}" if parts else ""
+
+
+def signatures_listed(marks: Sequence[ObservedIn] | Iterable[Any]) -> bool:
+    """Whether a technique's marks list the signatures that tag it (a mark stored before
+    they were recorded lists none)."""
+    return any(
+        (held.get("signatures") if isinstance(held, Mapping) else getattr(held, "signatures", None))
+        for held in marks or ()
+    )
+
+
+def _tag_words(technique_id: str, signature: TaggingSignature, code: Callable[[str], str]) -> str:
+    """What a signature's tag is to ``technique_id``: ``this technique``, ``this technique's
+    parent T1222``…
+
+    An id of another form than ATT&CK's is written out as a launch text is
+    and set as ``code`` sets it.
+    """
+
+    def _id(value: str) -> str:
+        text = value.strip().upper()
+        return text if _TECHNIQUE_ID_RE.fullmatch(text) else code(launch_text(value))
+
+    def _to(value: str) -> str:
+        relation = _relation(technique_id, value)
+        if relation == _SAME:
+            return "this technique"
+        if relation == _SUB:
+            return f"this technique's sub-technique {_id(value)}"
+        if relation == _PARENT:
+            return f"this technique's parent {_id(value)}"
+        return _id(value)
+
+    said = _to(signature.technique_id)
+    if signature.revoked_by:
+        return f"{said} (revoked by ATT&CK in favour of {_to(signature.revoked_by)})"
+    return said
+
+
+def _listed(items: Sequence[str]) -> str:
+    """``a``, ``a and b``, ``a, b and c``."""
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def technique_words(
+    technique_id: str,
+    marks: Sequence[ObservedIn] | Iterable[Any],
+    code: Callable[[str], str] | None = None,
+) -> str:
+    """A published technique's marks as one clause: what each detonation's signatures tag.
+
+    ``in detonation 2, launched with `<arguments>`, the sandbox signatures
+    `A` and `B` tag this technique``: per detonation (the job's own named
+    so), each signature that tags the technique by name, and the id it tags
+    where that is not the technique's (``this technique's sub-technique
+    T1070.004``, ``this technique's parent T1222``, a revoked id said to be
+    revoked and in favour of what). It states what the sandbox tagged, never that the behaviour was
+    observed. A launch text and a signature name are written out as
+    :func:`launch_text` writes them and set as ``code`` sets them (a
+    one-backtick span where none is given). Marks stored before their
+    signatures were recorded keep the words they were written in
+    (:func:`observed_words`). ``""`` for no mark.
+    """
+    held = [
+        ObservedIn.model_validate(dict(mark)) if isinstance(mark, Mapping) else mark
+        for mark in marks or ()
+    ]
+    if not signatures_listed(held):
+        return observed_words(held, code)
+    setting = code if code is not None else (lambda text: f"`{text}`")
+    parts: list[str] = []
+    for mark in held:
+        name = detonation_named(getattr(mark, "detonation", ""))
+        # A mark the builder writes always lists its signatures: one that
+        # lists none, or names no detonation, has nothing these words state.
+        if not name or not getattr(mark, "signatures", None):
+            continue
+        if name == FIRST_DETONATION:
+            where = "the job's own detonation"
+        else:
+            number = name[1:] if name.startswith("d") else name
+            where = f"detonation {number}, launched with {setting(launch_text(mark.launched_with))}"
+        groups: dict[str, list[str]] = {}
+        for signature in mark.signatures:
+            written = launch_text(signature.name)
+            named = setting(written) if written else "(no name)"
+            listed = groups.setdefault(_tag_words(technique_id, signature, setting), [])
+            if named not in listed:
+                listed.append(named)
+        said = [
+            f"the sandbox signature {names[0]} tags {tag}"
+            if len(names) == 1
+            else f"the sandbox signatures {_listed(names)} tag {tag}"
+            for tag, names in groups.items()
+        ]
+        parts.append(f"in {where}, {' and '.join(said)}")
+    return ", and ".join(parts)
 
 
 def later_only_words(marks: Sequence[ObservedIn] | Iterable[Any]) -> str:

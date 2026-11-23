@@ -1,8 +1,8 @@
 """Every published value that rests on a later detonation's read carries its mark.
 
-A row of the IOC table and a published technique rest on the entries the run's
-record ties to them: the entries an analysis statement is found whole in, the
-entries an analyst's listing cites, the sources behind a technique. Where one
+A row of the IOC table rests on the entries the run's record ties to it: the
+entries an analysis statement is found whole in, the entries an analyst's
+listing cites. Where one
 of those is the platform's read of a further detonation an agent asked for
 (``detonation_reads.later_detonation_name``, recorded on its index row), the
 value is marked with that detonation and its launch, whatever its kind; the
@@ -11,7 +11,8 @@ platform's read of the job's own detonation
 its kind or none, and any other read (a static tool's, an agent's call of
 another source) observed no detonation. A value's mark is the union over every
 row and every read that puts it on the table. A run with one detonation marks
-nothing (T-679).
+nothing (T-679). A published technique is credited only by the sandbox
+signatures that tag it, never by the reads it cites (T-871).
 """
 
 from __future__ import annotations
@@ -303,7 +304,9 @@ class TestEveryRowAndRead:
 
 
 class TestTechniques:
-    def test_a_technique_whose_source_is_a_later_read_carries_the_mark(self) -> None:
+    def test_a_technique_whose_source_is_a_later_read_carries_no_mark(self) -> None:
+        # Only the sandbox signatures that tag a technique credit it with a
+        # detonation; the reads it cites credit none (T-871).
         report = MalwareReport(
             identity=SampleIdentity(hashes=FileHashes(sha256="6" * 64)),
             evidence_index=_index(),
@@ -316,13 +319,7 @@ class TestTechniques:
             ],
         )
         with_technique_marks(report.ttp_mappings, report)
-        assert [m.observed_in for m in report.ttp_mappings] == [
-            [D2],
-            [D1, D2],
-            [],
-            [D1, D2],
-            [D1, D2],
-        ]
+        assert [m.observed_in for m in report.ttp_mappings] == [[], [], [], [], []]
 
 
 class TestTheIndex:

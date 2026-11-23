@@ -20,13 +20,15 @@
    "condition": "section 8 of the single-file report and the bundle: the ATT&CK table, one row per technique, then the note on `(rule match)` where any rule hit over the binary is held, the claims not published, the cut note, the behaviour-catalog and unmapped-behaviour lines",
    "basis": [
     "the capability matrix, the published mappings, the rule hits over the binary",
-    "the run summary's corroboration (asserted_by, claimed_by)"
+    "the run summary's corroboration (asserted_by, claimed_by)",
+    "each published mapping's detonation marks and the signatures each lists (detonation_marks.technique_words)"
    ],
    "test": [
     "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_no_absence_of_a_source_the_table_shows",
-    "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_every_source_the_table_marks_is_named"
+    "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_every_source_the_table_marks_is_named",
+    "tests/unit/reporting/test_a_technique_s_note_names_the_signatures_that_tag_it.py::TestEverySurfaceWritesIt::test_the_markdown_and_analyst_reports"
    ],
-   "text_digest": "080fe5a056b750ec63477d29e604d98ce03ddcba15a813043f22a643b8df3b9d"
+   "text_digest": "8c2b0f86c9540214940760deefa80e72680bb482bd3173bb7e5106b0c4237c21"
   },
   {
    "function": "malspark.reporting.renderers.markdown:_attack_row",
@@ -34,10 +36,14 @@
    "basis": [
     "the capability cell",
     "the corroboration row's asserted_by and claimed_by",
-    "the rule hits folded into the row"
+    "the rule hits folded into the row",
+    "the published mapping's detonation marks and the signatures each lists (detonation_marks.technique_words)"
    ],
-   "test": "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_no_absence_of_a_source_the_table_shows",
-   "text_digest": "2143a26860829c070c01bec77a57be16b57383323648b23d90e5d64d374d7e91"
+   "test": [
+    "tests/unit/reporting/test_the_attack_note_names_the_rule_sources_its_table_marks.py::test_no_absence_of_a_source_the_table_shows",
+    "tests/unit/reporting/test_a_technique_s_note_names_the_signatures_that_tag_it.py::TestEverySurfaceWritesIt::test_the_markdown_and_analyst_reports"
+   ],
+   "text_digest": "4a96dc9be82a200266d0abd44c00274920b63655d80bd215e15b14f20db7c88e"
   },
   {
    "function": "malspark.reporting.renderers.markdown:_rule_labels",

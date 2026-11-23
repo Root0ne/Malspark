@@ -350,6 +350,22 @@ class StaticAnalysis(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class TaggingSignature(BaseModel):
+    """A sandbox signature of one detonation whose own technique ids credit a published technique.
+
+    ``name`` is the signature's as the sandbox gave it; ``technique_id`` the
+    id among its own that credits the technique: the technique's, a
+    sub-technique's, its parent's, or one the vendored ATT&CK table says was
+    revoked in favour of one of these, which ``revoked_by`` then names.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    name: str
+    technique_id: str
+    revoked_by: str | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
 class ObservedIn(BaseModel):
     """One detonation of the sample a row was observed in, and the launch it was made with.
 
@@ -357,12 +373,19 @@ class ObservedIn(BaseModel):
     further one an agent asked for (``providers.detonation``);
     ``launched_with`` is a further detonation's launch arguments, ``None``
     for the job's own, whose launch the report's Sandbox sentence states.
+    ``signatures`` is set on a published technique's mark only: the
+    signatures of that detonation that tag it (``detonation_marks``); empty,
+    and left out of a dump, on every other row and on a mark stored before it
+    was recorded.
     """
 
     model_config = _STRICT_CONFIG
 
     detonation: str
     launched_with: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    signatures: list[TaggingSignature] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
 
 
 # Which detonations a row was observed in, where a further detonation an agent
@@ -1038,7 +1061,7 @@ class TTPMapping(BaseModel):
     # that names it. Left out of the stored row when empty.
     retry_only_layers: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
     # The detonations whose sandbox signatures tag the technique, where a
-    # further detonation's do (``ObservedIn``).
+    # further detonation's do (``ObservedIn``), each with those signatures.
     observed_in: list[ObservedIn] = _observed_in()
 
 

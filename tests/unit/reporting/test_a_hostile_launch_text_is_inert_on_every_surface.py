@@ -119,7 +119,7 @@ def _layer_value(report: Any) -> str:
         f"launched with {m['value'].split('launched with ', 1)[1]}"
         for t in layer["techniques"]
         for m in t["metadata"]
-        if m["name"] == "observed in"
+        if m["name"] == "sandbox signatures"
     ]
     return values[0]
 

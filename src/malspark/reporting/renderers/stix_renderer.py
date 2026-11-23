@@ -7691,13 +7691,19 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
     (``reporting.detonation_marks``): an indicator takes the marks the
     report's IOC table states for the values its pattern compares, as
     ``x_malspark_observed_in`` and a clause after its description; the
-    sample's ``uses`` edge to a technique takes the technique's; a
+    sample's ``uses`` edge to a technique takes the technique's, with the
+    signatures that tag it, and a description saying what they tag; a
     cyber-observable stating such a value (:data:`_OBSERVABLE_VALUES`) takes
     the value's, and an observed-data object naming a marked observable takes
     the marks of every one it names. A copy is written; every other object,
     and every object of a run with one detonation, is returned as it was.
     """
-    from malspark.reporting.detonation_marks import observed_property, observed_words
+    from malspark.reporting.detonation_marks import (
+        observed_property,
+        observed_words,
+        signatures_listed,
+        technique_words,
+    )
     from malspark.reporting.ledger_projection import stated_marks
 
     by_value: dict[tuple[str, str], list[Any]] = {}
@@ -7707,7 +7713,10 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
             kind = str(row.kind or "")
             by_value.setdefault((kind, _value_key(kind, row.value)), []).extend(held)
     by_pattern = {
-        _pattern_id_for(str(m.technique_id).strip().upper()): list(m.observed_in)
+        _pattern_id_for(str(m.technique_id).strip().upper()): (
+            str(m.technique_id),
+            list(m.observed_in),
+        )
         for m in getattr(report, "ttp_mappings", None) or []
         if getattr(m, "observed_in", None)
     }
@@ -7717,6 +7726,7 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
     observed: dict[str, list[Any]] = {}
     for obj in objects:
         marks: list[Any] = []
+        technique = ""
         if isinstance(obj, Indicator):
             marks = stated_marks(
                 mark
@@ -7728,7 +7738,7 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
             and getattr(obj, "relationship_type", "") == "uses"
             and OBSERVED_IN_PROPERTY in type(obj).model_fields
         ):
-            marks = by_pattern.get(str(getattr(obj, "target_ref", "") or ""), [])
+            technique, marks = by_pattern.get(str(getattr(obj, "target_ref", "") or ""), ("", []))
         elif isinstance(obj, _Observable):
             marks = stated_marks(
                 mark
@@ -7745,6 +7755,13 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
             said = observed_words(marks)
             said = f"{said[:1].upper()}{said[1:]}."
             before = str(obj.description or "").strip()
+            update["description"] = f"{before} {said}" if before else said
+        elif technique and signatures_listed(marks):
+            # The edge to a technique says what the signatures that tag it
+            # tag; a mark stored before they were recorded adds no words.
+            said = technique_words(technique, marks)
+            said = f"{said[:1].upper()}{said[1:]}."
+            before = str(getattr(obj, "description", "") or "").strip()
             update["description"] = f"{before} {said}" if before else said
         out.append(obj.model_copy(update=update))
     if not observed:

@@ -1,0 +1,39 @@
+{
+ "entries": [
+  {
+   "function": "malspark.reporting.detonation_marks:_tag_words",
+   "condition": "within a published technique's detonation note: what one listed signature's tag is to the technique (this technique, its sub-technique, its parent, an id of another form written out), and a revoked id said to be revoked by ATT&CK in favour of what",
+   "basis": [
+    "TTPMapping.observed_in: each detonation's name and launch, and the signatures of it that tag the technique with the id each tags (set by with_technique_marks from the sandbox signatures' own technique ids and the vendored ATT&CK table's revoked-by relation)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_technique_s_note_names_the_signatures_that_tag_it.py::TestTheWords::test_each_shape_says_what_the_shared_cases_say"
+   ],
+   "text_digest": "f420672cab8ad95b927f9bb690ca7153fc9a54d0be7e4589e8dcf0b77446562a"
+  },
+  {
+   "function": "malspark.reporting.detonation_marks:_tag_words.<locals>._to",
+   "condition": "within a published technique's detonation note: how one tagged id, or the id ATT&CK revoked it in favour of, stands to the technique's id",
+   "basis": [
+    "TTPMapping.observed_in: each detonation's name and launch, and the signatures of it that tag the technique with the id each tags (set by with_technique_marks from the sandbox signatures' own technique ids and the vendored ATT&CK table's revoked-by relation)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_technique_s_note_names_the_signatures_that_tag_it.py::TestTheWords::test_each_shape_says_what_the_shared_cases_say"
+   ],
+   "text_digest": "4d875bac00adc95e0c9a68fce3176bdf01347c19d9250ef6c3036bf0b90ae6eb"
+  },
+  {
+   "function": "malspark.reporting.detonation_marks:technique_words",
+   "condition": "a published technique's detonation note, where a further detonation's sandbox signatures tag it: the ATT&CK table's status cell of report.md and the bundle, the analyst report's technique note, the MISP technique attribute's comment, the ATT&CK layer's sandbox signatures row, the STIX uses edge's description and the composer bundles' technique lists; a mark stored before its signatures were recorded is worded by observed_words as it was written",
+   "basis": [
+    "TTPMapping.observed_in: each detonation's name and launch, and the signatures of it that tag the technique with the id each tags (set by with_technique_marks from the sandbox signatures' own technique ids and the vendored ATT&CK table's revoked-by relation)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_technique_s_note_names_the_signatures_that_tag_it.py::TestTheWords::test_each_shape_says_what_the_shared_cases_say",
+    "tests/unit/reporting/test_a_technique_s_note_names_the_signatures_that_tag_it.py::TestEverySurfaceWritesIt::test_the_markdown_and_analyst_reports",
+    "tests/unit/reporting/test_a_technique_s_note_names_the_signatures_that_tag_it.py::TestAStoredReportReadsAsWritten::test_its_words_are_the_words_it_was_written_in"
+   ],
+   "text_digest": "031903043d2f5dcc1d4c1605c6b0c727a8e0c8f2e3298269096b92b5537b2ef2"
+  }
+ ]
+}

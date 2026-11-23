@@ -415,7 +415,10 @@ EVIDENCE_NOTE_PROPERTY = "x_malspark_evidence_note"
 # technique a ``uses`` edge points at, were observed in, where a further
 # detonation an agent asked for observed them: each ``{"detonation": "d2",
 # "launched_with": "<arguments>"}``, the job's own as ``{"detonation": "d1"}``
-# (``reporting.detonation_marks``). Absent where only the job's own did.
+# (``reporting.detonation_marks``); on a ``uses`` edge each also lists, as
+# ``signatures``, the detonation's sandbox signatures that tag the technique,
+# each ``{"name": …, "technique_id": …}`` with ``revoked_by`` where the id it
+# tags was revoked. Absent where only the job's own did.
 OBSERVED_IN_PROPERTY = "x_malspark_observed_in"
 
 
@@ -437,7 +440,7 @@ class Relationship(STIXObject):
     x_malspark_support: str | None = None
     x_malspark_support_note: str | None = None
     # See ``OBSERVED_IN_PROPERTY``.
-    x_malspark_observed_in: list[dict[str, str]] | None = None
+    x_malspark_observed_in: list[dict[str, Any]] | None = None
 
     @field_validator("start_time", "stop_time", mode="after")
     @classmethod

@@ -15,9 +15,16 @@
  * one joined string, so a launch text can never read as another detonation.
  * One fixture of cases, written from the report's function, holds both to the
  * same written form (`tests/fixtures/reporting/launch_text_cases.json`).
+ *
+ * A published technique's mark is worded by what the sandbox tagged, never as
+ * observed (`detonation_marks.technique_words`): per detonation, the signatures
+ * that tag it by name and the id each tags where that is not the technique's.
+ * A mark stored before its signatures were recorded keeps the words above. One
+ * fixture of cases holds the report's words and the console's to the same text
+ * (`tests/fixtures/reporting/technique_note_cases.json`).
  */
 
-import type { ObservedIn } from "@/types/malware-report";
+import type { ObservedIn, TaggingSignature } from "@/types/malware-report";
 
 /** The longest launch text the report writes (`detonation_marks.LAUNCH_TEXT_CHARS`), in code points. */
 export const LAUNCH_TEXT_CHARS = 200;
@@ -121,4 +128,116 @@ export function observedTitle(parts: readonly MarkPart[]): string {
     part.launch === null ? part.detonation : `${part.detonation}, launched with \`${part.launch}\``,
   );
   return `observed in ${said.join(" and in ")}`;
+}
+
+/** An ATT&CK technique id as a signature's tag credits a technique (`detonation_marks._TECHNIQUE_ID_RE`). */
+const TECHNIQUE_ID_RE = /^T\p{Nd}{4}(?:\.\p{Nd}{3})?$/u;
+
+/** How a signature's tag stands to a technique's id (`detonation_marks._relation`). */
+function relation(techniqueId: string, tagged: string): "same" | "sub" | "parent" | null {
+  const wanted = techniqueId.trim().toUpperCase();
+  const said = tagged.trim().toUpperCase();
+  if (!TECHNIQUE_ID_RE.test(wanted) || !TECHNIQUE_ID_RE.test(said)) return null;
+  if (said === wanted) return "same";
+  if (said.startsWith(`${wanted}.`)) return "sub";
+  if (wanted.startsWith(`${said}.`)) return "parent";
+  return null;
+}
+
+/** What a signature's tag is to the technique, as the report words it (`detonation_marks._tag_words`). */
+function tagWords(techniqueId: string, signature: TaggingSignature, code: (text: string) => string): string {
+  const id = (value: string): string => {
+    const text = value.trim().toUpperCase();
+    return TECHNIQUE_ID_RE.test(text) ? text : code(launchText(value));
+  };
+  const to = (value: string): string => {
+    const found = relation(techniqueId, value);
+    if (found === "same") return "this technique";
+    if (found === "sub") return `this technique's sub-technique ${id(value)}`;
+    if (found === "parent") return `this technique's parent ${id(value)}`;
+    return id(value);
+  };
+  const said = to(String(signature.technique_id ?? ""));
+  return signature.revoked_by ? `${said} (revoked by ATT&CK in favour of ${to(String(signature.revoked_by))})` : said;
+}
+
+/** One group of a technique's signatures in one detonation: their names as written
+ *  (`null` for a signature with no name) and what they tag. */
+export interface TagGroup {
+  names: (string | null)[];
+  tag: string;
+}
+
+/** One detonation of a technique's mark: its name in words, a further one's launch text,
+ *  and the signatures of it that tag the technique, grouped by what they tag. */
+export interface TechniquePart extends MarkPart {
+  groups: TagGroup[];
+}
+
+/** A technique's mark in parts, one per detonation whose signatures it lists, or `null` where
+ *  it lists none (a mark stored before its signatures were recorded, worded by `observedParts`). */
+export function techniqueParts(
+  techniqueId: string,
+  marks: readonly ObservedIn[] | null | undefined,
+  code: (text: string) => string = (text) => `\`${text}\``,
+): TechniquePart[] | null {
+  if (!(marks ?? []).some((mark) => mark?.signatures?.length)) return null;
+  const parts: TechniquePart[] = [];
+  for (const mark of marks ?? []) {
+    const name = String(mark?.detonation ?? "");
+    const signatures = mark?.signatures ?? [];
+    if (!signatures.length) continue;
+    let part: MarkPart;
+    if (name === FIRST_DETONATION) part = { detonation: "the job's own detonation", launch: null };
+    else if (LATER_DETONATION_RE.test(name)) {
+      part = { detonation: `detonation ${name.slice(1).toLowerCase()}`, launch: launchText(mark.launched_with) };
+    } else continue;
+    const groups: TagGroup[] = [];
+    for (const signature of signatures) {
+      const written = launchText(signature.name);
+      const named = written ? written : null;
+      const tag = tagWords(techniqueId, signature, code);
+      let group = groups.find((held) => held.tag === tag);
+      if (!group) {
+        group = { names: [], tag };
+        groups.push(group);
+      }
+      if (!group.names.includes(named)) group.names.push(named);
+    }
+    parts.push({ ...part, groups });
+  }
+  return parts;
+}
+
+/** ``a``, ``a and b``, ``a, b and c``. */
+function listed(items: readonly string[]): string {
+  return items.length === 1 ? items[0] : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** One group's clause: "the sandbox signatures `A` and `B` tag this technique". */
+export function groupWords(group: TagGroup, code: (text: string) => string = (text) => `\`${text}\``): string {
+  const names = group.names.map((name) => (name === null ? "(no name)" : code(name)));
+  return names.length === 1
+    ? `the sandbox signature ${names[0]} tags ${group.tag}`
+    : `the sandbox signatures ${listed(names)} tag ${group.tag}`;
+}
+
+/** A technique's mark in the report's words (`detonation_marks.technique_words`), each launch
+ *  text and signature name in a code span: what a hover shows. */
+export function techniqueTitle(parts: readonly TechniquePart[]): string {
+  return parts
+    .map((part) => {
+      const where = part.launch === null ? part.detonation : `${part.detonation}, launched with \`${part.launch}\``;
+      return `in ${where}, ${part.groups.map((group) => groupWords(group)).join(" and ")}`;
+    })
+    .join(", and ");
+}
+
+/** A technique's mark as one clause in the report's words, or the old words of a mark stored
+ *  before its signatures were recorded; `""` for no mark. */
+export function techniqueWords(techniqueId: string, marks: readonly ObservedIn[] | null | undefined): string {
+  const parts = techniqueParts(techniqueId, marks);
+  if (parts) return techniqueTitle(parts);
+  const old = observedParts(marks);
+  return old ? observedTitle(old) : "";
 }
