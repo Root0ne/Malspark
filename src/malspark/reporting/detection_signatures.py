@@ -304,11 +304,11 @@ def analyst_print_gate(rule: DetectionRule) -> str | None:
     """Why the analyst report does not print a draft's body, or ``None`` when it does.
 
     A rule an engine ran against the sample prints only where its strings
-    clause held: a rule that matches the sample by its sha256 or import hash
-    alone says nothing a hash lookup does not, and one whose content match is
-    not shown carries no more. A behaviour or traffic rule, which no engine
-    runs on a file, prints when it compiles. Every body, printed or not, is in
-    the evidence bundle.
+    clause held: a rule that matches the sample by a hash clause alone (its
+    sha256, or the import hash a stored record may name) says nothing a hash
+    lookup does not, and one whose content match is not shown carries no more.
+    A behaviour or traffic rule, which no engine runs on a file, prints when it
+    compiles. Every body, printed or not, is in the evidence bundle.
     """
     if rule.compile_error:
         return NOT_PRINTED_UNCOMPILED
@@ -641,8 +641,12 @@ def _build_yara(report: MalwareReport, sample: OwnSample | None = None) -> Detec
 
     Conditions chained with ``or`` so any one fingerprint triggers the rule:
     - ``hash.sha256(0, filesize) == "..."`` always present (sha256 is required)
-    - ``pe.imphash() == "..."`` when imphash is known
-    - ``N of them`` when at least two string IOCs are collected
+    - the strings clause (``N of them``) when the draft declares strings
+
+    The import hash is no clause: it also matches files that are not the
+    sample, every one whose import table is the same set, so a rule named for
+    a family is never satisfied by it. Its value is kept in the rule's
+    ``meta:`` (``imphash``), on the line after the sha256.
 
     The strings are the published rows of the IOC table (``$sN``) and the
     values the sample stores that a tool read as a decoder's seed (``$dN``) or
@@ -766,10 +770,11 @@ def _render_yara(
     and a quantifier of the hashes, ``all of ($d*) and k of ($h*)``. The group
     is written only with a seed and a hash both; a draft with no such group is
     written as it always was.
+
+    ``imphash`` is written in ``meta:`` only, never as a clause, so the rule
+    imports no module but ``hash``.
     """
     imports = ['import "hash"']
-    if imphash:
-        imports.append('import "pe"')
     seeds, hashes = list(seeds or []), list(hashes or [])
     stored = [*seeds, *hashes] if seeds and hashes else []
     declared = [
@@ -779,8 +784,6 @@ def _render_yara(
     clauses: list[tuple[RuleClause, str]] = [
         ("sha256", f'hash.sha256(0, filesize) == "{_escape_yara(sha256)}"')
     ]
-    if imphash:
-        clauses.append(("imphash", f'pe.imphash() == "{_escape_yara(imphash)}"'))
     # Each group of the strings clause: its quantifier, its slots in the draft
     # and the probe's string rules standing for them, in the declared order.
     string_rules = tuple(f"{_PROBE_STRING}{index}" for index in range(len(declared)))
@@ -814,6 +817,8 @@ def _render_yara(
         f'        description = "Auto-generated, verdict={verdict_safe}, family={family_safe}"'
     )
     lines.append(f'        sha256 = "{_escape_yara(sha256)}"')
+    if imphash:
+        lines.append(f'        imphash = "{_escape_yara(imphash)}"')
     lines.append(f'        generated_at = "{_escape_yara(generated_at_iso)}"')
     if declared:
         lines.append("    strings:")

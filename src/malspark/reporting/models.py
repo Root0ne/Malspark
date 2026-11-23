@@ -1178,7 +1178,9 @@ class SampleString(BaseModel):
 
 
 # The clauses of a drafted YARA rule's condition, in the order the draft writes
-# them: the sample's sha256, its import hash, and the rule's strings.
+# them: the sample's sha256 and the rule's strings. ``imphash``, the sample's
+# import hash, is no clause a draft writes, since it also matches files that
+# are not the sample; a stored record that names it is read as stored.
 RuleClause = Literal["sha256", "imphash", "strings"]
 
 

@@ -242,7 +242,7 @@ class TestTheEngineSaysWhichClauseHeld:
         )
         assert rule.body.rstrip() in MarkdownRenderer().render(report), "never dropped"
 
-    def test_the_imphash_clause_is_read_from_the_engine(self, tmp_path: Path) -> None:
+    def test_the_sample_s_import_hash_holds_no_clause(self, tmp_path: Path) -> None:
         from scripts.rehearsal.sample import sample_bytes
 
         image = sample_bytes()
@@ -252,11 +252,8 @@ class TestTheEngineSaysWhichClauseHeld:
             OwnSample(path=str(path), budget_seconds=BUDGET),
         )
 
-        assert _rule_of(report).matched_by == ["imphash"]
-        assert _said(report).startswith(
-            f"{SAID}the rule matches it by its imphash only; its strings do not "
-            "(0 of 2 strings found)."
-        )
+        assert (_rule_of(report).matches_sample, _rule_of(report).matched_by) == (False, [])
+        assert _said(report).startswith(f"{SAID}the rule does not match it (0 of 2 strings found).")
 
     def test_the_probe_alone_is_scanned_from_the_file_in_fast_mode_within_the_budget(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -344,16 +341,15 @@ class TestTheDraftAndItsProbeAreWrittenFromOneDeclaration:
         )
         quantifier = re.search(r"\((\d+|any) of them\)", condition)
 
-        assert rendered.parts == ("sha256", "imphash", "strings")
+        assert rendered.parts == ("sha256", "strings")
         assert f"({reporters['sha256']})" in condition
-        assert f"({reporters['imphash']})" in condition
         assert quantifier is not None
         assert reporters["strings"] == (
             f"{quantifier.group(1)} of ({', '.join(rendered.string_rules)})"
         )
         assert re.search(
             r"^rule probe_whole \{ condition: \(probe_part_sha256\) or "
-            r"\(probe_part_imphash\) or \(probe_part_strings\) \}$",
+            r"\(probe_part_strings\) \}$",
             rendered.probe,
             re.M,
         )
@@ -367,7 +363,7 @@ class TestTheDraftAndItsProbeAreWrittenFromOneDeclaration:
         )
         names = re.findall(r"^rule (\w+)", self._rendered().probe, re.M)
 
-        assert len(names) == len(set(names)) == len(self.VALUES) + 4
+        assert len(names) == len(set(names)) == len(self.VALUES) + 3
         assert not set(names) & keywords
         assert not [name for name in names if name.startswith("Malspark_AutoGen_")]
 
