@@ -47,9 +47,16 @@ function titleOf(html: string): string | null {
   return found ? unescaped(found[1]) : null;
 }
 
-/** The text a reader is shown: every tag dropped, entities read back. */
+/** The text a reader is shown: what stands outside every tag, entities read back. */
 function textOf(html: string): string {
-  return unescaped(html.replace(/<[^>]*>/g, ""));
+  let text = "";
+  let inTag = false;
+  for (const ch of html) {
+    if (ch === "<") inTag = true;
+    else if (inTag) inTag = ch !== ">";
+    else text += ch;
+  }
+  return unescaped(text);
 }
 
 describe("a technique's mark, in the report's words", () => {
