@@ -4001,8 +4001,10 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
     further one's (``detonation_trees``), never another detonation's. A record
     several detonations observed is placed in each of them. A further
     detonation the report keeps no process of (an empty tree, or none) places
-    its records nowhere, and their sentence says no process list of it that
-    lists a process was read. A mark of no detonation's form names none: the
+    its records nowhere, and a record that names its writer's number has the
+    sentence that no process list of it that lists a process was read (a
+    record that names its writer only by a process name keeps its own
+    sentence about the process name). A mark of no detonation's form names none: the
     record is the job's own detonation's. A report that carries no
     ``detonation_trees`` places every record in the job's own, as it was
     written. In a launched

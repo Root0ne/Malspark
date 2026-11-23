@@ -1199,6 +1199,80 @@ def test_a_passage_that_differs_otherwise_than_by_its_readings_is_a_difference(
     assert any(line.startswith(f"report .{field}: ") for line in said)
 
 
+# Two spellings the round's quoting prints alike: a backslash and a letter, and the control.
+_SPELLED = " Line one\\nline two."
+_CONTROL = " Line one\nline two."
+
+
+def _marked_run(tmp_path: Path) -> tuple[Path, Any, dict[str, Any]]:
+    """A replayed run that names the introduction as read more than one way, its stored
+    report as read back."""
+    from malspark.agents.tool_fence import quoted_value
+
+    assert quoted_value(_SPELLED) == quoted_value(_CONTROL)
+    run, _after, _done, _given = _stored_run(
+        tmp_path, keep_answers=True, written=_placed(_LETTERS, "introduction")
+    )
+    found = harness.recover(run)
+    assert found.case is not None and found.record is not None
+    assert found.passages_read_more_than_one_way == ["introduction"]
+    assert harness.against_stored(run, found.case, found.record) == []
+    return run, found, json.loads((run / "report.json").read_bytes())
+
+
+def _store(run: Path, stored: dict[str, Any]) -> None:
+    (run / "report.json").write_text(json.dumps(stored), encoding="utf-8")
+
+
+def test_a_passage_the_run_does_not_name_that_differs_by_a_control_s_spelling_is_a_difference(
+    tmp_path: Path,
+) -> None:
+    run, found, stored = _marked_run(tmp_path)
+    section = stored["technical_analysis"]["string_resolution"]
+    replayed = found.record["report"]["technical_analysis"]["string_resolution"]
+    found.record["after"]["string_resolution"]["text"] = section["body"] + _CONTROL
+    replayed["body"] = section["body"] + _CONTROL
+    section["body"] += _SPELLED
+    _store(run, stored)
+
+    said = harness.against_stored(run, found.case, found.record)
+
+    assert any(line.startswith("passage string_resolution: final text differs") for line in said)
+    assert any(
+        line.startswith("report .technical_analysis.string_resolution.body: ") for line in said
+    )
+
+
+def test_a_passage_the_run_names_whose_two_texts_print_alike_is_no_difference(
+    tmp_path: Path,
+) -> None:
+    run, found, stored = _marked_run(tmp_path)
+    found.record["after"]["introduction"]["text"] = stored["intro_background"] + _CONTROL
+    found.record["report"]["intro_background"] = stored["intro_background"] + _CONTROL
+    stored["intro_background"] += _SPELLED
+    _store(run, stored)
+
+    assert harness.against_stored(run, found.case, found.record) == []
+
+
+def test_a_report_string_that_is_no_named_passage_s_text_and_differs_so_is_a_difference(
+    tmp_path: Path,
+) -> None:
+    run, found, stored = _marked_run(tmp_path)
+    section = stored["technical_analysis"]["string_resolution"]
+    found.record["report"]["technical_analysis"]["string_resolution"]["title"] = (
+        section["title"] + _CONTROL
+    )
+    section["title"] += _SPELLED
+    _store(run, stored)
+
+    said = harness.against_stored(run, found.case, found.record)
+
+    assert [line.split(":")[0] for line in said] == [
+        "report .technical_analysis.string_resolution.title"
+    ]
+
+
 def _runs_keeping_answers() -> list[Path]:
     """The stored runs whose record keeps the round's answers: a run directory directly under
     the benchmark, or a numbered job directory under a family's."""

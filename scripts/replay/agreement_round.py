@@ -1346,9 +1346,10 @@ def _cut(text: str, at: int) -> str:
 def against_stored(run: Path, case: Mapping[str, Any], record: Mapping[str, Any]) -> list[str]:
     """Every difference between the replay and the round as the run stored it: each passage's
     final text, each outcome record in order, the codes counted, the counts and the flagged
-    statements. Empty where the replay reproduces the stored round exactly. Where a passage
-    was put back as the first of its readings (``passages_read_more_than_one_way``), a text
-    the quoted form prints as the stored one is another reading of it, no difference."""
+    statements. Empty where the replay reproduces the stored round exactly. A passage the run
+    names as put back as the first of its readings (``passages_read_more_than_one_way``) is
+    no difference where the quoted form prints its two texts alike, and so is a report string
+    whose stored value is such a passage's text; every other text compares exactly."""
     from malspark.reporting.models import MalwareReport
 
     stored = json.loads((run / "report.json").read_bytes())
@@ -1356,10 +1357,15 @@ def against_stored(run: Path, case: Mapping[str, Any], record: Mapping[str, Any]
     texts = texts_of(report, bool(case.get("narrative_written", True)), case.get("discussion"))
     out: list[str] = []
     after = record["after"]
-    alike = _printed_alike if case.get("passages_read_more_than_one_way") else None
+    named = set(case.get("passages_read_more_than_one_way") or ())
+    named_texts = {texts[pid]["text"] for pid in named if pid in texts}
+
+    def alike(replayed: Any, kept: Any) -> bool:
+        return _printed_alike(replayed, kept) and kept in named_texts
+
     for pid in sorted(set(texts) | set(after)):
         a, b = (after.get(pid) or {}).get("text"), (texts.get(pid) or {}).get("text")
-        if a == b or (alike is not None and alike(a, b)):
+        if a == b or (pid in named and _printed_alike(a, b)):
             continue
         if a is None or b is None:
             out.append(f"passage {pid}: {'only stored' if a is None else 'only replayed'}")
@@ -1424,7 +1430,7 @@ def against_stored(run: Path, case: Mapping[str, Any], record: Mapping[str, Any]
         out.extend(
             f"report {where}: {what}"
             for where, what in _dump_differences(
-                record["report"], report.model_dump(mode="json"), alike=alike
+                record["report"], report.model_dump(mode="json"), alike=alike if named else None
             )
         )
     return out
