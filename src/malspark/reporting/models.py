@@ -28,6 +28,7 @@ from pydantic import (
     BeforeValidator,
     ConfigDict,
     Field,
+    PrivateAttr,
     SerializerFunctionWrapHandler,
     ValidatorFunctionWrapHandler,
     WrapValidator,
@@ -1811,6 +1812,32 @@ class CodeConstant(BaseModel):
     tool: str = ""
     first_offset: str = ""
     places: int = 0
+    # The chance, by its answer's own figures, that a hash's reading arose by
+    # chance (``code_constants.chance_of_matches``), kept for the draft built
+    # in the same process; never serialised, so the report document carries
+    # the words only, and ``None`` on a value read back from a stored report.
+    _chance: float | None = PrivateAttr(default=None)
+    # Whether the value was read from its answer in this process
+    # (``code_constants.code_constants_from_ledger``); never serialised, so a
+    # value read back from a stored report is ``False``: its answer's figures
+    # are not kept, and a draft does not match on such a hash.
+    _built: bool = PrivateAttr(default=False)
+
+    @property
+    def chance(self) -> float | None:
+        return self._chance
+
+    @chance.setter
+    def chance(self, value: float | None) -> None:
+        self._chance = value
+
+    @property
+    def built(self) -> bool:
+        return self._built
+
+    @built.setter
+    def built(self, value: bool) -> None:
+        self._built = value
 
 
 class BoundValue(BaseModel):

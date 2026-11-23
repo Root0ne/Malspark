@@ -51,6 +51,7 @@ from malspark.reporting.detection_signatures import (
 )
 from malspark.reporting.judge_reasons import judge_reasons_shown, reason_marks
 from malspark.reporting.models import (
+    DetectionRule,
     LimitationInventory,
     MalwareReport,
     TechnicalSubsection,
@@ -2567,7 +2568,7 @@ class _Analyst:
             # the rule's record carries (``rule_standing``).
             said += f" {rule_standing(rule)[1]}"
             if rule.kind == "yara":
-                said += _stored_left_out(self.report)
+                said += _stored_left_out(rule)
             lines.append(_item(said))
         lines.extend(
             _item(self.ctx.inline(_one_line(not_drafted_sentence(item)))) for item in not_built
@@ -3292,15 +3293,18 @@ class _Analyst:
         return "\n".join(lines)
 
 
-def _stored_left_out(report: MalwareReport) -> str:
-    """`` N stored values … left out …``: the stored values the YARA draft does not match on."""
-    from malspark.reporting.detection_signatures import stored_selection
+def _stored_left_out(rule: DetectionRule) -> str:
+    """`` N stored values … left out …``: the stored values the YARA draft does not match on.
 
-    chosen = stored_selection(report)
-    rest = chosen.left_out
+    Read from the draft's own closing comment (``detection_signatures.stored_left_out``),
+    so a stored report says what its stored draft did.
+    """
+    from malspark.reporting.detection_signatures import stored_left_out
+
+    rest, reason = stored_left_out(rule)
     if not rest:
         return ""
-    why = f" ({chosen.why})" if chosen.why else ""
+    why = f" ({reason})" if reason else ""
     return (
         f" {rest} stored value{'s' if rest != 1 else ''} the run read "
         f"{'are' if rest != 1 else 'is'} left out of the draft{why}; the report's JSON lists "

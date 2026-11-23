@@ -4599,7 +4599,43 @@ name:
 * a `capability_rules` tool's rows become technique hits under its `source`;
 * the published record of a value only a recovering tool read states each
   `emulated_strings` and `decoded_strings` tool under its `display_name`, with
-  the scheme, routine and call site its declaration places.
+  the scheme, routine and call site its declaration places;
+* the 32-bit values the sample stores that a drafted YARA rule matches the
+  file's own bytes on (`code_constants` in the report) are read from every
+  `decoded_strings` answer's `values.seed` and every `api_hash_resolution`
+  answer's `values.value`, `values.algorithm`, `values.name` and `values.set`.
+  Each value's meaning, and the comment the rule writes beside it, says what
+  its tool reported, never what the value is: the tool's name, the algorithm,
+  the names, the set and how many values the tool matched under that
+  algorithm, or how many results state a seed. The rule matches on a seed only
+  where two or more results of its answer state it, and on a hash only where
+  the chance of its algorithm's count of matched values arising by chance,
+  over the algorithms tried, is under 0.001 by the answer's own figures:
+  `values.candidates_tested`, `values.names_tried` and
+  `values.algorithms_tried`, each read in the whole answer rather than in a row
+  (the built-in resolver's `/candidates/scanned`, `/names/names` and
+  `/algorithms`, read where a declaration names none). A figure is a whole
+  number as it is stated: a number, a float with no fraction (`240000.0` reads
+  as 240000), or decimal or `0x` text (`"5000000000"`); a pointer that names
+  one list gives the list's length, and one that names several values adds
+  them. A bool, a negative number, NaN or infinity, a fraction or any other
+  text is no count, and one such value among several leaves the figure not
+  stated. One value matches one of n names under one
+  algorithm with a chance of n in 2^32, so the count matched by chance is
+  close to Poisson with the mean candidates × names / 2^32; the chance is that
+  tail at the count matched, times the algorithms tried, at most 1, and 1 where
+  a figure is too large to compute with. The two
+  rules were set on stored answers of two kinds, one whose matches chance
+  explains (about one in four) and one whose matches it does not (far under one
+  in a million), and every bound from one in a million to one in ten decides
+  them alike. An answer that leaves out the candidates or the names is held by
+  the test of two values under one algorithm alone, and one that states no
+  algorithms tried counts those its rows name. The chance is kept only for the
+  draft built with the report: a hash read back from a stored report, which
+  does not keep its answer's figures, is not drafted, and the draft says so. A
+  draft that leaves values out says how many in its closing comment, with the
+  test each failed, and the analyst report's line for the rule repeats that
+  comment.
 
 The report reads these from the facts each entry stored when it was written,
 copied onto the report's evidence index and captured outputs, never from the

@@ -201,8 +201,10 @@ class TestOnlyAContentMatchPrintsItsBody:
         assert BODY in full
 
     def test_the_stored_values_the_draft_leaves_out_are_counted_on_its_line(self) -> None:
-        report = _report(_yara(**HASH_ONLY))
+        # The line says what the draft's own closing comment says it left out (T-872).
+        report = _report()
         report.code_constants = _seeds(SEED) + _hashes(*_many(15))
+        report.detection_signatures = [_drafted_as_hash_only(report)]
         line = _rule_line(_analyst(report), "YARA")
 
         assert line.endswith(
@@ -210,6 +212,7 @@ class TestOnlyAContentMatchPrintsItsBody:
             "every one."
         )
         report.code_constants = _hashes(*HASHES)
+        report.detection_signatures = [_drafted_as_hash_only(report)]
         assert _rule_line(_analyst(report), "YARA").endswith(
             f" 3 stored values the run read are left out of the draft ({NO_STORED_GROUP_NO_SEED})"
             "; the report's JSON lists every one."
@@ -217,6 +220,10 @@ class TestOnlyAContentMatchPrintsItsBody:
 
 
 ALGORITHM = "crc32_ascii"
+# How a hash's meaning opens, and how it counts the values matched under one
+# algorithm of two hits (T-872).
+_READ_AS = "resolve_api_hashes read it as the crc32_ascii hash of"
+_OF_TWO = "one of 2 values it matched under that algorithm"
 
 
 def _decoder(*seeds: Any, entry: str = "ev_0021", **args: Any) -> LedgerEntry:
@@ -290,9 +297,13 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
         seed = constants[0]
         assert (seed.entry, seed.places, seed.first_offset) == ("ev_0021", 3, "0xce00")
         assert seed.meaning == (
-            "the decoder seed stored in the header of 3 encoded strings, xor8_rolling_header"
+            "decode_string_blobs read it as the seed in the header of 3 encoded strings it "
+            "decoded (xor8_rolling_header)"
         )
-        assert constants[1].meaning == "a name hash (set exports: InternetOpenW)"
+        assert constants[1].meaning == (
+            f"{_READ_AS} InternetOpenW (set exports), one of 3 values it matched under that "
+            "algorithm"
+        )
 
     def test_a_carved_file_a_failed_call_and_a_plain_value_are_not_read(self) -> None:
         failed = _decoder("0x5a17c0de", entry="ev_0030").model_copy(update={"ok": False})
@@ -336,7 +347,7 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
         name = "Internet‮Open‍W x "
         constant = code_constants_from_ledger([_resolver(*HASHES[:2], names=(name,))])[0]
 
-        assert constant.meaning == "a name hash (set exports: InternetOpenW x)"
+        assert constant.meaning == f"{_READ_AS} InternetOpenW x (set exports), {_OF_TWO}"
 
     def test_a_hash_resolved_in_modules_prints_set_modules(self) -> None:
         entry = _resolver(*HASHES[:2], names=("kernel32.dll",))
@@ -344,12 +355,12 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
 
         meaning = code_constants_from_ledger([entry])[0].meaning
 
-        assert meaning == "a name hash (set modules: kernel32.dll)"
+        assert meaning == f"{_READ_AS} kernel32.dll (set modules), {_OF_TWO}"
 
     def test_a_hash_resolved_in_exports_prints_set_exports(self) -> None:
         meaning = code_constants_from_ledger([_resolver(*HASHES[:2])])[0].meaning
 
-        assert meaning == "a name hash (set exports: InternetOpenW)"
+        assert meaning == f"{_READ_AS} InternetOpenW (set exports), {_OF_TWO}"
 
     def test_a_row_with_no_set_prints_neither_word(self) -> None:
         entry = _resolver(*HASHES[:2])
@@ -357,7 +368,7 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
 
         meaning = code_constants_from_ledger([entry])[0].meaning
 
-        assert meaning == "a name hash (InternetOpenW)"
+        assert meaning == f"{_READ_AS} InternetOpenW, {_OF_TWO}"
         assert "set" not in meaning
         assert "function" not in meaning
         assert "module" not in meaning
@@ -374,9 +385,9 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
 
         meaning = code_constants_from_ledger([entry])[0].meaning
 
-        assert (
-            meaning
-            == "a name hash (set exports, modules: kernel32.dll, InternetOpenW, KERNEL32.DLL)"
+        assert meaning == (
+            f"{_READ_AS} kernel32.dll, InternetOpenW, KERNEL32.DLL (set exports, modules), "
+            f"{_OF_TWO}"
         )
 
     def test_a_hostile_set_word_cannot_leave_the_comment(self) -> None:
@@ -386,7 +397,7 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
         meaning = code_constants_from_ledger([entry])[0].meaning
 
         assert not any(c in meaning for c in "\r\n*/<>`|{}")
-        assert meaning.startswith("a name hash (set modules")
+        assert meaning.startswith(f"{_READ_AS} InternetOpenW (set modules")
 
     def test_a_list_of_sets_is_read_as_its_words(self) -> None:
         entry = _resolver(*HASHES[:2])
@@ -397,7 +408,7 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
 
         meaning = code_constants_from_ledger([entry])[0].meaning
 
-        assert meaning == "a name hash (set exports, modules: InternetOpenW)"
+        assert meaning == f"{_READ_AS} InternetOpenW (set exports, modules), {_OF_TWO}"
 
     def test_more_sets_than_names_said_are_counted(self) -> None:
         entry = _resolver(*HASHES[:2])
@@ -410,7 +421,7 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
 
         meaning = code_constants_from_ledger([entry])[0].meaning
 
-        assert meaning == "a name hash (set set0, set1, set2 and 2 more: InternetOpenW)"
+        assert meaning == (f"{_READ_AS} InternetOpenW (set set0, set1, set2 and 2 more), {_OF_TWO}")
 
     def test_a_value_is_read_as_an_int_as_hexadecimal_or_as_decimal(self) -> None:
         constants = code_constants_from_ledger(
@@ -445,7 +456,8 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
 
         assert "\n" not in constant.meaning and "`" not in constant.meaning
         assert "|" not in constant.meaning and "*" not in constant.meaning
-        assert len(constant.meaning) < 120
+        # The name is one word of at most 64 characters, the rest of the line the platform's.
+        assert "Evil__name __x__" + "A" * 48 + " (set exports)" in constant.meaning
 
     def test_a_value_is_stored_little_endian(self) -> None:
         assert little_endian(SEED) == bytes.fromhex("409d6233")
@@ -453,11 +465,18 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
 
 
 def _seeds(*values: str) -> list[CodeConstant]:
-    return [CodeConstant(value=v, role="seed", meaning="m", entry="ev_0021") for v in values]
+    # Each a seed two results of its answer state, as a drafted seed is (T-872).
+    return [
+        CodeConstant(value=v, role="seed", meaning="m", entry="ev_0021", places=2) for v in values
+    ]
 
 
 def _hashes(*values: str) -> list[CodeConstant]:
-    return [CodeConstant(value=v, role="hash", meaning="h", entry="ev_0020") for v in values]
+    # Each read from its answer in this process, as a drafted hash is (T-872).
+    out = [CodeConstant(value=v, role="hash", meaning="h", entry="ev_0020") for v in values]
+    for constant in out:
+        constant.built = True
+    return out
 
 
 def _many(count: int) -> list[str]:
@@ -472,6 +491,11 @@ def _sample(tmp_path: Path, blob: bytes) -> OwnSample:
 
 def _drafted_yara(report: MalwareReport, sample: OwnSample | None) -> DetectionRule:
     return next(rule for rule in build_detection_rules(report, sample) if rule.kind == "yara")
+
+
+def _drafted_as_hash_only(report: MalwareReport) -> DetectionRule:
+    """The report's YARA draft, with a record of a check that matched by its hashes only."""
+    return _drafted_yara(report, None).model_copy(update={**HASH_ONLY, "sample_not_checked": None})
 
 
 class TestTheDraftMatchesTheStoredValues:

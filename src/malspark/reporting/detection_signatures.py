@@ -88,8 +88,12 @@ LEFT_OUT_COMMENT = (
 # finds its imports, which programs resolving by the same public algorithm
 # share; a seed with no hash beside it is four bytes. So the stored group holds
 # only with every seed and enough hashes, and a run with no seed, or fewer than
-# two hashes, drafts none. A draft that leaves any value out says how many; the
-# report's JSON carries every one.
+# two hashes, drafts none. A value its answer's own figures do not hold
+# (``code_constants.held``: a seed fewer than two results state, a hash its
+# algorithm's count of matches leaves at chance, a hash read back from a stored
+# report, which does not keep its answer's figures) is not drafted either. A draft
+# that leaves any value out says how many, and why where a test or the group
+# left it out; the report's JSON carries every one.
 _MAX_YARA_SEEDS = 4
 _MAX_YARA_HASHES = 12
 _LEAST_HASHES = 2
@@ -97,9 +101,36 @@ STORED_LEFT_OUT_COMMENT = (
     "{rest} stored value{s} the run read {are} not in this draft{why}; the report's JSON "
     "(code_constants) carries every one."
 )
-NO_STORED_GROUP_NO_SEED = "no decoder seed was read, and a function-name hash alone is no match"
-NO_STORED_GROUP_FEW_HASHES = "a decoder seed counts only beside two function-name hashes"
+NO_STORED_GROUP_NO_SEED = "no decoder seed was read, and a name hash alone is no match"
+NO_STORED_GROUP_FEW_HASHES = "a decoder seed counts only beside two name hashes"
+# Why values its answer's own figures do not hold are not drafted (T-872), and
+# why the held ones are not either when the group no longer stands. A hash's
+# reason says what was computed: its answer's figures and the bound, the chance
+# being the Poisson tail times the algorithms tried (``chance_of_matches``).
+STORED_SEEDS_NOT_HELD = "{n} read as a seed by fewer than {least} results of {its} answer"
+STORED_HASHES_NOT_HELD = (
+    "{n} read as {what} under an algorithm whose count of matched values {its} answer's own "
+    "figures do not put under a chance of {bound} (the Poisson tail times the algorithms tried)"
+)
+STORED_HASHES_READ_BACK = (
+    "{n} read as {what} and read back from a stored report, which does not keep {its} "
+    "answer's figures"
+)
+NO_STORED_GROUP_NO_HELD_SEED = "a name hash alone is no match"
+STORED_PAST_ROOM = "{n} past the draft's room"
 _SAFE_RULE_NAME_RE = re.compile(r"[^A-Za-z0-9_]+")
+# The draft's closing comment on the stored values it leaves out, as
+# ``StoredSelection.comment`` writes it from :data:`STORED_LEFT_OUT_COMMENT`.
+_STORED_LEFT_OUT_LINE = re.compile(
+    "^// "
+    + re.escape(STORED_LEFT_OUT_COMMENT)
+    .replace(re.escape("{rest}"), r"(?P<rest>\d+)")
+    .replace(re.escape("{s}"), "s?")
+    .replace(re.escape("{are}"), "(?:are|is)")
+    .replace(re.escape("{why}"), r"(?: \((?P<why>.*)\))?")
+    + "$",
+    re.MULTILINE,
+)
 
 
 @dataclass(frozen=True)
@@ -885,10 +916,21 @@ class StoredSelection:
 def stored_selection(report: MalwareReport) -> StoredSelection:
     """The stored values (``report.code_constants``) one YARA draft of ``report`` matches on.
 
-    Every seed up to its cap and the function-name hashes up to theirs, when
-    there is a seed and at least two hashes; none otherwise, and why.
+    Every seed and function-name hash its answer's own figures hold
+    (``code_constants.held``), each up to its cap, when a held seed and at
+    least two held hashes stand; none otherwise. With no seed read, or fewer
+    than two hashes, none, and why as before; a value a test held out is
+    counted with that test, a hash read back from a stored report with that
+    reason (its answer's figures are not kept), and a held value the group
+    then leaves out with the group's reason.
     """
-    from malspark.reporting.code_constants import little_endian
+    from malspark.reporting.code_constants import (
+        CHANCE_BOUND,
+        LEAST_RESULTS_PER_SEED,
+        held,
+        little_endian,
+        read_back,
+    )
 
     seeds: list[tuple[Any, bytes]] = []
     hashes: list[tuple[Any, bytes]] = []
@@ -903,8 +945,47 @@ def stored_selection(report: MalwareReport) -> StoredSelection:
         return StoredSelection((), read, NO_STORED_GROUP_NO_SEED if read else "")
     if len(hashes) < _LEAST_HASHES:
         return StoredSelection((), read, NO_STORED_GROUP_FEW_HASHES)
-    used = (*seeds[:_MAX_YARA_SEEDS], *hashes[:_MAX_YARA_HASHES])
-    return StoredSelection(used, read)
+    held_seeds = [pair for pair in seeds if held(pair[0])]
+    held_hashes = [pair for pair in hashes if held(pair[0])]
+    why: list[str] = []
+    if len(held_seeds) < len(seeds):
+        n = len(seeds) - len(held_seeds)
+        its = "its" if n == 1 else "their"
+        why.append(STORED_SEEDS_NOT_HELD.format(n=n, least=LEAST_RESULTS_PER_SEED, its=its))
+    stored = sum(1 for item, _raw in hashes if read_back(item))
+    if len(held_hashes) + stored < len(hashes):
+        n = len(hashes) - len(held_hashes) - stored
+        what, its = ("a name hash", "its") if n == 1 else ("name hashes", "their")
+        why.append(
+            STORED_HASHES_NOT_HELD.format(n=n, what=what, bound=f"{CHANCE_BOUND:g}", its=its)
+        )
+    if stored:
+        what, its = ("a name hash", "its") if stored == 1 else ("name hashes", "their")
+        why.append(STORED_HASHES_READ_BACK.format(n=stored, what=what, its=its))
+    if not held_seeds or len(held_hashes) < _LEAST_HASHES:
+        if held_seeds or held_hashes:
+            why.append(
+                NO_STORED_GROUP_NO_HELD_SEED if not held_seeds else NO_STORED_GROUP_FEW_HASHES
+            )
+        return StoredSelection((), read, "; ".join(why))
+    used = (*held_seeds[:_MAX_YARA_SEEDS], *held_hashes[:_MAX_YARA_HASHES])
+    past = len(held_seeds) + len(held_hashes) - len(used)
+    if why and past:
+        why.append(STORED_PAST_ROOM.format(n=past))
+    return StoredSelection(used, read, "; ".join(why))
+
+
+def stored_left_out(rule: Any) -> tuple[int, str]:
+    """How many stored values a YARA draft's closing comment says it leaves out, and why.
+
+    Read from the draft itself, so a report says what its stored draft did,
+    whichever tests the draft was built under; ``(0, "")`` for a draft whose
+    body carries no such comment.
+    """
+    found = _STORED_LEFT_OUT_LINE.search(str(getattr(rule, "body", "") or ""))
+    if found is None:
+        return 0, ""
+    return int(found.group("rest")), found.group("why") or ""
 
 
 def _why_stored(item: Any) -> str:

@@ -1,0 +1,20 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.reporting.detection_signatures:STORED_LEFT_OUT_COMMENT",
+   "condition": "the closing comment of a drafted YARA rule that leaves any value the sample stores (code_constants) out of its stored group: how many, and in parentheses why where a test its answer's own figures decide (a seed fewer than two results state, a hash whose algorithm's matches chance explains) or the group left some out; the analyst report's line for the rule reads its count and its reason back from that comment (stored_left_out), so a stored report says what its stored draft did",
+   "basis": [
+    "report code_constants (each value read with a 32-bit value)",
+    "the values the draft's stored group holds (StoredSelection.used)",
+    "the tests code_constants.held applies and the group's condition (a held seed and two held hashes)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_stored_value_is_drafted_on_what_its_answer_states.py::TestTheClosingCommentSaysWhatWasTested::test_a_draft_holding_none_says_each_test_and_keeps_its_strings",
+    "tests/unit/reporting/test_a_stored_value_is_drafted_on_what_its_answer_states.py::TestTheAnalystReportSaysWhatTheDraftLeftOut::test_its_line_carries_the_draft_s_closing_comment",
+    "tests/unit/reporting/test_a_stored_value_is_drafted_on_what_its_answer_states.py::TestTheAnalystReportSaysWhatTheDraftLeftOut::test_a_stored_draft_holding_every_value_is_said_to_leave_none_out",
+    "tests/unit/reporting/test_a_rule_prints_in_the_analyst_report_by_its_content.py::TestOnlyAContentMatchPrintsItsBody::test_the_stored_values_the_draft_leaves_out_are_counted_on_its_line"
+   ],
+   "text_digest": "901c713b1c0e4a0d98eb88e546d0326daec76807e0192d2ac1c4da0f5586c654"
+  }
+ ]
+}
