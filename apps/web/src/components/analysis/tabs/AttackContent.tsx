@@ -182,7 +182,7 @@ export default function AttackContent({ view = "all", empty }: { view?: Behaviou
                         <span className="font-mono text-[11px] text-status-blue">{tech.id}</span>
                         <span className="text-text-primary">{tech.name}</span>
                         <span className="text-[11px] text-text-muted">×{tech.matches}</span>
-                        <DetonationMark marks={observed.get(tech.id)} compact />
+                        <DetonationMark marks={observed.get(tech.id)} techniqueId={tech.id} compact />
                         <span className="sr-only">: {statusWords(tech)}</span>
                       </button>
                     ))}
@@ -271,7 +271,7 @@ function TechniqueFacts({
   open?: boolean;
   /** How the report knows this technique; absent when it does not map it. */
   voice?: Voice;
-  /** The detonations whose signatures tag it, where a further one's do. */
+  /** The detonations whose signatures tag it, where a further one's do, with those signatures. */
   observed?: ObservedIn[];
 }) {
   const lists = corroborationLists(corroboration, tech.id);
@@ -302,7 +302,7 @@ function TechniqueFacts({
       )}
       {observed && (
         <div className="mb-1 break-all">
-          <DetonationMark marks={observed} />
+          <DetonationMark marks={observed} techniqueId={tech.id} />
         </div>
       )}
       {tech.note && (

@@ -2687,6 +2687,22 @@ NOT_A_FILE_SHAPE = (
 )
 
 
+def catalogue_path_reason(value: str) -> str:
+    """Why the catalogue calls a path every Windows host's, or ``""``: the analysis route's test.
+
+    The value asked as the analysis asks a file path it states
+    (``stated_host_values.benign_reason``), whose catalogue tests hold a
+    folder's: a path made only of drives, names Windows gives its own folders
+    and a profile name, a word of a task definition, and a file Windows ships
+    in the folder it keeps it in. The sample's own copy is not asked here: a
+    row of the file's text carries no sandbox's name for the sample.
+    """
+    from malspark.reporting.stated_host_values import benign_reason, typed_kind
+
+    kind = typed_kind("file path")
+    return benign_reason(kind, str(value or "").strip()) if kind is not None else ""
+
+
 def _string_path_shape(value: str) -> str:
     """Why a path the string sweep read is not the shape of a file the sample uses, or ``""``.
 
@@ -3017,6 +3033,10 @@ def _evidence_reason(
     ):
         # A path read out of the file's text is asked its shape before who
         # else saw it: the answer is about the value, not about its sources.
+        return None
+    if kind == "path" and _from_the_strings(source) and catalogue_path_reason(value):
+        # Then the catalogue the analysis route asks of the same value, before
+        # a second source publishes it: one value, one answer on both routes.
         return None
     if kind == "hash":
         # A digest is publishable when it is whole and somebody other than the
@@ -6052,6 +6072,47 @@ def publish_answer(
     # refused for that first, as before the shape was asked.
     if kind == "path" and corroborated and not judge_s_value and _string_path_shape(text):
         return refused(_string_path_shape(text))
+    # The catalogue refuses a path of the file's text whose shape stands (or
+    # is not asked), whatever holds it: its reason is the refusing part. What
+    # the record holds stays as facts after it, every fact the refusal it
+    # replaces carried: the row the value is from, a second source that holds
+    # it or, where none does, that the publish rule's lookup found none and
+    # each holder an analyst section cites; a recovery of the value; and what
+    # a search for a judge's value found.
+    catalogue = (
+        catalogue_path_reason(text)
+        if kind == "path" and from_strings and (judge_s_value or not _string_path_shape(text))
+        else ""
+    )
+    if catalogue:
+        found = (
+            (
+                search_found(seen_in, tool_search or SEARCHED_THE_RUN),
+                f"{listed_by} lists it" if listed_by else "",
+            )
+            if seen_in
+            else ()
+        )
+        return refused(
+            catalogue,
+            facts=(
+                strings_source(
+                    text,
+                    corroborating,
+                    source,
+                    named_by=JUDGE_S_INDICATOR if judge_s_value and seen_in else "",
+                ),
+                published_because(corroborated) if corroborated else LOOKUP_FOUND_NO_SECOND_SOURCE,
+                recovered,
+                *found[:1],
+                *(
+                    ()
+                    if corroborated
+                    else second_source_refusal_parts(text, corroborating, path=True)
+                ),
+                *found[1:],
+            ),
+        )
     if kind == "hash" and not _is_a_whole_digest(text):
         return refused("not a whole digest")
     if bound and _is_benign_verdict(verdict):
@@ -7691,13 +7752,19 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
     (``reporting.detonation_marks``): an indicator takes the marks the
     report's IOC table states for the values its pattern compares, as
     ``x_malspark_observed_in`` and a clause after its description; the
-    sample's ``uses`` edge to a technique takes the technique's; a
+    sample's ``uses`` edge to a technique takes the technique's, with the
+    signatures that tag it, and a description saying what they tag; a
     cyber-observable stating such a value (:data:`_OBSERVABLE_VALUES`) takes
     the value's, and an observed-data object naming a marked observable takes
     the marks of every one it names. A copy is written; every other object,
     and every object of a run with one detonation, is returned as it was.
     """
-    from malspark.reporting.detonation_marks import observed_property, observed_words
+    from malspark.reporting.detonation_marks import (
+        observed_property,
+        observed_words,
+        signatures_listed,
+        technique_words,
+    )
     from malspark.reporting.ledger_projection import stated_marks
 
     by_value: dict[tuple[str, str], list[Any]] = {}
@@ -7707,7 +7774,10 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
             kind = str(row.kind or "")
             by_value.setdefault((kind, _value_key(kind, row.value)), []).extend(held)
     by_pattern = {
-        _pattern_id_for(str(m.technique_id).strip().upper()): list(m.observed_in)
+        _pattern_id_for(str(m.technique_id).strip().upper()): (
+            str(m.technique_id),
+            list(m.observed_in),
+        )
         for m in getattr(report, "ttp_mappings", None) or []
         if getattr(m, "observed_in", None)
     }
@@ -7717,6 +7787,7 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
     observed: dict[str, list[Any]] = {}
     for obj in objects:
         marks: list[Any] = []
+        technique = ""
         if isinstance(obj, Indicator):
             marks = stated_marks(
                 mark
@@ -7728,7 +7799,7 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
             and getattr(obj, "relationship_type", "") == "uses"
             and OBSERVED_IN_PROPERTY in type(obj).model_fields
         ):
-            marks = by_pattern.get(str(getattr(obj, "target_ref", "") or ""), [])
+            technique, marks = by_pattern.get(str(getattr(obj, "target_ref", "") or ""), ("", []))
         elif isinstance(obj, _Observable):
             marks = stated_marks(
                 mark
@@ -7745,6 +7816,13 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
             said = observed_words(marks)
             said = f"{said[:1].upper()}{said[1:]}."
             before = str(obj.description or "").strip()
+            update["description"] = f"{before} {said}" if before else said
+        elif technique and signatures_listed(marks):
+            # The edge to a technique says what the signatures that tag it
+            # tag; a mark stored before they were recorded adds no words.
+            said = technique_words(technique, marks)
+            said = f"{said[:1].upper()}{said[1:]}."
+            before = str(getattr(obj, "description", "") or "").strip()
             update["description"] = f"{before} {said}" if before else said
         out.append(obj.model_copy(update=update))
     if not observed:

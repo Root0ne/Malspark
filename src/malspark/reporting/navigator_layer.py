@@ -76,7 +76,7 @@ def build_layer(
     domain: str | None = None,
 ) -> dict[str, Any]:
     """The Navigator layer for the published techniques of one stored report."""
-    from malspark.reporting.detonation_marks import observed_words
+    from malspark.reporting.detonation_marks import signatures_listed, technique_words
     from malspark.reporting.technique_evidence import (
         technique_evidence_ids,
         technique_evidence_words,
@@ -126,11 +126,13 @@ def build_layer(
         if mapping.get("confidence") is not None:
             metadata.append({"name": "confidence", "value": str(mapping["confidence"])})
         # Under which detonations a further detonation's sandbox signatures
-        # tag it, where they do (``detonation_marks``).
-        observed = observed_words(
-            mark for mark in mapping.get("observed_in") or () if isinstance(mark, Mapping)
-        )
-        if observed:
+        # tag it, where they do, and which signatures (``detonation_marks``);
+        # a mark stored before its signatures were recorded keeps its row.
+        marks = [mark for mark in mapping.get("observed_in") or () if isinstance(mark, Mapping)]
+        observed = technique_words(tid, marks)
+        if observed and signatures_listed(marks):
+            metadata.append({"name": "sandbox signatures", "value": observed})
+        elif observed:
             metadata.append({"name": "observed in", "value": observed.removeprefix("observed in ")})
         entry.update(
             {

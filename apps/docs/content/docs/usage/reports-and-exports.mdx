@@ -162,14 +162,40 @@ with the rule's refusal and its `type`, where the end of this section says):
   word of running text or of a bracket in it (`the loader (explorer) then`),
   never a key (`{"name": 1}`, `name: value`), never a path component of a URL. A mutex or a named pipe stated bare also counts under its
   own namespace (`Global\`, `\\.\pipe\`), and a stream after its file's name
-  (`a.exe:stream`);
+  (`a.exe:stream`). Such a value is also held where it is one whole argument
+  of a process's command line the cited entry records in the platform's
+  sandbox document (a process row: one object stating its process id, its
+  parent's id and its command line under the document's own fields), the
+  line split as Windows splits it, a quoted part one argument; part of an
+  argument is not held, and neither is a value between spaces anywhere else
+  (a signature's description, a strings entry, an object with an id and a
+  command line but no parent). The check reads the first 16 entries a row
+  cites. A row none of them holds whole says, in one of four wordings, what
+  the entries read hold instead: "a cited entry holds its text only inside a
+  longer run of letters or digits"; "the cited entries hold it only between
+  spaces, which this check does not count as a value's ends"; "a cited entry
+  holds its text, but nowhere this check counts as the whole value"; and "its
+  whole value is in none of the entries it cites" only where every cited
+  entry was read and none holds its text in any spelling. A row citing more
+  entries than the check reads says so, for a row citing 20: "its whole value is in none of the
+  first 16 of the 20 entries it cites, which are the entries this check
+  reads", or one of the other wordings followed by "(this check reads the
+  first 16 of the 20 entries it cites)". A row of a report stored before the
+  check recorded what it found says only what its record holds: "no cited
+  entry is recorded as holding its whole value";
 - it holds no format placeholder (`%x`, `%s`, `{0}`): a template is no value a
   log records;
-- it is not a value every Windows host holds: a known folder (its 8.3 short
-  name included; a system folder only in the `%SystemRoot%` chain), a file
-  Windows ships in that chain (the .NET Framework's tools among them), a
+- it is not a value every Windows host holds: a path every component of
+  which is a drive, a name Windows gives one of its own folders (a known
+  folder, its 8.3 short name; a system folder only in the `%SystemRoot%`
+  chain) or a user's profile name (the folder right after the users folder
+  under a drive, or first in a path written without one), which the reason says in those words, a
+  file Windows ships in that chain (the .NET Framework's tools among them), a
   registry key or
-  value every installation has, the key of a service Windows installs, an
+  value every installation has, the key of a service Windows installs, a key
+  exactly one level below it named as Windows names the subkeys it keeps a
+  service's settings in (a key or value below that one is not refused by
+  this test), an
   object-manager namespace (`Global`), Windows' own streams, services and named
   pipes, a word of a task definition, or the sample itself as the sandbox holds
   it (a file named by its digest, or by the name it was submitted under, bare

@@ -26,6 +26,7 @@ from malspark.reporting.models import (
     MalwareReport,
     ObservedIn,
     SampleIdentity,
+    TaggingSignature,
     TTPMapping,
 )
 from malspark.reporting.navigator_layer import build_layer
@@ -71,6 +72,14 @@ D2_REPORT: dict[str, Any] = {
 SHA256 = "6" * 64
 D2_MARK = ObservedIn(detonation="d2", launched_with=ARGS)
 D1_MARK = ObservedIn(detonation="d1")
+
+
+def _technique_note() -> str:
+    """The words of the T1486 row's mark, read at call time (a test sets ``ARGS``)."""
+    return (
+        f"in detonation 2, launched with `{ARGS}`, the sandbox signature `ransomware_files` "
+        "tags this technique"
+    )
 
 
 class _Container:
@@ -164,7 +173,12 @@ class TestTheProjectionMarksEachRow:
     def test_a_technique_a_later_detonation_s_signature_tags_is_marked(self) -> None:
         report = _report(_ledger())
         marked = {m.technique_id: m.observed_in for m in report.ttp_mappings}
-        assert marked == {"T1486": [D2_MARK], "T1027": []}
+        # The mark lists the signatures of the detonation that tag it (T-871).
+        tagged = TaggingSignature(name="ransomware_files", technique_id="T1486")
+        assert marked == {
+            "T1486": [D2_MARK.model_copy(update={"signatures": [tagged]})],
+            "T1027": [],
+        }
 
 
 class TestEverySurfaceSaysIt:
@@ -199,14 +213,13 @@ class TestEverySurfaceSaysIt:
         table = build_consolidated_iocs(report)
         comments = [a["comment"] for a in build_misp_attributes(report, table, owner="unit")]
         technique = next(c for c in comments if c.startswith("ATT&CK technique"))
-        assert technique.endswith(f"observed in detonation 2, launched with `{ARGS}`")
+        # A technique's mark says what the sandbox's signatures tag (T-871).
+        assert technique.endswith(_technique_note())
         layer = build_layer(report.model_dump(mode="json"))
         (t1486,) = [t for t in layer["techniques"] if t["techniqueID"] == "T1486"]
-        assert {"name": "observed in", "value": f"detonation 2, launched with `{ARGS}`"} in (
-            t1486["metadata"]
-        )
+        assert {"name": "sandbox signatures", "value": _technique_note()} in t1486["metadata"]
         (t1027,) = [t for t in layer["techniques"] if t["techniqueID"] == "T1027"]
-        assert all(m["name"] != "observed in" for m in t1027["metadata"])
+        assert all(m["name"] != "sandbox signatures" for m in t1027["metadata"])
 
     def test_the_stix_export_carries_it_on_the_indicator_and_the_technique_edge(self) -> None:
         from malspark.reporting.renderers.stix_renderer import (
@@ -234,7 +247,15 @@ class TestEverySurfaceSaysIt:
             f"Published because x. Observed in detonation 2, launched with `{ARGS}`."
         )
         assert unmarked is plain
-        assert edge.x_malspark_observed_in == [{"detonation": "d2", "launched_with": ARGS}]
+        # The technique's edge lists the signatures, and says what they tag (T-871).
+        assert edge.x_malspark_observed_in == [
+            {
+                "detonation": "d2",
+                "launched_with": ARGS,
+                "signatures": [{"name": "ransomware_files", "technique_id": "T1486"}],
+            }
+        ]
+        assert edge.description == f"{_technique_note()[:1].upper()}{_technique_note()[1:]}."
 
 
 class TestOneDetonationReadsAsBefore:

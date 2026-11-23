@@ -792,7 +792,7 @@ class TestThePlatformsOwnToolsAreReadByTheirShippedKind:
         return report
 
     def test_its_string_listing_reads_the_file_again(self) -> None:
-        answer = _answer(self._report("strings", "C:\\Temp"), "C:\\Temp")
+        answer = _answer(self._report("strings", "C:\\Staging7731"), "C:\\Staging7731")
 
         assert not publishes(answer), answer
 
@@ -814,7 +814,9 @@ class TestThePlatformsOwnToolsAreReadByTheirShippedKind:
     def test_an_operator_s_tool_named_as_a_platform_tool_keeps_full_strength(self) -> None:
         # Its server is not the platform's own: what the platform ships for a
         # tool of that name is never read for it.
-        answer = _answer(self._report("strings", "C:\\Temp", source="mcp:example"), "C:\\Temp")
+        answer = _answer(
+            self._report("strings", "C:\\Staging7731", source="mcp:example"), "C:\\Staging7731"
+        )
 
         assert publishes(answer), answer
         assert confirmed_only_by_undeclared(answer)

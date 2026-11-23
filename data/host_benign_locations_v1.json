@@ -625,6 +625,13 @@
       "software\\microsoft\\windows\\currentversion\\internet settings\\proxyenable"
     ]
   },
+  "service_settings_subkeys": {
+    "criterion": "The name Windows gives a subkey it keeps a service's settings in, directly under the service's own key. A key of this name exactly one level below the key of a service in 'windows_services' (under either Services key of 'registry_keys') is refused for both registry kinds; a key or value below it, a value right under the service's key, such a subkey of a service not listed and a subkey of another name are not.",
+    "source": "The Services registry tree of a clean installation as Microsoft documents it: the Parameters subkey a service's own settings are kept in, which 'registry_keys' already holds for the TCP/IP service.",
+    "entries": [
+      "Parameters"
+    ]
+  },
   "task_definition_words": {
     "criterion": "An element or value name of the Task Scheduler task-definition schema, which every task carries.",
     "source": "Microsoft Task Scheduler schema reference.",

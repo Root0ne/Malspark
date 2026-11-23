@@ -1,0 +1,99 @@
+{
+ "entries": [
+  {
+   "function": "malspark.reporting.stated_host_values:benign_reason",
+   "condition": "why the declared catalogue calls a host value every Windows host's, asked of an analysis row, of a Sigma selection's value and of a path of the file's text: a key or value every installation has, a service's key or a settings subkey exactly one level below it, a path made only of drives, names Windows gives its own folders and a profile name, a file Windows ships in its folder, Windows' own name, and the sample as the sandbox holds it",
+   "basis": [
+    "the value and its vocabulary kind",
+    "the declared catalogue data/host_benign_locations_v1.json",
+    "the sample's digests and submitted name"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_location_every_host_has_is_refused_on_every_route.py::TestAServiceSubkey::test_is_refused_in_every_spelling_for_both_registry_kinds",
+    "tests/unit/reporting/test_a_location_every_host_has_is_refused_on_every_route.py::TestTheNameMatchingBranchSaysWhatItFound::test_one_wording_for_every_value_it_answers"
+   ],
+   "text_digest": "f5e69371cc6c4f945487dc8f1f4d2747d04469e9fb36170ae8c57b4f8b070869"
+  },
+  {
+   "constant": "malspark.reporting.stated_host_values:SERVICE_SUBKEY_REASON",
+   "condition": "the refusal of a registry key exactly one level below the key of a service the catalogue lists, named as the catalogue's service_settings_subkeys, on every route that asks the catalogue",
+   "basis": [
+    "the catalogue's windows_services and service_settings_subkeys"
+   ],
+   "test": "tests/unit/reporting/test_a_location_every_host_has_is_refused_on_every_route.py::TestTheAnalysisRoute::test_a_stated_service_subkey_is_refused_with_the_reason",
+   "text_digest": "cc47c04e868d13f33cb0e46ef84ddc05a105d5789750d87a3752f089ab8b857d"
+  },
+  {
+   "constant": "malspark.reporting.stated_host_values:KNOWN_NAMES_REASON",
+   "condition": "the refusal of a path every component of which the catalogue reads by its name (a drive, a known folder's or system folder's name, an environment or 8.3 form, a known-folder constant, the profile name right after the users folder under a drive or first in a path written without one), on every route that asks the catalogue",
+   "basis": [
+    "the catalogue's known_folders, environment_folders, system_folders, system_roots and known_folder_prefixes"
+   ],
+   "test": "tests/unit/reporting/test_a_location_every_host_has_is_refused_on_every_route.py::TestTheNameMatchingBranchSaysWhatItFound::test_it_never_calls_the_path_a_known_folder",
+   "text_digest": "e013760906b6420bb9cccc57f308ff5f0c28e77388d2204bdc436c91cfc1eaa8"
+  },
+  {
+   "function": "malspark.reporting.stated_host_values:stated_refusal",
+   "condition": "why the rule refuses a host value the analysis states, printed in the identifier table, the analyst report and the full export list: the first of its checks that fails, a value no cited entry holds whole said by what the scan that wrote held_in found (with the count read and the count cited where the row cites more than are read), and a stored row without that finding by what its record holds",
+   "basis": [
+    "the row's kind, use and value",
+    "held_in and unheld_as, written by stated_host_values.scan_cited",
+    "the verdict and its confidence",
+    "the declared catalogue"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_cited_command_line_argument_holds_a_value_and_a_refusal_says_what_the_scan_found.py::TestOneScanOneAnswerOnEverySurface::test_every_surface_prints_the_one_answer",
+    "tests/unit/reporting/test_a_cited_command_line_argument_holds_a_value_and_a_refusal_says_what_the_scan_found.py::TestOneScanOneAnswerOnEverySurface::test_a_value_no_cited_entry_holds_in_any_spelling_keeps_the_earlier_words"
+   ],
+   "text_digest": "0bfdd7b3259c7edfceff5a9e75c91977007f10fda397ef0efe5aa718a2d49266"
+  },
+  {
+   "constant": "malspark.reporting.stated_host_values:UNHELD_WORDS",
+   "condition": "the refusal of a stated host value no cited entry holds whole where the scan found its text in a cited entry: only inside a longer run of letters or digits, only between spaces, or somewhere not counted as the whole value",
+   "basis": [
+    "HostIdentifier.unheld_as, written by stated_host_values.scan_cited"
+   ],
+   "test": "tests/unit/reporting/test_a_cited_command_line_argument_holds_a_value_and_a_refusal_says_what_the_scan_found.py::TestARefusalSaysWhatTheScanFound::test_the_words",
+   "text_digest": "ccfa8e93f82e74857748bd45824cce2d1efe19d4a67f5ef91a12e8f711a9d1c9"
+  },
+  {
+   "constant": "malspark.reporting.stated_host_values:NOT_IN_THE_CITED",
+   "condition": "the refusal of a stated host value whose text none of the cited entries holds in any spelling, every cited entry read",
+   "basis": [
+    "held_in empty and unheld_as nowhere, written by stated_host_values.scan_cited",
+    "the count of distinct entries the row cites, at most MAX_CITED"
+   ],
+   "test": "tests/unit/reporting/test_a_cited_command_line_argument_holds_a_value_and_a_refusal_says_what_the_scan_found.py::TestOneScanOneAnswerOnEverySurface::test_a_value_no_cited_entry_holds_in_any_spelling_keeps_the_earlier_words",
+   "text_digest": "c7d0ddca7919e3ca550c777177bd309e1fb6ae341bac8ac0ca323063edb1465b"
+  },
+  {
+   "constant": "malspark.reporting.stated_host_values:NOT_IN_THE_READ",
+   "condition": "the refusal of a stated host value whose text none of the cited entries read holds in any spelling, where the row cites more entries than the check reads: the count read and the count cited",
+   "basis": [
+    "held_in empty and unheld_as nowhere, written by stated_host_values.scan_cited",
+    "the count of distinct entries the row cites, above MAX_CITED"
+   ],
+   "test": "tests/unit/reporting/test_a_cited_command_line_argument_holds_a_value_and_a_refusal_says_what_the_scan_found.py::TestOneScanOneAnswerOnEverySurface::test_a_row_citing_more_entries_than_the_check_reads_says_so",
+   "text_digest": "16525a2d90d62ab4f04254a4230294b1c52e61a29a3ef72e213e42f10cdf5e93"
+  },
+  {
+   "constant": "malspark.reporting.stated_host_values:READ_OF_THE_CITED",
+   "condition": "after the words of what the scan found in the cited entries read, where the row cites more entries than the check reads: the count read and the count cited",
+   "basis": [
+    "HostIdentifier.unheld_as, written by stated_host_values.scan_cited",
+    "the count of distinct entries the row cites, above MAX_CITED"
+   ],
+   "test": "tests/unit/reporting/test_a_cited_command_line_argument_holds_a_value_and_a_refusal_says_what_the_scan_found.py::TestOneScanOneAnswerOnEverySurface::test_a_finding_on_a_row_citing_more_than_are_read_says_the_counts",
+   "text_digest": "4f7d941f34a2d90d6829991bd7690c6435339609325994059d1be8be633e19bd"
+  },
+  {
+   "constant": "malspark.reporting.stated_host_values:NOT_RECORDED_AS_HELD",
+   "condition": "the refusal of a stated host value whose row records held_in empty and no word of what the scan found (a report stored before the scan recorded it): what its record holds, never that no cited entry holds the value",
+   "basis": [
+    "held_in empty and unheld_as absent"
+   ],
+   "test": "tests/unit/reporting/test_a_cited_command_line_argument_holds_a_value_and_a_refusal_says_what_the_scan_found.py::TestOneScanOneAnswerOnEverySurface::test_a_stored_row_without_the_finding_says_only_what_its_record_holds",
+   "text_digest": "f34456d00a90ac013f389cd056412cd581f31e2fabd517e62cb3b36382bc45a9"
+  }
+ ]
+}

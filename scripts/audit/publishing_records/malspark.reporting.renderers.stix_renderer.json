@@ -200,7 +200,7 @@
   },
   {
    "function": "malspark.reporting.renderers.stix_renderer:publish_answer",
-   "condition": "every row's publish answer and every judge value's, on every surface that prints or reads it: yes with the evidence reason, or no with each refusing test as its own part and the facts after them; a listed value's answer gives the listing's test and the judge's keep for a network value, and, as facts, that the judge did not keep any other kind where the judge's indicators were read and none names it, and what the whole-value search found; a row of another source the search found is refused by its own tests with the search's entries and who lists it as facts",
+   "condition": "every row's publish answer and every judge value's, on every surface that prints or reads it: yes with the evidence reason, or no with each refusing test as its own part and the facts after them; a listed value's answer gives the listing's test and the judge's keep for a network value, and, as facts, that the judge did not keep any other kind where the judge's indicators were read and none names it, and what the whole-value search found; a row of another source the search found is refused by its own tests with the search's entries and who lists it as facts; a path of the file's text, or a judge's path asked as the sweep's, that the declared catalogue calls every host's is refused with the catalogue's reason, the row it is from, a second source that holds it or that the publish rule's lookup found none and each cited holder, a recovery of it, and a search's finding facts after it",
    "basis": [
     "the row's kind, value, source and reputation",
     "the run's second-source record, recovery and verdict",
@@ -209,9 +209,10 @@
    ],
    "test": [
     "tests/unit/reporting/test_a_listing_s_refusal_says_what_the_search_found.py::TestEveryReaderComposesFromTheParts::test_the_indicator_table_prints_the_composition",
-    "tests/unit/reporting/test_a_stated_publish_state_is_not_marked_again.py::TestAListingStateRestatedWordForWord::test_it_states_the_value_s_publish_state"
+    "tests/unit/reporting/test_a_stated_publish_state_is_not_marked_again.py::TestAListingStateRestatedWordForWord::test_it_states_the_value_s_publish_state",
+    "tests/unit/reporting/test_a_location_every_host_has_is_refused_on_every_route.py::TestTheStringSweepRoute::test_a_swept_path_a_second_source_holds_is_refused_by_the_catalogue"
    ],
-   "text_digest": "f6f176ccf86403c465fbd5842669da1f02113df97bc15afe86ee23c174c503c8"
+   "text_digest": "ccc4c36d71fcb74c0faee53b73989cb2fbcaa0c7626f23cc99b78c13841249f2"
   },
   {
    "constant": "malspark.reporting.renderers.stix_renderer:QUERY_ANSWERS_APART",
@@ -311,6 +312,27 @@
     "tests/unit/reporting/test_each_record_is_placed_in_its_own_detonation_s_tree.py::TestTheProjectionKeepsEachDetonationSProcessesApart::test_its_record_is_not_placed_in_the_job_s_own_tree"
    ],
    "text_digest": "f414e31bc203685a77ac778210acbda23ec3df65bfb02950c513c684d8e7708e"
+  },
+  {
+   "function": "malspark.reporting.renderers.stix_renderer:catalogue_path_reason",
+   "condition": "the catalogue's reason for a path of the file's text or a judge's path asked as the sweep's, asked as the analysis asks a file path it states, which publish_answer prints as the refusing part",
+   "basis": [
+    "the value",
+    "the declared catalogue data/host_benign_locations_v1.json"
+   ],
+   "test": "tests/unit/reporting/test_a_location_every_host_has_is_refused_on_every_route.py::TestSameValueSameAnswer::test_the_sweep_s_row_and_the_analysis_row_give_the_catalogue_s_reason",
+   "text_digest": "2c685e5a6043221fa2c4cc3c58284f1fbe9d43935fc65acc9b722724ca2716ec"
+  },
+  {
+   "function": "malspark.reporting.renderers.stix_renderer:_evidence_reason",
+   "condition": "the evidence half of every row's publish decision, the reason a published row prints: a stated value's reason, a binding's chain, a model's keep, a reputation record, a recovery, a second source; a path of the file's text the catalogue calls every host's admits none",
+   "basis": [
+    "the row's kind, value, source and reputation",
+    "the run's second-source record, recovery and verdict",
+    "the declared catalogue"
+   ],
+   "test": "tests/unit/reporting/test_a_location_every_host_has_is_refused_on_every_route.py::TestTheStringSweepRoute::test_a_judge_s_path_asked_as_the_sweep_s_is_refused_by_the_catalogue",
+   "text_digest": "ec1711bde75fe87fa84dc03d664a934dd3b153bf972be2e4963a223ef3bd063a"
   }
  ]
 }

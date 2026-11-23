@@ -197,7 +197,7 @@ def build_misp_attributes(
     attribute's uuid is derived from.
     """
     from malspark.memory.attck_loader import technique_entry
-    from malspark.reporting.detonation_marks import observed_words
+    from malspark.reporting.detonation_marks import observed_words, technique_words
     from malspark.reporting.technique_evidence import (
         technique_evidence_ids,
         technique_evidence_words,
@@ -296,7 +296,7 @@ def build_misp_attributes(
                     f"evidence: {technique_evidence_words(mapping)}"
                     if technique_evidence_ids(mapping) is not None
                     else "",
-                    observed_words(getattr(mapping, "observed_in", None) or ()),
+                    technique_words(tid, getattr(mapping, "observed_in", None) or ()),
                 )
                 if part
             ),

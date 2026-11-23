@@ -334,12 +334,18 @@ _API_HASHES: dict[str, Any] = {
     "rows": "/hits/*",
     "places": {"rva": "/occurrences/*/rva"},
     # ``value``: the stored value itself; ``algorithm``: the hash of each reading;
-    # ``set``: the set of names each reading was resolved in.
+    # ``set``: the set of names each reading was resolved in. Read in the whole
+    # answer, not a row: ``candidates_tested``, how many values the scan tested;
+    # ``names_tried``, how many names it hashed; ``algorithms_tried``, the
+    # algorithms it tried (``reporting.code_constants``).
     "values": {
         "name": "/readings/*/name",
         "set": "/readings/*/set",
         "value": "/value",
         "algorithm": "/readings/*/algorithm",
+        "candidates_tested": "/candidates/scanned",
+        "names_tried": "/names/names",
+        "algorithms_tried": "/algorithms",
     },
     "arguments": _PATH,
 }
