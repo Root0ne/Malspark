@@ -44,6 +44,8 @@ from malspark.agents._indicator_denylists import (
     first_holders,
     malformed_hash_in,
     on_a_denied_url_host,
+    whole_path_in,
+    whole_path_starts,
     whole_value_in,
     whole_value_starts,
 )
@@ -3773,6 +3775,12 @@ HOST_FOUND_IN_TREE = "matched {numbers} to {which} of the sample's process tree"
 HOST_FOUND_OUTSIDE = "matched {numbers} to {which} outside the sample's process tree"
 HOST_FOUND_DISPUTED = "matched {numbers} to {who} whose lineage the report's two facts dispute"
 HOST_FOUND_NAME_OUTSIDE = "matched the process {names} to no process of the sample's process tree"
+# A number a record of a further detonation names where no process list the
+# rule read lists a process of that detonation.
+HOST_FOUND_NO_LISTING = (
+    "matched {numbers} to no process since it read no process list of detonation "
+    "{detonation} that lists a process"
+)
 # The process list a number is matched against: the one the report is built from.
 HOST_LISTING = "the process list it read"
 # The field a record names its writer's number under, as the sentence names it.
@@ -3812,7 +3820,7 @@ _PID_KEYS = ("pid", "process_id", "pids")
 _PROCESS_KEYS = ("process", "process_name", "processes")
 
 
-def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str | None:
+def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str, unlisted: str = "") -> str | None:
     """Why a sandbox record is not the sample's: ``""`` when a process of its tree made it,
     ``None`` where it is unattributed, else the sentence of what the rule found.
 
@@ -3828,7 +3836,9 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str | None:
     a process whose lineage the two lineage facts dispute is unattributed
     too, and says so naming the process in the network row's words for that
     case (:data:`MADE_BY_WHOM`). An unattributed record's sentence is written
-    over every record of its value (:func:`_host_unattributed`).
+    over every record of its value (:func:`_host_unattributed`). ``unlisted``
+    names the further detonation whose tree ``trees`` is where that tree lists
+    no process (:func:`_host_findings`).
     """
     from types import SimpleNamespace
 
@@ -3864,9 +3874,9 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str | None:
             # every process the record could name states its guest pid; else
             # it may be the guest pid of one that states none.
             if trees.identities.states_every_guest_pid(task):
-                return _host_matched([record], trees, did)
+                return _host_matched([record], trees, did, unlisted)
             return None
-        return _host_matched([record], trees, did)
+        return _host_matched([record], trees, did, unlisted)
     by_name: list[str] = []
     for key in _PROCESS_KEYS:
         value = record.get(key)
@@ -3883,7 +3893,7 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str | None:
     )
 
 
-def _host_findings(records: list[Any], trees: ProcessTrees) -> list[str]:
+def _host_findings(records: list[Any], trees: ProcessTrees, unlisted: str = "") -> list[str]:
     """What the rule found for each number ``records`` name, one phrase per kind of finding.
 
     Every number every record names under a pid field (``_PID_KEYS``) is read,
@@ -3891,7 +3901,10 @@ def _host_findings(records: list[Any], trees: ProcessTrees) -> list[str]:
     its record's task, and placed (:meth:`ProcessTrees.place`). Numbers are
     grouped by what was found for them, their field and their task, in the
     order the records name them: no number is lost, and one number met under
-    two tasks keeps each.
+    two tasks keeps each. ``unlisted`` names the further detonation whose tree
+    ``trees`` is where that tree lists no process: a number no process answers
+    to is then said to be matched to none since no process list of that
+    detonation that lists a process was read (:data:`HOST_FOUND_NO_LISTING`).
     """
     from malspark.schemas.sandbox_document import pid_of
     from malspark.schemas.sandbox_report import (
@@ -3924,7 +3937,9 @@ def _host_findings(records: list[Any], trees: ProcessTrees) -> list[str]:
         numbers = f"{field}{'' if one else 's'} {' and '.join(pids)}"
         of_task = f" of task {task}" if task else ""
         numbers += of_task
-        if place == WRITER_UNLISTED:
+        if place == WRITER_UNLISTED and unlisted:
+            found.append(HOST_FOUND_NO_LISTING.format(numbers=numbers, detonation=unlisted))
+        elif place == WRITER_UNLISTED:
             words = (
                 HOST_FOUND_UNLISTED
                 if trees.identities.states_every_guest_pid(task or None)
@@ -3951,17 +3966,19 @@ def _host_findings(records: list[Any], trees: ProcessTrees) -> list[str]:
     return found
 
 
-def _host_matched(records: list[Any], trees: ProcessTrees, did: str) -> str:
+def _host_matched(records: list[Any], trees: ProcessTrees, did: str, unlisted: str = "") -> str:
     """The definite sentence of a record the rule placed outside every tree, by what it matched."""
-    found = _host_findings(records, trees)
+    found = _host_findings(records, trees, unlisted)
     if not found:
         return HOST_ROW_NONE_FOUND.format(did=did)
     return "the publish rule " + " and ".join(found)
 
 
-def _host_unattributed(records: list[Any], trees: ProcessTrees, did: str) -> str:
+def _host_unattributed(
+    records: list[Any], trees: ProcessTrees, did: str, unlisted: str = ""
+) -> str:
     """The sentence of a value no record of which the rule could place, over every record of it."""
-    found = _host_findings(records, trees)
+    found = _host_findings(records, trees, unlisted)
     if not found:
         return HOST_ROW_NONE_FOUND.format(did=did)
     return HOST_ROW_NOT_PLACED.format(did=did, found=" and ".join(f"it {f}" for f in found))
@@ -3976,29 +3993,80 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
     names no process, so its key is not attributed. Otherwise the first
     definite reason a record gives, and where every record is unattributed,
     what the rule found over every record of the value
-    (:func:`_host_unattributed`).
+    (:func:`_host_unattributed`), against each detonation's tree.
+
+    In a report that carries ``detonation_trees``, each record is placed
+    against the process tree of the detonation it was observed in
+    (``observed_in``): the job's own (``process_tree``) or a
+    further one's (``detonation_trees``), never another detonation's. A record
+    several detonations observed is placed in each of them. A further
+    detonation the report keeps no process of (an empty tree, or none) places
+    its records nowhere, and a record that names its writer's number has the
+    sentence that no process list of it that lists a process was read (a
+    record that names its writer only by a process name keeps its own
+    sentence about the process name). A mark of no detonation's form names none: the
+    record is the job's own detonation's. A report that carries no
+    ``detonation_trees`` places every record in the job's own, as it was
+    written. In a launched
+    detonation the launcher is not the sample: neither the submitted file nor
+    the sandbox's mark names it, so a record of its process is placed outside
+    the sample's tree.
     """
+    from malspark.reporting.detonation_marks import detonation_named
+    from malspark.reporting.ledger_projection import FIRST_DETONATION, marks_of
 
     def _build() -> dict[tuple[str, str], str]:
         dynamic = _field(report, "dynamic")
         if dynamic is None:
             return {}
         identity = _field(report, "identity")
-        tree = sample_process_trees(
-            list(_field(dynamic, "process_tree") or []),
-            str(_field(identity, "file_name") or ""),
-            str(_field(_field(identity, "hashes"), "sha256") or ""),
-        )
-        held: dict[tuple[str, str], tuple[str, list[Any], list[str | None]]] = {}
+        named = str(_field(identity, "file_name") or "")
+        sha256 = str(_field(_field(identity, "hashes"), "sha256") or "")
+        kept = _field(dynamic, "detonation_trees") or {}
+        listings: dict[str, list[Any]] = {
+            FIRST_DETONATION: list(_field(dynamic, "process_tree") or []),
+            **{str(name): list(nodes or []) for name, nodes in kept.items()},
+        }
+        # A report that carries no ``detonation_trees`` places every record in
+        # the job's own, as it was written.
+        apart = bool(kept)
+        trees: dict[str, ProcessTrees] = {}
+
+        def _unlisted(detonation: str) -> str:
+            """``detonation`` where it is a further one whose tree lists no process, else ``""``."""
+            if detonation == FIRST_DETONATION or listings.get(detonation):
+                return ""
+            return detonation
+
+        def _tree(detonation: str) -> ProcessTrees:
+            if detonation not in trees:
+                trees[detonation] = sample_process_trees(
+                    listings.get(detonation, []), named, sha256
+                )
+            return trees[detonation]
+
+        held: dict[tuple[str, str], tuple[str, list[str | None]]] = {}
+        # The records of each value, by the detonation each is placed in.
+        placed: dict[tuple[str, str], dict[str, list[Any]]] = {}
 
         def _put(kind: str, value: Any, record: Any, did: str) -> None:
             text = str(value or "").strip()
             if not text:
                 return
             key = (kind, _value_key(kind, text))
-            _did, records, whys = held.setdefault(key, (did, [], []))
-            records.append(record)
-            whys.append(_not_the_sample_s(record, tree, did))
+            _did, whys = held.setdefault(key, (did, []))
+            try:
+                marks = marks_of(record)
+            except ValueError:
+                # A mark of no detonation's form names none: the job's own.
+                marks = []
+            stated = [
+                (detonation_named(one.detonation) if apart else "") or FIRST_DETONATION
+                for one in marks
+            ]
+            for mark in dict.fromkeys(stated) or [FIRST_DETONATION]:
+                placed.setdefault(key, {}).setdefault(mark, []).append(record)
+                whys.append(_not_the_sample_s(record, _tree(mark), did, _unlisted(mark)))
 
         for op in list(_field(dynamic, "file_operations") or []):
             if not isinstance(op, dict):
@@ -4012,12 +4080,17 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
             if _field(mod, "operation") in ("create", "modify"):
                 _put("registry", _field(mod, "key"), {"pids": _field(mod, "pids")}, "wrote")
         out: dict[tuple[str, str], str] = {}
-        for key, (did, records, whys) in held.items():
+        for key, (did, whys) in held.items():
             if "" in whys:
                 out[key] = ""
                 continue
             definite = next((why for why in whys if why), None)
-            out[key] = definite or _host_unattributed(records, tree, did)
+            out[key] = definite or " and ".join(
+                dict.fromkeys(
+                    _host_unattributed(records, _tree(mark), did, _unlisted(mark))
+                    for mark, records in placed[key].items()
+                )
+            )
         return out
 
     index: dict[tuple[str, str], str] = _memo(report, "sandbox_host_index", _build)
@@ -4473,7 +4546,7 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
             return said
         if row is None or _field(row, "source") != "sandbox":
             return {}
-        why = url_made_by_reason(_field(row, "made_by"))
+        why = url_made_by_reason(_field(row, "made_by")) or unplaced_traffic_reason(row, "url")
         if not why or _field(row, "sample_process_tree") is True:
             return {}
     elif kind == "ip":
@@ -4489,7 +4562,7 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
     else:
         if row is None or _field(row, "source") != "sandbox":
             return {}
-        made = name_made_by_reason(_field(row, "made_by"))
+        made = name_made_by_reason(_field(row, "made_by")) or unplaced_traffic_reason(row, "domain")
         if made and _field(row, "sample_process_tree") is not True:
             why = made
         elif _field(row, "capture_only"):
@@ -4622,6 +4695,60 @@ def _address_made_by(
         else _flows_word(max(1, len(names)), True)
     )
     return FLOW_RULE + _part_read(reading) + FLOW_MADE_BY.format(flows=flows, whose=whose)
+
+
+# Why a sandbox URL or name row is not the sample's where parts of a network
+# view name processes for its traffic that the rule did not place
+# (``NetworkURL.unplaced``, :func:`unplaced_traffic_reason`): the address
+# sentence's words (:data:`FLOW_PART_READ`, :data:`FLOW_UNPLACED`), a URL's
+# requests or a name's traffic records in place of the flows to an address.
+TRAFFIC_REQUESTS = "requests"
+TRAFFIC_RECORDS = "traffic records"
+TRAFFIC_COUNTED_SOME = "counted {records} to it as made by {whose}"
+# Beside the processes not placed where the records name more than are kept.
+TRAFFIC_MORE = " (and further processes the records name)"
+
+
+def unplaced_traffic_reason(row: Any, kind: str, word: Callable[[str], str] = str) -> str:
+    """Why a sandbox URL or name row is unattributed where parts of a view name its processes.
+
+    What the publish rule read and what the reading gave, in the address
+    rule's words (:func:`unplaced_flow_reason`): the views it read only part
+    of, the processes of another lineage the value's other records name
+    (``placed``), and the processes the records in those parts name, which it
+    did not place. ``kind`` ``"url"`` says the requests to it, a name its
+    traffic records (its requests, its lookups that state their process and
+    the flows to the addresses it resolved to). ``""`` for a row the sample's
+    tree made or one with no such processes.
+    """
+    from types import SimpleNamespace
+
+    unplaced = _field(row, "unplaced")
+    if unplaced is None or _field(row, "sample_process_tree") is True:
+        return ""
+    processes = [str(p) for p in _field(unplaced, "processes") or [] if str(p)]
+    if not processes:
+        return ""
+    records = TRAFFIC_REQUESTS if kind == "url" else TRAFFIC_RECORDS
+    views = [{"detonation": str(view)} for view in _field(unplaced, "views") or []]
+    clauses = []
+    placed = _field(unplaced, "placed")
+    parts = []
+    for made, whose in MADE_BY_WHOM.items():
+        named = [str(p) for p in (_field(placed, made) or []) if str(p)]
+        if named:
+            parts.append(FLOW_LISTED.format(said=whose, processes=", ".join(map(word, named))))
+    if parts:
+        clauses.append(TRAFFIC_COUNTED_SOME.format(records=records, whose=" and by ".join(parts)))
+    clause = FLOW_UNPLACED.format(
+        processes="processes" if len(processes) > 1 else "process",
+        flows=f"the other {records}" if parts else f"the {records}",
+        name="name",
+    )
+    clause = FLOW_LISTED.format(said=clause, processes=" and ".join(map(word, processes)))
+    more = TRAFFIC_MORE if _field(unplaced, "more") else ""
+    lead = FLOW_RULE + _part_read(SimpleNamespace(part_views=views))
+    return lead + " and ".join(clauses + [clause]) + more
 
 
 def url_made_by_reason(makers: Any, word: Callable[[str], str] = str) -> str:
@@ -5831,7 +5958,7 @@ def publish_answer(
     """
     text = str(value or "").strip()
     from_strings = str(source or "").strip().lower() in ("", "strings")
-    corroborated = second_source(text, corroborating) if from_strings else ""
+    corroborated = second_source(text, corroborating, path=kind == "path") if from_strings else ""
     admitted = (
         "identity"
         if digest
@@ -5973,7 +6100,9 @@ def publish_answer(
         return judge_only
     network = kind in NETWORK_KINDS
     holders = (
-        second_source_refusal_parts(text, corroborating, network=network) if from_strings else ()
+        second_source_refusal_parts(text, corroborating, network=network, path=kind == "path")
+        if from_strings
+        else ()
     )
     # Where the publish rule searched for a listed value, what the search
     # found and who lists it are facts after the refusal its own tests give:
@@ -6940,7 +7069,7 @@ def _as_record(corroborating: Any) -> SecondSources:
     return SecondSources(observed=str(corroborating or "").lower())
 
 
-def second_source(value: Any, corroborating: Any) -> str:
+def second_source(value: Any, corroborating: Any, *, path: bool = False) -> str:
     """:data:`SECOND_SOURCE` when an independent observation holds this value whole, else ``""``.
 
     The one test of a value taken from the file's text (a string row, a value
@@ -6957,6 +7086,11 @@ def second_source(value: Any, corroborating: Any) -> str:
       declare it;
     * nothing else does — another reading of the same bytes, or an entry no
       claim cites.
+
+    A value asked as a ``path`` is held only as a whole path (:func:`whole_as_held`):
+    a text holding it only as the leading directory of a longer path does not
+    hold it. The build's record of each entry reads it the same way
+    (:func:`second_source_reads`).
     """
     record = _as_record(corroborating)
     text = str(value or "").strip()
@@ -6964,7 +7098,7 @@ def second_source(value: Any, corroborating: Any) -> str:
     if not text:
         return ""
     cut = low in record.cut
-    if whole_as_held(text, record.observed, cut) or low.rstrip(".") in record.recovered:
+    if whole_as_held(text, record.observed, cut, path=path) or low.rstrip(".") in record.recovered:
         return SECOND_SOURCE
     held = [
         (tool, standing)
@@ -6977,7 +7111,11 @@ def second_source(value: Any, corroborating: Any) -> str:
         dict.fromkeys(
             [
                 *(tool for tool, standing in held if standing == tool_kinds.UNDECLARED),
-                *(tool for tool, part in record.undeclared if whole_as_held(text, part, cut)),
+                *(
+                    tool
+                    for tool, part in record.undeclared
+                    if whole_as_held(text, part, cut, path=path)
+                ),
             ]
         )
     )
@@ -7004,27 +7142,32 @@ def confirmed_only_by_undeclared(answer: Any) -> bool:
     return said.startswith(f"yes: {SECOND_SOURCE}; ") and said.endswith(f" {_NO_KIND}")
 
 
-def whole_as_held(value: str, text: str, cut: bool) -> bool:
+def whole_as_held(value: str, text: str, cut: bool, *, path: bool = False) -> bool:
     """Whether ``text`` holds ``value`` whole: as :func:`whole_value_in` finds a value.
 
     A value the string sweep cut out of a longer token (``cut``) is held
     whole only where one of its places in ``text`` is also a whole token by
     the sweep's own token test (``tools.strings.token_cuts``): a fragment an
-    observation also holds only inside a longer token stays a fragment.
+    observation also holds only inside a longer token stays a fragment. A
+    ``path`` is held only as a whole path (:func:`whole_path_in`), never as
+    the leading directory of a longer one.
     """
     if not cut:
-        return whole_value_in(value, text)
+        return whole_path_in(value, text) if path else whole_value_in(value, text)
     from malspark.tools.strings import stands_as_a_token
 
-    return stands_as_a_token(value, text, whole_value_starts(value.lower(), text))
+    starts = whole_path_starts if path else whole_value_starts
+    return stands_as_a_token(value, text, starts(value.lower(), text))
 
 
-def second_source_refusal(value: Any, corroborating: Any, *, network: bool = False) -> str:
+def second_source_refusal(
+    value: Any, corroborating: Any, *, network: bool = False, path: bool = False
+) -> str:
     """Which holders an analyst section cites hold a value the rule did not publish, in words.
 
     ``""`` for no such holder: :func:`second_source_refusal_parts`, joined.
     """
-    return "; ".join(second_source_refusal_parts(value, corroborating, network=network))
+    return "; ".join(second_source_refusal_parts(value, corroborating, network=network, path=path))
 
 
 # How a holder clause says a citation, as the rule's lookup reads one
@@ -7040,7 +7183,7 @@ _NETWORK_RULE_DOES_NOT_ASK = "the publish rule does not ask which entries hold a
 
 
 def second_source_refusal_parts(
-    value: Any, corroborating: Any, *, network: bool = False
+    value: Any, corroborating: Any, *, network: bool = False, path: bool = False
 ) -> tuple[str, ...]:
     """:func:`second_source_refusal`'s clauses, each whole: the cut reason and the string as
     the record keeps it, or each holder an analyst section cites; ``()`` for none.
@@ -7053,7 +7196,9 @@ def second_source_refusal_parts(
     On a ``network`` row no holder's kind is asked: every cited entry (of
     whatever kind), every cited section and the section beside an uncited
     entry is named with :data:`_NETWORK_RULE_DOES_NOT_ASK`, never with a
-    kind's standing. An entry no analyst section cites is not named.
+    kind's standing. An entry no analyst section cites is not named. A
+    section holds a ``path`` value only as a whole path (:func:`whole_path_in`),
+    never as the leading directory of a longer one, as the rule reads it.
     """
     record = _as_record(corroborating)
     text = str(value or "").strip()
@@ -7064,7 +7209,8 @@ def second_source_refusal_parts(
         return (CUT_REASON, f'the string reads "{_quoted_token(token)}"')
 
     def holders(held: tuple[tuple[str, str], ...]) -> list[str]:
-        return list(dict.fromkeys(tool for tool, part in held if whole_value_in(text, part)))
+        holds_it = whole_path_in if path else whole_value_in
+        return list(dict.fromkeys(tool for tool, part in held if holds_it(text, part)))
 
     def cited_entries(standings: tuple[str, ...]) -> list[tuple[str, str]]:
         return [
@@ -7150,6 +7296,24 @@ def _asked_values(report: Any) -> list[str]:
     return list(dict.fromkeys(value.strip().lower() for value in asked if value.strip()))
 
 
+def _asked_paths(report: Any) -> frozenset[str]:
+    """The values of :func:`_asked_values` the publish rule asks as a ``path``, lower case.
+
+    A string row's and a judge's indicator's of that kind: held by an entry
+    only as a whole path (:func:`whole_path_in`).
+    """
+    static = getattr(report, "static", None)
+    rows = [
+        *(getattr(static, "interesting_strings", None) or []),
+        *(getattr(report, "judge_indicators", None) or []),
+    ]
+    return frozenset(
+        str(row.value or "").strip().lower()
+        for row in rows
+        if str(getattr(row, "kind", None) or getattr(row, "type", None) or "") == "path"
+    )
+
+
 def _entry_text(entry: Any, corpus: Any) -> str:
     """What the run saw of one entry, as text a value is found whole in.
 
@@ -7231,6 +7395,7 @@ def second_source_reads(
     asked = _asked_values(report)
     if not asked:
         return []
+    paths = _asked_paths(report)
     entries = list(ledger or ())
     cited = _cited_entries(report)
     # A claim citing a repeat the guard answered from an earlier entry stands
@@ -7260,7 +7425,8 @@ def second_source_reads(
         holds = sorted(
             value
             for value in first_holders(asked, [text])
-            if value not in cut or whole_as_held(value, text, True)
+            if (value not in cut or whole_as_held(value, text, True, path=value in paths))
+            and (value not in paths or whole_path_in(value, text))
         )
         if not holds:
             continue

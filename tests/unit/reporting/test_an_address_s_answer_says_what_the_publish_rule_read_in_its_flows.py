@@ -222,7 +222,8 @@ class TestOneFlowIsSaidOnce:
         unlisted = _flow(
             procid=46, pid=2756, **{TRAFFIC_PROCESS_KEY: 46, PROCESS_UNLISTED_KEY: True}
         )
-        said = _said({"tcp": [unlisted]}, ({"tcp": [unlisted]}, {"args": {"limit": 100}}))
+        page = {"tcp": [unlisted], "tcp_total": 2, "tcp_next_offset": 1}
+        said = _said({"tcp": [unlisted]}, (page, {"args": {"limit": 1}}))
         assert said == (
             RULE + "found a flow to it made by a process the report does not list (procid 46 "
             "pid 2756)"

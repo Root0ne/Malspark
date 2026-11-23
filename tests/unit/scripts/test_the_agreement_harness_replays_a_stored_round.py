@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -81,12 +82,16 @@ def _request_line(turns: list[BaseMessage]) -> str:
 
 
 def _stored_run(
-    tmp_path: Path, *, keep_answers: bool, answers: tuple[dict[str, Any], ...] = _ANSWERS
+    tmp_path: Path,
+    *,
+    keep_answers: bool,
+    answers: tuple[dict[str, Any], ...] = _ANSWERS,
+    written: Callable[[], Any] = _written,
 ) -> tuple[Path, Any, Any, list[str]]:
     """A stored run made by a live round: its log, its post-round report and its ledger."""
     ledger = _ledger()
-    report = _written()
-    given = [prompt_text(passages_of(_written(), entries=ledger))]
+    report = written()
+    given = [prompt_text(passages_of(written(), entries=ledger))]
     reporter = _Logging(*answers)
     done = asyncio.run(
         ask_section_agreement(
@@ -1090,6 +1095,182 @@ def test_the_program_refuses_to_start_on_a_package_earlier_on_the_path(tmp_path:
 
     assert done.returncode == harness.WRONG_TREE, done.stderr
     assert str(fake / "malspark") in done.stderr
+
+
+# One path written two ways that the quoted form prints alike: a backslash before r, n and t,
+# and the same path with a tab where the last backslash and t stand.
+_LETTERS = "The loader opens C:\\data\\root\\next\\tab.cfg at start."
+_CONTROLS = "The loader opens C:\\data\\root\\next\tab.cfg at start."
+
+
+def _placed(tail: str, place: str) -> Callable[[], Any]:
+    """The report with ``tail`` in a passage the round keeps (section 5) or in the one its
+    retry rewrites another sentence of (the introduction)."""
+
+    def written() -> Any:
+        if place == "introduction":
+            return _report(FIRST, background=f"{FIRST} {tail} {_UNKNOWN}")
+        report = _written()
+        section = report.technical_analysis.string_resolution
+        section.body = f"{section.body} {tail}"
+        return report
+
+    return written
+
+
+def _text_at(report: dict[str, Any], place: str) -> str:
+    if place == "introduction":
+        return str(report["intro_background"])
+    return str(report["technical_analysis"]["string_resolution"]["body"])
+
+
+def test_a_quoted_form_that_reads_more_than_one_way_keeps_each_reading() -> None:
+    from scripts.replay.agreement_names import _readings
+
+    from malspark.agents.tool_fence import quoted_value
+
+    shown = quoted_value(_LETTERS)
+    assert shown == quoted_value(_CONTROLS)
+
+    readings = _readings(shown)
+
+    assert _LETTERS in readings and _CONTROLS in readings
+    assert all(quoted_value(text) == shown for text in readings)
+    # A quoted form with one reading keeps that one alone.
+    assert _readings(quoted_value("The loader opens C:\\data.")) == ("The loader opens C:\\data.",)
+
+
+@pytest.mark.parametrize("place", ["section 5", "introduction"])
+@pytest.mark.parametrize("tail", [_LETTERS, _CONTROLS], ids=["letters", "controls"])
+def test_a_passage_whose_quoted_form_reads_more_than_one_way_replays_to_the_stored_one(
+    tmp_path: Path, tail: str, place: str
+) -> None:
+    run, _after, _done, given = _stored_run(
+        tmp_path, keep_answers=True, written=_placed(tail, place)
+    )
+    other = _placed(_CONTROLS if tail == _LETTERS else _LETTERS, place)()
+    # The logged prompt is the same for both spellings.
+    assert given[0] == prompt_text(passages_of(other, entries=_ledger()))
+
+    found = harness.recover(run)
+
+    assert found.case is not None and found.record is not None
+    assert found.prompt_reproduced and not found.blocks_differing
+    if place == "section 5":
+        # The stored text is one reading: the passage is put back as stored, and not marked.
+        assert found.passages_read_more_than_one_way == []
+        assert _text_at(found.case["report"], place).endswith(f" {tail}")
+    else:
+        # The stored text is the round's rewrite, no reading: the first is put back, marked.
+        assert found.passages_read_more_than_one_way == ["introduction"]
+    assert harness.against_stored(run, found.case, found.record) == []
+
+
+@pytest.mark.parametrize("place", ["section 5", "introduction"])
+def test_a_passage_that_differs_otherwise_than_by_its_readings_is_a_difference(
+    tmp_path: Path, place: str
+) -> None:
+    run, _after, _done, _given = _stored_run(
+        tmp_path, keep_answers=True, written=_placed(_LETTERS, place)
+    )
+    stored = json.loads((run / "report.json").read_bytes())
+    if place == "introduction":
+        stored["intro_background"] = stored["intro_background"].replace("tab.cfg", "tab.ini")
+    else:
+        section = stored["technical_analysis"]["string_resolution"]
+        section["body"] = section["body"].replace("tab.cfg", "tab.ini")
+    (run / "report.json").write_text(json.dumps(stored), encoding="utf-8")
+
+    found = harness.recover(run)
+
+    assert found.case is not None and found.record is not None
+    # The prompt still reproduces: the first reading quotes to the logged form.
+    assert found.prompt_reproduced and not found.blocks_differing
+    # No reading is the stored text: the passage is said to read more than one way.
+    pid, field = (
+        ("introduction", "intro_background")
+        if place == "introduction"
+        else ("string_resolution", "technical_analysis.string_resolution.body")
+    )
+    assert found.passages_read_more_than_one_way == [pid]
+    assert "read more than one way" in harness.mark_text(found.record)
+    said = harness.against_stored(run, found.case, found.record)
+    assert any(line.startswith(f"passage {pid}: final text differs") for line in said)
+    assert any(line.startswith(f"report .{field}: ") for line in said)
+
+
+# Two spellings the round's quoting prints alike: a backslash and a letter, and the control.
+_SPELLED = " Line one\\nline two."
+_CONTROL = " Line one\nline two."
+
+
+def _marked_run(tmp_path: Path) -> tuple[Path, Any, dict[str, Any]]:
+    """A replayed run that names the introduction as read more than one way, its stored
+    report as read back."""
+    from malspark.agents.tool_fence import quoted_value
+
+    assert quoted_value(_SPELLED) == quoted_value(_CONTROL)
+    run, _after, _done, _given = _stored_run(
+        tmp_path, keep_answers=True, written=_placed(_LETTERS, "introduction")
+    )
+    found = harness.recover(run)
+    assert found.case is not None and found.record is not None
+    assert found.passages_read_more_than_one_way == ["introduction"]
+    assert harness.against_stored(run, found.case, found.record) == []
+    return run, found, json.loads((run / "report.json").read_bytes())
+
+
+def _store(run: Path, stored: dict[str, Any]) -> None:
+    (run / "report.json").write_text(json.dumps(stored), encoding="utf-8")
+
+
+def test_a_passage_the_run_does_not_name_that_differs_by_a_control_s_spelling_is_a_difference(
+    tmp_path: Path,
+) -> None:
+    run, found, stored = _marked_run(tmp_path)
+    section = stored["technical_analysis"]["string_resolution"]
+    replayed = found.record["report"]["technical_analysis"]["string_resolution"]
+    found.record["after"]["string_resolution"]["text"] = section["body"] + _CONTROL
+    replayed["body"] = section["body"] + _CONTROL
+    section["body"] += _SPELLED
+    _store(run, stored)
+
+    said = harness.against_stored(run, found.case, found.record)
+
+    assert any(line.startswith("passage string_resolution: final text differs") for line in said)
+    assert any(
+        line.startswith("report .technical_analysis.string_resolution.body: ") for line in said
+    )
+
+
+def test_a_passage_the_run_names_whose_two_texts_print_alike_is_no_difference(
+    tmp_path: Path,
+) -> None:
+    run, found, stored = _marked_run(tmp_path)
+    found.record["after"]["introduction"]["text"] = stored["intro_background"] + _CONTROL
+    found.record["report"]["intro_background"] = stored["intro_background"] + _CONTROL
+    stored["intro_background"] += _SPELLED
+    _store(run, stored)
+
+    assert harness.against_stored(run, found.case, found.record) == []
+
+
+def test_a_report_string_that_is_no_named_passage_s_text_and_differs_so_is_a_difference(
+    tmp_path: Path,
+) -> None:
+    run, found, stored = _marked_run(tmp_path)
+    section = stored["technical_analysis"]["string_resolution"]
+    found.record["report"]["technical_analysis"]["string_resolution"]["title"] = (
+        section["title"] + _CONTROL
+    )
+    section["title"] += _SPELLED
+    _store(run, stored)
+
+    said = harness.against_stored(run, found.case, found.record)
+
+    assert [line.split(":")[0] for line in said] == [
+        "report .technical_analysis.string_resolution.title"
+    ]
 
 
 def _runs_keeping_answers() -> list[Path]:

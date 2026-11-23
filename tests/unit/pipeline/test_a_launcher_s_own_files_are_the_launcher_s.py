@@ -616,6 +616,9 @@ class TestNoHostAboveTheSampleSProcess:
         flow["dst"] = f"{ADDRESS}:443"
         document = sandbox_document(_one_task(task))
         args = {"offset": 0, "limit": 500}
+        # The answer says, as the tool's own page does, that more flows exist.
+        answer = sandbox_network(document, **args)
+        answer = {**answer, "tcp_total": len(answer["tcp"]) + 1, "tcp_next_offset": 500}
         entry = build_entry(
             entry_id="ev_0001",
             seq=1,
@@ -623,7 +626,7 @@ class TestNoHostAboveTheSampleSProcess:
             tool="sandbox_network",
             args=args,
             server=None,
-            output=json.dumps(sandbox_network(document, **args)),
+            output=json.dumps(answer),
         )
         network = network_from_ledger([entry])
         assert network is not None

@@ -5845,7 +5845,26 @@ is assembled from what the run gathered rather than recomputed beside it:
   report's id, or by a number that is the guest's pid any answer of the run
   states for a listed process (the process tree keeps each process's `task`
   and `guest_pid`, a child nested under the parent of its own task), and the
-  tree is read per task (`sample_process_trees`). A writer outside its task's
+  tree is read per task (`sample_process_trees`). In a report that carries
+  `detonation_trees`, each record is placed against the process tree of the
+  detonation it was observed in: the job's
+  own detonation's processes are the report's process tree, each further
+  detonation's are a tree of their own (`dynamic.detonation_trees`, with the
+  guest pids that detonation's answers state; every further detonation the
+  run read has one, empty where its process view lists no process), and a
+  record several detonations observed is placed in each, never in another
+  detonation's tree, where the same task and id may name another process. A
+  record that names its writer's number, of a further detonation whose tree
+  lists nothing (or of one the report keeps no tree of), is placed nowhere,
+  and its sentence says that no process list of that detonation that lists a
+  process was read (a record that names its writer only by a process name
+  keeps its own sentence about the process name); a mark of no
+  detonation's form names none, so its record is the job's own detonation's.
+  A report that carries no `detonation_trees` places every record in the
+  job's own, as it was written. In a launched
+  detonation the launcher is not the sample: neither the submitted file nor
+  the sandbox's mark names it, so a record of the launcher's process is
+  outside the sample's tree. A writer outside its task's
   tree is outside it, one the listing does not settle (a disputed lineage, or
   a number two listed processes answer to) is unattributed, and one named by
   a number no listed process answers to is refused as so named where every
@@ -5885,11 +5904,32 @@ is assembled from what the run gathered rather than recomputed beside it:
   (outside its tree, the launcher's, not listed, or disputed) only when every
   record names a process of another lineage; a record naming none leaves the
   value as decided without one, and so does a value with no record at all.
-  A view read in pages, or shortened, can only show that a record is the
-  sample's: there a record naming another lineage counts as naming none, for
-  the three kinds alike, and `unlisted_processes` is set from whole views
-  only; a name the report gives part of its resolved addresses
-  (`resolved_ips_partial`) reads the flows to those addresses the same way.
+  A view is a page only where its answer shows it holds part of the view:
+  its own paging markers (a flag, a next field, a count bound to a list it
+  does not reach, a page number, a start past the first row), the platform's
+  shortening, the tool's own top-level mark that it was shortened or
+  truncated (a set `shortened` or `truncated` key that is not the platform
+  shortener's map), a `<name>_total` count that names no list of the answer,
+  a call's `offset` that is not zero, or a list exactly as long as a
+  bounding argument of the call with no marker beside it, an argument read
+  as a number whatever its spelling (`"2"`, `-1`); a call's row limit alone
+  makes no page, and an answer holding every row is the whole view. A part
+  of a view never overrides the whole view of its own detonation: where the
+  rule read the whole view, that view's reading of who made a request
+  decides, and a part adds only a record of the sample's tree. A part read
+  alone can only show that a record is the sample's: a process of another
+  lineage it names is placed neither in the sample's tree nor outside it.
+  An address's flow there counts as naming none, and `unlisted_processes` is
+  set from whole views only; a name or a URL whose records all name
+  processes, none the sample's and some only in parts, is unattributed
+  (`unplaced`, with the processes not placed, the views read in part and the
+  processes its other records name), published only on the judge's keep
+  against that fact, as an undecided address is, its `no:` saying "the
+  publish rule read only part of the network view and did not place the
+  process the requests to it name by id" (a name's "traffic records"). A
+  record that names no process at all keeps the value as decided without
+  one. A name the report gives part of its resolved addresses
+  (`resolved_ips_partial`) reads the flows to those addresses as naming none.
   A flow to an address several names resolved to counts for each of them,
   which errs toward hiding nothing.
   A value of another lineage is not published as observed from the sample,
@@ -6996,7 +7036,18 @@ Two halves, in this order:
   (`StringIOC.cut_from`, recorded by the build from the sample's own text,
   never in a tool's answer) is confirmed only where an observation holds it
   as a whole token of its own, by the sweep's token test; a fragment the
-  observation also holds only inside a longer token stays refused. A refusal
+  observation also holds only inside a longer token stays refused. A path is
+  held only as a whole value: a record that holds it only as the leading
+  directory of a longer path (`C:\Temp` inside `C:\Temp\x.exe`) does not
+  hold it, while a file name that is a recorded path's last component is
+  held. A further component is whatever follows the separator, unless it is
+  white space or one of `"` `'` `<` `>` `|` `*` `?` `;` `,` `)` `]` `}` (a
+  directory written as itself before a closing bracket, `(C:\Temp\)`, is
+  held), so a component opening with a brace, a dollar sign, an opening
+  bracket or a letter outside ASCII makes the path a leading directory like
+  any other; the refusal's clauses
+  on the sections that hold a path read it the same way. A value of another
+  kind keeps the boundary rule. A refusal
   names what held the value and confirms nothing — a re-reading, an entry no
   claim cites — and a cut's refusal says so in its first clause and quotes
   the token after it.

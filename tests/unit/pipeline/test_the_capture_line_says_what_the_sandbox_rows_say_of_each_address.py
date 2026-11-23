@@ -148,25 +148,58 @@ class TestTheWordsSayWhatWasRead:
         assert listed.split("; contacts at a regular interval", 1)[0].endswith("not recorded")
 
 
+def _page(rows: int) -> dict[str, Any]:
+    """The view cut to its first ``rows`` flows, as the tool's own page says it."""
+    whole = _flows()["tcp"]
+    return {"tcp": whole[:rows], "tcp_total": len(whole), "tcp_next_offset": rows}
+
+
 class TestAViewNotReadWholeSaysNothing:
     @pytest.mark.parametrize(
-        "args", [{"offset": 0, "limit": 2}, {"limit": 50}, {"offset": 2}], ids=str
+        ("network", "args"),
+        [(_page(2), {"offset": 0, "limit": 2}), (None, {"offset": 2})],
+        ids=["page", "offset"],
     )
-    def test_a_page_or_a_bounded_view_says_nothing_of_any_address(
-        self, args: dict[str, Any]
+    def test_a_page_says_nothing_of_any_address(
+        self, network: dict[str, Any] | None, args: dict[str, Any]
     ) -> None:
-        assert _capture_line(_view(args=args)) == _capture_line(reader=False)
+        assert _capture_line(_view(network, args=args)) == _capture_line(reader=False)
+
+    def test_an_answer_within_its_row_limit_is_the_whole_view(self) -> None:
+        assert _capture_line(_view(args={"limit": 50})) == _capture_line(_view())
 
     def test_a_shortened_answer_says_nothing_of_any_address(self) -> None:
         shortened = _view(_flows(shortened=True, tcp_total=9))
         assert _capture_line(shortened) == _capture_line(reader=False)
+
+    @pytest.mark.parametrize(
+        ("network", "args"),
+        [
+            (None, {"offset": "2"}),
+            (None, {"offset": -1}),
+            ({"tcp": _flows()["tcp"]}, {"limit": "3"}),
+            (_flows(shortened=True), None),
+            (_flows(flows_total=9), None),
+        ],
+        ids=[
+            "offset-as-text",
+            "offset-below-zero",
+            "limit-as-text-filled",
+            "own-shortened-mark-alone",
+            "total-naming-no-list",
+        ],
+    )
+    def test_an_answer_cut_in_any_spelling_says_nothing_of_any_address(
+        self, network: dict[str, Any] | None, args: dict[str, Any] | None
+    ) -> None:
+        assert _capture_line(_view(network, args=args)) == _capture_line(reader=False)
 
     def test_a_truncated_entry_says_nothing_of_any_address(self) -> None:
         truncated = _view().model_copy(update={"truncated": True})
         assert _capture_line(truncated) == _capture_line(reader=False)
 
     def test_a_whole_view_beside_a_part_of_one_says_nothing(self) -> None:
-        part = _entry("sandbox_network", _flows(), 14, {"offset": 0, "limit": 1})
+        part = _entry("sandbox_network", _page(1), 14, {"offset": 0, "limit": 1})
         assert _capture_line(_view(), part) == _capture_line(reader=False)
 
     def test_without_a_network_view_the_line_is_as_it_was(self) -> None:

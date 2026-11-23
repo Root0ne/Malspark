@@ -34,7 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
-from malspark.analysis.detonation_reads import later_detonation_name
+from malspark.analysis.detonation_reads import later_detonation_name, own_detonation_read
 from malspark.analysis.directed_text import KIND as DIRECTED_TEXT_KIND
 from malspark.analysis.technique_ids import (
     api_capability_hits,
@@ -70,6 +70,7 @@ from malspark.reporting.models import (
     StaticAnalysis,
     StringIOC,
     TrafficMakers,
+    UnplacedTraffic,
 )
 from malspark.schemas.evidence import build_entry, format_entry_id
 from malspark.schemas.sandbox_document import LINEAGE_KEY, joined_url, pid_of, signature_pids
@@ -242,10 +243,13 @@ class _MakerTally:
     """What the records of one value's traffic say of the processes that made it.
 
     Each record's answer (:func:`traffic_maker`) is added once; a value's
-    attribution is read off the whole (:meth:`state`).
+    attribution is read off the whole (:meth:`state`). A record a part of a
+    view holds that names a process of another lineage is added as an
+    unplaced process (:meth:`add_unplaced`): the part cannot show that no
+    other record is the sample's.
     """
 
-    __slots__ = ("named", "more", "sample", "seen", "unstated")
+    __slots__ = ("named", "more", "sample", "seen", "unplaced", "unstated", "views")
 
     def __init__(self) -> None:
         self.sample = False
@@ -253,6 +257,9 @@ class _MakerTally:
         self.unstated = False
         self.named: dict[str, list[str]] = {}
         self.seen: set[tuple[str, str]] = set()
+        # The processes records of parts of a view name, and those parts' detonations.
+        self.unplaced: list[str] = []
+        self.views: list[str] = []
         # Processes of the addresses' flows left unnamed here (``_ADDRESS_MAKERS_NAMED``).
         self.more = False
 
@@ -266,35 +273,62 @@ class _MakerTally:
         else:
             self.unstated = True
 
+    def add_unplaced(self, named: str, view: str) -> None:
+        """A part of a view's record naming ``named``, a process of another lineage, in ``view``."""
+        if named not in self.unplaced:
+            self.unplaced.append(named)
+        if view not in self.views:
+            self.views.append(view)
+
     def take(self, other: _MakerTally, limit: int | None = None, *, in_part: bool = False) -> None:
         """Add another tally's facts, and its names, up to ``limit`` per kind where one is given.
 
         ``in_part``: the other tally is read as a page's, which can only show
-        that a record is the sample's; its records of another lineage count
-        as naming no process.
+        that a record is the sample's; its records of another lineage, placed
+        or not, count as naming no process.
         """
         self.sample |= other.sample
         if in_part:
-            self.unstated |= other.unstated or bool(other.named)
+            self.unstated |= other.unstated or bool(other.named) or bool(other.unplaced)
             return
         self.unstated |= other.unstated
         for kind, names in other.named.items():
             for named in names[:limit]:
                 self.add((kind, named))
             self.more |= limit is not None and len(names) > limit
+        for named in other.unplaced[:limit]:
+            if named not in self.unplaced:
+                self.unplaced.append(named)
+        self.more |= limit is not None and len(other.unplaced) > limit
+        for view in other.views:
+            if view not in self.views:
+                self.views.append(view)
         self.more |= other.more
 
     def state(self, row: NetworkDomain | NetworkURL) -> None:
         """The value's attribution: the sample's when any record came from its tree.
 
-        Another lineage's only when every record names a process and none is
-        the sample's: a record that names no process leaves the value as it is
-        decided without one, and so does a value with no record at all.
+        A record that names no process leaves the value as it is decided
+        without one, and so does a value with no record at all. Where every
+        record names a process and none is the sample's: unplaced
+        (``UnplacedTraffic``) where some of them stand only in parts of a
+        view, so the value is unattributed; another lineage's otherwise.
         """
         if self.sample:
             row.sample_process_tree = True
             return
-        if self.unstated or not self.named:
+        if self.unstated:
+            return
+        if self.unplaced:
+            placed = TrafficMakers.model_validate(self.named) if self.named else None
+            row.unplaced = UnplacedTraffic(
+                processes=list(self.unplaced),
+                views=list(self.views),
+                placed=placed,
+                more=self.more,
+            )
+            return
+        if not self.named:
             return
         row.sample_process_tree = False
         row.made_by = TrafficMakers.model_validate({**self.named, "more": self.more})
@@ -1133,29 +1167,29 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
     seen = False
 
     # Every call reads the same sandbox task: the pack's call and an analyst's
-    # answer the same processes and signatures, and each is one row.
-    processes: list[ProcessNode] = []
-    for _entry, data in _payloads(ledger, "sandbox_processes"):
-        nodes = [
-            ProcessNode(
-                pid=_int(row.get("pid")),
-                ppid=_int(row.get("ppid")),
-                name=str(row.get("name") or ""),
-                command_line=str(row.get("command_line") or ""),
-                marked=row.get("marked") is True,
-                task=str(row.get("task") or ""),
-                staged_by_sandbox=row.get(STAGED_KEY) is True,
-            )
-            for row in data.get("processes") or []
-            if isinstance(row, dict)
-        ]
+    # answer the same processes and signatures, and each is one row. Each
+    # detonation's processes are read apart, the job's own as the process
+    # tree and each further one's as its own tree (``detonation_trees``), and
+    # each takes the guest pids its own detonation's answers state. Every
+    # further detonation the ledger reads has a tree, one with nothing in it
+    # where its process view lists no process, so no record of it is placed
+    # in another detonation's tree.
+    listed: dict[str, list[ProcessNode]] = {
+        name: [] for name in (later_detonation_name(e) for e in ledger if e.ok) if name
+    }
+    for entry, data in _payloads(ledger, "sandbox_processes", detonations=True):
+        nodes = _process_nodes(data)
         if nodes:
             seen = True
-            processes.extend(nodes)
-    # A report of several tasks gives each task's processes ids of the task's own.
-    processes = _once(processes, lambda node: (process_identity(node), node.task))
-    _with_guest_pids(processes, ledger)
-    dynamic.process_tree = _as_tree(processes)
+            listed.setdefault(later_detonation_name(entry), []).extend(nodes)
+    for name in ("", *sorted(key for key in listed if key)):
+        # A report of several tasks gives each task's processes ids of the task's own.
+        processes = _once(listed.get(name, []), lambda node: (process_identity(node), node.task))
+        _with_guest_pids(processes, [e for e in ledger if later_detonation_name(e) == name])
+        if name:
+            dynamic.detonation_trees[name] = _as_tree(processes)
+        else:
+            dynamic.process_tree = _as_tree(processes)
 
     for entry, data in _payloads(ledger, "sandbox_signatures", detonations=True):
         later = [observed_mark(entry)] if later_detonation(entry) else []
@@ -1310,6 +1344,23 @@ def _registry_operation(value: Any) -> str:
     """One of the four operations the typed model knows; anything else is a query."""
     operation = str(value or "").strip().lower()
     return operation if operation in _REGISTRY_OPERATIONS else "query"
+
+
+def _process_nodes(data: dict[str, Any]) -> list[ProcessNode]:
+    """The processes one process view's answer lists, as the report's nodes."""
+    return [
+        ProcessNode(
+            pid=_int(row.get("pid")),
+            ppid=_int(row.get("ppid")),
+            name=str(row.get("name") or ""),
+            command_line=str(row.get("command_line") or ""),
+            marked=row.get("marked") is True,
+            task=str(row.get("task") or ""),
+            staged_by_sandbox=row.get(STAGED_KEY) is True,
+        )
+        for row in data.get("processes") or []
+        if isinstance(row, dict)
+    ]
 
 
 def _with_guest_pids(nodes: list[ProcessNode], ledger: list[LedgerEntry]) -> None:
@@ -1607,14 +1658,24 @@ def network_from_ledger(
         source: str = "",
     ) -> None:
         # A page of a view can only show that a record is the sample's: one
-        # naming another lineage counts as naming none, as the sample's may
-        # be on another page. One rule for the three kinds.
-        if not whole and isinstance(answer, tuple):
-            answer = None
-        makers.setdefault((kind, key), []).append(answer)
-        tallies.setdefault((kind, key), _MakerTally()).add(answer)
-        if source:
-            source_tallies.setdefault((source, key), _MakerTally()).add(answer)
+        # naming another lineage places its process neither in the tree nor
+        # outside it, as the sample's may be on another page. An address's
+        # own reading counts such a record as naming none.
+        unplaced = not whole and isinstance(answer, tuple)
+        makers.setdefault((kind, key), []).append(None if unplaced else answer)
+        if not whole and answer is not True and viewing[0] in whole_read:
+            # A part never overrides the whole view of its own detonation: the
+            # whole view's reading of who made the traffic decides, and the
+            # part adds only a record of the sample's tree.
+            return
+        for tally in (
+            tallies.setdefault((kind, key), _MakerTally()),
+            *([source_tallies.setdefault((source, key), _MakerTally())] if source else []),
+        ):
+            if unplaced and isinstance(answer, tuple):
+                tally.add_unplaced(answer[1], viewing[1])
+            else:
+                tally.add(answer)
 
     # The names a DNS or HTTP view named, and the names only the capture's TLS
     # list recorded: a TLS name says nothing about which process made the
@@ -1637,9 +1698,27 @@ def network_from_ledger(
     # What the flow rows to each address name, as the rule reads them: the
     # words of its sentence (``NetworkIP.flow_reading``), never its decision.
     flow_tally = _FlowTally(read, _blanked_views(ledger))
+    # The detonations whose whole view the rule read; and, for the view in
+    # hand, its detonation and the name a part of it is said under (its
+    # detonation where the run read a further one's view and the platform's
+    # reading gives it, as ``_FlowTally`` names a part).
+    whole_read = {view.mark.detonation for view in read if view.whole}
+    later_read = any(view.mark.detonation != FIRST_DETONATION for view in read)
+    viewing = ["", ""]
     for index, (data, whole, mark, view_entry) in enumerate(read):
         read_by = reading if view_entry is None or not later_detonation(view_entry) else None
         marking[0] = mark
+        viewing[0] = mark.detonation
+        viewing[1] = (
+            mark.detonation
+            if later_read
+            and (
+                view_entry is None
+                or mark.detonation != FIRST_DETONATION
+                or own_detonation_read(view_entry)
+            )
+            else ""
+        )
         # Each DNS question reads the answers for its own name, and a request's
         # unnamed answers, within the request's own size. A ``domains`` row is
         # no DNS question: it reads its own answers, as dev read it, whatever
@@ -3233,17 +3312,62 @@ def _ledger_views(
 
 
 def _view_paged(entry: LedgerEntry, data: dict[str, Any]) -> bool:
-    """Whether a network view's call or answer marks it a page or a shortened answer."""
+    """Whether a network view's answer shows it holds part of the view: a page or a shortened one.
+
+    Read from the answer itself, as every entry is read (``schemas.entry_reading``):
+    its own paging markers (a flag, a next field, a count bound to a list it
+    does not reach, a page number, a start past the first row), the platform's
+    shortening, or a paging the answer cannot settle (only the call's
+    ``offset`` places it after the first row). Beside them, read as numbers
+    whatever their spelling (``"2"``, ``-1``): a call's ``offset`` that is not
+    zero; the tool's own top-level mark that the answer was shortened or
+    truncated (a ``shortened`` or ``truncated`` key that is set and is not the
+    platform shortener's map); and a ``<name>_total`` count that names no list
+    of the answer. A call's row limit alone makes no page: an answer that
+    holds every row is the whole view, whatever the call asked for. Where a
+    list of the answer is exactly as long as a bounding argument of the call
+    (``output_shortening.bounding_arguments``, in any spelling) and no marker
+    says more, the answer cannot show whether rows were left out, and it is
+    read as a page.
+    """
+    from malspark.agents.output_shortening import bounding_arguments, our_key_in
+    from malspark.schemas.entry_reading import ONE_PAGE, SHORTENED, entry_reading
+
+    reading = entry_reading(entry)
+    if reading.paging_unknown or {ONE_PAGE, SHORTENED} & set(reading.states):
+        return True
     args = entry.args if isinstance(entry.args, dict) else {}
-    return any(_as_int(args.get(k)) for k in ("offset", "limit")) or any(
-        str(k).endswith("_total") or k in ("next_offset", "shortened", "truncated") for k in data
-    )
+    if _as_number(args.get("offset")):
+        return True
+    ours = our_key_in(data)
+    for key, value in data.items():
+        if key in ("shortened", "truncated") and key != ours and value:
+            return True
+        if (
+            isinstance(key, str)
+            and key.endswith("_total")
+            and not isinstance(data.get(key.removesuffix("_total")), list)
+        ):
+            return True
+    bounds = {
+        value
+        for name in bounding_arguments([name for name in args if isinstance(name, str)])
+        if (value := _as_number(args.get(name))) > 0
+    }
+    return any(isinstance(rows, list) and len(rows) in bounds for rows in data.values())
 
 
-def _as_int(value: Any) -> int:
+def _as_number(value: Any) -> int:
+    """A call argument read as a whole number whatever its spelling; ``0`` for none.
+
+    ``3``, ``"3"`` and ``3.0`` are three; a flag, text that is no number and
+    an empty value are none.
+    """
+    if isinstance(value, bool) or value is None:
+        return 0
     try:
-        return int(value or 0)
-    except (TypeError, ValueError):
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 
@@ -3299,7 +3423,7 @@ def address_flow_facts(
     whatever a DNS answer or a host list holds; a value that does not parse as
     an address is said nothing of. ``None``, and so no words for any address,
     where the ledger holds no such answer or any answer read is not the whole
-    view (a page, a bounded or shortened answer): no words are derived from
+    view (a page, an answer that fills its bound, or a shortened one): no words are derived from
     part of a view.
     """
     from malspark.reporting.renderers.stix_renderer import address_flow_words

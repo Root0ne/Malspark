@@ -8,9 +8,10 @@ by its field and its task, with what the rule found for it — matched to no
 process of the process list it read where that list states a guest pid for
 every process, undecided where it does not, not placed in or outside the tree,
 or matched to a listed process. It never states what the whole report says, so
-a record the rule did not read, or a further detonation's own listing, cannot
-contradict it. The decision is the one it was: no record of the tree, no
-publish. No "," or ";" stands outside brackets.
+a record the rule did not read cannot contradict it; a further detonation's
+record is matched against that detonation's own listing. The decision is the
+one it was: no record of the tree, no publish. No "," or ";" stands outside
+brackets.
 
 Every value is synthetic.
 """
@@ -54,9 +55,15 @@ def _twice() -> list[ProcessNode]:
     return processes
 
 
-def _fact(processes: list[ProcessNode], *rows: dict[str, Any]) -> str:
+def _fact(
+    processes: list[ProcessNode],
+    *rows: dict[str, Any],
+    trees: dict[str, list[ProcessNode]] | None = None,
+) -> str:
     writes = [{"operation": "write", "name": "a.dat", "sha256": DIGEST, **row} for row in rows]
-    dynamic = DynamicBehavior(process_tree=processes, file_operations=writes)
+    dynamic = DynamicBehavior(
+        process_tree=processes, detonation_trees=trees or {}, file_operations=writes
+    )
     ask = sandbox_facts_for_the_judge(None, dynamic, sample={"file_name": SAMPLE})
     return str(ask("hash", DIGEST))
 
@@ -117,17 +124,27 @@ class TestTheListingIsTheOneItWasMatchedAgainst:
             "that list states a guest pid for every process"
         )
 
-    def test_a_further_detonation_s_row_whose_own_listing_holds_the_number(self) -> None:
+    def test_a_further_detonation_s_row_is_matched_against_its_own_listing(self) -> None:
         # The first detonation's row names no writer; a further detonation's
-        # row names guest pid 5000, which that detonation's own listing holds.
-        # The sentence says what the rule matched, against the list it read.
-        later = {"pids": ["5000"], "observed_in": [{"detonation": 2}]}
-        said = _fact(_listing(every_guest_pid=True), {}, later)
+        # row names guest pid 5000, which no process of that detonation's own
+        # listing answers to, and that listing states every guest pid while
+        # the job's own states none. The sentence says what the rule matched,
+        # against the list it read.
+        later = {"pids": ["5000"], "observed_in": [{"detonation": "d2"}]}
+        said = _fact(_listing(), {}, later, trees={"d2": _listing(every_guest_pid=True)})
 
         assert said == (
             "the publish rule matched pid 5000 to no process of the process list it read and "
             "that list states a guest pid for every process"
         )
+
+    def test_a_further_detonation_s_row_its_own_listing_places_in_the_tree(self) -> None:
+        # Guest pid 1924 is the sample's child in the further detonation's own
+        # listing, and no process of the job's own listing.
+        later = {"pids": ["1924"], "observed_in": [{"detonation": "d2"}]}
+        said = _fact(_listing(), {}, later, trees={"d2": _listing(every_guest_pid=True)})
+
+        assert said == ""
 
     def test_a_listing_that_states_no_guest_pid_for_some_process(self) -> None:
         processes = _listing(every_guest_pid=True)
