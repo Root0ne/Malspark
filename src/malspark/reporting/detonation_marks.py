@@ -24,6 +24,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
+from malspark.analysis.technique_ids import ID_BODY
 from malspark.reporting.ledger_projection import (
     FIRST_DETONATION,
     marks_of,
@@ -139,7 +140,7 @@ def with_value_marks(rows: list[ConsolidatedIOC], report: MalwareReport) -> list
 
 # An ATT&CK technique id as a signature's tag must be written to credit a
 # technique: an id of another form names nothing the table can relate.
-_TECHNIQUE_ID_RE = re.compile(r"T\d{4}(?:\.\d{3})?")
+_TECHNIQUE_ID_RE = re.compile(ID_BODY)
 
 # How a credited signature's tag stands to the technique's id, closest first.
 _SAME, _SUB, _PARENT = "same", "sub-technique", "parent"

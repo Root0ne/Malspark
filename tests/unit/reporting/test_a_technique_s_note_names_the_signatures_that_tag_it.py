@@ -228,14 +228,14 @@ class TestTheCredit:
 
 
 class TestTheWords:
-    @pytest.mark.parametrize("case", CASES, ids=[case["case"] for case in CASES])
+    @pytest.mark.parametrize("case", CASES, ids=[case["title"] for case in CASES])
     def test_each_shape_says_what_the_shared_cases_say(self, case: dict[str, Any]) -> None:
         marks = [ObservedIn.model_validate(mark) for mark in case["observed_in"]]
         assert technique_words(case["technique_id"], marks) == case["words"]
         # A stored report's dicts read the same.
         assert technique_words(case["technique_id"], case["observed_in"]) == case["words"]
 
-    @pytest.mark.parametrize("case", CASES, ids=[case["case"] for case in CASES])
+    @pytest.mark.parametrize("case", CASES, ids=[case["title"] for case in CASES])
     def test_a_mark_that_lists_its_signatures_never_says_observed(
         self, case: dict[str, Any]
     ) -> None:

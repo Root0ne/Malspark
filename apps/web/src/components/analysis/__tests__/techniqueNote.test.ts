@@ -21,7 +21,7 @@ import type { ObservedIn } from "@/types/malware-report";
 import DetonationMark from "../DetonationMark";
 
 interface Case {
-  case: string;
+  title: string;
   technique_id: string;
   observed_in: ObservedIn[];
   words: string;
@@ -53,11 +53,11 @@ function textOf(html: string): string {
 }
 
 describe("a technique's mark, in the report's words", () => {
-  it.each(CASES.map((c) => [c.case, c] as const))("is the shared case's text: %s", (_, c) => {
+  it.each(CASES.map((c) => [c.title, c] as const))("is the shared case's text: %s", (_, c) => {
     expect(techniqueWords(c.technique_id, c.observed_in)).toBe(c.words);
   });
 
-  it.each(CASES.filter((c) => c.observed_in.some((m) => m.signatures?.length)).map((c) => [c.case, c] as const))(
+  it.each(CASES.filter((c) => c.observed_in.some((m) => m.signatures?.length)).map((c) => [c.title, c] as const))(
     "never says observed where it lists its signatures: %s",
     (_, c) => {
       expect(c.words.toLowerCase()).not.toContain("observed");
@@ -66,7 +66,7 @@ describe("a technique's mark, in the report's words", () => {
 });
 
 describe("the ATT&CK tab's mark of a technique", () => {
-  it.each(CASES.filter((c) => c.words).map((c) => [c.case, c] as const))(
+  it.each(CASES.filter((c) => c.words).map((c) => [c.title, c] as const))(
     "hovers with the report's words and draws them: %s",
     (_, c) => {
       const html = renderToStaticMarkup(
@@ -75,7 +75,7 @@ describe("the ATT&CK tab's mark of a technique", () => {
       expect(titleOf(html)).toBe(c.words);
       // Drawn, each launch text and name stands in its own code element without the backticks;
       // an id of another form than ATT&CK's is drawn as the hover writes it, in its backticks.
-      if (c.observed_in.some((m) => m.signatures?.length) && c.case !== "an id of another form") {
+      if (c.observed_in.some((m) => m.signatures?.length) && c.title !== "an id of another form") {
         expect(textOf(html)).toBe(c.words.replace(/`([^`]*)`/g, "$1"));
         expect(html).not.toContain("<script>");
       }
@@ -83,7 +83,7 @@ describe("the ATT&CK tab's mark of a technique", () => {
   );
 
   it("draws the detonations alone where it is compact, never saying observed", () => {
-    const listed = CASES.find((c) => c.case === "two detonations, one signature");
+    const listed = CASES.find((c) => c.title === "two detonations, one signature");
     expect(listed).toBeDefined();
     const html = renderToStaticMarkup(
       createElement(DetonationMark, { marks: listed?.observed_in, techniqueId: listed?.technique_id, compact: true }),
@@ -93,7 +93,7 @@ describe("the ATT&CK tab's mark of a technique", () => {
   });
 
   it("keeps the old words for a mark stored before its signatures were recorded", () => {
-    const stored = CASES.find((c) => c.case === "a mark stored before its signatures");
+    const stored = CASES.find((c) => c.title === "a mark stored before its signatures");
     const html = renderToStaticMarkup(
       createElement(DetonationMark, { marks: stored?.observed_in, techniqueId: stored?.technique_id }),
     );

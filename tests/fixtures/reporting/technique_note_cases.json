@@ -1,7 +1,7 @@
 {
  "cases": [
   {
-   "case": "one signature",
+   "title": "one signature",
    "technique_id": "T1490",
    "observed_in": [
     {
@@ -18,7 +18,7 @@
    "words": "in detonation 2, launched with `--example-flag on`, the sandbox signature `Example signature alpha` tags this technique"
   },
   {
-   "case": "several signatures",
+   "title": "several signatures",
    "technique_id": "T1490",
    "observed_in": [
     {
@@ -39,7 +39,7 @@
    "words": "in detonation 2, launched with `--example-flag on`, the sandbox signatures `Example signature alpha` and `Example signature beta` tag this technique"
   },
   {
-   "case": "three signatures",
+   "title": "three signatures",
    "technique_id": "T1012",
    "observed_in": [
     {
@@ -64,7 +64,7 @@
    "words": "in detonation 2, launched with `--example-flag on`, the sandbox signatures `Example probe one`, `Example probe two` and `Example probe three` tag this technique"
   },
   {
-   "case": "a parent's tag",
+   "title": "a parent's tag",
    "technique_id": "T1222.001",
    "observed_in": [
     {
@@ -81,7 +81,7 @@
    "words": "in detonation 2, launched with `--example-flag on`, the sandbox signature `Example access change` tags this technique's parent T1222"
   },
   {
-   "case": "a sub-technique's tag",
+   "title": "a sub-technique's tag",
    "technique_id": "T1070",
    "observed_in": [
     {
@@ -102,7 +102,7 @@
    "words": "in detonation 2, launched with `--example-flag on`, the sandbox signature `Example log wipe` tags this technique's sub-technique T1070.001 and the sandbox signature `Example signature alpha` tags this technique's sub-technique T1070.004"
   },
   {
-   "case": "a revoked id, in favour of the technique",
+   "title": "a revoked id, in favour of the technique",
    "technique_id": "T1686",
    "observed_in": [
     {
@@ -120,7 +120,7 @@
    "words": "in detonation 2, launched with `--example-flag on`, the sandbox signature `Example rule edit` tags T1562.004 (revoked by ATT&CK in favour of this technique)"
   },
   {
-   "case": "a revoked id, in favour of its parent",
+   "title": "a revoked id, in favour of its parent",
    "technique_id": "T1685.005",
    "observed_in": [
     {
@@ -138,7 +138,7 @@
    "words": "in detonation 2, launched with `--example-flag on`, the sandbox signature `Example guard switch-off` tags T1562.001 (revoked by ATT&CK in favour of this technique's parent T1685)"
   },
   {
-   "case": "a revoked id, in favour of a sub-technique",
+   "title": "a revoked id, in favour of a sub-technique",
    "technique_id": "T1685",
    "observed_in": [
     {
@@ -156,7 +156,7 @@
    "words": "in detonation 2, launched with `--example-flag on`, the sandbox signature `Example log wipe` tags T1070.001 (revoked by ATT&CK in favour of this technique's sub-technique T1685.005)"
   },
   {
-   "case": "two detonations, one signature",
+   "title": "two detonations, one signature",
    "technique_id": "T1059.001",
    "observed_in": [
     {
@@ -182,7 +182,7 @@
    "words": "in the job's own detonation, the sandbox signature `Example script host` tags this technique, and in detonation 2, launched with `--example-flag on`, the sandbox signature `Example script host` tags this technique"
   },
   {
-   "case": "two detonations, mixed tags",
+   "title": "two detonations, mixed tags",
    "technique_id": "T1059",
    "observed_in": [
     {
@@ -212,7 +212,7 @@
    "words": "in the job's own detonation, the sandbox signature `Example interpreter` tags this technique's sub-technique T1059.001, and in detonation 2, launched with `--example-flag on`, the sandbox signature `Example interpreter` tags this technique's sub-technique T1059.001 and the sandbox signature `Example console line` tags this technique's sub-technique T1059.003"
   },
   {
-   "case": "a hostile name and launch",
+   "title": "a hostile name and launch",
    "technique_id": "T1486",
    "observed_in": [
     {
@@ -229,7 +229,7 @@
    "words": "in detonation 2, launched with `e\\x60f\\x7cg\\nexample tail nine`, the sandbox signature `q\\x60, and in detonation 3, launched with \\x60z \\x7c \\x3cb\\x3e\\x7b\\x7bt\\x7d\\x7d\\x3c/b\\x3e` tags this technique"
   },
   {
-   "case": "a signature with no name",
+   "title": "a signature with no name",
    "technique_id": "T1486",
    "observed_in": [
     {
@@ -246,7 +246,7 @@
    "words": "in detonation 2, launched with `--example-flag on`, the sandbox signature (no name) tags this technique"
   },
   {
-   "case": "an id of another form",
+   "title": "an id of another form",
    "technique_id": "T1486",
    "observed_in": [
     {
@@ -264,7 +264,7 @@
    "words": "in detonation 2, launched with `--example-flag on`, the sandbox signature `Example odd tag` tags `T1486.[x](y)` (revoked by ATT&CK in favour of this technique)"
   },
   {
-   "case": "a mark stored before its signatures",
+   "title": "a mark stored before its signatures",
    "technique_id": "T1486",
    "observed_in": [
     {
@@ -278,7 +278,7 @@
    "words": "observed in the job's own detonation and in detonation 2, launched with `--example-flag on`"
   },
   {
-   "case": "no mark",
+   "title": "no mark",
    "technique_id": "T1486",
    "observed_in": [],
    "words": ""
