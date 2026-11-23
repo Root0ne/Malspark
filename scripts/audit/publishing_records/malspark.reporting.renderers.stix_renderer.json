@@ -296,6 +296,21 @@
     "tests/unit/reporting/test_a_process_a_part_of_a_view_names_is_unplaced.py::TestTheSentence::test_records_placed_elsewhere_are_counted_before_the_processes_not_placed"
    ],
    "text_digest": "b44895a64e250871889a6083769ae1cfad6cf0bfdabab37bcc0116a69dd1ae26"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:HOST_FOUND_NO_LISTING",
+   "condition": "in _host_findings's phrase of a number a sandbox file, digest, key or mutex record names, where the record was observed in a further detonation whose tree in the report lists no process (an empty tree, or none): the publish answer, the context of its refusal and the judge's question of that host row",
+   "basis": [
+    "the record's pids and task",
+    "the report's dynamic.detonation_trees",
+    "the record's observed_in"
+   ],
+   "test": [
+    "tests/unit/reporting/test_each_record_is_placed_in_its_own_detonation_s_tree.py::TestARecordIsPlacedInItsOwnDetonationSTree::test_a_record_of_a_detonation_with_an_empty_tree_is_placed_nowhere",
+    "tests/unit/reporting/test_each_record_is_placed_in_its_own_detonation_s_tree.py::TestARecordIsPlacedInItsOwnDetonationSTree::test_a_record_of_a_detonation_with_no_tree_is_placed_nowhere",
+    "tests/unit/reporting/test_each_record_is_placed_in_its_own_detonation_s_tree.py::TestTheProjectionKeepsEachDetonationSProcessesApart::test_its_record_is_not_placed_in_the_job_s_own_tree"
+   ],
+   "text_digest": "f414e31bc203685a77ac778210acbda23ec3df65bfb02950c513c684d8e7708e"
   }
  ]
 }

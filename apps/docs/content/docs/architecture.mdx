@@ -5845,15 +5845,21 @@ is assembled from what the run gathered rather than recomputed beside it:
   report's id, or by a number that is the guest's pid any answer of the run
   states for a listed process (the process tree keeps each process's `task`
   and `guest_pid`, a child nested under the parent of its own task), and the
-  tree is read per task (`sample_process_trees`). Each record is placed
-  against the process tree of the detonation it was observed in: the job's
+  tree is read per task (`sample_process_trees`). In a report that carries
+  `detonation_trees`, each record is placed against the process tree of the
+  detonation it was observed in: the job's
   own detonation's processes are the report's process tree, each further
   detonation's are a tree of their own (`dynamic.detonation_trees`, with the
-  guest pids that detonation's answers state), and a record several
-  detonations observed is placed in each, never in another detonation's
-  tree, where the same task and id may name another process; a report that
-  keeps no further detonation's tree (one stored before the trees were kept
-  apart) places every record in the job's own, as it was written. In a launched
+  guest pids that detonation's answers state; every further detonation the
+  run read has one, empty where its process view lists no process), and a
+  record several detonations observed is placed in each, never in another
+  detonation's tree, where the same task and id may name another process. A
+  record of a further detonation whose tree lists nothing (or of one the
+  report keeps no tree of) is placed nowhere, and its sentence says that no
+  process list of that detonation that lists a process was read; a mark of no
+  detonation's form names none, so its record is the job's own detonation's.
+  A report that carries no `detonation_trees` places every record in the
+  job's own, as it was written. In a launched
   detonation the launcher is not the sample: neither the submitted file nor
   the sandbox's mark names it, so a record of the launcher's process is
   outside the sample's tree. A writer outside its task's
@@ -7033,9 +7039,11 @@ Two halves, in this order:
   directory of a longer path (`C:\Temp` inside `C:\Temp\x.exe`) does not
   hold it, while a file name that is a recorded path's last component is
   held. A further component is whatever follows the separator, unless it is
-  white space or one of `"` `'` `<` `>` `|` `*` `?` `;` `,`, so a component
-  opening with a brace, a dollar sign, a bracket or a letter outside ASCII
-  makes the path a leading directory like any other; the refusal's clauses
+  white space or one of `"` `'` `<` `>` `|` `*` `?` `;` `,` `)` `]` `}` (a
+  directory written as itself before a closing bracket, `(C:\Temp\)`, is
+  held), so a component opening with a brace, a dollar sign, an opening
+  bracket or a letter outside ASCII makes the path a leading directory like
+  any other; the refusal's clauses
   on the sections that hold a path read it the same way. A value of another
   kind keeps the boundary rule. A refusal
   names what held the value and confirms nothing — a re-reading, an entry no

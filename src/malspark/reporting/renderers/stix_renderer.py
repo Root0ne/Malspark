@@ -3775,6 +3775,12 @@ HOST_FOUND_IN_TREE = "matched {numbers} to {which} of the sample's process tree"
 HOST_FOUND_OUTSIDE = "matched {numbers} to {which} outside the sample's process tree"
 HOST_FOUND_DISPUTED = "matched {numbers} to {who} whose lineage the report's two facts dispute"
 HOST_FOUND_NAME_OUTSIDE = "matched the process {names} to no process of the sample's process tree"
+# A number a record of a further detonation names where no process list the
+# rule read lists a process of that detonation.
+HOST_FOUND_NO_LISTING = (
+    "matched {numbers} to no process since it read no process list of detonation "
+    "{detonation} that lists a process"
+)
 # The process list a number is matched against: the one the report is built from.
 HOST_LISTING = "the process list it read"
 # The field a record names its writer's number under, as the sentence names it.
@@ -3814,7 +3820,7 @@ _PID_KEYS = ("pid", "process_id", "pids")
 _PROCESS_KEYS = ("process", "process_name", "processes")
 
 
-def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str | None:
+def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str, unlisted: str = "") -> str | None:
     """Why a sandbox record is not the sample's: ``""`` when a process of its tree made it,
     ``None`` where it is unattributed, else the sentence of what the rule found.
 
@@ -3830,7 +3836,9 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str | None:
     a process whose lineage the two lineage facts dispute is unattributed
     too, and says so naming the process in the network row's words for that
     case (:data:`MADE_BY_WHOM`). An unattributed record's sentence is written
-    over every record of its value (:func:`_host_unattributed`).
+    over every record of its value (:func:`_host_unattributed`). ``unlisted``
+    names the further detonation whose tree ``trees`` is where that tree lists
+    no process (:func:`_host_findings`).
     """
     from types import SimpleNamespace
 
@@ -3866,9 +3874,9 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str | None:
             # every process the record could name states its guest pid; else
             # it may be the guest pid of one that states none.
             if trees.identities.states_every_guest_pid(task):
-                return _host_matched([record], trees, did)
+                return _host_matched([record], trees, did, unlisted)
             return None
-        return _host_matched([record], trees, did)
+        return _host_matched([record], trees, did, unlisted)
     by_name: list[str] = []
     for key in _PROCESS_KEYS:
         value = record.get(key)
@@ -3885,7 +3893,7 @@ def _not_the_sample_s(record: Any, trees: ProcessTrees, did: str) -> str | None:
     )
 
 
-def _host_findings(records: list[Any], trees: ProcessTrees) -> list[str]:
+def _host_findings(records: list[Any], trees: ProcessTrees, unlisted: str = "") -> list[str]:
     """What the rule found for each number ``records`` name, one phrase per kind of finding.
 
     Every number every record names under a pid field (``_PID_KEYS``) is read,
@@ -3893,7 +3901,10 @@ def _host_findings(records: list[Any], trees: ProcessTrees) -> list[str]:
     its record's task, and placed (:meth:`ProcessTrees.place`). Numbers are
     grouped by what was found for them, their field and their task, in the
     order the records name them: no number is lost, and one number met under
-    two tasks keeps each.
+    two tasks keeps each. ``unlisted`` names the further detonation whose tree
+    ``trees`` is where that tree lists no process: a number no process answers
+    to is then said to be matched to none since no process list of that
+    detonation that lists a process was read (:data:`HOST_FOUND_NO_LISTING`).
     """
     from malspark.schemas.sandbox_document import pid_of
     from malspark.schemas.sandbox_report import (
@@ -3926,7 +3937,9 @@ def _host_findings(records: list[Any], trees: ProcessTrees) -> list[str]:
         numbers = f"{field}{'' if one else 's'} {' and '.join(pids)}"
         of_task = f" of task {task}" if task else ""
         numbers += of_task
-        if place == WRITER_UNLISTED:
+        if place == WRITER_UNLISTED and unlisted:
+            found.append(HOST_FOUND_NO_LISTING.format(numbers=numbers, detonation=unlisted))
+        elif place == WRITER_UNLISTED:
             words = (
                 HOST_FOUND_UNLISTED
                 if trees.identities.states_every_guest_pid(task or None)
@@ -3953,17 +3966,19 @@ def _host_findings(records: list[Any], trees: ProcessTrees) -> list[str]:
     return found
 
 
-def _host_matched(records: list[Any], trees: ProcessTrees, did: str) -> str:
+def _host_matched(records: list[Any], trees: ProcessTrees, did: str, unlisted: str = "") -> str:
     """The definite sentence of a record the rule placed outside every tree, by what it matched."""
-    found = _host_findings(records, trees)
+    found = _host_findings(records, trees, unlisted)
     if not found:
         return HOST_ROW_NONE_FOUND.format(did=did)
     return "the publish rule " + " and ".join(found)
 
 
-def _host_unattributed(records: list[Any], trees: ProcessTrees, did: str) -> str:
+def _host_unattributed(
+    records: list[Any], trees: ProcessTrees, did: str, unlisted: str = ""
+) -> str:
     """The sentence of a value no record of which the rule could place, over every record of it."""
-    found = _host_findings(records, trees)
+    found = _host_findings(records, trees, unlisted)
     if not found:
         return HOST_ROW_NONE_FOUND.format(did=did)
     return HOST_ROW_NOT_PLACED.format(did=did, found=" and ".join(f"it {f}" for f in found))
@@ -3980,16 +3995,22 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
     what the rule found over every record of the value
     (:func:`_host_unattributed`), against each detonation's tree.
 
-    Each record is placed against the process tree of the detonation it was
-    observed in (``observed_in``): the job's own (``process_tree``) or a
+    In a report that carries ``detonation_trees``, each record is placed
+    against the process tree of the detonation it was observed in
+    (``observed_in``): the job's own (``process_tree``) or a
     further one's (``detonation_trees``), never another detonation's. A record
-    several detonations observed is placed in each of them; a report that
-    keeps no further detonation's tree places every record in the job's own,
-    as it was written. In a launched
+    several detonations observed is placed in each of them. A further
+    detonation the report keeps no process of (an empty tree, or none) places
+    its records nowhere, and their sentence says no process list of it that
+    lists a process was read. A mark of no detonation's form names none: the
+    record is the job's own detonation's. A report that carries no
+    ``detonation_trees`` places every record in the job's own, as it was
+    written. In a launched
     detonation the launcher is not the sample: neither the submitted file nor
     the sandbox's mark names it, so a record of its process is placed outside
     the sample's tree.
     """
+    from malspark.reporting.detonation_marks import detonation_named
     from malspark.reporting.ledger_projection import FIRST_DETONATION, marks_of
 
     def _build() -> dict[tuple[str, str], str]:
@@ -3999,18 +4020,21 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
         identity = _field(report, "identity")
         named = str(_field(identity, "file_name") or "")
         sha256 = str(_field(_field(identity, "hashes"), "sha256") or "")
+        kept = _field(dynamic, "detonation_trees") or {}
         listings: dict[str, list[Any]] = {
             FIRST_DETONATION: list(_field(dynamic, "process_tree") or []),
-            **{
-                str(name): list(nodes or [])
-                for name, nodes in (_field(dynamic, "detonation_trees") or {}).items()
-            },
+            **{str(name): list(nodes or []) for name, nodes in kept.items()},
         }
-        # A report that keeps no further detonation's tree (one stored before
-        # the trees were kept apart) places every record in the job's own, as
-        # it was written.
-        apart = len(listings) > 1
+        # A report that carries no ``detonation_trees`` places every record in
+        # the job's own, as it was written.
+        apart = bool(kept)
         trees: dict[str, ProcessTrees] = {}
+
+        def _unlisted(detonation: str) -> str:
+            """``detonation`` where it is a further one whose tree lists no process, else ``""``."""
+            if detonation == FIRST_DETONATION or listings.get(detonation):
+                return ""
+            return detonation
 
         def _tree(detonation: str) -> ProcessTrees:
             if detonation not in trees:
@@ -4034,10 +4058,13 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
             except ValueError:
                 # A mark of no detonation's form names none: the job's own.
                 marks = []
-            stated = [one.detonation if apart else FIRST_DETONATION for one in marks]
+            stated = [
+                (detonation_named(one.detonation) if apart else "") or FIRST_DETONATION
+                for one in marks
+            ]
             for mark in dict.fromkeys(stated) or [FIRST_DETONATION]:
                 placed.setdefault(key, {}).setdefault(mark, []).append(record)
-                whys.append(_not_the_sample_s(record, _tree(mark), did))
+                whys.append(_not_the_sample_s(record, _tree(mark), did, _unlisted(mark)))
 
         for op in list(_field(dynamic, "file_operations") or []):
             if not isinstance(op, dict):
@@ -4058,7 +4085,7 @@ def _sandbox_host_index(report: Any) -> dict[tuple[str, str], str]:
             definite = next((why for why in whys if why), None)
             out[key] = definite or " and ".join(
                 dict.fromkeys(
-                    _host_unattributed(records, _tree(mark), did)
+                    _host_unattributed(records, _tree(mark), did, _unlisted(mark))
                     for mark, records in placed[key].items()
                 )
             )

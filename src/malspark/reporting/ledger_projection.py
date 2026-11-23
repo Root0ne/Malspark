@@ -1170,8 +1170,13 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
     # answer the same processes and signatures, and each is one row. Each
     # detonation's processes are read apart, the job's own as the process
     # tree and each further one's as its own tree (``detonation_trees``), and
-    # each takes the guest pids its own detonation's answers state.
-    listed: dict[str, list[ProcessNode]] = {}
+    # each takes the guest pids its own detonation's answers state. Every
+    # further detonation the ledger reads has a tree, one with nothing in it
+    # where its process view lists no process, so no record of it is placed
+    # in another detonation's tree.
+    listed: dict[str, list[ProcessNode]] = {
+        name: [] for name in (later_detonation_name(e) for e in ledger if e.ok) if name
+    }
     for entry, data in _payloads(ledger, "sandbox_processes", detonations=True):
         nodes = _process_nodes(data)
         if nodes:

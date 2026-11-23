@@ -451,8 +451,10 @@ class DynamicBehavior(BaseModel):
     process_tree: list[ProcessNode] = Field(default_factory=list)
     # Each further detonation's listed processes, nested as ``process_tree``
     # is, by the detonation's name (``d2``…): the tree a record observed in
-    # that detonation is placed against, never the job's own. Empty, and left
-    # out of the dump, for a run with one detonation.
+    # that detonation is placed against, never the job's own. Every further
+    # detonation the run read has one, an empty list where its process view
+    # lists no process. Empty, and left out of the dump, for a run with one
+    # detonation.
     detonation_trees: dict[str, list[ProcessNode]] = Field(
         default_factory=dict, exclude_if=lambda value: not value
     )

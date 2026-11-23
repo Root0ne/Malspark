@@ -5,11 +5,12 @@ names that directory, and the record does not hold it: it is no second source
 of the path. A file name that is the last component of a recorded path is held
 (the boundary rule's own case). A further component is whatever follows the
 separator, unless it is white space or a character no component starts with in
-a quoted or listed path; a component opening with a brace, a dollar sign, a
-bracket or a letter outside ASCII makes the path a leading directory like any
-other. The build's record of each entry, the publish rule's reading of an
-observation and the refusal's holder clauses read a path the same way; a value
-of another kind keeps the boundary rule as it is.
+a quoted, listed or bracketed path (a closing bracket among them); a component
+opening with a brace, a dollar sign, an opening bracket or a letter outside
+ASCII makes the path a leading directory like any other. The build's record of
+each entry, the publish rule's reading of an observation and the refusal's
+holder clauses read a path the same way; a value of another kind keeps the
+boundary rule as it is.
 """
 
 from __future__ import annotations
@@ -82,6 +83,18 @@ class TestTheTest:
         self, after: str
     ) -> None:
         assert whole_path_in(DIRECTORY, f"cwd {DIRECTORY.lower()}\\{after}x")
+
+    @pytest.mark.parametrize(
+        "written", ["({d}\\)", "[{d}\\]", "{{{d}\\}}", "{d}\\)", "{d}\\]", "{d}\\}}"]
+    )
+    def test_a_directory_written_as_itself_before_a_closing_bracket_is_held(
+        self, written: str
+    ) -> None:
+        assert whole_path_in(DIRECTORY, f"cwd {written.format(d=DIRECTORY.lower())} set")
+
+    @pytest.mark.parametrize("opening", ["{x}\\relay.exe", "[1]\\relay.exe", "(1)\\relay.exe"])
+    def test_an_opening_bracket_after_the_separator_opens_a_component(self, opening: str) -> None:
+        assert not whole_path_in(DIRECTORY, f"({DIRECTORY}\\{opening})".lower())
 
     def test_another_kind_keeps_the_boundary_rule(self) -> None:
         assert whole_value_in(KEY.lower(), f"{KEY.lower()}\\run")

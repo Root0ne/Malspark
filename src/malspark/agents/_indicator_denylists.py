@@ -410,9 +410,10 @@ def whole_path_starts(literal: str, haystack: str) -> Iterator[int]:
             yield start
 
 
-# The characters that close or join a quoted or listed path rather than open a
-# component of it: after a separator they join nothing to the value before it.
-_OPENS_NO_COMPONENT = frozenset("\"'<>|*?;,")
+# The characters that close or join a quoted, listed or bracketed path rather
+# than open a component of it: after a separator they join nothing to the value
+# before it. A closing bracket is one; an opening one opens a component.
+_OPENS_NO_COMPONENT = frozenset("\"'<>|*?;,)]}")
 
 
 def _leads_a_longer_path(haystack: str, end: int) -> bool:
@@ -423,8 +424,9 @@ def _leads_a_longer_path(haystack: str, end: int) -> bool:
     a separator. A further component is whatever follows the separators,
     unless it is nothing (a trailing ``\\``), white space, or a character no
     component starts with in a quoted or listed path
-    (:data:`_OPENS_NO_COMPONENT`): a component opening with a brace, a dollar
-    sign, a bracket or a letter outside ASCII is a component like any other.
+    (:data:`_OPENS_NO_COMPONENT`, a closing bracket among them): a component
+    opening with a brace, a dollar sign, an opening bracket or a letter outside
+    ASCII is a component like any other.
     """
     after = haystack[end : end + 1]
     if after not in ("\\", "/"):

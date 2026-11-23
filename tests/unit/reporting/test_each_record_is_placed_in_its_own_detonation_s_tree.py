@@ -7,15 +7,21 @@ observed in a detonation is placed in that detonation's tree, never in
 another's, where the same task and process id may name another process. In a
 launched detonation the launcher is not the sample: neither the submitted file
 nor the sandbox's mark names it, so a record of the launcher's process is
-placed outside the sample's tree. A report that keeps no further detonation's
-tree (one stored before the trees were kept apart) places every record in the
-job's own, as it was written.
+placed outside the sample's tree. Every further detonation the ledger reads
+has a tree of its own, one with nothing in it where its process view lists no
+process: a record of it is then placed nowhere, and its sentence says that no
+process list of that detonation listing a process was read. A mark of no
+detonation's form names none: the record is the job's own detonation's. A
+report that carries no ``detonation_trees`` places every record in the job's
+own, as it was written.
 """
 
 from __future__ import annotations
 
 import json
 from typing import Any
+
+import pytest
 
 from malspark.pipeline.detonations import platform_reads
 from malspark.providers import sandbox_tools
@@ -56,6 +62,14 @@ def _launched_tree() -> list[ProcessNode]:
         children=[sample],
     )
     return [launcher]
+
+
+# The refusal of a pid of task t1 recorded in a detonation whose tree lists nothing.
+NO_LISTING = (
+    "the publish rule could not place the process that wrote it (it matched pid 10 of task "
+    "t1 to no process since it read no process list of detonation {detonation} that lists "
+    "a process)"
+)
 
 
 def _report(*records: dict[str, Any]) -> MalwareReport:
@@ -105,11 +119,35 @@ class TestARecordIsPlacedInItsOwnDetonationSTree:
         report = _report(_write(FIRST_DIGEST, "10", None))
         assert "unattributed" not in sandbox_host_kwargs(report, "hash", FIRST_DIGEST)
 
-    def test_a_report_keeping_no_further_tree_places_its_records_as_it_was_written(self) -> None:
+    def test_a_report_carrying_no_detonation_trees_places_its_records_in_the_job_s_own(
+        self,
+    ) -> None:
         report = _report(_write(FIRST_DIGEST, "10", D2))
         assert report.dynamic is not None
         report.dynamic.detonation_trees = {}
         assert "unattributed" not in sandbox_host_kwargs(report, "hash", FIRST_DIGEST)
+
+    def test_a_record_of_a_detonation_with_an_empty_tree_is_placed_nowhere(self) -> None:
+        report = _report(_write(FIRST_DIGEST, "10", D2))
+        assert report.dynamic is not None
+        report.dynamic.detonation_trees = {"d2": []}
+        said = sandbox_host_kwargs(report, "hash", FIRST_DIGEST)
+        assert said["unattributed"] == NO_LISTING.format(detonation="d2")
+        assert said["kept_by"] == ""
+
+    def test_a_record_of_a_detonation_with_no_tree_is_placed_nowhere(self) -> None:
+        d9 = [{"detonation": "d9", "launched_with": "--key k"}]
+        said = sandbox_host_kwargs(_report(_write(FIRST_DIGEST, "10", d9)), "hash", FIRST_DIGEST)
+        assert said["unattributed"] == NO_LISTING.format(detonation="d9")
+        assert said["kept_by"] == ""
+
+    @pytest.mark.parametrize("mark", [{"detonation": "xx??"}, {"detonation": 5}])
+    def test_a_mark_of_no_detonation_s_form_is_the_job_s_own(self, mark: dict[str, Any]) -> None:
+        said = sandbox_host_kwargs(
+            _report(_write(FIRST_DIGEST, "10", [mark])), "hash", FIRST_DIGEST
+        )
+        assert "unattributed" not in said
+        assert said["kept_by"] == "the judge's indicator"
 
 
 ARGS = "--key k"
@@ -122,6 +160,11 @@ LAUNCHED_REPORT: dict[str, Any] = {
     },
 }
 JOB_REPORT: dict[str, Any] = {"behavior": {"processes": [{"pid": 10, "process_name": SAMPLE}]}}
+# A launched detonation whose process view lists nothing, and a file it recorded process 10 writing.
+UNLISTED_REPORT: dict[str, Any] = {
+    "behavior": {"processes": []},
+    "dropped_files": [{"filepath": "C:\\x\\a.bin", "sha256": FIRST_DIGEST, "pids": [10]}],
+}
 
 
 class _Container:
@@ -129,7 +172,7 @@ class _Container:
     detonations: list[Any] = []
 
 
-def _ledger() -> list[LedgerEntry]:
+def _ledger(launched: dict[str, Any] = LAUNCHED_REPORT) -> list[LedgerEntry]:
     view = sandbox_tools.sandbox_processes(JOB_REPORT)
     ledger = [
         LedgerEntry(
@@ -144,7 +187,7 @@ def _ledger() -> list[LedgerEntry]:
         ordinal=2,
         origin="agent",
         arguments=ARGS,
-        report=LAUNCHED_REPORT,
+        report=launched,
         requested_by=[{"agent": "reversing", "cited_entries": ["ev_0001"]}],
     )
     return ledger + [
@@ -165,3 +208,23 @@ class TestTheProjectionKeepsEachDetonationSProcessesApart:
         dynamic = dynamic_from_ledger(_ledger()[:1])
         assert dynamic is not None
         assert "detonation_trees" not in dynamic.model_dump()
+
+    def test_a_further_detonation_listing_no_process_has_an_empty_tree(self) -> None:
+        dynamic = dynamic_from_ledger(_ledger(UNLISTED_REPORT))
+        assert dynamic is not None
+        assert dynamic.detonation_trees == {"d2": []}
+        assert dynamic.model_dump()["detonation_trees"] == {"d2": []}
+
+    def test_its_record_is_not_placed_in_the_job_s_own_tree(self) -> None:
+        dynamic = dynamic_from_ledger(_ledger(UNLISTED_REPORT))
+        assert dynamic is not None
+        report = MalwareReport(
+            identity=SampleIdentity(hashes=FileHashes(sha256=SHA256), file_name=SAMPLE),
+            verdict="Malware",
+            overall_confidence=0.9,
+            dynamic=dynamic,
+            judge_indicators=[JudgeIndicator(kind="hash", value=FIRST_DIGEST)],
+        )
+        said = sandbox_host_kwargs(report, "hash", FIRST_DIGEST)
+        assert "no process list of detonation d2" in said["unattributed"]
+        assert said["kept_by"] == ""
