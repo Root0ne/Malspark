@@ -632,6 +632,12 @@ def test_a_sentence_saying_a_call_failed_keeps_its_finding() -> None:
 
 
 _TRUE = "The decompile of 0x5a10 shows no network call."
+# What a refusal says the round read where it reads a rewrite as keeping its sentence (T-895).
+_READ_AS_KEPT = (
+    "changing too few of its words for the round's check to read the rewrite as a new sentence "
+    "(a number written in digits alone not being counted as a word), so the round reads it as "
+    "keeping the sentence"
+)
 
 
 def _row(sentence: str, decision: str, sources: list[str], **said: str) -> dict[str, Any]:
@@ -682,7 +688,7 @@ def test_a_sentence_held_to_a_redone_call_ends_as_the_round_is_told() -> None:
     same = _row(_TRUE, "rewrite", ["inv.1"], rewrite=_TRUE.rstrip(".") + " [ev_0107].")
     (refused,) = agreement_violations({"sentences": [same]}, passages)
     assert refused.code == KEEP_UNQUOTED_CODE
-    assert "into the same words, which keeps it" in refused.message
+    assert f"{_READ_AS_KEPT}, on inv.1, but" in refused.message
     assert refused.message.endswith(f"{_ONE_REDO_ENDS} {_LEFT_OUT}")
     # A rewrite in its own words on what the redo answered, citing it, and a drop stand
     # whole: no finding of any kind.
@@ -991,15 +997,15 @@ def _kept(where: str, sentence: str, why: str, ends: str) -> str:
 
 def _same_words(where: str, sentence: str, sources: str, why: str, ends: str) -> str:
     return (
-        f"row 1: {where} rewrites {sentence!r} into the same words, which keeps it, on "
-        f"{sources}, but the best sentence of those sources {why}: {ends}"
+        f"row 1: {where} rewrites {sentence!r} {_READ_AS_KEPT}, on {sources}, but the best "
+        f"sentence of those sources {why}: {ends}"
     )
 
 
 def _same_kept(where: str, sentence: str, sources: str, why: str, ends: str) -> str:
     return (
-        f"row 1: {where} rewrites {sentence!r} into the same words, which keeps it, on "
-        f"{sources}, but its quote {why}: {ends}"
+        f"row 1: {where} rewrites {sentence!r} {_READ_AS_KEPT}, on {sources}, but its quote "
+        f"{why}: {ends}"
     )
 
 
@@ -1093,9 +1099,9 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
                     (
                         KEEP_UNQUOTED_CODE,
                         # It gives no quote, and is told so (T-600).
-                        f"row 1: introduction rewrites {_UNKNOWN!r} into the same words, which "
-                        "keeps it, on ledger.1, but gives no quote; quote at least 12 characters "
-                        f"of the source's words: {_BODY_ENDS}",
+                        f"row 1: introduction rewrites {_UNKNOWN!r} {_READ_AS_KEPT}, on "
+                        "ledger.1, but gives no quote; quote at least 12 characters of the "
+                        f"source's words: {_BODY_ENDS}",
                     )
                 ],
             ),
@@ -1324,6 +1330,23 @@ def test_a_held_sentence_no_row_lists_is_told_its_own_ends(path: str, ends: str)
     assert unlisted.message.endswith(
         f"List it: {ends} {_LEFT_OUT} Answer with every row again, this one included."
     )
+
+
+@pytest.mark.parametrize("names", [["limitations"], ["parcel_marker"]])
+@pytest.mark.parametrize("quote", ["", _SLOT_ROW])
+def test_a_held_body_rewrite_naming_no_passage_a_quote_may_stand_in_is_told_only_that(
+    names: list[str], quote: str
+) -> None:
+    report, ledger, pid, sentence, _sources, citation, *_rest = _PATHS["body held on a name"]
+    row = _row(sentence, "rewrite", names, rewrite=_cited(sentence, citation, "end"), quote=quote)
+    found = agreement_violations(
+        {"sentences": [{**row, "passage": pid}]}, passages_of(report(), entries=ledger())
+    )
+    # Nothing is said of a quote, given or not: no passage it names is one a quote may stand in.
+    assert [v.message for v in found if v.code == KEEP_UNQUOTED_CODE] == [
+        f"row 1: introduction rewrites {sentence!r} {_READ_AS_KEPT}, but it names no passage "
+        f"listed that a quote may stand in: {_BODY_ENDS} {_LEFT_OUT}"
+    ]
 
 
 @pytest.mark.parametrize(

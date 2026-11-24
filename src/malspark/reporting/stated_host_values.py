@@ -1145,12 +1145,17 @@ def _delimited_shape(kind: HostKind | None) -> bool:
 
 
 # What a refusal says of a value no cited entry holds whole, by what the one scan
-# that wrote ``held_in`` found (:class:`HeldScan`): the text only inside a longer
-# run of letters or digits, only between spaces, or somewhere this check does not
+# that wrote ``held_in`` found (:class:`HeldScan`): the value whole only where a
+# cited entry's answer repeats its own call (and, where that answer shows it,
+# elsewhere only inside a longer run of text), the text only inside a longer run
+# of letters or digits, only between spaces, or somewhere this check does not
 # count as the value's whole. A value whose text no cited entry holds in any
 # spelling (:data:`NOWHERE`) keeps :data:`NOT_IN_THE_CITED`; a row whose record
 # holds no word of what the scan found (a report stored before the scan recorded
 # it) says only what its record holds (:data:`NOT_RECORDED_AS_HELD`).
+ONLY_IN_ITS_CALL = "only_in_its_call"
+ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE = "only_in_its_call_elsewhere_inside"
+AS_BYTES = "as_bytes"
 INSIDE_A_LONGER_RUN = "inside_a_longer_run"
 BETWEEN_SPACES = "between_spaces"
 NOT_WHOLE = "not_whole"
@@ -1164,7 +1169,19 @@ NOT_IN_THE_READ = (
     "which are the entries this check reads"
 )
 READ_OF_THE_CITED = "this check reads the first {read} of the {cited} entries it cites"
+# What a cited entry holds whole only in its answer's echo of its own call.
+ONLY_IN_ITS_CALL_WORDS = (
+    "a cited entry holds it whole only where its answer repeats what its call asked for"
+)
 UNHELD_WORDS = {
+    ONLY_IN_ITS_CALL: ONLY_IN_ITS_CALL_WORDS,
+    ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE: (
+        f"{ONLY_IN_ITS_CALL_WORDS}; elsewhere only inside a longer run of text"
+    ),
+    AS_BYTES: (
+        "a cited entry writes its whole value only as bytes, which the export does not read as "
+        "a host value"
+    ),
     INSIDE_A_LONGER_RUN: (
         "a cited entry holds its text only inside a longer run of letters or digits"
     ),
@@ -1219,15 +1236,30 @@ def scan_cited(entries: Any, item: Any) -> HeldScan:
     literal inside it writes (``written_forms.code_literal_forms``), under the
     same delimiting.
 
+    A cited entry this reading finds the value whole in only in the echo of
+    its own call (``validation.held_only_in_its_echo``: whole in a text with
+    nothing taken out, in none once what repeats the call's arguments is out)
+    holds nothing here — a model's own question echoed back is no record of
+    the value — unless its echo-free text holds a spelling of the value at a
+    place no letter, digit or ``_`` of the run around it touches, read decoded,
+    where the entry holds it as this reading found.
+
     Where no cited entry holds it whole, the same reading says what they hold
-    (:func:`_held_as`): an entry whose every place of the text has a letter or
-    a digit running on at an end holds it only inside a longer run; where every
+    (:func:`_held_as`): an entry holding it whole only in its call's echo says
+    so, with, where its echo-free text holds the value's text only inside a
+    longer run, that too; an entry whose text holds the value's text nowhere,
+    or only inside a longer run, and whose bytes hold it
+    (``EntryTexts.holds_as_bytes``, read for these words alone: the export
+    reads no bytes) writes it whole only as bytes; an entry whose every place
+    of the text has a letter or a digit running on at an end holds it only
+    inside a longer run; where every
     place in every entry has a space at both ends, outside any recorded command
     line that holds the text, they hold it only between spaces; any other place
     is somewhere this check does not count as the whole value; and where no entry
     read holds its text in any spelling, :data:`NOWHERE`.
     """
     from malspark.agents._indicator_denylists import whole_value_in
+    from malspark.pipeline.validation import ECHO_FREE_HOLDS_IT, ECHO_FREE_HOLDS_IT_INSIDE
 
     value = str(getattr(item, "value", "") or "").strip()
     if not value or len(value) > MAX_VALUE_CHARS or entries is None:
@@ -1263,36 +1295,69 @@ def scan_cited(entries: Any, item: Any) -> HeldScan:
         read = spelt[ref.lower() in listings]
         paths = kind is not None and kind.shape in ("folder", "file_name")
         forms = [*read.forms, *read.names, *read.stream]
-        held = False
-        if ref.lower() in candidates or _is_item(entries, ref):
+
+        def _whole_in(text: str, read: _Spellings = read, paths: bool = paths) -> bool:
+            # The value whole in one text, delimited where its kind is.
             if stream:
-                held = any(
+                return any(
                     delimited_in(form, text, separators=False) for form in read.forms
                 ) or any(
                     delimited_in(form, text, after_colon=True, separators=False)
                     for form in read.stream
                 )
-            elif _delimited_shape(kind):
-                held = any(
+            if _delimited_shape(kind):
+                return any(
                     delimited_in(form, text, separators=paths, prefixes=read.prefixes)
                     for form in [*read.forms, *read.names]
                 )
-            else:
-                held = any(whole_value_in(form, text) for form in read.forms)
+            return any(whole_value_in(form, text) for form in read.forms)
+
+        def _held_in_one(text: str, forms: list[str] = forms) -> bool:
+            # This scan's whole test of one text: the value whole, or one whole
+            # argument of a command line the text records.
+            if _whole_in(text):
+                return True
+            return (
+                _delimited_shape(kind)
+                and any(form in text for form in forms)
+                and any(
+                    argument in arguments
+                    for line in command_line_arguments(text)
+                    for argument in line
+                )
+            )
+
+        held = False
+        if ref.lower() in candidates or _is_item(entries, ref):
+            held = _whole_in(text)
         lines: list[tuple[str, ...]] = []
         if not held and _delimited_shape(kind) and any(form in text for form in forms):
             lines = _command_lines_of(entries, ref)
             held = any(argument in arguments for line in lines for argument in line)
+        echo = _echo_holding(entries, ref, _held_in_one, forms) if held else ""
+        if echo and echo != ECHO_FREE_HOLDS_IT:
+            # Held only in the echo of the entry's own call: no holder.
+            held = False
         if held:
             out.append(ref)
         elif not out:
             # What this entry holds of the text, read only while no entry holds it.
+            if echo == ECHO_FREE_HOLDS_IT_INSIDE:
+                found.append(ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE)
+                continue
+            if echo:
+                found.append(ONLY_IN_ITS_CALL)
+                continue
             in_a_line = any(
                 any(value_text in argument for argument in line)
                 for line in lines
                 for value_text in arguments
             )
-            found.append(_held_as(text, forms, in_a_line))
+            what = _held_as(text, forms, in_a_line)
+            if what in ("", INSIDE_A_LONGER_RUN) and _writes_as_bytes(entries, ref, value):
+                # Its text holds no whole value, its bytes do: said, never exported.
+                what = AS_BYTES
+            found.append(what)
     if out:
         return HeldScan(held=tuple(out))
     return HeldScan(unheld_as=_unheld_as(found) or NOWHERE)
@@ -1330,15 +1395,49 @@ def _held_as(text: str, forms: Sequence[str], in_a_line: bool) -> str:
     return NOT_WHOLE if seen else ""
 
 
+def _writes_as_bytes(entries: Any, ref: str, value: str) -> bool:
+    """Whether a cited entry's text writes ``value`` as bytes chance does not explain
+    (``EntryTexts.holds_as_bytes``, the citation check's one byte reading): read only to say
+    so in a refusal, never to export the value."""
+    holds = getattr(entries, "holds_as_bytes", None)
+    return callable(holds) and bool(holds(ref, value))
+
+
+def _echo_holding(entries: Any, ref: str, held: Any, forms: Sequence[str]) -> str:
+    """What a cited entry holds of a value this scan's own test (``held``) finds whole only
+    in the echo of the entry's call (``validation.held_only_in_its_echo``); ``""`` where it
+    is held elsewhere too, or the entries tell no echo apart."""
+    if not callable(getattr(entries, "echo_free_parts", None)):
+        return ""
+    from malspark.pipeline.validation import held_only_in_its_echo
+
+    return held_only_in_its_echo(entries, ref, held, forms)
+
+
+# What one entry's reading says of a value no cited entry holds whole, in the fixed
+# order :func:`_unheld_as` picks among them: each says what one cited entry holds, so
+# the first found is true of the row whatever the others hold.
+_UNHELD_ORDER = (
+    ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE,
+    ONLY_IN_ITS_CALL,
+    AS_BYTES,
+    INSIDE_A_LONGER_RUN,
+)
+
+
 def _unheld_as(found: Sequence[str]) -> str:
     """What the cited entries hold of a value none holds whole, from each entry's reading:
-    an entry that holds it only inside a longer run says so; every entry that holds it
-    holding it only between spaces says that; nothing held says ``""``."""
+    the first reading of :data:`_UNHELD_ORDER` an entry gives (an entry holding it whole
+    only in the echo of its own call, then one writing it whole only as bytes, then one
+    holding it only inside a longer run); every
+    entry that holds it holding it only between spaces says that; nothing held says
+    ``""``."""
     held = [what for what in found if what]
     if not held:
         return ""
-    if INSIDE_A_LONGER_RUN in held:
-        return INSIDE_A_LONGER_RUN
+    for what in _UNHELD_ORDER:
+        if what in held:
+            return what
     if all(what == BETWEEN_SPACES for what in held):
         return BETWEEN_SPACES
     return NOT_WHOLE

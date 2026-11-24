@@ -410,14 +410,17 @@ def test_a_held_sentence_never_listed_stays_and_the_finding_is_recorded() -> Non
     assert done.summary["dropped"] == 0
 
 
-def test_mixed_valid_and_unknown_sources_on_a_failing_rewrite_keep_the_sentence() -> None:
+def test_mixed_valid_and_unknown_sources_on_a_failing_rewrite_leave_the_sentence_out() -> None:
     report = _held_report()
     row = _row("limitations", HELD, ["bound.1", "conclusion"], "It is 'alphaname' [ev_0002].")
     done, _ = _ask(report, {"sentences": [row]}, {"sentences": [row]})
-    # Left out only where every source the row names is one it may rest on.
-    assert _limitations(report) == f"{HELD} {KEPT}"
-    assert done.summary["dropped"] == 0 and done.summary["not_applied"] == 1
+    # A name that is no source decides no end: refused for more than that name, the row ends
+    # as the row naming the fact alone, its record naming only the fact (T-895).
+    assert _limitations(report) == KEPT
+    assert done.summary["dropped"] == 1 and done.summary["not_applied"] == 0
     assert UNKNOWN_SOURCE_CODE in [r["code"] for r in done.tally.unresolved]
+    (dropped,) = [r for r in done.tally.unresolved if r["code"] == DROPPED_CODE]
+    assert "as saying otherwise than bound.1, and no rewrite" in dropped["message"]
 
 
 def test_a_closing_section_whose_every_sentence_is_left_out_is_empty() -> None:

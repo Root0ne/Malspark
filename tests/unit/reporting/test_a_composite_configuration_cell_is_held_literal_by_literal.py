@@ -43,6 +43,7 @@ from malspark.pipeline import validation
 from malspark.pipeline.events import FINDING_VALUE_LIMIT, safe_finding_value
 from malspark.pipeline.validation import (
     KEPT_WITH_A_FINDING,
+    SHORT_NUMBER_SAID,
     STATED_VALUE_INSIDE_A_TOKEN_CODE,
     STATED_VALUE_UNHELD_CODE,
     EntryTexts,
@@ -137,7 +138,7 @@ class TestACompositeCell:
 
         assert found.code == STATED_VALUE_UNHELD_CODE
         assert found.asked
-        assert "holds 'primary'." in found.message
+        assert "'primary' was not found as a whole value in" in found.message
 
     def test_no_span_is_skipped_for_its_shape_case_or_length(self) -> None:
         texts = EntryTexts.from_ledger(
@@ -147,12 +148,12 @@ class TestACompositeCell:
         found = _one(_items("CryptEncrypt with RSA, AES", "ev_0020"), texts)
 
         assert found.code == STATED_VALUE_UNHELD_CODE
-        assert "holds 'with', 'RSA', 'AES'." in found.message
+        assert "'with', 'RSA', 'AES' were not found as whole values in" in found.message
 
     def test_a_joining_word_is_a_span_like_any_other(self) -> None:
         found = _one(_items("ws2_32.dll and wsock32.dll", "ev_0010", "ev_0011"))
 
-        assert "holds 'and'." in found.message
+        assert "'and' was not found as a whole value in" in found.message
 
     def test_a_path_runs_to_the_end_of_its_part(self) -> None:
         texts = EntryTexts.from_ledger(
@@ -183,7 +184,7 @@ class TestACompositeCell:
             == []
         )
         found = _one(_items("GetTempPathW, Software\\Vendor\\Shell Icons", "ev_0022"), texts)
-        assert "holds 'Software\\\\Vendor\\\\Shell Icons'." in found.message
+        assert "'Software\\\\Vendor\\\\Shell Icons' was not found as a whole value" in found.message
 
     def test_a_path_is_held_only_whole_never_by_its_components(self) -> None:
         found = _one(_items("C:\\Users\\Public\\evil.exe", "ev_0011", "ev_0012"))
@@ -195,7 +196,7 @@ class TestACompositeCell:
 
         found = _one(_items("C:\\Temp\\a.exe (dropped)", "ev_0023"), texts)
 
-        assert "holds 'dropped'." in found.message
+        assert "'dropped' was not found as a whole value in" in found.message
 
     def test_quotes_around_a_span_are_no_part_of_it(self) -> None:
         texts = EntryTexts.from_ledger([_code("ev_0024", 'FindWindowA("Pageant", "Pageant");\n')])
@@ -212,7 +213,7 @@ class TestACompositeCell:
 
         found = _one(_items("LoadLibraryA; alpha,beta", "ev_0025"), texts)
 
-        assert "holds 'alpha,beta'." in found.message
+        assert "'alpha,beta' was not found as a whole value in" in found.message
 
     def test_a_quoted_span_with_a_space_is_one_span_without_its_quotes(self) -> None:
         texts = EntryTexts.from_ledger(
@@ -250,34 +251,40 @@ class TestACompositeCell:
         assert stated_value_violations(_items(cell, "ev_0052"), texts) == []
         # One address no cited entry holds is named alone, paired with nothing.
         found = _one(_items("8.8.8.8 (DNS); 172.217.76.95 (HTTP)", "ev_0052"), texts)
-        assert "holds '172.217.76.95'." in found.message
+        assert "'172.217.76.95' was not found as a whole value in" in found.message
 
     def test_a_number_first_in_its_part_is_read_alone(self) -> None:
         # 0x202 pairs with WSAStartup in its part; 0x101 opens the next part and
         # is read as a number standing alone, in decimal or hex.
         found = _one(_items("WSAStartup 0x202; 0x101", "ev_0010"))
-        assert "holds 'WSAStartup 0x202', '0x101'." in found.message
+        assert "'WSAStartup 0x202', '0x101' were not found as whole values" in found.message
         texts = EntryTexts.from_ledger([_code("ev_0053", "WSAStartup(0x202);\nver = 257;\n")])
         found = _one(_items("WSAStartup 0x202; 0x101", "ev_0053"), texts)
-        assert "holds 'WSAStartup 0x202'." in found.message
+        assert "): 'WSAStartup 0x202' was not found as a whole value" in found.message
 
     def test_a_short_number_alone_in_its_part_holds_nothing(self) -> None:
         texts = EntryTexts.from_ledger([_strings("ev_0054", "LoadLibraryA", "2")])
 
         found = _one(_items("LoadLibraryA; 2", "ev_0054"), texts)
 
-        assert "holds '2'." in found.message
+        assert f"'2' {SHORT_NUMBER_SAID}" in found.message
 
     def test_a_cell_of_one_span_is_read_whole(self) -> None:
         assert stated_value_violations(_items("0x80000001", "ev_0010"), _texts()) == []
         found = _one(_items("primary", "ev_0010"))
-        assert "is in none of the entries it cites" in found.message
+        assert (
+            "was not found as a whole value in the answer of ev_0010 (batch_decompile), read as "
+            "written"
+        ) in found.message
 
     def test_an_identifier_row_is_never_split(self) -> None:
         found = _one(_identifiers("ws2_32.dll and LoadLibraryA", "ev_0010"))
 
         assert found.code == STATED_VALUE_UNHELD_CODE
-        assert "is in none of the entries it cites" in found.message
+        assert (
+            "was not found as a whole value in the answer of ev_0010 (batch_decompile), read as "
+            "written"
+        ) in found.message
 
 
 class TestTheSpellings:
@@ -432,8 +439,10 @@ class TestTheQuestion:
 
         found = _one(_items(cell, "ev_0010"))
 
-        assert "none of the entries it cites (ev_0010 (batch_decompile)) holds " in found.message
-        assert "holds 'LoadLibraryExW', 'FreeLibraryX'." in found.message
+        assert (
+            "'LoadLibraryExW', 'FreeLibraryX' were not found as whole values in the answer of "
+            "ev_0010 (batch_decompile), read as written"
+        ) in found.message
         assert "write the value as that entry records it" not in found.message
         assert "Cite an entry that holds each value the row states" in found.message
 

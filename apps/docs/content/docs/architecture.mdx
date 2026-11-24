@@ -1509,7 +1509,15 @@ Two producers use it:
   not held. Only the table and citation checks read pairs; a sample-string
   read never takes a tool's own field and value for a string. Held by a cited entry, the citation stands; held only by another
   entry, the model is asked once with that entry named; held by none, nothing
-  is said, because a paraphrase or a composed value cannot be judged. "Held"
+  is said, because a paraphrase or a composed value cannot be judged. An
+  entry that holds the value whole only where its answer repeats its own
+  call's arguments (a repeat's, those of the call whose answer it repeats),
+  while the rest of its text holds the value's spellings only at places a
+  letter, digit or `_` of the run around them touches, read decoded, is not
+  offered: it holds the value no more than the cited entry
+  may. One whose rest holds no spelling of the value (a search that found
+  nothing, the right citation of a sentence saying the value is absent) is
+  offered as before. "Held"
   means held as a whole value in one of its spellings, never as a slice of a
   longer run; a value that is only a number raises no question (an answer may
   write it another way, and every reputation report holds short numbers), and
@@ -1523,17 +1531,19 @@ Two producers use it:
   `code_constants.chance_of_spelling` over the symbols each token is written
   with). A run the entry's own call wrote, or its echo, holds nothing: a run
   the call's arguments write as bytes, and a run equal to the UTF-8 or
-  UTF-16LE bytes of one of its string arguments, as written or lower-cased (a
-  longer run holding them is data; a hit an answer reports without what
+  UTF-16LE bytes of one of its string arguments, as written or lower-cased,
+  each also followed only by NUL bytes (a longer run holding them is data; a hit an answer reports without what
   stands around it, equal to an argument's bytes, is not told from the echo
   and holds nothing). A run's end bounds a value only where the run ends its
   JSON string or array, or the text: a line break, a column gap or a split
   between two rows of one list, read at the same place in each row at any
   depth below them, bounds nothing.
   `0x` lists, brace arrays, octal, percent and entity escapes, UTF-16BE,
-  base64 and a value split across two strings are not read. Only
-  this test reads bytes; the entries offered, and every other check that
-  reads an entry's text, read text. The question names the byte reading where
+  base64 and a value split across two strings are not read. The decoded
+  texts of an entry's byte runs are read once per entry. Only the tests of a
+  cited entry read bytes — this one, the table id check's and the
+  stated-value check's, each asking every cited entry directly; the entries
+  offered, and every other check that reads an entry's text, read text. The question names the byte reading where
   a cited entry's bytes had a place to read; where those bytes write the value
   whole and only the chance bound refuses the holding, the question and the
   mark printed beside the citation say that the bytes hold it and why that is
@@ -6354,10 +6364,23 @@ is assembled from what the run gathered rather than recomputed beside it:
   part of an argument, a value between spaces anywhere else, and an object
   with an id and a command line but no parent (a configuration's entry, a
   tool's echo of its arguments) are not. An entry that quotes a whole process
-  row is read as one. The same scan records, for a row no cited entry holds
+  row is read as one. A cited entry this reading finds the value whole in
+  only where its answer repeats its own call's arguments (a search's pattern,
+  a lookup's path; a repeat's, those of the call whose answer it repeats:
+  whole in its text written again with nothing taken out, whole nowhere once
+  the echo is out; `validation.held_only_in_its_echo`)
+  holds nothing, unless the rest of its text holds a spelling of the value at
+  a place no letter, digit or `_` of the run around it touches, read decoded:
+  a model's own question echoed back is no record of the value, so a search
+  that found nothing or a lookup about its own argument is no holder here,
+  for the answer, the reason or the row's evidence ids. The same scan records, for a row no cited entry holds
   whole, what the entries it read (the first `MAX_CITED`) hold instead
   (`HostIdentifier.unheld_as`, never in the model's schema), and the refusal
-  says it: the text only inside a longer run of letters or digits, only
+  says it: the value whole only where a cited entry's answer repeats what its
+  call asked for (and, where the rest of that answer holds its text only
+  inside a longer run, that too), the whole value written by a cited entry
+  only as bytes, which the export does not read as a host value (the
+  citation check's byte reading, read for these words alone), the text only inside a longer run of letters or digits, only
   between spaces, or somewhere else not counted as the whole value; the
   earlier words where no entry read holds the text at all (`nowhere`); and,
   where the row cites more entries than were read, the count read and the
@@ -6725,13 +6748,20 @@ is assembled from what the run gathered rather than recomputed beside it:
   (`validation.compared_values`, picked as for `composer.command_values`),
   and only where the entries holding as many agree on its values, never one
   that merely compares it; any other id is held by an entry whose
-  text writes it whole; an entry whose call failed, or whose answer is an error
+  text writes it whole, and by a cited entry also where its text writes it as
+  bytes (the citation check's byte reading); an entry whose call failed, or whose answer is an error
   envelope, holds nothing; rows the same entries hold are one question naming
   them, an id no entry holds is not asked here, and a kept row is marked beside
-  its evidence),
+  its evidence; the question says of an id read as a number that none of the
+  cited entries writes it as a compared operand, and of an id that is not a
+  number that it was not found as a whole value in the cited entries, read as
+  written and, where one writes a byte run, as its bytes, a holding chance explains said as such),
   `report.value_not_in_cited_entry` (a host
-  identifier's or a configuration value's whole value is in none of the entries
-  it cites; a configuration number is held in decimal or hex, or by its number
+  identifier's or a configuration value's whole value none of the entries it
+  cites holds, as text or as the bytes each cited entry's text writes (the
+  citation check's byte reading, asked of every cited entry: a read that returns
+  the first bytes of a longer string holds what it returned, as text cut at a
+  chosen length does); a configuration number is held in decimal or hex, or by its number
   beside a known time or size unit, and a field name written with its value by
   the entry's pair of the two; a value with a backslash is also held as a C
   string writes it, a 32-bit constant also sign-extended to 64 bits, and a
@@ -6749,7 +6779,17 @@ is assembled from what the run gathered rather than recomputed beside it:
   part is read alone, in decimal or hex, and one shorter than three characters
   holds nothing; a cell of one span and an identifier
   row are read whole; rows citing the same entries are one question, which
-  names the spans no cited entry holds and, for a path, the whole leading part
+  says of each row's value, or of each span no cited entry holds, what was
+  searched and what a cited entry holds — not found as a whole value, read as
+  written and as the bytes the entries write where the byte reading takes the
+  value (no number alone other than a whole digest, nothing under three
+  characters) and a byte run had a place to hold it, with a holding chance explains said as such; only inside a
+  longer run, with the run, whatever its length, spans beyond the listed ones
+  counted, the question then offering to keep
+  the row where the value is one of several strings joined in the run, to
+  write the token where the longer token is the value, or else to cite another
+  entry or leave the row out; one or two characters read as a number, which is
+  never read alone — never that a span is in none of the cited entries, and, for a path, the whole leading part
   of at least two components a cited entry holds, where every string of that
   sentence prints as it is; a kept row is marked beside its evidence, and a row
   whose finding was never asked says so),

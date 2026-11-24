@@ -67,7 +67,12 @@ answer; a sentence kept, or a rewrite that still fails, stays as written, and
 the finding is recorded. A sentence of the conclusion or the limitations a row
 lists against sources it may rest on, whose rewrite still fails, is left out
 instead, and
-recorded with what stood: neither states what section 5 says otherwise of.
+recorded with what stood: neither states what section 5 says otherwise of. A
+name the round holds no source for decides no such end: a row naming one beside
+such a source, refused for more than that name, ends as the row without it, and a
+rewrite the round reads as keeping its sentence whose keep is refused is left out
+whatever the row names, the record naming only the sources the round holds, unless
+the platform appends the ledger's listing fact to the sentence instead (T-895).
 A sentence of either that calls open an address or a value a section 5
 passage or a fact states, or says the run's own reading left something open,
 is held (:func:`held_closing_sentences`): the prompt names it, and an answer
@@ -381,7 +386,12 @@ FAILURE_REDONE_CODE = "agreement.failure_redone"
 # whichever text it stands in there, and counted there, its passage's text and the bundle
 # keeping it whole, and recorded naming the passage, as left out (T-613). A record of the
 # round's own keeps its sentence whole on its row (``stood``), its message a bounded copy
-# (T-705).
+# (T-705). A name the round holds no source for decides no closing sentence's end: a row
+# also naming one is left out as the same row without it, where a refusal other than that
+# name stands and it names a source the round holds, and where the round read its rewrite
+# as keeping the sentence and refused that keep, whatever it names; but where the platform
+# appends the ledger's listing fact instead. The record names only the sources the round
+# holds, or says the row names none (T-895).
 DROPPED_CODE = "agreement.dropped"
 # A held sentence (any sentence of the conclusion or the limitations, of a
 # record's value cell or of a capability bullet; one calling open an address or a
@@ -429,7 +439,14 @@ ABSENCE_KEPT_CODE = "agreement.absence_kept"
 # only those two word tests refuse a quote standing whole in one sentence of a section 5
 # passage: the sentence then stands as written (``KEPT_ON_ITS_QUOTE_CODE``, T-736); a body
 # absence stands, recorded
-# (``HELD_KEPT_CODE``).
+# (``HELD_KEPT_CODE``). A rewrite the round reads as keeping its sentence
+# (``repeats_sentence``) is refused as such a keep, the refusal saying that the rewrite
+# changes too few of the sentence's words for the round's check to read it as a new sentence
+# (a number written in digits alone not counted as a word), with no figure, and naming as
+# sources only those its keep is read on: of a closing sentence, the facts, section 5
+# passages and debate rounds the round holds; of a held body sentence, those and a passage
+# written without the code, never a passage shown as a source only. Where the row names
+# none, it says so, and nothing of a quote (T-895).
 KEEP_UNQUOTED_CODE = "agreement.keep_unquoted"
 # A sentence of the conclusion or the limitations, of a record's value cell or of a
 # capability bullet, kept on a quote that stands whole, in whole words, in one sentence of a
@@ -5765,15 +5782,26 @@ def _answer_violations(
             # source speaks of it: kept, and recorded by the rewrite's own record.
             problem = ""
         if problem:
+            # What the check read, and only the sources it read: a name the round holds no
+            # such source for is no source the keep was read on (T-895).
+            held_names = ", ".join(dict.fromkeys(s.id for s in named_sources))
             out.append(
                 Violation(
                     code=KEEP_UNQUOTED_CODE,
                     message=(
-                        f"row {number}: {where} rewrites {safe_finding_value(sentence)!r} into "
-                        "the same words, which keeps it, on "
-                        f"{safe_finding_value(', '.join(_form(n) for n in row.sources))}, but "
-                        "the best sentence of those sources "
-                        f"{safe_finding_value(_quote_said(problem, passage, sentence))}: "
+                        f"row {number}: {where} rewrites {safe_finding_value(sentence)!r} "
+                        f"{_READ_AS_KEPT}, "
+                        + (
+                            f"on {safe_finding_value(held_names)}, but the best sentence of "
+                            "those sources "
+                            f"{safe_finding_value(_quote_said(problem, passage, sentence))}"
+                            if quote
+                            else f"on {safe_finding_value(held_names)}, but no sentence of "
+                            "those sources states it"
+                            if named_sources
+                            else _NAMES_NO_SOURCE
+                        )
+                        + ": "
                         + (
                             held_ends
                             or _TO_THE_SOURCES + _candidates(sentence, by_id or {}, passage)
@@ -5804,21 +5832,33 @@ def _answer_violations(
             ],
         )
         if problem:
+            # A rewrite read as keeping its sentence names only the sources its quote may stand
+            # in; a keep, every name it gives (T-895).
+            held_names = ", ".join(dict.fromkeys(s.id for s in named_sources))
             out.append(
                 Violation(
                     code=KEEP_UNQUOTED_CODE,
                     message=(
                         f"row {number}: {where} "
                         + (
-                            f"rewrites {safe_finding_value(sentence)!r} into the same words, "
-                            "which keeps it,"
+                            f"rewrites {safe_finding_value(sentence)!r} {_READ_AS_KEPT}"
+                            + (
+                                f", on {safe_finding_value(held_names)}, but "
+                                if named_sources
+                                # No passage it names is one a quote may stand in: said, and
+                                # nothing of the quote.
+                                else ", but it names no passage listed that a quote may stand in: "
+                            )
                             if kept_as_written
-                            else f"keeps {safe_finding_value(sentence)!r}"
+                            else f"keeps {safe_finding_value(sentence)!r} on "
+                            f"{safe_finding_value(', '.join(_form(n) for n in row.sources))}, but "
                         )
-                        + f" on {safe_finding_value(', '.join(_form(n) for n in row.sources))}, "
-                        "but "
-                        + ("" if problem == _QUOTE_NONE else "its quote ")
-                        + f"{safe_finding_value(_quote_said(problem, passage, sentence))}: "
+                        + (
+                            ""
+                            if kept_as_written and not named_sources
+                            else ("" if problem == _QUOTE_NONE else "its quote ")
+                            + f"{safe_finding_value(_quote_said(problem, passage, sentence))}: "
+                        )
                         + (
                             held_ends
                             or _QUOTE_OR_REWRITE + _candidates(sentence, by_id or {}, passage)
@@ -5890,7 +5930,7 @@ def _answer_violations(
                 message=(
                     f"row {number}: {where} "
                     + (
-                        "rewrites the sentence into the same words, which keeps it"
+                        f"rewrites the sentence {_READ_AS_KEPT}"
                         if kept_same
                         else "keeps the sentence"
                     )
@@ -6246,6 +6286,18 @@ _QUOTED_VALUE = re.compile(
 
 # How much of a sentence's own words a rewrite repeats, and the reverse, to say the same.
 _REPEAT_SHARE = 0.8
+# What a refusal says the round read where it reads a rewrite as keeping its sentence
+# (:func:`repeats_sentence`): only what holds of every such reading, never "the same words",
+# which a changed count, negation or qualifier is not, and no figure or list of what the
+# reading counts, which a detail left out of it would make untrue (T-895). A number written
+# in digits alone is never one of the words it counts (``content_words``).
+_READ_AS_KEPT = (
+    "changing too few of its words for the round's check to read the rewrite as a new sentence "
+    "(a number written in digits alone not being counted as a word), so the round reads it as "
+    "keeping the sentence"
+)
+# What such a refusal says of a row naming none of the sources a keep is read on (T-895).
+_NAMES_NO_SOURCE = "but it names none of the facts, section 5 passages and debate rounds listed"
 
 
 def repeats_sentence(sentence: str, rewrite: str) -> bool:
@@ -8023,6 +8075,41 @@ def _rests_on_a_source(row: AgreementRow, by_id: dict[str, Passage]) -> bool:
     )
 
 
+def _held_sources(row: AgreementRow, by_id: dict[str, Passage]) -> list[str]:
+    """The names a row gives that are sources the round holds (:func:`_names_a_source`), in
+    the row's order, each once: what a record of its sentence names as its sources (T-895)."""
+    return list(
+        dict.fromkeys(
+            source.id
+            for name in row.sources
+            if (source := by_id.get(_form(name))) is not None
+            and (source.kind in (FACT, SECTION_5, DEBATE) or source.source_only)
+        )
+    )
+
+
+def _unkept_closing_rewrite(
+    passage: Passage,
+    sentence: str,
+    row: AgreementRow,
+    found: Sequence[Violation],
+    by_id: dict[str, Passage],
+) -> bool:
+    """Whether a closing sentence whose rewrite is still refused after the retry, on a row
+    naming something the round holds no such source for, is left out as the same row naming
+    only sources is: a refusal other than the unknown name stands and the row names a source
+    the round holds, whatever else it names; or the round read the rewrite as keeping the
+    sentence (:func:`repeats_sentence`) and refused that keep, whatever the row names. Never
+    where the round told the sentence the platform's qualification instead
+    (:func:`_unread_end`): that end stands (T-895)."""
+    if not passage.closing or _unread_end(passage, sentence, row, by_id):
+        return False
+    refused = any(violation.code != UNKNOWN_SOURCE_CODE for violation in found)
+    return (refused and _names_a_source(row, by_id)) or (
+        _unbacked(found) and repeats_sentence(sentence, row.rewrite)
+    )
+
+
 # A row as :func:`_checked_rows` reads it: its index, the row as it ends
 # (:func:`_without_the_judge`), its passage, its own refusals, its rewrite's, the span of its
 # sentence, and the refusal only told of the passages of the judge's decision it names.
@@ -8132,7 +8219,9 @@ def apply_rows(
     (``_platform_rewrites``). A sentence of a closing passage (the conclusion,
     the limitations) whose rewrite still fails, on a row every source of which it
     may rest on, is left out of the passage and returned with what stood
-    (``DROPPED_CODE``). A sentence the ledger's own lines hold (:func:`_held_by_the_ledger`)
+    (``DROPPED_CODE``); so is one on a row also naming what the round holds no source for,
+    where :func:`_unkept_closing_rewrite` says so, its record naming only the sources the
+    round holds (T-895). A sentence the ledger's own lines hold (:func:`_held_by_the_ledger`)
     that no answer passing the checks answers is left out the same way, of a closing passage
     or of the body, where it would otherwise print as written: one whose answer a check
     refuses, recorded with what holds it and every code refusing the answer, and one no row
@@ -8419,19 +8508,29 @@ def apply_rows(
             counts["not_applied"] += 1
             continue
         if found:
-            if passage.closing and _rests_on_a_source(row, by_id):
+            if passage.closing and (
+                _rests_on_a_source(row, by_id)
+                or (not refused and _unkept_closing_rewrite(passage, span[2], row, found, by_id))
+            ):
                 # A closing sentence a source says otherwise than is never kept
-                # as written: left out, and recorded with what stood.
+                # as written: left out, and recorded with what stood. A name the round holds
+                # no source for decides no such end: the record names the sources it holds,
+                # or says it holds none (T-895).
                 taken.append((*left_out_span(passage.text, span[0], span[1]), ""))
                 counts["dropped"] += 1
+                held_names = ", ".join(_held_sources(row, by_id))
                 written.append(
                     Violation(
                         code=DROPPED_CODE,
                         message=(
                             "The agreement question lists a sentence of "
-                            f"{safe_finding_value(passage.label)} as saying otherwise than "
-                            f"{safe_finding_value(', '.join(_form(s) for s in row.sources))}, "
-                            "and no rewrite of it passed the checks: it is left out of the "
+                            f"{safe_finding_value(passage.label)}"
+                            + (
+                                f" as saying otherwise than {safe_finding_value(held_names)}"
+                                if held_names
+                                else ", its row naming no source the round holds"
+                            )
+                            + ", and no rewrite of it passed the checks: it is left out of the "
                             f"section: {safe_finding_value(span[2])!r}."
                         ),
                         path=f"sentences.{index}",

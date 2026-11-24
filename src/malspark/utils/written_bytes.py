@@ -274,25 +274,41 @@ def _readings(run: ByteRun) -> Iterator[tuple[str, bool, bool]]:
         )
 
 
-def holds_whole(runs: Iterable[ByteRun], spellings: Iterable[str]) -> bool:
+def readings_of(runs: Iterable[ByteRun]) -> tuple[tuple[str, bool, bool], ...]:
+    """Every text ``runs`` decode to, with whether each end bounds a value, in order.
+
+    What :func:`holds_whole` reads: decoded once, it is read for any number of values.
+    """
+    return tuple(reading for run in runs for reading in _readings(run))
+
+
+def holds_whole(
+    runs: Iterable[ByteRun],
+    spellings: Iterable[str],
+    *,
+    readings: Iterable[tuple[str, bool, bool]] | None = None,
+) -> bool:
     """Whether a run decodes to text holding one of ``spellings`` whole.
 
     Whole by :func:`~malspark.agents._indicator_denylists.whole_value_in`'s own
     bound, a decoded text's end counting as an end only where the run's end
-    bounds a value (:class:`ByteRun`).
+    bounds a value (:class:`ByteRun`). ``readings``, where given, are the
+    runs' own decoded texts (:func:`readings_of`), read in place of decoding
+    them again.
     """
     from malspark.agents._indicator_denylists import whole_value_starts
 
     wanted = [str(spelling).lower() for spelling in spellings if spelling]
-    for run in runs:
-        for decoded, opens, closes in _readings(run):
-            for spelling in wanted:
-                for start in whole_value_starts(spelling, decoded):
-                    if start == 0 and not opens:
-                        continue
-                    if start + len(spelling) == len(decoded) and not closes:
-                        continue
-                    return True
+    if readings is None:
+        readings = (reading for run in runs for reading in _readings(run))
+    for decoded, opens, closes in readings:
+        for spelling in wanted:
+            for start in whole_value_starts(spelling, decoded):
+                if start == 0 and not opens:
+                    continue
+                if start + len(spelling) == len(decoded) and not closes:
+                    continue
+                return True
     return False
 
 
