@@ -401,6 +401,10 @@ CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
     # ends (``_whole_ends``): this module's own sentences, each value in them wrapped where
     # it was written.
     ("reporting/section_agreement.py", "_told_the_end"): frozenset({"violation", "end", "ends"}),
+    # The byte reading's words are one of two module constants.
+    ("pipeline/validation.py", "_bytes_read"): frozenset({"said"}),
+    # Why bytes holding a value by chance do not hold it: one of two module constants.
+    ("pipeline/validation.py", "_held_by_chance"): frozenset({"tail"}),
 }
 
 # A builtin that answers about its argument in this interpreter's own words: a
@@ -484,6 +488,13 @@ MESSAGE_BUILDERS: frozenset[str] = frozenset(
         # A wrong-entry question: the search, its spellings and what it found,
         # each value and id through the helper.
         "_wrong_entry_message",
+        # Its two parts: where the search found each value (ids, values and runs
+        # through the helper) and the byte reading named (ids through the helper).
+        "_found_clause",
+        "_found_of_value",
+        "_bytes_read",
+        # What a cited entry's bytes hold by chance (ids and values through the helper).
+        "_held_by_chance",
     }
 )
 

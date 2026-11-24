@@ -10094,6 +10094,12 @@ class EntryTexts:
     _operands: dict[str, tuple[frozenset[int], bool]] = field(
         default_factory=dict, compare=False, repr=False
     )
+    # The byte runs each entry's text writes outside the echo of its own call
+    # (:meth:`byte_runs_of`), read once per entry.
+    _bytes: dict[str, tuple[Any, ...]] = field(default_factory=dict, compare=False, repr=False)
+    _byte_chances: dict[tuple[str, str], float | None] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
     @classmethod
     def from_ledger(cls, ledger: Iterable[Any], corpus: Any = None) -> EntryTexts:
@@ -10183,7 +10189,9 @@ class EntryTexts:
         held = self.words.get(entry_id)
         return held if held is not None else frozenset(_tool_words(self.tools.get(entry_id, "")))
 
-    def holds(self, entry_id: str, value: str, *, fields: bool = False) -> bool:
+    def holds(
+        self, entry_id: str, value: str, *, fields: bool = False, as_bytes: bool = False
+    ) -> bool:
         """Whether this entry's text holds ``value`` as a value of its own, however spelt.
 
         A whole value, never a slice of a longer run: ``443`` is not held by an
@@ -10193,7 +10201,9 @@ class EntryTexts:
         is also held by the entry's pair of the two (:func:`field_pair_in`). An
         entry of :attr:`code_listings` also holds the value as a C string literal
         inside its JSON writes it (:func:`code_literal_forms`), on the whole-value
-        path only.
+        path only. With ``as_bytes``, asked by the cited-entry test of
+        :func:`wrong_entry_citations` alone, the entry also holds a value its
+        text writes as bytes (:meth:`holds_as_bytes`).
         """
         from malspark.agents._indicator_denylists import whole_value_in
 
@@ -10212,11 +10222,86 @@ class EntryTexts:
             for form in code_literal_forms(spelling)
         ):
             return True
-        return fields and any(
+        if fields and any(
             field_pair_in(form, text)
             for spelling in field_value_spellings(value)
             for form in written_forms(spelling)
-        )
+        ):
+            return True
+        return as_bytes and self.holds_as_bytes(entry_id, value)
+
+    def holds_as_bytes(self, entry_id: str, value: str) -> bool:
+        """Whether this entry's text writes ``value`` as bytes that chance does not explain.
+
+        A byte run of the entry's text (:meth:`byte_runs_of`) decodes to text
+        holding one of the value's spellings whole
+        (:func:`~malspark.utils.written_bytes.holds_whole`), and the chance of
+        that among every byte run of the entry
+        (:func:`~malspark.utils.written_bytes.chance_in`) is under the
+        platform's one chance bound (``reporting.code_constants.CHANCE_BOUND``).
+        Read by the text's shape, never by a tool or an entry's kind.
+        """
+        from malspark.reporting.code_constants import CHANCE_BOUND
+
+        chance = self.chance_of_bytes_holding(entry_id, value)
+        return chance is not None and chance < CHANCE_BOUND
+
+    def chance_of_bytes_holding(self, entry_id: str, value: str) -> float | None:
+        """The chance of this entry's bytes holding ``value`` whole, where they hold it.
+
+        ``None`` where no byte run of the entry decodes to text holding one of
+        the value's spellings whole, or the value is not one this check decides.
+        Read once per entry and value: the test, the question and the mark
+        beside the citation each ask it.
+        """
+        from malspark.utils.written_bytes import chance_in, holds_whole
+
+        key = (str(entry_id).strip().lower(), value)
+        if key not in self._byte_chances:
+            chance: float | None = None
+            if decidable(value):
+                runs = self.byte_runs_of(entry_id)
+                spellings = library_spellings(value)
+                if runs and holds_whole(runs, spellings):
+                    chance = chance_in(runs, spellings[0], spellings)
+            self._byte_chances[key] = chance
+        return self._byte_chances[key]
+
+    def byte_runs_of(self, entry_id: str) -> tuple[Any, ...]:
+        """The byte runs an entry's text writes, outside the echo of its own call.
+
+        Each text the entry was read in, with what echoes its call's arguments
+        taken out (:func:`_without_call_echoes`), read by
+        :func:`~malspark.utils.written_bytes.byte_runs`; a run whose bytes are
+        the call's own is not read: a run its arguments write as bytes, or the
+        UTF-8 or UTF-16LE bytes of one of its string arguments, as written or
+        lower-cased. Only a run equal to those bytes is the call's: a longer
+        one holds what stands around them too. Read once per entry.
+        """
+        from malspark.utils.written_bytes import byte_runs
+
+        key = str(entry_id).strip().lower()
+        if key not in self._bytes:
+            arguments = _call_arguments(self, key)
+            written = (
+                {run.data for run in byte_runs(json.dumps(arguments, default=str))}
+                if arguments
+                else set()
+            )
+            for argument in _string_leaves(arguments):
+                for form in (argument, argument.lower()):
+                    written.add(form.encode("utf-8", errors="surrogatepass"))
+                    written.add(form.encode("utf-16-le", errors="surrogatepass"))
+            runs: list[Any] = []
+            for part in self.parts_of(key):
+                try:
+                    read = _without_call_echoes(part, arguments)
+                except RecursionError:
+                    # Nested past what can be walked: no echo is told apart, so none is read.
+                    continue
+                runs.extend(run for run in byte_runs(read) if run.data not in written)
+            self._bytes[key] = tuple(runs)
+        return self._bytes[key]
 
     def text_of(self, cited: str) -> str:
         """The text of a cited entry or a cited sandbox item, ``""`` when the run holds none."""
@@ -10803,7 +10888,9 @@ def wrong_entry_citations(
     or backticks, unquoted where its shape makes it an indicator (a digest, a
     URL, a path, a host, a file name; :func:`literal_values`), or the
     whole of a record's value — is looked for in the text of each entry cited
-    for it. Found in one of them, the citation stands.
+    for it, and in the bytes that text writes (:meth:`EntryTexts.holds_as_bytes`:
+    this test alone reads bytes, and no entry is offered for its bytes). Found
+    in one of them, the citation stands.
     Found in none of them but in another entry of the run, the citation points
     a reader at the wrong answer, and the model is asked once, with the entry
     that holds it offered. Found nowhere, nothing is said: a value the run's
@@ -10814,10 +10901,13 @@ def wrong_entry_citations(
 
     The question says what was searched and nothing more
     (:func:`_wrong_entry_message`): the entries read, whether the sentence or
-    its record cites them, the spellings asked, and the entries the value was
-    found whole in; a cited entry with no text is named as one this check does
-    not read; a value a cited entry holds only inside a longer run is asked
-    with that run and the two ends that pass (:data:`INSIDE_A_TOKEN_ENDS`). A
+    its record cites them, the spellings asked (the bytes too, where a cited
+    entry's bytes had a place to read), and of each entry the value was found
+    in, whether it stands there whole or only inside a longer run, with where
+    the search matched it (:func:`_found_clause`); a cited entry with no text
+    is named as one this check does not read; a value a cited entry holds only
+    inside a longer run is asked with that run and the two ends that pass
+    (:data:`INSIDE_A_TOKEN_ENDS`). A
     cited entry known not to be the whole answer silences the question.
 
     ``prose`` names the fields that are running text, read sentence by
@@ -10847,7 +10937,7 @@ def wrong_entry_citations(
         known = [entry_id for entry_id in cited if entries.has_text(entry_id)]
         if not decidable(value) or not known:
             return
-        if any(entries.holds(entry_id, value, fields=True) for entry_id in known):
+        if any(entries.holds(entry_id, value, fields=True, as_bytes=True) for entry_id in known):
             return
         if any(entry_id in entries.partial for entry_id in known):
             # A cited entry that is not the whole answer may hold it in the
@@ -10935,14 +11025,19 @@ def wrong_entry_citations(
     for group, values in wrong.items():
         cited, holders = group[0], group[1]
         places = written.get(group, {})
+        found = {
+            (holder, value): _found_in(entries, holder, value)
+            for value in values
+            for holder in holders
+        }
         violations.append(
             Violation(
                 code=CITATION_WRONG_ENTRY_CODE,
-                message=_wrong_entry_message(group, values, runs, entries),
+                message=_wrong_entry_message(group, values, runs, entries, found),
                 path="citation",
                 quoted=tuple(places),
                 labels=tuple(
-                    _not_found_whole_label(stated, cited, holders, entries)
+                    _not_found_whole_label(stated, cited, holders, entries, found)
                     for stated in places.values()
                 ),
                 values=tuple(values),
@@ -10963,6 +11058,20 @@ _WrongGroup = tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], bool, boo
 # also asks of a code listing stored as JSON (:attr:`EntryTexts.code_listings`).
 SEARCHED_SPELLINGS = "as written, as JSON writes {it} or as the triage pack quotes {it}"
 CODE_LITERAL_SPELLING = "as a C string literal inside JSON writes {it}"
+# What a cited entry's text is also read as where it writes bytes a value could
+# stand in (:meth:`EntryTexts.holds_as_bytes`), for one entry and for several.
+BYTES_SPELLING = "as the bytes its text writes"
+BYTES_SPELLINGS = "as the bytes their texts write"
+# Why bytes that write a value whole do not hold it (:func:`_held_by_chance`),
+# for one value and for several.
+BYTES_HELD_BY_CHANCE = (
+    "but at its length and among so many bytes chance alone would put it there at least as "
+    "often as the platform's chance bound allows, so that is not counted as holding it"
+)
+BYTES_HELD_BY_CHANCE_SEVERAL = (
+    "but at their lengths and among so many bytes chance alone would put them there at least "
+    "as often as the platform's chance bound allows, so that is not counted as holding them"
+)
 # The two ends a value cited to an entry it was not found whole in allows.
 WRONG_ENTRY_ENDS = (
     "Cite an entry that holds the value as the text states it, or, where the cited entry "
@@ -10975,26 +11084,32 @@ def _wrong_entry_message(
     values: Sequence[str],
     runs: Mapping[tuple[str, tuple[str, ...]], tuple[str, tuple[str, bool] | None]],
     entries: EntryTexts,
+    found_in: Mapping[tuple[str, str], _Found] | None = None,
 ) -> str:
     """What a question of :func:`wrong_entry_citations` says: the search, and what it found.
 
     Never that an entry lacks a value: that the value was not found whole in
-    the cited entries read, in the spellings named, and was found whole in
-    others. A cited entry with no text is said to be one this check does not
-    read. A value a cited entry holds only inside a longer run is said to
-    stand there, with the run as :func:`_run_shown` shows it, and the two ends
-    that pass (:data:`INSIDE_A_TOKEN_ENDS`), preferring neither.
+    the cited entries read, in the spellings named (and, where a cited entry's
+    text writes bytes a value could stand in, as those bytes:
+    :meth:`EntryTexts.holds_as_bytes`), and where the search found it in
+    others (:func:`_found_clause`). Where a cited entry's bytes write a value
+    whole and only the chance bound refuses the holding, it says that, and
+    not that the bytes lack it (:func:`_held_by_chance`). A cited entry with
+    no text is said to be one this check does not read. A value a cited
+    entry holds only inside a longer run is said to stand there, with the run
+    as :func:`_run_shown` shows it, and the two ends that pass
+    (:data:`INSIDE_A_TOKEN_ENDS`), preferring neither.
     """
     cited, holders, blank, by_record, inside = group
     one = len(values) == 1
     it = "it" if one else "them"
-    was = "it was" if one else "they were"
     citing = "its record cites" if by_record else "the sentence cites"
     shown = values[:_MAX_NAMED_IDS]
     more = len(values) - _MAX_NAMED_IDS
     extra = f" (with {safe_finding_value(more)} more)" if more > 0 else ""
-    holding = safe_finding_value(_named_entries(entries, holders), whole=True)
-    found = f"{was} found whole in {holding}."
+    if found_in is None:
+        found_in = {(h, value): _found_in(entries, h, value) for value in values for h in holders}
+    found = _found_clause(values, holders, entries, found_in)
     unread = ""
     if blank:
         holds = "holds" if len(blank) == 1 else "hold"
@@ -11018,7 +11133,8 @@ def _wrong_entry_message(
             text, lowered = run
             case = f", {RUN_IN_LOWER_CASE}" if lowered else ""
             listed = f"{where}{case}: {safe_finding_value(text)!r}"
-        return f"{listed}{extra}; {found}{unread} {INSIDE_A_TOKEN_ENDS}"
+        held = _held_by_chance(shown, _bytes_holding_by_chance(values, cited, entries), entries)
+        return f"{listed}{extra}{held}; {found}{unread} {INSIDE_A_TOKEN_ENDS}"
     quoted = safe_finding_value(", ".join(repr(value) for value in shown))
     answers = "the answer of" if len(cited) == 1 else "the answers of"
     named = safe_finding_value(_named_entries(entries, cited), whole=True)
@@ -11031,11 +11147,305 @@ def _wrong_entry_message(
             f", or, in {safe_finding_value(_named_entries(entries, listings), whole=True)}, "
             f"{CODE_LITERAL_SPELLING.format(it=it)}"
         )
+    by_chance = _bytes_holding_by_chance(values, cited, entries)
+    spellings += _bytes_read(values, cited, entries, by_chance)
+    held = _held_by_chance(shown, by_chance, entries)
     searched = "was not found as a whole value" if one else "were not found as whole values"
     return (
-        f"{quoted}{extra} {searched} in {answers} {named}, which {citing}, read {spellings}; "
-        f"{found}{unread} {WRONG_ENTRY_ENDS}"
+        f"{quoted}{extra} {searched} in {answers} {named}, which {citing}, read {spellings}"
+        f"{held}; {found}{unread} {WRONG_ENTRY_ENDS}"
     )
+
+
+def _bytes_holding_by_chance(
+    values: Sequence[str], cited: Sequence[str], entries: EntryTexts
+) -> dict[str, list[str]]:
+    """Of each value, the cited entries whose bytes hold it whole where chance explains it.
+
+    The bytes hold the value whole (:meth:`EntryTexts.chance_of_bytes_holding`)
+    and the chance of that is at or above the platform's one chance bound
+    (``reporting.code_constants.CHANCE_BOUND``), so the holding is not counted.
+    """
+    from malspark.reporting.code_constants import CHANCE_BOUND
+
+    held: dict[str, list[str]] = {}
+    for value in values:
+        for entry_id in cited:
+            chance = entries.chance_of_bytes_holding(entry_id, value)
+            if chance is not None and chance >= CHANCE_BOUND:
+                held.setdefault(value, []).append(entry_id)
+    return held
+
+
+def _bytes_read(
+    values: Sequence[str],
+    cited: Sequence[str],
+    entries: EntryTexts,
+    by_chance: Mapping[str, Sequence[str]],
+) -> str:
+    """The words naming the byte reading, where a cited entry's bytes had a place to read.
+
+    Empty where no cited entry's text writes a byte run as long as a value's
+    shortest spelling: there no byte was read and the search was a text one.
+    An entry whose bytes hold a value whole by chance (``by_chance``) is not
+    named here, where the values are said not found: :func:`_held_by_chance`
+    says what its bytes hold.
+    """
+    from malspark.utils.written_bytes import has_a_place
+
+    spellings = [spelling for value in values for spelling in library_spellings(value)]
+    holding = {entry_id for held in by_chance.values() for entry_id in held}
+    read = [
+        i for i in cited if i not in holding and has_a_place(entries.byte_runs_of(i), spellings)
+    ]
+    if not read:
+        return ""
+    said = BYTES_SPELLING if len(read) == 1 else BYTES_SPELLINGS
+    if len(read) == len(cited):
+        return f", and {said}"
+    return f", and, in {safe_finding_value(_named_entries(entries, read), whole=True)}, {said}"
+
+
+def _held_by_chance(
+    values: Sequence[str], by_chance: Mapping[str, Sequence[str]], entries: EntryTexts
+) -> str:
+    """The clause saying which values a cited entry's bytes hold whole, by chance alone.
+
+    Empty where no cited entry's bytes hold a value named: the bytes write the
+    value whole, but at its length and among so many bytes chance alone puts
+    it there at least as often as the platform's chance bound allows, so that
+    is not counted as holding it (:func:`_bytes_holding_by_chance`).
+    """
+    held = [value for value in values if by_chance.get(value)]
+    if not held:
+        return ""
+    parts = []
+    for value in held:
+        ids = by_chance[value]
+        texts = "the text of" if len(ids) == 1 else "the texts of"
+        writes = "writes" if len(ids) == 1 else "write"
+        what = "it" if len(values) == 1 else safe_finding_value(repr(value))
+        named = safe_finding_value(_named_entries(entries, ids), whole=True)
+        parts.append(f"the bytes {texts} {named} {writes} hold {what} whole")
+    tail = BYTES_HELD_BY_CHANCE if len(held) == 1 else BYTES_HELD_BY_CHANCE_SEVERAL
+    return f"; {', and '.join(parts)}, {tail}"
+
+
+@dataclass(frozen=True)
+class _Found:
+    """How the whole-value search found a value in one entry, as a question words it.
+
+    ``whole`` where, at a place the search found, no letter, digit or ``_`` of
+    the run the value stands in touches it, the run read decoded
+    (:func:`_touched_by_none`), and where the entry holds it through a field
+    pair alone. Otherwise ``run`` is the run shown at a place the search found
+    (:func:`_run_of`) and ``bounds`` says where in it the value stands
+    (:func:`_where_matched`); both ``None`` where the run cannot be shown.
+    """
+
+    whole: bool
+    run: tuple[str, bool] | None = None
+    bounds: str | None = None
+
+
+def _found_in(entries: EntryTexts, holder: str, value: str) -> _Found:
+    """How the search found ``value`` in ``holder``: whole, or only inside a longer run.
+
+    The places are those of :meth:`EntryTexts.holds` (each spelling, a code
+    listing's literal too), read in each text the entry was read in, and in
+    the texts joined where no single one holds the value.
+    """
+    from malspark.agents._indicator_denylists import whole_value_starts
+
+    forms = [form for spelling in library_spellings(value) for form in written_forms(spelling)]
+    if str(holder).strip().lower() in entries.code_listings:
+        forms += [
+            form for spelling in library_spellings(value) for form in code_literal_forms(spelling)
+        ]
+    forms = list(dict.fromkeys(form.lower() for form in forms))
+    places: list[tuple[str, int, int, bool]] = []
+    texts = entries.parts_of(holder)
+    for texts_read in (texts, (entries.text_of(holder),)):
+        for text in texts_read:
+            json_notation: bool | None = None
+            for form in forms:
+                for start in whole_value_starts(form, text):
+                    if json_notation is None:
+                        json_notation = _a_json_document(text)
+                    places.append((text, start, start + len(form), json_notation))
+        if places:
+            break
+    if not places:
+        return _Found(whole=True)
+    if any(_touched_by_none(*place) for place in places):
+        return _Found(whole=True)
+    for text, start, end, json_notation in places:
+        run = _run_of(entries, holder, value, text, start, end)
+        bounds = _where_matched(text, start, end, json_notation, run) if run else None
+        if run is not None and bounds is not None:
+            return _Found(whole=False, run=run, bounds=bounds)
+    return _Found(whole=False)
+
+
+def _touched_by_none(text: str, start: int, end: int, json_notation: bool) -> bool:
+    """Whether no letter, digit or ``_`` of the run around ``text[start:end]`` touches it.
+
+    The run is :func:`~malspark.agents._indicator_denylists.run_around`'s, read
+    decoded in a JSON text: an escape at either end of it that writes a
+    character (``\\u00e9``) is that character beside the value.
+    """
+    from malspark.agents._indicator_denylists import run_around
+
+    begin, finish = run_around(text, start, end, json_notation=json_notation)
+    around = text[begin:start] + text[end:finish]
+    if json_notation:
+        begin = _escape_opening(text, begin)
+        around = (
+            _code_read(text[begin:start])
+            + _code_read(text[end:finish])
+            + _escaped_character_at(text, finish)
+        )
+    return not any(character.isalnum() or character == "_" for character in around)
+
+
+def _escape_opening(text: str, begin: int) -> int:
+    """Where a run that begins inside a JSON escape writing a character begins with it."""
+    from malspark.agents._indicator_denylists import escape_starts_at
+
+    if begin >= 2 and text[begin - 1 : begin] == "u" and escape_starts_at(text, begin - 2):
+        return begin - 2
+    return begin
+
+
+def _escaped_character_at(text: str, at: int) -> str:
+    """The character a JSON escape opening at ``at`` writes, where it writes one by its code."""
+    from malspark.agents._indicator_denylists import escape_starts_at
+
+    if text[at + 1 : at + 2] != "u" or not escape_starts_at(text, at):
+        return ""
+    match = _JSON_ESCAPE_RE.match(text, at)
+    return _json_escaped(match) if match is not None else ""
+
+
+def _where_matched(
+    text: str, start: int, end: int, json_notation: bool, shown: tuple[str, bool]
+) -> str | None:
+    """Where in the run shown the search matched the value: between which characters, or at
+    which end of the run. ``None`` where the run shown cannot say it: the place splits an
+    escape, the run begins inside one, or a neighbour of the value is cut from what is shown.
+    """
+    from malspark.agents._indicator_denylists import run_around
+
+    begin, finish = run_around(text, start, end, json_notation=json_notation)
+    if _escape_opening(text, begin) != begin:
+        return None
+    pieces = [text[begin:start], text[start:end], text[end:finish]]
+    if json_notation:
+        try:
+            read = [str(json.loads(f'"{piece}"')) for piece in pieces]
+            joined = str(json.loads(f'"{text[begin:finish]}"'))
+        except ValueError:
+            return None
+        if "".join(read) != joined:
+            return None
+        pieces = read
+    before, value, after = (piece.lower() for piece in pieces)
+    full = before + value + after
+    run = shown[0]
+    body = run[1:] if run.startswith("…") and not full.startswith("…") else run
+    body = body[:-1] if body.endswith("…") and not full.endswith("…") else body
+    folded = body.lower()
+    if len(folded) != len(body):
+        # A letter whose lower case is longer: places in the two do not line up.
+        return None
+    at = full.find(folded)
+    while at != -1:
+        if at <= len(before) and at + len(folded) >= len(before) + len(value):
+            break
+        at = full.find(folded, at + 1)
+    if at == -1:
+        return None
+    place = len(before) - at
+    left = body[place - 1] if place > 0 else ("" if at == 0 else None)
+    following = place + len(value)
+    right = (
+        body[following] if following < len(body) else ("" if at + len(body) == len(full) else None)
+    )
+    if left is None or right is None or not (left or right):
+        return None
+    if left and right:
+        return f"between {left!r} and {right!r}"
+    if right:
+        return f"at the start of the run, before {right!r}"
+    return f"at the end of the run, after {left!r}"
+
+
+def _found_clause(
+    values: Sequence[str],
+    holders: Sequence[str],
+    entries: EntryTexts,
+    found_in: Mapping[tuple[str, str], _Found],
+) -> str:
+    """What a question says of the entries the search found its values in.
+
+    "found whole in" only of an entry where each value stands whole
+    (:class:`_Found`); of every other entry, that the value stands there only
+    inside a longer run of text, where the search matched it and the run, or
+    that the run is not shown. In a question about several values, each value
+    is said for itself wherever one of them stands only inside a run.
+    """
+    if all(found_in[(holder, value)].whole for value in values for holder in holders):
+        was = "it was" if len(values) == 1 else "they were"
+        named = safe_finding_value(_named_entries(entries, holders), whole=True)
+        return f"{was} found whole in {named}."
+    if len(values) == 1:
+        said = _found_of_value("it", values[0], holders, entries, found_in)
+        return f"{said}."
+    return (
+        "; ".join(
+            _found_of_value(safe_finding_value(repr(value)), value, holders, entries, found_in)
+            for value in values[:_MAX_NAMED_IDS]
+        )
+        + "."
+    )
+
+
+def _found_of_value(
+    subject: str,
+    value: str,
+    holders: Sequence[str],
+    entries: EntryTexts,
+    found_in: Mapping[tuple[str, str], _Found],
+) -> str:
+    """:func:`_found_clause` of one value: the entries it stands whole in, and the others."""
+    whole = [holder for holder in holders if found_in[(holder, value)].whole]
+    inside = [holder for holder in holders if not found_in[(holder, value)].whole]
+    said = []
+    if whole:
+        named = safe_finding_value(_named_entries(entries, whole), whole=True)
+        said.append(f"{safe_finding_value(subject)} was found whole in {named}")
+    if inside:
+        named = safe_finding_value(_named_entries(entries, inside), whole=True)
+        stands = safe_finding_value("it" if whole else subject)
+        clause = f"{stands} stands in {named} only inside a longer run of text"
+        at = next((holder for holder in inside if found_in[(holder, value)].run), None)
+        if at is None:
+            clause += f", {RUN_NOT_SHOWN}"
+        else:
+            matched = found_in[(at, value)]
+            text, lowered = matched.run or ("", False)
+            where = (
+                "there"
+                if len(inside) == 1
+                else f"in {safe_finding_value(entries.named_whole(at), whole=True)}"
+            )
+            case = f", {RUN_IN_LOWER_CASE}" if lowered else ""
+            clause += (
+                f"; {where} the search matched it {safe_finding_value(matched.bounds)}{case}: "
+                f"{safe_finding_value(text)!r}"
+            )
+        said.append(clause)
+    return "; ".join(said)
 
 
 @_locating(lambda payload, entries, *, prose=(): _Names(top=frozenset(prose)))
@@ -11496,23 +11906,95 @@ def cited_row_text(text: str, row: Mapping[str, Any]) -> str:
 
 
 def _not_found_whole_label(
-    values: Sequence[str], cited: Sequence[str], holders: Sequence[str], entries: EntryTexts
+    values: Sequence[str],
+    cited: Sequence[str],
+    holders: Sequence[str],
+    entries: EntryTexts,
+    found_in: Mapping[tuple[str, str], _Found] | None = None,
 ) -> str:
     """What a renderer prints beside a citation its value was not found whole in.
 
     The values, the ids cited and the holder, as :func:`_wrong_entry_label`
-    names them, said as the search: not found whole in the ids cited, found
-    whole in the holder, or in how many entries where several hold it.
+    names them, said as the search: not found whole in the ids cited, and
+    found whole in the holder, or only inside a longer run of text there (with
+    the run, or that it is not shown), or in how many entries of each where
+    several hold it (:class:`_Found`). Where one of several values stands only
+    inside a run, each value is said for itself. Where a cited entry's bytes
+    write a value whole and chance alone explains it, the label says so
+    (:func:`_label_held_by_chance`), as the question does.
     """
+    if found_in is None:
+        found_in = {(h, value): _found_in(entries, h, value) for value in values for h in holders}
     # Written as stated, as :func:`_wrong_entry_label` writes them.
     said = ", ".join(f'"{value}"' for value in values[:_MAX_NAMED_IDS])
     if len(values) > _MAX_NAMED_IDS:
         said += f" and {len(values) - _MAX_NAMED_IDS} more"
     one = len(values) == 1
-    where = entries.named(holders[0]) if len(holders) == 1 else f"{len(holders)} other entries"
+    by_chance = _label_held_by_chance(values, cited, entries)
+    # Beside a clause on what the bytes hold, the search said not to have found is the text's.
+    where = "the text of " if by_chance else ""
+    head = f"{said} {'was' if one else 'were'} not found whole in {where}{', '.join(cited)}; "
+    head += by_chance
+    if all(found_in[(holder, value)].whole for value in values for holder in holders):
+        where = entries.named(holders[0]) if len(holders) == 1 else f"{len(holders)} other entries"
+        return f"{head}{'it was' if one else 'they were'} found whole in {where}"
+    if one:
+        return head + _label_of_value("it", values[0], holders, entries, found_in)
+    return head + "; ".join(
+        _label_of_value(f'"{value}"', value, holders, entries, found_in)
+        for value in values[:_MAX_NAMED_IDS]
+    )
+
+
+def _label_held_by_chance(values: Sequence[str], cited: Sequence[str], entries: EntryTexts) -> str:
+    """:func:`_not_found_whole_label`'s clause for bytes that write a value whole by chance.
+
+    Empty where no cited entry's bytes hold a value named. Otherwise, of each
+    such value, the cited entries whose bytes write it whole and why that is
+    not counted (:func:`_bytes_holding_by_chance`), in the question's own
+    words; ids and values stand as the label writes them.
+    """
+    by_chance = _bytes_holding_by_chance(values, cited, entries)
+    one = len(values) == 1
+    said = ""
+    for value in values[:_MAX_NAMED_IDS]:
+        ids = by_chance.get(value)
+        if not ids:
+            continue
+        what = "it" if one else f'"{value}"'
+        writes = "writes" if len(ids) == 1 else "write"
+        said += f"the bytes {', '.join(ids)} {writes} hold {what} whole, {BYTES_HELD_BY_CHANCE}; "
+    return said
+
+
+def _label_of_value(
+    subject: str,
+    value: str,
+    holders: Sequence[str],
+    entries: EntryTexts,
+    found_in: Mapping[tuple[str, str], _Found],
+) -> str:
+    """:func:`_not_found_whole_label`'s words for one value: whole, inside a run, or how many."""
+    whole = [holder for holder in holders if found_in[(holder, value)].whole]
+    inside = len(holders) - len(whole)
+    if len(holders) == 1:
+        named = entries.named(holders[0])
+        if whole:
+            return f"{subject} was found whole in {named}"
+        run = found_in[(holders[0], value)].run
+        stands = f"{subject} stands in {named} only inside a longer run of text"
+        if run is None:
+            return f"{stands}, {RUN_NOT_SHOWN}"
+        case = f", {RUN_IN_LOWER_CASE}" if run[1] else ""
+        return f'{stands}{case}: "{run[0]}"'
+    if not inside:
+        return f"{subject} was found whole in {len(holders)} other entries"
+    if not whole:
+        return f"{subject} stands only inside a longer run of text in {inside} other entries"
+    entry = "entry" if len(whole) == 1 else "entries"
     return (
-        f"{said} {'was' if one else 'were'} not found whole in {', '.join(cited)}; "
-        f"{'it was' if one else 'they were'} found whole in {where}"
+        f"{subject} was found whole in {len(whole)} other {entry}, and only inside a longer run "
+        f"of text in {inside} more"
     )
 
 
@@ -12684,6 +13166,19 @@ def _call_arguments(entries: EntryTexts, entry_id: str) -> Any:
     """An entry's own call arguments as stored, or ``None``."""
     entry = entries.entries.get(entry_id)
     return getattr(entry, "args", None)
+
+
+def _string_leaves(arguments: Any) -> Iterator[str]:
+    """Every string a call's arguments hold, in objects and lists at any depth."""
+    pending = [arguments]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, str):
+            yield node
+        elif isinstance(node, dict):
+            pending.extend(node.values())
+        elif isinstance(node, list | tuple):
+            pending.extend(node)
 
 
 def _argument_places(arguments: Any) -> dict[tuple[str, ...], frozenset[str]]:
