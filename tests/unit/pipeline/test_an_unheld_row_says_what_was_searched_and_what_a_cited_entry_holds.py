@@ -338,3 +338,40 @@ class TestANumberOnlyIdSaysWhatTheCheckTests:
             "row cites writes as a compared operand: 1: '0x5e'; 2: '0x6b'. This run's evidence "
             "holds them in ev_0001 (decompile)."
         )
+
+    def test_a_number_beside_a_name_is_said_as_read_as_a_number(self) -> None:
+        # One holder for both rows: the dispatcher's entry also lists the name.
+        texts = EntryTexts.from_ledger(
+            [
+                LedgerEntry(
+                    id="ev_0001", agent="static", server="static", tool="decompile",
+                    output=json.dumps({"code": self.DISPATCHER, "names": ["relay_open"]}),
+                ),
+                LedgerEntry(
+                    id="ev_0002", agent="static", server="static", tool="decompile",
+                    output=json.dumps({"code": self.CALLER}),
+                ),
+            ]
+        )  # fmt: skip
+        rows = (
+            ("0x6b", "ev_0002"),
+            ("relay_open", "ev_0002"),
+            ("0x5e", "ev_0001"),
+            ("0x71", "ev_0001"),
+            ("0x7d", "ev_0001"),
+        )
+        payload = {
+            "commands": [
+                {"id": written, "name": f"command {written}", "evidence_refs": [cited]}
+                for written, cited in rows
+            ]
+        }
+        (found,) = cited_id_violations(payload, texts)
+
+        assert found.message.startswith(
+            "Rows 1, 2 of commands each state an id this check did not find in the entries the "
+            "row cites: 1: '0x6b' (read as a number none of the entries the row cites writes as "
+            "a compared operand); 2: 'relay_open' (was not found as a whole value in the answer "
+            "of ev_0002 (decompile), which the row cites, read as written). This run's evidence "
+            "holds them in ev_0001 (decompile)."
+        )

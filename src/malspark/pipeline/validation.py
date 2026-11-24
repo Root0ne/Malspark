@@ -12651,7 +12651,8 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
                 + (
                     f"{_id_not_found(written, cites, entries)}"
                     if number in searched
-                    else "a number none of the entries the row cites writes as a compared operand"
+                    else "read as a number none of the entries the row cites writes as a "
+                    "compared operand"
                 )
                 + ")"
                 for number, written, cites, _where in found[:_MAX_NAMED_IDS]
