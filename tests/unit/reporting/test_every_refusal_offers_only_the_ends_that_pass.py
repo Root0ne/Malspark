@@ -534,9 +534,9 @@ _HELD_BULLET_IS = (
 _EVERY_ROW = "Answer with every row again, this one included."
 # What a refusal says the round read where it reads a rewrite as keeping its sentence (T-895).
 _READ_AS_KEPT = (
-    "repeating at least 80% of its words, at most 20% of the rewrite's words being new (words "
-    "under three characters, stop words, entry ids and bare numbers not counted), which the "
-    "round reads as keeping it"
+    "changing too few of its words for the round's check to read the rewrite as a new sentence "
+    "(a number written in digits alone not being counted as a word), so the round reads it as "
+    "keeping the sentence"
 )
 # The report rounds' own findings on a rewrite that misreads the entries it cites.
 _NOT_SHOWN = (

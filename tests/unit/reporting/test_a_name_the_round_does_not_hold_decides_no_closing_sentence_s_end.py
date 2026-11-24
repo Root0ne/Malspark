@@ -21,6 +21,8 @@ from typing import Any
 
 from malspark.pipeline.validation import ValidationTally
 from malspark.reporting.models import (
+    C2Channel,
+    CapabilityBullet,
     FileHashes,
     MalwareReport,
     SampleIdentity,
@@ -200,6 +202,37 @@ def test_a_row_refused_only_for_an_unknown_name_prints_as_written() -> None:
         assert _conclusion(report) == f"{STAYS} {SAID}"
         assert counts["not_applied"] == 1 and counts["dropped"] == 0
         assert records == []
+
+
+def test_a_value_cell_and_a_capability_bullet_are_left_out_whatever_the_row_names() -> None:
+    # Answered whole, a cell or a bullet whose rewrite is still refused is left out whatever
+    # its row names, as it is where every name is a source the round holds.
+    for sources in (
+        ["command_and_control"],
+        ["command_and_control", NOWHERE],
+        [NOWHERE],
+    ):
+        for field in ("cell", "bullet"):
+            report = _report(STAYS, docks=BARE)
+            ta = report.technical_analysis
+            assert ta is not None
+            if field == "cell":
+                report.c2_channels = [C2Channel(name="Relay pipe", encryption=SAID)]
+                pid = "communications.1.encryption"
+            else:
+                ta.capability_summary = [CapabilityBullet(text=SAID, evidence_refs=["ev_0061"])]
+                pid = "capability_summary.1"
+            row = {**_rewrite(RECOUNTED, sources), "passage": pid}
+            assert KEEP_UNQUOTED_CODE in _codes(report, row)
+            counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
+            # A cell left with no sentence prints "-"; a bullet left with none is not printed.
+            assert (
+                report.c2_channels[0].encryption == ""
+                if field == "cell"
+                else [b.text for b in ta.capability_summary if b.text] == []
+            )
+            assert counts["dropped"] == 1 and counts["not_applied"] == 0
+            assert [(r.code, r.subject, r.stood) for r in records] == [(DROPPED_CODE, pid, SAID)]
 
 
 def test_a_body_sentence_s_refused_rewrite_ends_as_before() -> None:

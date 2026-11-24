@@ -440,10 +440,13 @@ ABSENCE_KEPT_CODE = "agreement.absence_kept"
 # passage: the sentence then stands as written (``KEPT_ON_ITS_QUOTE_CODE``, T-736); a body
 # absence stands, recorded
 # (``HELD_KEPT_CODE``). A rewrite the round reads as keeping its sentence
-# (``repeats_sentence``) is refused as such a keep, the refusal saying what was read: the
-# share of the sentence's own words it repeats and what is not counted (bare numbers among
-# them), naming as sources only the facts, section 5 passages and debate rounds the round
-# holds, or that it names none (T-895).
+# (``repeats_sentence``) is refused as such a keep, the refusal saying that the rewrite
+# changes too few of the sentence's words for the round's check to read it as a new sentence
+# (a number written in digits alone not counted as a word), with no figure, and naming as
+# sources only those its keep is read on: of a closing sentence, the facts, section 5
+# passages and debate rounds the round holds; of a held body sentence, those and a passage
+# written without the code, never a passage shown as a source only. Where the row names
+# none, it says so, and nothing of a quote (T-895).
 KEEP_UNQUOTED_CODE = "agreement.keep_unquoted"
 # A sentence of the conclusion or the limitations, of a record's value cell or of a
 # capability bullet, kept on a quote that stands whole, in whole words, in one sentence of a
@@ -5842,15 +5845,20 @@ def _answer_violations(
                             + (
                                 f", on {safe_finding_value(held_names)}, but "
                                 if named_sources
-                                else ", but it names no passage listed that a quote may stand "
-                                "in, and "
+                                # No passage it names is one a quote may stand in: said, and
+                                # nothing of the quote.
+                                else ", but it names no passage listed that a quote may stand in: "
                             )
                             if kept_as_written
                             else f"keeps {safe_finding_value(sentence)!r} on "
                             f"{safe_finding_value(', '.join(_form(n) for n in row.sources))}, but "
                         )
-                        + ("" if problem == _QUOTE_NONE else "its quote ")
-                        + f"{safe_finding_value(_quote_said(problem, passage, sentence))}: "
+                        + (
+                            ""
+                            if kept_as_written and not named_sources
+                            else ("" if problem == _QUOTE_NONE else "its quote ")
+                            + f"{safe_finding_value(_quote_said(problem, passage, sentence))}: "
+                        )
                         + (
                             held_ends
                             or _QUOTE_OR_REWRITE + _candidates(sentence, by_id or {}, passage)
@@ -6279,12 +6287,14 @@ _QUOTED_VALUE = re.compile(
 # How much of a sentence's own words a rewrite repeats, and the reverse, to say the same.
 _REPEAT_SHARE = 0.8
 # What a refusal says the round read where it reads a rewrite as keeping its sentence
-# (:func:`repeats_sentence`): the shares it counted and what it did not count, never "the same
-# words", which a changed count, negation or qualifier is not (T-895).
+# (:func:`repeats_sentence`): only what holds of every such reading, never "the same words",
+# which a changed count, negation or qualifier is not, and no figure or list of what the
+# reading counts, which a detail left out of it would make untrue (T-895). A number written
+# in digits alone is never one of the words it counts (``content_words``).
 _READ_AS_KEPT = (
-    f"repeating at least {_REPEAT_SHARE:.0%} of its words, at most {1 - _REPEAT_SHARE:.0%} of "
-    "the rewrite's words being new (words under three characters, stop words, entry ids and "
-    "bare numbers not counted), which the round reads as keeping it"
+    "changing too few of its words for the round's check to read the rewrite as a new sentence "
+    "(a number written in digits alone not being counted as a word), so the round reads it as "
+    "keeping the sentence"
 )
 # What such a refusal says of a row naming none of the sources a keep is read on (T-895).
 _NAMES_NO_SOURCE = "but it names none of the facts, section 5 passages and debate rounds listed"
