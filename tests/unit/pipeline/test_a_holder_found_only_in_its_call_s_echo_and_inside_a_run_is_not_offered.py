@@ -170,3 +170,34 @@ class TestTheSharedReading:
         ((_whole, rest),) = entries.echo_free_parts("ev_0001")
         assert rest is not None and NAME not in rest
         assert entries.holds_as_bytes("ev_0001", NAME)
+
+
+class TestARepeatIsReadAsTheEntryHoldingItsAnswer:
+    """A repeat carries the answer of the call that produced it, and that call's echo."""
+
+    @staticmethod
+    def _asked(answer: Any) -> list[Any]:
+        repeat = LedgerEntry(
+            id="ev_0002",
+            agent="static",
+            server="static",
+            tool="read_evidence",
+            output="(served from ev_0001)",
+            args={"evidence_id": "ev_0001", "limit": 4000},
+            repeated_of="ev_0001",
+        )
+        texts = EntryTexts.from_ledger(
+            [_entry(*CITED), _entry("ev_0001", answer, {"pattern": NAME}), repeat]
+        )
+        return wrong_entry_citations(
+            {"body": f"It writes `{NAME}` [ev_0003]."}, texts, prose=("body",)
+        )
+
+    def test_a_repeat_of_an_echo_beside_a_run_is_not_offered(self) -> None:
+        assert self._asked({"pattern": NAME, "matches": [{"text": f"x{NAME}"}]}) == []
+
+    def test_a_repeat_of_a_search_with_no_row_is_offered_as_the_search_is(self) -> None:
+        (found,) = self._asked({"pattern": NAME, "matches": []})
+
+        assert "ev_0001" in found.message
+        assert "ev_0002" in found.message

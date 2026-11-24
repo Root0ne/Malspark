@@ -43,6 +43,7 @@ from malspark.pipeline import validation
 from malspark.pipeline.events import FINDING_VALUE_LIMIT, safe_finding_value
 from malspark.pipeline.validation import (
     KEPT_WITH_A_FINDING,
+    SHORT_NUMBER_SAID,
     STATED_VALUE_INSIDE_A_TOKEN_CODE,
     STATED_VALUE_UNHELD_CODE,
     EntryTexts,
@@ -266,10 +267,7 @@ class TestACompositeCell:
 
         found = _one(_items("LoadLibraryA; 2", "ev_0054"), texts)
 
-        assert (
-            "'2' is a number of one or two characters, which this check does not read as a "
-            "value of its own"
-        ) in found.message
+        assert f"'2' {SHORT_NUMBER_SAID}" in found.message
 
     def test_a_cell_of_one_span_is_read_whole(self) -> None:
         assert stated_value_violations(_items("0x80000001", "ev_0010"), _texts()) == []

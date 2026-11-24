@@ -145,6 +145,14 @@ ECHO_THEN_INSIDE = [
         {"file": NAME, "imports": [f"a{NAME}"]},
         {"file": f"C:\\T\\{NAME}"},
     ),
+    # A row a decoded letter or an underscore touches: a run of word characters.
+    (
+        "file name",
+        NAME,
+        {"pattern": NAME, "matches": [{"text": f"\u00e9{NAME}"}]},
+        {"pattern": NAME},
+    ),
+    ("file name", NAME, {"pattern": NAME, "matches": [{"text": f"_{NAME}"}]}, {"pattern": NAME}),
 ]
 
 # An answer that holds the value outside its echo: held as the scan reads it.
@@ -167,18 +175,38 @@ HELD = [
         {"pattern": NAME, "matches": [{"text": f"\u0000{NAME}"}]},
         {"pattern": NAME},
     ),
+    # A row bounded by a no-break space, and by an escape character: neither is a
+    # letter, a digit or an underscore of the decoded run.
+    (
+        "file name",
+        NAME,
+        {"pattern": NAME, "matches": [{"text": f"\u00a0{NAME}"}]},
+        {"pattern": NAME},
+    ),
+    (
+        "file name",
+        NAME,
+        {"pattern": NAME, "matches": [{"text": f"\u001b{NAME}"}]},
+        {"pattern": NAME},
+    ),
     # A one-character and a two-character argument beside a row holding the value.
     ("file name", NAME, {"pattern": "e", "matches": [{"text": NAME}]}, {"pattern": "e"}),
     ("file name", NAME, {"sep": "\\\\", "matches": [{"text": NAME}]}, {"sep": "\\\\"}),
-    # An echo the reading does not tell apart stays as it was: a list argument
-    # echoed as a list, an echo inside a list item, plain text.
+]
+
+# An echo the reading does not tell apart: the entry is read as it was before the
+# echo was read at all, whether or not anything else in its answer holds the value.
+NOT_TOLD_APART = [
+    # A list argument echoed as a list.
     (
         "file name",
         NAME,
         {"patterns": [NAME, "x"], "matches": [{"text": f"a{NAME}"}]},
         {"patterns": [NAME, "x"]},
     ),
+    # An echo inside a list item.
     ("file name", NAME, {"rows": [{"pattern": NAME}]}, {"pattern": NAME}),
+    # Plain text.
     ("mutex", MUTEX, f"Searching for '{MUTEX}'...\nNo matches found.", {"pattern": MUTEX}),
 ]
 
@@ -205,6 +233,18 @@ class TestAnEchoAloneIsNoHolder:
         said = _answer(kind, value, answer, args)
 
         assert publishes(said), said
+
+    @pytest.mark.parametrize(("kind", "value", "answer", "args"), NOT_TOLD_APART)
+    def test_an_echo_the_reading_does_not_tell_apart_is_read_as_before(
+        self, kind: str, value: str, answer: Any, args: dict[str, Any]
+    ) -> None:
+        entries = _texts(("ev_0001", answer, args))
+        unread = EntryTexts(texts=entries.texts, parts=entries.parts)
+        row = _row(kind, value)
+
+        assert scan_cited(entries, row).held == scan_cited(unread, row).held
+        ((_, before),) = identifier_answers(_report(row, unread))
+        assert _answer(kind, value, answer, args) == before
 
     def test_an_entry_nothing_echoes_is_read_as_before(self) -> None:
         entries = EntryTexts(texts={"ev_0001": json.dumps({"pattern": NAME}).lower()})
@@ -269,3 +309,57 @@ class TestTheRefusalsStillPartitionEveryUnheldRow:
         entries = _texts(("ev_0002", {"strings": ["other"]}, {"path": "s.bin"}))
 
         assert scan_cited(entries, _row("file name", NAME, "ev_0002")).unheld_as == NOWHERE
+
+
+class TestARepeatIsReadAsTheEntryHoldingItsAnswer:
+    """A repeat carries the answer of the call that produced it, and that call's echo."""
+
+    @staticmethod
+    def _texts(answer: Any) -> EntryTexts:
+        repeat = LedgerEntry(
+            id="ev_0002",
+            agent="static",
+            server="static",
+            tool="read_evidence",
+            output="(served from ev_0001)",
+            args={"evidence_id": "ev_0001", "limit": 4000},
+            repeated_of="ev_0001",
+        )
+        return EntryTexts.from_ledger([_entry("ev_0001", answer, {"pattern": NAME}), repeat])
+
+    @pytest.mark.parametrize(
+        ("answer", "unheld"),
+        [
+            # A search with no row.
+            ({"pattern": NAME, "matches": []}, ONLY_IN_ITS_CALL),
+            # A search whose rows hold the value only inside a longer run.
+            (
+                {"pattern": NAME, "matches": [{"text": f"x{NAME}"}]},
+                ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE,
+            ),
+        ],
+    )
+    def test_citing_the_repeat_is_citing_the_answer_it_repeats(
+        self, answer: Any, unheld: str
+    ) -> None:
+        entries = self._texts(answer)
+
+        for cited in ("ev_0001", "ev_0002"):
+            row = _row("file name", NAME, cited)
+            scan = scan_cited(entries, row)
+            assert scan.held == (), cited
+            assert scan.unheld_as == unheld, cited
+            ((_, said),) = identifier_answers(_report(row, entries))
+            assert said == f"no: {UNHELD_WORDS[unheld]}", cited
+
+    def test_a_repeat_of_a_true_holder_holds_the_value(self) -> None:
+        entries = self._texts({"pattern": NAME, "matches": [{"text": NAME}]})
+
+        assert scan_cited(entries, _row("file name", NAME, "ev_0002")).held == ("ev_0002",)
+
+    def test_the_byte_reading_takes_out_the_same_echo(self) -> None:
+        entries = self._texts({"pattern": NAME, "hex": NAME.encode().hex()})
+
+        assert entries.echo_free_parts("ev_0002") == entries.echo_free_parts("ev_0001")
+        assert not entries.holds_as_bytes("ev_0001", NAME)
+        assert not entries.holds_as_bytes("ev_0002", NAME)

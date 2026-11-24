@@ -10078,6 +10078,9 @@ class EntryTexts:
     # cited item is read through its own text, as an entry is through its
     # answer. Never in :meth:`holding` or :meth:`may_hold`, which offer entries.
     items: Any = None
+    # Each repeat (``repeated_of``) mapped to the entry that holds its answer:
+    # a repeat's text is that answer, so its echo is the echo of that entry's call.
+    holder_of: Mapping[str, str] = field(default_factory=dict)
     # Each letter-and-digit run of the texts, and the entries it is a whole run
     # of: built once, on first use, by :meth:`may_hold`.
     _runs: dict[str, frozenset[str]] = field(default_factory=dict, compare=False, repr=False)
@@ -10194,6 +10197,7 @@ class EntryTexts:
             failed=frozenset(failed),
             parts=parts,
             code_listings=code_listings,
+            holder_of=holders,
         )
 
     def words_of(self, entry_id: str) -> frozenset[str]:
@@ -10273,13 +10277,15 @@ class EntryTexts:
         UTF-8 or UTF-16LE bytes of one of its string arguments, as written or
         lower-cased, each also followed only by NUL bytes (a C string's end, a
         fixed-width field). Only a run equal to those bytes is the call's: a
-        longer one holds what stands around them too. Read once per entry.
+        longer one holds what stands around them too. A repeat's call is the
+        one whose answer it repeats (:meth:`_answer_arguments`). Read once per
+        entry.
         """
         from malspark.utils.written_bytes import byte_runs
 
         key = str(entry_id).strip().lower()
         if key not in self._bytes:
-            arguments = _call_arguments(self, key)
+            arguments = self._answer_arguments(key)
             written = (
                 {run.data for run in byte_runs(json.dumps(arguments, default=str))}
                 if arguments
@@ -10329,13 +10335,14 @@ class EntryTexts:
         Both as :func:`_without_call_echoes` writes a text — a JSON one read
         and written again, any other as it is — the first with nothing taken
         out, the second with the echo of the entry's own call taken out
-        (``None`` for a text nested past what can be walked). The two are
-        equal where nothing echoes the call, so comparing them compares like
-        with like. Read once per entry; the byte reading reads the second.
+        (``None`` for a text nested past what can be walked); a repeat's call
+        is the one whose answer it repeats (:meth:`_answer_arguments`). The two
+        are equal where nothing echoes the call, so comparing them compares
+        like with like. Read once per entry; the byte reading reads the second.
         """
         key = str(entry_id).strip().lower()
         if key not in self._echo_free:
-            arguments = _call_arguments(self, key)
+            arguments = self._answer_arguments(key)
             read: list[tuple[str, str | None]] = []
             for part in self.parts_of(key):
                 try:
@@ -10346,6 +10353,14 @@ class EntryTexts:
                 read.append((whole, rest))
             self._echo_free[key] = tuple(read)
         return self._echo_free[key]
+
+    def _answer_arguments(self, entry_id: str) -> Any:
+        """The arguments of the call whose answer an entry's text is.
+
+        An entry's own, or, for a repeat, those of the entry holding its answer
+        (:attr:`holder_of`): what the text read again repeats is that call's.
+        """
+        return _call_arguments(self, self.holder_of.get(entry_id) or entry_id)
 
     def text_of(self, cited: str) -> str:
         """The text of a cited entry or a cited sandbox item, ``""`` when the run holds none."""
@@ -11260,14 +11275,19 @@ def _bytes_read(
 ) -> str:
     """The words naming the byte reading, where a cited entry's bytes had a place to read.
 
-    Empty where no cited entry's text writes a byte run as long as a value's
-    shortest spelling: there no byte was read and the search was a text one.
-    An entry whose bytes hold a value whole by chance (``by_chance``) is not
-    named here, where the values are said not found: :func:`_held_by_chance`
-    says what its bytes hold.
+    Only of the values the byte reading takes (:func:`decidable`): one it never
+    reads (a number alone, a value under three characters) is read as written
+    and no more. Empty where none is left, or where no cited entry's text
+    writes a byte run as long as a value's shortest spelling: there no byte was
+    read and the search was a text one. An entry whose bytes hold a value whole
+    by chance (``by_chance``) is not named here, where the values are said not
+    found: :func:`_held_by_chance` says what its bytes hold.
     """
     from malspark.utils.written_bytes import has_a_place
 
+    values = [value for value in values if decidable(value)]
+    if not values:
+        return ""
     spellings = [spelling for value in values for spelling in library_spellings(value)]
     holding = {entry_id for held in by_chance.values() for entry_id in held}
     read = [
@@ -12489,7 +12509,10 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
     (:meth:`EntryTexts.choosing`), never an entry that merely compares it; for
     any other id, every other entry whose text holds it. With no holder,
     nothing is said here: whether an id no entry holds should be cited is
-    another question. The question says of any other id what was searched
+    another question. The question says of an id read as a number what the
+    check tests: that none of the cited entries writes it as a compared
+    operand. It says
+    of any other id what was searched
     (:func:`_id_not_found`): that it was not found as a whole value in the
     cited entries, read as written and, where one writes a byte run, as its
     bytes, with a holding chance explains said as such; never that a cited
@@ -12599,7 +12622,7 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
             ((number, written, cites, _where),) = found
             said = (
                 f"Row {number} of {list_key} states the id {safe_finding_value(written)!r}, "
-                f"which none of the entries it cites holds: "
+                "read as a number none of the entries it cites writes as a compared operand: "
                 f"{safe_finding_value(', '.join(entries.named(ref) for ref in cites))}. "
                 f"This run's evidence holds it in {holding}."
             )
@@ -12617,8 +12640,9 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
             )
             more = len(found) - _MAX_NAMED_IDS
             said = (
-                f"Rows {numbers} of {list_key} each state an id none of the entries the row "
-                f"cites holds: {ids}{f' and {more} more' if more > 0 else ''}. This run's "
+                f"Rows {numbers} of {list_key} each state an id read as a number none of the "
+                "entries the row cites writes as a compared operand: "
+                f"{ids}{f' and {more} more' if more > 0 else ''}. This run's "
                 f"evidence holds them in {holding}."
             )
         else:
@@ -12916,11 +12940,12 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
     - otherwise not held (``STATED_VALUE_UNHELD_CODE``): saying of the whole
       value, or of each span no cited entry holds, what was searched and what
       a cited entry holds (:func:`_unheld_row`) — not found as a whole value,
-      read as written and as the bytes the entries write where a byte run had
-      a place to hold it, with a holding chance explains said as such; only
-      inside a longer run, with the run, at any length, and then the ends such
-      a value allows besides citing another entry or leaving the row out; a
-      number of one or two characters, which is never read alone — and, for a
+      read as written and as the bytes the entries write where the byte
+      reading takes the value and a byte run had a place to hold it, with a
+      holding chance explains said as such; only inside a longer run, with the
+      run, at any length, and then the ends such a value allows besides citing
+      another entry or leaving the row out; one or two characters read as a
+      number, which is never read alone — and, for a
       path, the whole leading part of it a cited entry holds, where every
       string of that sentence prints as it is. Never that a span is in none
       of the cited entries.
@@ -13237,15 +13262,16 @@ STATED_VALUE_RUN_ENDS = (
     f"{INSIDE_A_TOKEN_ENDS} Otherwise, cite an entry that holds each value the row states, or "
     "leave the row out."
 )
-# What a stated-value question says of a span that is a number of one or two
-# characters, which the check never reads as a value of its own (T-555), for
-# one span and for several.
-SHORT_NUMBER_SAID = (
-    "is a number of one or two characters, which this check does not read as a value of its own"
+# What a stated-value question says of a span of one or two characters
+# ``_ONLY_A_NUMBER_RE`` reads as a number, which the check never reads as a
+# value of its own (T-555), for one span and for several: the words name what
+# that reading takes.
+_SHORT_NUMBER_READ = (
+    "one or two characters this check reads as a number (hex digits with a decimal digit "
+    "among them, or a decimal digit then '.', ',' or ':')"
 )
-SHORT_NUMBERS_SAID = (
-    "are numbers of one or two characters, which this check does not read as values of their own"
-)
+SHORT_NUMBER_SAID = f"is {_SHORT_NUMBER_READ}, which it does not read as a value of its own"
+SHORT_NUMBERS_SAID = f"are each {_SHORT_NUMBER_READ}, which it does not read as values of their own"
 
 
 def _unheld_row(
@@ -13254,12 +13280,15 @@ def _unheld_row(
     """What a stated-value question says of one row, and whether it shows a run.
 
     Of the row's whole value (no ``spans``), or of each span no cited entry
-    holds: a span that is a number of one or two characters, which the check
-    never reads alone, is said to be one; a span a cited entry holds only
-    inside a longer run (:func:`_placed_inside`, at any length) is said to
-    stand there, with the run as :func:`_run_shown` shows it; every other is
-    said not found as a whole value in the cited entries, with what was read
-    (:func:`_not_found_in`). Never that a span is in none of them.
+    holds: a span of one or two characters the check reads as a number, and
+    never alone, is said to be one, with what that reading takes; a span a
+    cited entry holds only inside a longer run (:func:`_placed_inside`, at any
+    length) is said to stand there, with the run as :func:`_run_shown` shows
+    it, those beyond the listed ones counted; every other is said not found as
+    a whole value in the cited entries, with what was read
+    (:func:`_not_found_in`), the spans the byte reading takes said apart from
+    the rest where the bytes are named for them. Never that a span is in none
+    of them.
     """
     whole = not spans
     read = [value] if whole else list(dict.fromkeys(spans))
@@ -13279,9 +13308,17 @@ def _unheld_row(
         else:
             inside.append((span, ref))
     facts: list[str] = []
-    if searched:
-        subject = head if whole else _named_literals(searched)
-        not_found = _not_found_in(searched, refs, entries)
+    # The spans the byte reading takes, said apart from the rest only where the
+    # bytes are named for them: each group is said what was read of it.
+    groups = [searched] if searched else []
+    taken = [span for span in searched if decidable(span)]
+    if 0 < len(taken) < len(searched) and _bytes_read(
+        taken, refs, entries, _bytes_holding_by_chance(taken, refs, entries)
+    ):
+        groups = [taken, [span for span in searched if span not in taken]]
+    for group in groups:
+        subject = head if whole else _named_literals(group)
+        not_found = _not_found_in(group, refs, entries)
         facts.append(f"{safe_finding_value(subject, whole=True)} {not_found}")
     for span, ref in inside[:_MAX_NAMED_IDS]:
         subject = head if whole else repr(span)
@@ -13296,6 +13333,11 @@ def _unheld_row(
         run, lowered = shown
         case = f", {RUN_IN_LOWER_CASE}" if lowered else ""
         facts.append(f"{where}{case}: {safe_finding_value(run)!r}")
+    more = len(inside) - _MAX_NAMED_IDS
+    if more == 1:
+        facts.append("and 1 more span stands only inside a longer run of text")
+    elif more > 1:
+        facts.append(f"and {more} more spans stand only inside longer runs of text")
     if short:
         said = SHORT_NUMBER_SAID
         if len(short) > 1:
@@ -13312,8 +13354,9 @@ def _not_found_in(
 ) -> str:
     """That ``values`` were not found as whole values in the cited entries, and how they were read.
 
-    Read as written and, where a cited entry's text writes a byte run as long
-    as a value's shortest spelling, as the bytes it writes (:func:`_bytes_read`);
+    Read as written and, for a value the byte reading takes, where a cited
+    entry's text writes a byte run as long as its shortest spelling, as the
+    bytes it writes (:func:`_bytes_read`);
     where a cited entry's bytes write a value whole and only the chance bound
     refuses the holding, it says that (:func:`_held_by_chance`). With
     ``by_row``, the entries are said to be the ones the row cites.
