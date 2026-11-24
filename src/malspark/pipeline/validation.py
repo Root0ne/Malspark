@@ -11276,8 +11276,9 @@ def _bytes_read(
     """The words naming the byte reading, where a cited entry's bytes had a place to read.
 
     Only of the values the byte reading takes (:func:`decidable`): one it never
-    reads (a number alone, a value under three characters) is read as written
-    and no more. Empty where none is left, or where no cited entry's text
+    reads (a number alone that is no whole digest, a value under three
+    characters) is read as written and no more. Empty where none is left, or
+    where no cited entry's text
     writes a byte run as long as a value's shortest spelling: there no byte was
     read and the search was a text one. An entry whose bytes hold a value whole
     by chance (``by_chance``) is not named here, where the values are said not

@@ -5,8 +5,9 @@ Per row and per span, the stated-value question says what the search found,
 never that a span is in none of the cited entries where one holds it in any
 reading: a span not found says it was not found as a whole value in the cited
 entries, read as written, and as the bytes their texts write where the byte
-reading takes the span (no number alone, nothing under three characters) and a
-byte run had a place to hold it, the two kinds said apart where a row holds
+reading takes the span (no number alone other than a whole digest, nothing
+under three characters) and a byte run had a place to hold it, the two kinds
+said apart where a row holds
 both; bytes writing it whole only where chance explains it say so; a span a
 cited entry holds only inside a longer run says so with the run, whatever its
 length, spans beyond the listed ones counted, and the question then offers
