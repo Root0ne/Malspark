@@ -532,6 +532,12 @@ _HELD_BULLET_IS = (
     "answered"
 )
 _EVERY_ROW = "Answer with every row again, this one included."
+# What a refusal says the round read where it reads a rewrite as keeping its sentence (T-895).
+_READ_AS_KEPT = (
+    "repeating at least 80% of its words, at most 20% of the rewrite's words being new (words "
+    "under three characters, stop words, entry ids and bare numbers not counted), which the "
+    "round reads as keeping it"
+)
 # The report rounds' own findings on a rewrite that misreads the entries it cites.
 _NOT_SHOWN = (
     "row 1: [ev_0999] is not an entry this answer was shown. Cite an entry by its evidence id in "
@@ -1158,7 +1164,8 @@ TABLE: dict[str, list[str]] = {
     ],
     "cell failed | rewrite, the same words cited | -": [
         "agreement.failure_redone at sentences.0.decision: row 1: communications.1.encryption "
-        "rewrites the sentence into the same words, which keeps it, but it says a call failed "
+        "rewrites the sentence "
+        f"{_READ_AS_KEPT}, but it says a call failed "
         "or a reading could not be made, while a later call redid it (ev_0101 by ev_0107). "
         f"Rewrite it citing ev_0107 and saying what it answered, or drop it. {_CELL_IS}: "
         f"{_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
@@ -1263,8 +1270,9 @@ TABLE: dict[str, list[str]] = {
         "Rewrite it in your own words to state that the code was read and what the sentence "
         f"can still say, citing an entry that fact cites, or drop it. {_EVERY_ROW}",
         "agreement.keep_unquoted at sentences.0.rewrite: row 1: communications.1.encryption "
-        "rewrites 'The routine at 0x5a10 was not read [ev_0107].' into the same words, which "
-        "keeps it, on listed.1, but the best sentence of those sources states no absence, "
+        "rewrites 'The routine at 0x5a10 was not read [ev_0107].' "
+        f"{_READ_AS_KEPT}, "
+        "on listed.1, but the best sentence of those sources states no absence, "
         f"while the sentence states one: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
         "agreement.unread_standing at sentences.0.decision: communications.1.encryption: 'The "
         "routine at 0x5a10 was not read [ev_0107].' calls code not read that the ledger lists "
@@ -1408,7 +1416,8 @@ TABLE: dict[str, list[str]] = {
         "your own words to state that the code was read and what the sentence can still say, "
         f"citing an entry that fact cites, or drop it. {_EVERY_ROW}",
         "agreement.keep_unquoted at sentences.0.rewrite: row 1: capability_summary.1 rewrites "
-        "'The routine at 0x5a10 was not read [ev_0107].' into the same words, which keeps it, "
+        "'The routine at 0x5a10 was not read [ev_0107].' "
+        f"{_READ_AS_KEPT}, "
         "on listed.1, but the best sentence of those sources states no absence, while the "
         f"sentence states one: {_UNKEPT}. {_LEFT_OUT}, and {_NOT_PRINTED}.",
         "agreement.unread_standing at sentences.0.decision: capability_summary.1: 'The routine "
@@ -1472,7 +1481,8 @@ TABLE: dict[str, list[str]] = {
     ],
     "conclusion failed | rewrite, the same words cited | left out": [
         "agreement.failure_redone at sentences.0.decision: row 1: conclusion rewrites the "
-        "sentence into the same words, which keeps it, but it says a call failed or a reading "
+        "sentence "
+        f"{_READ_AS_KEPT}, but it says a call failed or a reading "
         "could not be made, while a later call redid it (ev_0101 by ev_0107). Rewrite it citing "
         "ev_0107 and saying what it answered, or drop it. A keep of it is refused whatever it "
         "names, and the same words with a citation added are a keep; rewrite it on the source "
@@ -1602,7 +1612,8 @@ TABLE: dict[str, list[str]] = {
         "citing an entry that fact cites, or drop it; refused, a rewrite resting on the "
         f"sources it names leaves it out of the report. {_EVERY_ROW}",
         "agreement.keep_unquoted at sentences.0.rewrite: row 1: conclusion rewrites 'The "
-        "routine at 0x5a10 was not read [ev_0107].' into the same words, which keeps it, on "
+        "routine at 0x5a10 was not read [ev_0107].' "
+        f"{_READ_AS_KEPT}, on "
         "listed.1, but the best sentence of those sources states no absence, while the "
         f"sentence states one: {_UNKEPT}.",
         "agreement.unread_standing at sentences.0.decision: conclusion: 'The routine at 0x5a10 "
@@ -1632,8 +1643,9 @@ TABLE: dict[str, list[str]] = {
         "of the sources you read for the sentence of conclusion, or, leaving it out, give the "
         "reason.",
         "agreement.keep_unquoted at sentences.0.rewrite: row 1: conclusion rewrites 'The "
-        "routine at 0x5a10 was not read [ev_0107].' into the same words, which keeps it, on , "
-        "but the best sentence of those sources no sentence of the sources it names states it: "
+        "routine at 0x5a10 was not read [ev_0107].' "
+        f"{_READ_AS_KEPT}, but it names none of the facts, section 5 passages and debate rounds "
+        "listed: "
         f"{_UNKEPT}.",
         "agreement.unread_standing at sentences.0.decision: conclusion: 'The routine at 0x5a10 "
         "was not read [ev_0107].' calls code not read that the ledger lists (listed.1: "
@@ -1749,7 +1761,8 @@ TABLE: dict[str, list[str]] = {
         "can still say, citing an entry that fact cites, or drop it; refused, a rewrite "
         f"resting on the sources it names leaves it out of the report. {_EVERY_ROW}",
         "agreement.keep_unquoted at sentences.0.rewrite: row 1: limitations rewrites 'The "
-        "routine at 0x6100 was not read [ev_0112].' into the same words, which keeps it, on "
+        "routine at 0x6100 was not read [ev_0112].' "
+        f"{_READ_AS_KEPT}, on "
         "listed.2, but the best sentence of those sources states no absence, while the "
         f"sentence states one: {_UNKEPT}.",
         "agreement.unread_standing at sentences.0.decision: limitations: 'The routine at "
@@ -1916,7 +1929,8 @@ TABLE: dict[str, list[str]] = {
         "agreement.keep_unquoted at sentences.0.rewrite: row 1: communications.1.encryption "
         "rewrites 'Which export the loader calls is not established, the routine at 0x5a10 was "
         "not read, the decompile of 0x5a10 failed and five tool calls failed [ev_0101] "
-        "[ev_0104].' into the same words, which keeps it, on listed.1, but the best sentence "
+        "[ev_0104].' "
+        f"{_READ_AS_KEPT}, on listed.1, but the best sentence "
         "of those sources states no absence, while the sentence states one: it names what "
         "ledger.1 holds lines on: a keep of it as written is refused, and the same words with "
         "a citation added are a keep; rewrite it in your own words on the lines shown, citing "
@@ -2081,7 +2095,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.keep_unquoted at sentences.0.rewrite: row 1: capability_summary.2 rewrites "
         "'Which export the loader calls is not established, the routine at 0x5a10 was not "
         "read, the decompile of 0x5a10 failed and five tool calls failed [ev_0101] [ev_0104].' "
-        "into the same words, which keeps it, on listed.1, but the best sentence of those "
+        f"{_READ_AS_KEPT}, on listed.1, but the best sentence of those "
         "sources states no absence, while the sentence states one: it names what ledger.1 "
         "holds lines on: a keep of it as written is refused, and the same words with a "
         "citation added are a keep; rewrite it in your own words on the lines shown, citing "
@@ -2209,7 +2223,8 @@ TABLE: dict[str, list[str]] = {
         f"or drop it. {_EVERY_ROW} {_LEFT_OUT}.",
         "agreement.keep_unquoted at sentences.0.rewrite: row 1: limitations rewrites 'The "
         "decompile of 0x5a10 failed [ev_0101], so the routine at 0x5a10 was not read, and five "
-        "tool calls failed.' into the same words, which keeps it, on listed.1, but the best "
+        "tool calls failed.' "
+        f"{_READ_AS_KEPT}, on listed.1, but the best "
         "sentence of those sources states no absence, while the sentence states one: it names "
         "a call that failed and a later call redid: a keep of it as written is refused; "
         f"rewrite it in your own words on what ev_0107 answered, citing it, {_DENIAL}, or drop "
@@ -2356,7 +2371,8 @@ TABLE: dict[str, list[str]] = {
         f"can still say, citing an entry that fact cites, or drop it. {_EVERY_ROW} {_LEFT_OUT}.",
         "agreement.keep_unquoted at sentences.0.quote: row 1: introduction rewrites 'The "
         "runtime result of `QueryHostMode` is not known, the routine at 0x5a10 was not read "
-        "and five tool calls failed [ev_0109].' into the same words, which keeps it, on "
+        "and five tool calls failed [ev_0109].' "
+        f"{_READ_AS_KEPT}, on "
         "listed.1, but gives no quote: it names what ledger.1 holds lines on: a keep of it is "
         "refused whatever it names; rewrite it in your own words on the lines shown, citing an "
         f"entry the fact cites, {_DENIAL}; or drop it. {_LEFT_OUT}.",
