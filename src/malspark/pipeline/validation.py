@@ -8371,9 +8371,10 @@ UNCITED_IDENTIFIER_CODE = "report.identifier_uncited"
 # process row (``start_path_value_violations``). Asked once with the fact; a
 # row kept after it stands, with the finding beside it.
 SANDBOX_START_PATH_VALUE_CODE = "report.sandbox_start_path_as_value"
-# A table row whose whole value is in none of the entries it cites
-# (``stated_value_violations``). Asked once; a row kept after it is marked
-# beside its evidence.
+# A table row whose whole value none of the entries it cites holds, as text or
+# as the bytes its text writes (``stated_value_violations``). Asked once,
+# saying of each span what was searched and what a cited entry holds; a row
+# kept after it is marked beside its evidence.
 STATED_VALUE_UNHELD_CODE = "report.value_not_in_cited_entry"
 # A table row whose value a cited entry holds only inside a longer run of
 # letters or digits (``stated_value_violations``): one of several strings
@@ -8384,8 +8385,9 @@ STATED_VALUE_INSIDE_A_TOKEN_CODE = "report.value_inside_a_longer_token"
 # of the run does (``cited_id_violations``): a number where that entry's one
 # compared expression holds the most of the table's numbers, in a table of
 # four or more numbered ids that are not a plain count, any other id where its
-# text writes it whole. Asked once per set of holders, naming them; a row kept
-# after it is marked beside its evidence.
+# text writes it whole (a cited entry also as the bytes its text writes). Asked
+# once per set of holders, naming them; a row kept after it is marked beside
+# its evidence.
 ID_NOT_IN_CITED_ENTRY_CODE = "report.id_not_in_cited_entry"
 # Technical prose naming a network value this run does not publish without
 # that value's publish state (``unpublished_value_violations``). Asked once; a
@@ -10106,6 +10108,10 @@ class EntryTexts:
     _echo_free: dict[str, tuple[tuple[str, str | None], ...]] = field(
         default_factory=dict, compare=False, repr=False
     )
+    # The texts each entry's byte runs decode to (:meth:`byte_readings_of`).
+    _decoded: dict[str, tuple[tuple[str, bool, bool], ...]] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
     @classmethod
     def from_ledger(cls, ledger: Iterable[Any], corpus: Any = None) -> EntryTexts:
@@ -10207,9 +10213,9 @@ class EntryTexts:
         is also held by the entry's pair of the two (:func:`field_pair_in`). An
         entry of :attr:`code_listings` also holds the value as a C string literal
         inside its JSON writes it (:func:`code_literal_forms`), on the whole-value
-        path only. With ``as_bytes``, asked by the cited-entry test of
-        :func:`wrong_entry_citations` alone, the entry also holds a value its
-        text writes as bytes (:meth:`holds_as_bytes`).
+        path only. With ``as_bytes``, asked by the cited-entry tests of
+        :func:`wrong_entry_citations` and :func:`cited_id_violations`, the entry
+        also holds a value its text writes as bytes (:meth:`holds_as_bytes`).
         """
         text = self.text_of(entry_id)
         if not text:
@@ -10251,7 +10257,8 @@ class EntryTexts:
             if decidable(value):
                 runs = self.byte_runs_of(entry_id)
                 spellings = library_spellings(value)
-                if runs and holds_whole(runs, spellings):
+                readings = self.byte_readings_of(entry_id) if runs else ()
+                if runs and holds_whole(runs, spellings, readings=readings):
                     chance = chance_in(runs, spellings[0], spellings)
             self._byte_chances[key] = chance
         return self._byte_chances[key]
@@ -10264,8 +10271,9 @@ class EntryTexts:
         :func:`~malspark.utils.written_bytes.byte_runs`; a run whose bytes are
         the call's own is not read: a run its arguments write as bytes, or the
         UTF-8 or UTF-16LE bytes of one of its string arguments, as written or
-        lower-cased. Only a run equal to those bytes is the call's: a longer
-        one holds what stands around them too. Read once per entry.
+        lower-cased, each also followed only by NUL bytes (a C string's end, a
+        fixed-width field). Only a run equal to those bytes is the call's: a
+        longer one holds what stands around them too. Read once per entry.
         """
         from malspark.utils.written_bytes import byte_runs
 
@@ -10281,14 +10289,39 @@ class EntryTexts:
                 for form in (argument, argument.lower()):
                     written.add(form.encode("utf-8", errors="surrogatepass"))
                     written.add(form.encode("utf-16-le", errors="surrogatepass"))
+            # Each run the call wrote by what it is without its closing NUL
+            # bytes, with the shortest length it is written at.
+            shortest: dict[bytes, int] = {}
+            for data in written:
+                core = data.rstrip(b"\x00")
+                shortest[core] = min(shortest.get(core, len(data)), len(data))
+
+            def _the_calls(data: bytes) -> bool:
+                # The call's own bytes, followed only by NUL bytes or by none.
+                core = data.rstrip(b"\x00")
+                return core in shortest and len(data) >= shortest[core]
+
             runs: list[Any] = []
             for _whole, read in self.echo_free_parts(key):
                 if read is None:
                     # Nested past what can be walked: no echo is told apart, so none is read.
                     continue
-                runs.extend(run for run in byte_runs(read) if run.data not in written)
+                runs.extend(run for run in byte_runs(read) if not _the_calls(run.data))
             self._bytes[key] = tuple(runs)
         return self._bytes[key]
+
+    def byte_readings_of(self, entry_id: str) -> tuple[tuple[str, bool, bool], ...]:
+        """Each text the entry's byte runs (:meth:`byte_runs_of`) decode to, with its ends.
+
+        :func:`~malspark.utils.written_bytes.readings_of`, read once per entry:
+        every value asked of the entry reads the same decoded texts.
+        """
+        from malspark.utils.written_bytes import readings_of
+
+        key = str(entry_id).strip().lower()
+        if key not in self._decoded:
+            self._decoded[key] = readings_of(self.byte_runs_of(key))
+        return self._decoded[key]
 
     def echo_free_parts(self, entry_id: str) -> tuple[tuple[str, str | None], ...]:
         """Each text an entry was read in, as a pair written the same way: whole, and echo-free.
@@ -10900,7 +10933,7 @@ def wrong_entry_citations(
     URL, a path, a host, a file name; :func:`literal_values`), or the
     whole of a record's value — is looked for in the text of each entry cited
     for it, and in the bytes that text writes (:meth:`EntryTexts.holds_as_bytes`:
-    this test alone reads bytes, and no entry is offered for its bytes). Found
+    the cited-entry tests read bytes, and no entry is offered for its bytes). Found
     in one of them, the citation stands.
     Found in none of them but in another entry of the run, the citation points
     a reader at the wrong answer, and the model is asked once, with the entry
@@ -12447,14 +12480,20 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
     reads (:meth:`EntryTexts.operands`), and not asked about where a
     cited entry is code in a form not read (:meth:`EntryTexts.code_not_read`):
     a doubt keeps the question back. Any other id is held by an entry whose
-    text holds it whole (:meth:`EntryTexts.holds`). Held by none of the cited
-    entries, the row is asked about once, together with the other rows its
-    holders hold, with those holders named: for a number, the entries whose one
-    compared expression holds the most of the table's numbers, where the
-    entries holding as many agree on its values (:meth:`EntryTexts.choosing`),
-    never an entry that merely compares it; for any other id, every other
-    entry whose text holds it. With no holder, nothing is said here: whether
-    an id no entry holds should be cited is another question.
+    text holds it whole (:meth:`EntryTexts.holds`), and a cited entry also
+    where its text writes it as bytes (:meth:`EntryTexts.holds_as_bytes`).
+    Held by none of the cited entries, the row is asked about once, together
+    with the other rows its holders hold, with those holders named: for a
+    number, the entries whose one compared expression holds the most of the
+    table's numbers, where the entries holding as many agree on its values
+    (:meth:`EntryTexts.choosing`), never an entry that merely compares it; for
+    any other id, every other entry whose text holds it. With no holder,
+    nothing is said here: whether an id no entry holds should be cited is
+    another question. The question says of any other id what was searched
+    (:func:`_id_not_found`): that it was not found as a whole value in the
+    cited entries, read as written and, where one writes a byte run, as its
+    bytes, with a holding chance explains said as such; never that a cited
+    entry lacks it.
 
     A number is asked about only where a coincidence is implausible: a table
     with fewer than :data:`_FEWEST_CHECKED_NUMBERS` distinct numbered ids, or
@@ -12479,6 +12518,8 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
     groups: dict[tuple[str, tuple[str, ...]], list[tuple[int, str, tuple[str, ...], str]]] = {}
     # The strings of the rows asked about, to name them in the answer.
     where: dict[tuple[str, tuple[str, ...]], list[Span]] = {}
+    # The rows asked about for a number, which is held as a compared operand.
+    compared: set[tuple[str, int]] = set()
     for list_key, rows in data.items():
         if not isinstance(rows, list) or not _ROW_LIST_KEY_RE.fullmatch(str(list_key)):
             continue
@@ -12518,7 +12559,7 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
                     ]
                 else:
                     if not decidable(written) or any(
-                        entries.holds(ref, written, fields=True) for ref in answered
+                        entries.holds(ref, written, fields=True, as_bytes=True) for ref in answered
                     ):
                         continue
                     holders = [
@@ -12535,6 +12576,8 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
                 groups.setdefault(group, []).append(
                     (index + 1, written, tuple(cited), cited_row_text(written, row))
                 )
+                if index in numbered:
+                    compared.add((str(list_key), index + 1))
                 raw = row.get("id")
                 if isinstance(raw, str):
                     where.setdefault(group, []).append((raw, 0, len(raw)))
@@ -12549,7 +12592,10 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
             )
         )
         numbers = ", ".join(str(number) for number, _id, _cited, _where in found)
-        if len(found) == 1:
+        # A row asked for a number says what its cited entries' code does not
+        # compare; any other row what was searched, the bytes too.
+        searched = [number for number, *_rest in found if (list_key, number) not in compared]
+        if len(found) == 1 and not searched:
             ((number, written, cites, _where),) = found
             said = (
                 f"Row {number} of {list_key} states the id {safe_finding_value(written)!r}, "
@@ -12557,7 +12603,14 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
                 f"{safe_finding_value(', '.join(entries.named(ref) for ref in cites))}. "
                 f"This run's evidence holds it in {holding}."
             )
-        else:
+        elif len(found) == 1:
+            ((number, written, cites, _where),) = found
+            said = (
+                f"Row {number} of {list_key} states the id {safe_finding_value(written)!r}; "
+                f"it {_id_not_found(written, cites, entries)}. This run's evidence holds it in "
+                f"{holding}."
+            )
+        elif not searched:
             ids = "; ".join(
                 f"{number}: {safe_finding_value(written)!r}"
                 for number, written, _cited, _where in found[:_MAX_NAMED_IDS]
@@ -12568,12 +12621,30 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
                 f"cites holds: {ids}{f' and {more} more' if more > 0 else ''}. This run's "
                 f"evidence holds them in {holding}."
             )
+        else:
+            ids = "; ".join(
+                f"{number}: {safe_finding_value(written)!r} ("
+                + (
+                    f"{_id_not_found(written, cites, entries)}"
+                    if number in searched
+                    else "a number none of the entries the row cites writes as a compared operand"
+                )
+                + ")"
+                for number, written, cites, _where in found[:_MAX_NAMED_IDS]
+            )
+            more = len(found) - _MAX_NAMED_IDS
+            said = (
+                f"Rows {numbers} of {list_key} each state an id this check did not find in the "
+                f"entries the row cites: {ids}{f' and {more} more' if more > 0 else ''}. This "
+                f"run's evidence holds them in {holding}."
+            )
         out.append(
             Violation(
                 code=ID_NOT_IN_CITED_ENTRY_CODE,
                 message=(
                     f"{said} A number is held where an entry's code compares it with the "
-                    "value it chooses by, any other id where an entry's text writes it whole. "
+                    "value it chooses by, any other id where an entry's text writes it whole, "
+                    "or a cited entry's text writes it as bytes chance does not explain. "
                     "Cite the entry that holds each row's id."
                 ),
                 path=f"{list_key}.id",
@@ -12587,6 +12658,31 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
             )
         )
     return out
+
+
+def _id_not_found(written: str, cites: Sequence[str], entries: EntryTexts) -> str:
+    """What a cited-id question says of an id it searched for, after "it".
+
+    That it was not found as a whole value in the cited entries that answered,
+    read as written and, where one writes a byte run it could stand in, as its
+    bytes (:func:`_not_found_in`); a cited entry whose call failed holds no id
+    and is said to be one.
+    """
+    answered = [ref for ref in cites if ref not in entries.failed]
+    failed = [ref for ref in cites if ref in entries.failed]
+    searched = ""
+    if answered:
+        searched = _not_found_in([written], answered, entries, by_row=True)
+    if not failed:
+        return searched
+    named = safe_finding_value(_named_entries(entries, failed), whole=True)
+    what = "answers with a failure"
+    if len(failed) > 1:
+        what = "answer with a failure"
+    failure = f"{named}, which the row cites, {what}, which holds no id here"
+    if searched:
+        return f"{searched}; {failure}"
+    return f"stands in no answer this check reads: {failure}"
 
 
 # The tables whose rows state one value each, by the list a section answers
@@ -12786,12 +12882,15 @@ def _hive_before(text: str, at: int) -> str:
 
 
 def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Violation]:
-    """Table rows whose value is in none of the entries the row cites.
+    """Table rows whose value none of the entries the row cites holds.
 
     A configuration item or a host identifier states one value and cites the
     entries it was read in. The whole value is looked for in each cited entry
     under the citation check's own normalisation (:meth:`EntryTexts.holds`),
-    a number also in decimal and hex (:func:`_stated_spellings`); a value that
+    a number also in decimal and hex (:func:`_stated_spellings`), and in the
+    bytes each cited entry's text writes (:meth:`EntryTexts.holds_as_bytes`,
+    the citation check's one byte reading, asked of each cited entry: the
+    text's lookup offers no entry for its bytes); a value that
     lists items joined by ", " is held where one cited entry holds every item.
     A configuration cell of several spans (:func:`_cell_spans`) is held where
     every span of it is held by a cited entry; a cell of one span and an
@@ -12814,9 +12913,17 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
       and the two ends that pass, preferring neither: the value may be one of
       several strings joined in that run, or the start or the end of a longer
       value;
-    - otherwise not held (``STATED_VALUE_UNHELD_CODE``): naming the spans no
-      cited entry holds and, for a path, the whole leading part of it a cited
-      entry holds, where every string of that sentence prints as it is.
+    - otherwise not held (``STATED_VALUE_UNHELD_CODE``): saying of the whole
+      value, or of each span no cited entry holds, what was searched and what
+      a cited entry holds (:func:`_unheld_row`) — not found as a whole value,
+      read as written and as the bytes the entries write where a byte run had
+      a place to hold it, with a holding chance explains said as such; only
+      inside a longer run, with the run, at any length, and then the ends such
+      a value allows besides citing another entry or leaving the row out; a
+      number of one or two characters, which is never read alone — and, for a
+      path, the whole leading part of it a cited entry holds, where every
+      string of that sentence prints as it is. Never that a span is in none
+      of the cited entries.
 
     Each row is named by its number, which is how the report marks a row kept
     after it.
@@ -12844,11 +12951,15 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
     def _held_by(value: str, among: set[str], numbers: bool) -> bool:
         # A cited item is read directly: it is in no lookup of the entries.
         cited_items = [ref for ref in among if ref not in entries.texts]
-        return any(
+        if any(
             entries.holds(ref, form, fields=True)
             for form in _stated_spellings(value, numbers=numbers)
             for ref in [*(entries.may_hold(form, fields=True) & among), *cited_items]
-        )
+        ):
+            return True
+        # Each cited entry is also read as the bytes its text writes, asked of
+        # it directly: the text's lookup offers no entry for its bytes.
+        return any(entries.holds_as_bytes(ref, value) for ref in sorted(among))
 
     def _held_with_its_hive(label: str, rest: str, ref: str) -> bool:
         # The rest of the path whole, with this hive the last one spelt before
@@ -13018,39 +13129,42 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
             unheld_at.setdefault(tuple(cited), []).append(at)
         for refs, rows in unheld.items():
             named = safe_finding_value(", ".join(entries.named(ref) for ref in refs))
+            # Each row said for itself: what was searched, and what a cited entry holds.
+            told = [
+                _unheld_row(
+                    f"{noun} {number} ({safe_finding_value(label)}: {safe_finding_value(value)!r})",
+                    value,
+                    spans,
+                    refs,
+                    entries,
+                )
+                for number, label, value, spans, _notes in rows[:_MAX_NAMED_IDS]
+            ]
+            run_shown = any(shows_a_run for _said, shows_a_run in told)
             if len(rows) == 1:
-                ((number, label, value, spans, notes),) = rows
-                head = (
-                    f"{noun} {number} ({safe_finding_value(label)}: {safe_finding_value(value)!r})"
-                )
-                said = (
-                    f"{head}: none of the entries it cites ({named}) holds "
-                    f"{_named_literals(spans)}."
-                    if spans
-                    else f"{head} is in none of the entries it cites: {named}."
-                )
+                said = told[0][0]
             else:
-                values = "; ".join(
-                    f"{number}: {safe_finding_value(value)!r}"
-                    + (f" (not held: {_named_literals(spans)})" if spans else "")
-                    for number, _label, value, spans, _notes in rows[:_MAX_NAMED_IDS]
-                )
                 more = len(rows) - _MAX_NAMED_IDS
+                covers = (
+                    f" This finding also covers {safe_finding_value(more)} more {nouns} citing "
+                    "them."
+                    if more > 0
+                    else ""
+                )
                 said = (
-                    f"{nouns} {', '.join(str(number) for number, *_rest in rows)} are each in "
-                    f"none of the entries they cite: {named}. Their values: {values}"
-                    f"{f' and {more} more' if more > 0 else ''}."
+                    f"{nouns} {', '.join(str(number) for number, *_rest in rows)} cite {named}. "
+                    + " ".join(row_said for row_said, _shows in told)
+                    + covers
                 )
             # What a cited entry holds of each path, each string printed as it is.
             notes = list(dict.fromkeys(note for *_rest, row_notes in rows for note in row_notes))
             said = " ".join([said, *notes[:_MAX_NAMED_IDS]])
+            ends = STATED_VALUE_RUN_ENDS if run_shown else STATED_VALUE_ENDS
             out.append(
                 Violation(
                     code=STATED_VALUE_UNHELD_CODE,
                     message=(
-                        f"{said} A value in this table is one an entry records as written. "
-                        "Cite an entry that holds each value the row states, or leave the row "
-                        "out."
+                        f"{said} A value in this table is one an entry records as written. {ends}"
                     ),
                     path=f"{list_key}.value:{','.join(refs)}",
                     statements=tuple(f"{list_key}.{row_at}.value" for row_at in unheld_at[refs]),
@@ -13114,6 +13228,109 @@ INSIDE_A_TOKEN_ENDS = (
     "Where a value is one of several strings joined in its run, keep the row as written; "
     "where the longer token is the value, write the token the entry holds."
 )
+# What a stated-value question asks of its rows: the two ends a value no cited
+# entry holds allows, and, where a span stands in a cited entry only inside a
+# longer run (under the keep check's floor too), the two ends such a value
+# allows before them.
+STATED_VALUE_ENDS = "Cite an entry that holds each value the row states, or leave the row out."
+STATED_VALUE_RUN_ENDS = (
+    f"{INSIDE_A_TOKEN_ENDS} Otherwise, cite an entry that holds each value the row states, or "
+    "leave the row out."
+)
+# What a stated-value question says of a span that is a number of one or two
+# characters, which the check never reads as a value of its own (T-555), for
+# one span and for several.
+SHORT_NUMBER_SAID = (
+    "is a number of one or two characters, which this check does not read as a value of its own"
+)
+SHORT_NUMBERS_SAID = (
+    "are numbers of one or two characters, which this check does not read as values of their own"
+)
+
+
+def _unheld_row(
+    head: str, value: str, spans: Sequence[str], refs: Sequence[str], entries: EntryTexts
+) -> tuple[str, bool]:
+    """What a stated-value question says of one row, and whether it shows a run.
+
+    Of the row's whole value (no ``spans``), or of each span no cited entry
+    holds: a span that is a number of one or two characters, which the check
+    never reads alone, is said to be one; a span a cited entry holds only
+    inside a longer run (:func:`_placed_inside`, at any length) is said to
+    stand there, with the run as :func:`_run_shown` shows it; every other is
+    said not found as a whole value in the cited entries, with what was read
+    (:func:`_not_found_in`). Never that a span is in none of them.
+    """
+    whole = not spans
+    read = [value] if whole else list(dict.fromkeys(spans))
+    short = [
+        span
+        for span in read
+        if not whole and len(span) < _LISTED_PART_FLOOR and _ONLY_A_NUMBER_RE.fullmatch(span)
+    ]
+    searched: list[str] = []
+    inside: list[tuple[str, str]] = []
+    for span in read:
+        if span in short:
+            continue
+        ref = next((r for r in refs if _placed_inside(entries, r, span) is not None), None)
+        if ref is None:
+            searched.append(span)
+        else:
+            inside.append((span, ref))
+    facts: list[str] = []
+    if searched:
+        subject = head if whole else _named_literals(searched)
+        not_found = _not_found_in(searched, refs, entries)
+        facts.append(f"{safe_finding_value(subject, whole=True)} {not_found}")
+    for span, ref in inside[:_MAX_NAMED_IDS]:
+        subject = head if whole else repr(span)
+        where = (
+            f"{safe_finding_value(subject, whole=True)} stands in "
+            f"{safe_finding_value(entries.named(ref))} only inside a longer run of text"
+        )
+        shown = _run_shown(entries, ref, span)
+        if shown is None:
+            facts.append(f"{where}, {RUN_NOT_SHOWN}")
+            continue
+        run, lowered = shown
+        case = f", {RUN_IN_LOWER_CASE}" if lowered else ""
+        facts.append(f"{where}{case}: {safe_finding_value(run)!r}")
+    if short:
+        said = SHORT_NUMBER_SAID
+        if len(short) > 1:
+            said = SHORT_NUMBERS_SAID
+        facts.append(f"{safe_finding_value(_named_literals(short), whole=True)} {said}")
+    joined = "; ".join(facts)
+    if whole:
+        return f"{joined}.", bool(inside)
+    return f"{safe_finding_value(head, whole=True)}: {joined}.", bool(inside)
+
+
+def _not_found_in(
+    values: Sequence[str], cited: Sequence[str], entries: EntryTexts, *, by_row: bool = False
+) -> str:
+    """That ``values`` were not found as whole values in the cited entries, and how they were read.
+
+    Read as written and, where a cited entry's text writes a byte run as long
+    as a value's shortest spelling, as the bytes it writes (:func:`_bytes_read`);
+    where a cited entry's bytes write a value whole and only the chance bound
+    refuses the holding, it says that (:func:`_held_by_chance`). With
+    ``by_row``, the entries are said to be the ones the row cites.
+    """
+    one = len(values) == 1
+    answers = "the answer of" if len(cited) == 1 else "the answers of"
+    named = safe_finding_value(_named_entries(entries, cited), whole=True)
+    by_chance = _bytes_holding_by_chance(values, cited, entries)
+    spellings = _bytes_read(values, cited, entries, by_chance)
+    held = _held_by_chance(values[:_MAX_NAMED_IDS], by_chance, entries)
+    searched = "was not found as a whole value" if one else "were not found as whole values"
+    citing = ""
+    if by_row:
+        citing = ", which the row cites"
+    return f"{searched} in {answers} {named}{citing}, read as written{spellings}{held}"
+
+
 # What a finding says in place of a run the printer would print as other text,
 # and what a row kept after it is marked by (``markdown._row_mark``).
 RUN_NOT_SHOWN = "which is not shown here"

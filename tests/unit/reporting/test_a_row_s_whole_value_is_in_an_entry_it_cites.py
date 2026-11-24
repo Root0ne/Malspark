@@ -147,7 +147,7 @@ class TestTheWholeValue:
 
         together, alone = stated_value_violations(payload, _texts())
 
-        assert together.message.startswith("identifiers 1, 3 are each in none of the entries")
+        assert together.message.startswith("identifiers 1, 3 cite ev_0005 (strings). identifier 1 ")
         assert alone.message.startswith("identifier 4 (")
 
     def test_nothing_is_judged_without_the_entries(self) -> None:

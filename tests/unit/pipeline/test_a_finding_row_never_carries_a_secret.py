@@ -318,8 +318,8 @@ CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
     ("pipeline/validation.py", "platform_mismatch_message"): frozenset({"fact", "use"}),
     # The table's own nouns and row numbers, and the section's own sentence
     # numbers and states, around values each wrapped in the helper where the
-    # sentence is built.
-    ("pipeline/validation.py", "stated_value_violations"): frozenset({"said"}),
+    # sentence is built; what it asks of the rows is one of two module constants.
+    ("pipeline/validation.py", "stated_value_violations"): frozenset({"said", "ends"}),
     # The table's row numbers and its list's field name, around each row's id
     # and the entries named, each wrapped in the helper where written.
     ("pipeline/validation.py", "cited_id_violations"): frozenset({"said"}),
@@ -495,6 +495,11 @@ MESSAGE_BUILDERS: frozenset[str] = frozenset(
         "_bytes_read",
         # What a cited entry's bytes hold by chance (ids and values through the helper).
         "_held_by_chance",
+        # What a stated-value question says of one row, of the values it searched
+        # for, and a cited-id question of one id: values, runs and ids through the helper.
+        "_unheld_row",
+        "_not_found_in",
+        "_id_not_found",
     }
 )
 
