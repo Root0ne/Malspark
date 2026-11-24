@@ -30,9 +30,9 @@ A run's bytes are decoded as UTF-8 and as UTF-16LE at either byte alignment,
 a byte that decodes to nothing becoming a replacement character, which bounds
 a value. A run's own end bounds a value only where the run ends its JSON
 string or array, or the text; a line break, a column gap, or the split of one
-run between a list's consecutive rows bounds nothing: there the value must be
-bounded by a byte of the run. The end of what a tool returned bounds a value,
-as the end of a text does.
+run between a list's consecutive rows, at any depth below them, bounds
+nothing: there the value must be bounded by a byte of the run. The end of
+what a tool returned bounds a value, as the end of a text does.
 
 The chance (:func:`chance_in`) is that of the runs spelling the value at one
 place or more at random, each run over the symbols its token is written with:
@@ -68,8 +68,10 @@ class ByteRun:
 # A token of hex digits, and a whole number of decimal digits.
 _HEX_TOKEN_RE = re.compile(r"(?<![0-9a-z_])[0-9a-f]+(?![0-9a-z_])")
 _DECIMAL_RE = re.compile(r"[0-9]+")
-# A run of ``\xNN`` escapes, each with the backslashes written before it.
-_BYTE_ESCAPE_RE = re.compile(r"(\\+)x([0-9a-f]{2})")
+# A run of ``\xNN`` escapes, each with the backslashes written before it: a
+# match begins only where no backslash stands before it, so a run of
+# backslashes is read once, never again from each of its backslashes.
+_BYTE_ESCAPE_RE = re.compile(r"(?<!\\)(\\+)x([0-9a-f]{2})")
 # The fewest bytes a run is read with.
 _LEAST_BYTES = 2
 # The symbols a byte is one of: any, or the hundred two decimal digits write.
@@ -82,8 +84,9 @@ def byte_runs(text: str) -> list[ByteRun]:
 
     In a JSON text each string, each array of numbers and each whole number is
     read on its own, its ends being the ends of the string or the array; a run
-    that ends one row of a list where the same place of the next row begins
-    with one is split between them, and those two ends bound nothing. Any other
+    that ends one row of a list where the same place of the next row (the same
+    key or list item, at any depth) begins with one is split between them, and
+    those two ends bound nothing. Any other
     text is read as one string, its ends being the text's.
     """
     lowered = str(text or "").lower()
@@ -106,8 +109,8 @@ def _read_node(node: Any, found: list[ByteRun]) -> Any:
     """Read one JSON value's runs into ``found``; where they stand there, for its list to join.
 
     A string, a whole number and a list of numbers give the span of their runs
-    in ``found``; an object gives its members' spans by key; anything else
-    gives nothing.
+    in ``found``; an object gives its members' spans by key, any other list
+    its items' in order; anything else gives nothing.
     """
     if isinstance(node, str):
         start = len(found)
@@ -129,18 +132,25 @@ def _read_node(node: Any, found: list[ByteRun]) -> Any:
     for row, following in zip(rows, rows[1:], strict=False):
         for one, other in _same_places(row, following):
             _split(found, one, other)
-    return None
+    return rows
 
 
 def _same_places(row: Any, following: Any) -> Iterator[tuple[tuple[int, int], tuple[int, int]]]:
-    """The places two consecutive rows of a list share: the rows themselves, or a member's key."""
+    """The places two consecutive rows of a list share, at any depth.
+
+    The rows themselves, a member's key, and an item's place in a list, each
+    compared again below it as the rows are: a run split between two rows one
+    object or list down is split as one at the top.
+    """
     if isinstance(row, tuple) and isinstance(following, tuple):
         yield row, following
     elif isinstance(row, dict) and isinstance(following, dict):
         for key in row:
-            one, other = row[key], following.get(key)
-            if isinstance(one, tuple) and isinstance(other, tuple):
-                yield one, other
+            if key in following:
+                yield from _same_places(row[key], following[key])
+    elif isinstance(row, list) and isinstance(following, list):
+        for one, other in zip(row, following, strict=False):
+            yield from _same_places(one, other)
 
 
 def _split(found: list[ByteRun], one: tuple[int, int], other: tuple[int, int]) -> None:
@@ -290,8 +300,8 @@ def chance_in(runs: Iterable[ByteRun], value: str, spellings: Iterable[str] = ()
     """The chance that ``runs`` spell ``value``, or one of ``spellings``, at random.
 
     Every place of every run is counted, in UTF-8 and in UTF-16LE at both
-    alignments, each over the symbols its run is written with; a letter is
-    spelt in either case.
+    alignments, each over the symbols its run is written with; a character
+    with two cases (its lower and upper forms differ) is spelt in either.
     """
     from malspark.reporting.code_constants import chance_of_spelling
 
@@ -299,7 +309,7 @@ def chance_in(runs: Iterable[ByteRun], value: str, spellings: Iterable[str] = ()
     readings: list[tuple[int, int, int, int]] = []
     for run in runs:
         for spelling in said:
-            ways = 2 ** sum(1 for ch in spelling if ch.isascii() and ch.isalpha())
+            ways = 2 ** sum(1 for ch in spelling if ch.lower() != ch.upper())
             narrow = len(spelling.encode("utf-8"))
             wide = len(spelling.encode("utf-16-le")) // 2
             readings.append((len(run.data) - narrow + 1, ways, narrow, run.symbols))

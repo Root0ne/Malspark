@@ -10239,24 +10239,36 @@ class EntryTexts:
         Read by the text's shape, never by a tool or an entry's kind.
         """
         from malspark.reporting.code_constants import CHANCE_BOUND
+
+        chance = self.chance_of_bytes_holding(entry_id, value)
+        return chance is not None and chance < CHANCE_BOUND
+
+    def chance_of_bytes_holding(self, entry_id: str, value: str) -> float | None:
+        """The chance of this entry's bytes holding ``value`` whole, where they hold it.
+
+        ``None`` where no byte run of the entry decodes to text holding one of
+        the value's spellings whole, or the value is not one this check decides.
+        """
         from malspark.utils.written_bytes import chance_in, holds_whole
 
         if not decidable(value):
-            return False
+            return None
         runs = self.byte_runs_of(entry_id)
         spellings = library_spellings(value)
         if not runs or not holds_whole(runs, spellings):
-            return False
-        return chance_in(runs, spellings[0], spellings) < CHANCE_BOUND
+            return None
+        return chance_in(runs, spellings[0], spellings)
 
     def byte_runs_of(self, entry_id: str) -> tuple[Any, ...]:
         """The byte runs an entry's text writes, outside the echo of its own call.
 
         Each text the entry was read in, with what echoes its call's arguments
         taken out (:func:`_without_call_echoes`), read by
-        :func:`~malspark.utils.written_bytes.byte_runs`; a run whose bytes are a
-        run the call's arguments write is the call's own and is not read. Read
-        once per entry.
+        :func:`~malspark.utils.written_bytes.byte_runs`; a run whose bytes are
+        the call's own is not read: a run its arguments write as bytes, or the
+        UTF-8 or UTF-16LE bytes of one of its string arguments, as written or
+        lower-cased. Only a run equal to those bytes is the call's: a longer
+        one holds what stands around them too. Read once per entry.
         """
         from malspark.utils.written_bytes import byte_runs
 
@@ -10268,6 +10280,10 @@ class EntryTexts:
                 if arguments
                 else set()
             )
+            for argument in _string_leaves(arguments):
+                for form in (argument, argument.lower()):
+                    written.add(form.encode("utf-8", errors="surrogatepass"))
+                    written.add(form.encode("utf-16-le", errors="surrogatepass"))
             runs: list[Any] = []
             for part in self.parts_of(key):
                 try:
@@ -11038,6 +11054,16 @@ CODE_LITERAL_SPELLING = "as a C string literal inside JSON writes {it}"
 # stand in (:meth:`EntryTexts.holds_as_bytes`), for one entry and for several.
 BYTES_SPELLING = "as the bytes its text writes"
 BYTES_SPELLINGS = "as the bytes their texts write"
+# Why bytes that write a value whole do not hold it (:func:`_held_by_chance`),
+# for one value and for several.
+BYTES_HELD_BY_CHANCE = (
+    "but at its length and among so many bytes chance alone would put it there at least as "
+    "often as the platform's chance bound allows, so that is not counted as holding it"
+)
+BYTES_HELD_BY_CHANCE_SEVERAL = (
+    "but at their lengths and among so many bytes chance alone would put them there at least "
+    "as often as the platform's chance bound allows, so that is not counted as holding them"
+)
 # The two ends a value cited to an entry it was not found whole in allows.
 WRONG_ENTRY_ENDS = (
     "Cite an entry that holds the value as the text states it, or, where the cited entry "
@@ -11058,11 +11084,13 @@ def _wrong_entry_message(
     the cited entries read, in the spellings named (and, where a cited entry's
     text writes bytes a value could stand in, as those bytes:
     :meth:`EntryTexts.holds_as_bytes`), and where the search found it in
-    others (:func:`_found_clause`). A cited entry with no text is said to be
-    one this check does not read. A value a cited entry holds only inside a
-    longer run is said to stand there, with the run as :func:`_run_shown`
-    shows it, and the two ends that pass (:data:`INSIDE_A_TOKEN_ENDS`),
-    preferring neither.
+    others (:func:`_found_clause`). Where a cited entry's bytes write a value
+    whole and only the chance bound refuses the holding, it says that, and
+    not that the bytes lack it (:func:`_held_by_chance`). A cited entry with
+    no text is said to be one this check does not read. A value a cited
+    entry holds only inside a longer run is said to stand there, with the run
+    as :func:`_run_shown` shows it, and the two ends that pass
+    (:data:`INSIDE_A_TOKEN_ENDS`), preferring neither.
     """
     cited, holders, blank, by_record, inside = group
     one = len(values) == 1
@@ -11110,30 +11138,88 @@ def _wrong_entry_message(
             f", or, in {safe_finding_value(_named_entries(entries, listings), whole=True)}, "
             f"{CODE_LITERAL_SPELLING.format(it=it)}"
         )
-    spellings += _bytes_read(values, cited, entries)
+    by_chance = _bytes_holding_by_chance(values, cited, entries)
+    spellings += _bytes_read(values, cited, entries, by_chance)
+    held = _held_by_chance(shown, by_chance, entries)
     searched = "was not found as a whole value" if one else "were not found as whole values"
     return (
-        f"{quoted}{extra} {searched} in {answers} {named}, which {citing}, read {spellings}; "
-        f"{found}{unread} {WRONG_ENTRY_ENDS}"
+        f"{quoted}{extra} {searched} in {answers} {named}, which {citing}, read {spellings}"
+        f"{held}; {found}{unread} {WRONG_ENTRY_ENDS}"
     )
 
 
-def _bytes_read(values: Sequence[str], cited: Sequence[str], entries: EntryTexts) -> str:
+def _bytes_holding_by_chance(
+    values: Sequence[str], cited: Sequence[str], entries: EntryTexts
+) -> dict[str, list[str]]:
+    """Of each value, the cited entries whose bytes hold it whole where chance explains it.
+
+    The bytes hold the value whole (:meth:`EntryTexts.chance_of_bytes_holding`)
+    and the chance of that is at or above the platform's one chance bound
+    (``reporting.code_constants.CHANCE_BOUND``), so the holding is not counted.
+    """
+    from malspark.reporting.code_constants import CHANCE_BOUND
+
+    held: dict[str, list[str]] = {}
+    for value in values:
+        for entry_id in cited:
+            chance = entries.chance_of_bytes_holding(entry_id, value)
+            if chance is not None and chance >= CHANCE_BOUND:
+                held.setdefault(value, []).append(entry_id)
+    return held
+
+
+def _bytes_read(
+    values: Sequence[str],
+    cited: Sequence[str],
+    entries: EntryTexts,
+    by_chance: Mapping[str, Sequence[str]],
+) -> str:
     """The words naming the byte reading, where a cited entry's bytes had a place to read.
 
     Empty where no cited entry's text writes a byte run as long as a value's
     shortest spelling: there no byte was read and the search was a text one.
+    An entry whose bytes hold a value whole by chance (``by_chance``) is not
+    named here, where the values are said not found: :func:`_held_by_chance`
+    says what its bytes hold.
     """
     from malspark.utils.written_bytes import has_a_place
 
     spellings = [spelling for value in values for spelling in library_spellings(value)]
-    read = [i for i in cited if has_a_place(entries.byte_runs_of(i), spellings)]
+    holding = {entry_id for held in by_chance.values() for entry_id in held}
+    read = [
+        i for i in cited if i not in holding and has_a_place(entries.byte_runs_of(i), spellings)
+    ]
     if not read:
         return ""
     said = BYTES_SPELLING if len(read) == 1 else BYTES_SPELLINGS
     if len(read) == len(cited):
         return f", and {said}"
     return f", and, in {safe_finding_value(_named_entries(entries, read), whole=True)}, {said}"
+
+
+def _held_by_chance(
+    values: Sequence[str], by_chance: Mapping[str, Sequence[str]], entries: EntryTexts
+) -> str:
+    """The clause saying which values a cited entry's bytes hold whole, by chance alone.
+
+    Empty where no cited entry's bytes hold a value named: the bytes write the
+    value whole, but at its length and among so many bytes chance alone puts
+    it there at least as often as the platform's chance bound allows, so that
+    is not counted as holding it (:func:`_bytes_holding_by_chance`).
+    """
+    held = [value for value in values if by_chance.get(value)]
+    if not held:
+        return ""
+    parts = []
+    for value in held:
+        ids = by_chance[value]
+        texts = "the text of" if len(ids) == 1 else "the texts of"
+        writes = "writes" if len(ids) == 1 else "write"
+        what = "it" if len(values) == 1 else safe_finding_value(repr(value))
+        named = safe_finding_value(_named_entries(entries, ids), whole=True)
+        parts.append(f"the bytes {texts} {named} {writes} hold {what} whole")
+    tail = BYTES_HELD_BY_CHANCE if len(held) == 1 else BYTES_HELD_BY_CHANCE_SEVERAL
+    return f"; {', and '.join(parts)}, {tail}"
 
 
 @dataclass(frozen=True)
@@ -13044,6 +13130,19 @@ def _call_arguments(entries: EntryTexts, entry_id: str) -> Any:
     """An entry's own call arguments as stored, or ``None``."""
     entry = entries.entries.get(entry_id)
     return getattr(entry, "args", None)
+
+
+def _string_leaves(arguments: Any) -> Iterator[str]:
+    """Every string a call's arguments hold, in objects and lists at any depth."""
+    pending = [arguments]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, str):
+            yield node
+        elif isinstance(node, dict):
+            pending.extend(node.values())
+        elif isinstance(node, list | tuple):
+            pending.extend(node)
 
 
 def _argument_places(arguments: Any) -> dict[tuple[str, ...], frozenset[str]]:

@@ -101,6 +101,20 @@ class TestTheRunIsReadDecoded:
             found.message
         )
 
+    def test_an_underscore_written_as_an_escape_beside_the_value_is_no_whole_holding(
+        self,
+    ) -> None:
+        # The JSON text writes ``_`` by its code, so the search bounds the value there.
+        texts = _texts('{"s": "' + HOST + '\\u005f"}')
+
+        found = _asked(f"It calls `{HOST}` [ev_0001].", texts)
+
+        assert "found whole in ev_0002" not in found.message
+        assert f"it stands in ev_0002 (t) only inside a longer run of text, {RUN_NOT_SHOWN}." in (
+            found.message
+        )
+        assert "found whole in ev_0002" not in found.labels[0]
+
     def test_an_escape_that_writes_no_letter_bounds_the_value(self) -> None:
         texts = _texts(json.dumps({"s": f"{HOST}\u0000"}))
 

@@ -1521,11 +1521,14 @@ Two producers use it:
   where the chance of that among the entry's byte runs is under the
   platform's one chance bound (`code_constants.CHANCE_BOUND`, computed by
   `code_constants.chance_of_spelling` over the symbols each token is written
-  with). A run the entry's own call wrote, or its echo, holds nothing, and a
-  run's end bounds a value only where the run ends its JSON string or array,
-  or the text: a line break, a column gap or a split between a list's rows
-  bounds nothing. `0x` lists, brace arrays, octal, percent and entity escapes,
-  UTF-16BE, base64 and a value split across two strings are not read. Only
+  with). A run the entry's own call wrote, or its echo, holds nothing: a run
+  the call's arguments write as bytes, and a run equal to the UTF-8 or
+  UTF-16LE bytes of one of its string arguments, as written or lower-cased (a
+  longer run holding them is data). A run's end bounds a value only where the
+  run ends its JSON string or array, or the text: a line break, a column gap
+  or a split between a list's rows, at any depth below them, bounds nothing.
+  `0x` lists, brace arrays, octal, percent and entity escapes, UTF-16BE,
+  base64 and a value split across two strings are not read. Only
   this test reads bytes; the entries offered, and every other check that
   reads an entry's text, read text. The question names the byte reading where
   a cited entry's bytes had a place to read. Of each entry it offers, it says

@@ -6,11 +6,14 @@ cited entry also holds a value its text writes as bytes: a token of hex pairs
 ``\\xNN`` escapes written at a byte-escape level, decoded as UTF-8 or as
 UTF-16LE, holding the value whole, where the chance of such a holding among
 that entry's byte runs is under the platform's one chance bound. A run the
-entry's own call wrote, or the answer's echo of it, holds nothing. A run's end
-bounds a value only where the run ends its JSON string or array, or the text;
-a line break, a column gap or a split between two rows bounds nothing. The
-question names the byte reading where it read a place. Only this test of the
-cited entry reads bytes: every other reader of an entry's text is unchanged.
+entry's own call wrote, or the answer's echo of it, holds nothing: a run its
+arguments write as bytes, and a run equal to the UTF-8 or UTF-16LE bytes of
+one of its string arguments. A run's end bounds a value only where the run
+ends its JSON string or array, or the text; a line break, a column gap or a
+split between two rows, at any depth, bounds nothing. The question names the
+byte reading where it read a place, and where the bytes write the value whole
+but chance alone explains it, says so. Only this test of the cited entry reads
+bytes: every other reader of an entry's text is unchanged.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from __future__ import annotations
 import json
 import math
 import random
+import time
 from typing import Any
 
 import pytest
@@ -55,6 +59,13 @@ def _spaced(hexed: str) -> str:
 
 def _wide(text: str) -> str:
     return text.encode("utf-16-le").hex()
+
+
+def _large_dump_writing(value: bytes) -> str:
+    rng = random.Random(888)
+    dump = bytearray(rng.randrange(256) for _ in range(80_000))
+    dump[40_000 : 40_002 + len(value)] = b"\x00" + value + b"\x00"
+    return dump.hex()
 
 
 class TestEachShapeHoldsABoundedValue:
@@ -97,11 +108,7 @@ class TestEachShapeHoldsABoundedValue:
         assert "and as the bytes its text writes;" in found.message
 
     def test_a_three_byte_value_in_a_large_random_dump_is_asked(self) -> None:
-        rng = random.Random(888)
-        dump = bytearray(rng.randrange(256) for _ in range(80_000))
-        dump[40_000:40_005] = b"\x00cmd\x00"
-
-        assert len(_asked(json.dumps({"hex": dump.hex()}), value="cmd")) == 1
+        assert len(_asked(json.dumps({"hex": _large_dump_writing(b"cmd")}), value="cmd")) == 1
 
 
 class TestTheCallsOwnBytesHoldNothing:
@@ -119,13 +126,36 @@ class TestTheCallsOwnBytesHoldNothing:
             ),
             ({"query": SWITCH_HEX}, {"query": SWITCH_HEX, "found": False}),
             ({"query": SWITCH_HEX}, {"searched_for": SWITCH_HEX, "found": False}),
+            ({"pattern": SWITCH}, {"pattern_hex": SWITCH_HEX, "hits": 0}),
+            ({"pattern": SWITCH}, {"pattern": SWITCH_HEX, "hits": 0}),
+            ({"pattern": SWITCH}, {"bytes": list(SWITCH.encode()), "matches": []}),
+            ({"pattern": SWITCH}, {"pattern_hex": _wide(SWITCH), "hits": 0}),
+            ({"pattern": SWITCH}, {"pattern_hex": SWITCH.lower().encode().hex(), "hits": 0}),
+            ({"search": {"strings": [SWITCH]}}, {"searched": [list(SWITCH.encode())], "hits": 0}),
         ],
-        ids=["pattern", "rule", "regex", "query", "echo-under-another-key"],
+        ids=[
+            "pattern",
+            "rule",
+            "regex",
+            "query",
+            "echo-under-another-key",
+            "text-as-hex",
+            "text-as-hex-same-key",
+            "text-as-array",
+            "text-as-utf16le-hex",
+            "text-lower-cased-as-hex",
+            "nested-text-as-array",
+        ],
     )
     def test_a_pattern_echoed_back_is_no_holding(
         self, args: dict[str, Any], cited: dict[str, Any]
     ) -> None:
         assert len(_asked(json.dumps(cited), args)) == 1
+
+    def test_a_run_holding_the_call_s_text_with_other_bytes_around_it_still_holds(self) -> None:
+        cited = {"hits": [{"offset": 16, "hex": "00" + SWITCH_HEX + "00"}]}
+
+        assert _asked(json.dumps(cited), {"pattern": SWITCH}) == []
 
 
 class TestOnlyARealEndBoundsTheValue:
@@ -135,14 +165,38 @@ class TestOnlyARealEndBoundsTheValue:
             {"dump": f"00401000  41 42 {_spaced(SWITCH_HEX)}\n00401010  4d 65 00"},
             {"dump": f"{_spaced(SWITCH_HEX)}  4d 65 00"},
             {"rows": [{"hex": "0000" + SWITCH_HEX}, {"hex": "4d6500"}]},
+            {"reads": [{"r": {"hex": "0000" + SWITCH_HEX}}, {"r": {"hex": "4d6500"}}]},
+            {"reads": [{"r": ["0000" + SWITCH_HEX]}, {"r": ["4d6500"]}]},
+            {
+                "reads": [
+                    {"r": [{"s": {"hex": "0000" + SWITCH_HEX}}]},
+                    {"r": [{"s": {"hex": "4d6500"}}]},
+                ]
+            },
         ],
-        ids=["line-break", "column-gap", "row-split"],
+        ids=[
+            "line-break",
+            "column-gap",
+            "row-split",
+            "nested-row-split",
+            "row-split-in-a-list",
+            "deep-row-split",
+        ],
     )
     def test_an_end_inside_one_answer_bounds_nothing(self, cited: dict[str, Any]) -> None:
         assert len(_asked(json.dumps(cited))) == 1
 
-    def test_the_end_of_a_json_string_bounds_the_value(self) -> None:
-        assert _asked(json.dumps({"rows": [{"hex": "0000" + SWITCH_HEX}]})) == []
+    @pytest.mark.parametrize(
+        "cited",
+        [
+            {"rows": [{"hex": "0000" + SWITCH_HEX}]},
+            {"reads": [{"r": {"hex": "0000" + SWITCH_HEX}}]},
+            {"reads": [{"r": {"hex": "0000" + SWITCH_HEX}}, {"r": {"size": "4d6500"}}]},
+        ],
+        ids=["one-row", "one-nested-row", "next-row-elsewhere"],
+    )
+    def test_the_end_of_a_json_string_bounds_the_value(self, cited: dict[str, Any]) -> None:
+        assert _asked(json.dumps(cited)) == []
 
 
 class TestTheEscapeLevel:
@@ -157,6 +211,14 @@ class TestTheEscapeLevel:
     def test_an_escaped_backslash_before_x_writes_no_byte(self, cited: str) -> None:
         assert len(_asked(cited)) == 1
 
+    def test_an_escaped_backslash_before_x_in_plain_text_writes_no_byte(self) -> None:
+        # ``\\x00`` writes a backslash and ``x00``, no byte: the run of escapes after it
+        # begins inside the text, and its start bounds nothing.
+        escapes = "".join(f"\\x{byte:02x}" for byte in SWITCH.encode())
+
+        assert len(_asked("\\\\x00" + escapes + "\\x00")) == 1
+        assert _asked("\\x00" + escapes + "\\x00") == []
+
     def test_a_byte_escape_in_plain_text_is_read(self) -> None:
         assert _asked("".join(f"\\x{byte:02x}" for byte in SWITCH.encode())) == []
 
@@ -170,6 +232,15 @@ class TestTheChanceBound:
         # Three letters, four bytes: 2**3 / 256**4; one letter, four bytes: 2 / 256**4.
         assert _one_place_chance("/run") == pytest.approx(-math.expm1(-(2**3) / 256**4))
         assert _one_place_chance("C:\\a") == pytest.approx(-math.expm1(-(2**2) / 256**4))
+
+    def test_every_cased_letter_counts_in_both_cases_and_an_uncased_one_does_not(self) -> None:
+        # ``é`` has two cases, ``·`` none: four letters of six bytes, two of five.
+        assert _one_place_chance("/café") == pytest.approx(
+            -math.expm1(-(2**4) / 256**6), rel=1e-9, abs=0
+        )
+        assert _one_place_chance("/a·b") == pytest.approx(
+            -math.expm1(-(2**2) / 256**5), rel=1e-9, abs=0
+        )
 
     @pytest.mark.parametrize(
         ("value", "held", "refused"),
@@ -220,6 +291,33 @@ class TestTheQuestionNamesTheByteReading:
         )
         assert " is not in " not in found.message
 
+    def test_bytes_holding_the_value_whole_by_chance_are_said_to_hold_it(self) -> None:
+        (found,) = _asked(json.dumps({"hex": _large_dump_writing(b"cmd")}), value="cmd")
+
+        assert found.message.startswith(
+            "'cmd' was not found as a whole value in the answer of ev_0001 (t), which the "
+            "sentence cites, read as written, as JSON writes it or as the triage pack quotes "
+            "it; the bytes the text of ev_0001 (t) writes hold it whole, but at its length and "
+            "among so many bytes chance alone would put it there at least as often as the "
+            "platform's chance bound allows, so that is not counted as holding it; it was found "
+            "whole in ev_0002 (t). Cite"
+        )
+        assert "as the bytes its text writes" not in found.message
+
+    def test_bytes_holding_one_of_two_values_whole_by_chance_say_so_of_that_value(self) -> None:
+        cited = json.dumps({"hex": _large_dump_writing(b"cmd")})
+        sentence = f"It runs `cmd` with `{SWITCH}` [ev_0001]."
+
+        (found,) = wrong_entry_citations({"body": sentence}, _texts(cited), prose=("body",))
+
+        assert (
+            "read as written, as JSON writes them or as the triage pack quotes them; the bytes "
+            "the text of ev_0001 (t) writes hold 'cmd' whole, but at its length and among so "
+            "many bytes chance alone would put it there at least as often as the platform's "
+            "chance bound allows, so that is not counted as holding it;"
+        ) in found.message
+        assert "as the bytes its text writes" not in found.message
+
     def test_an_entry_writing_no_bytes_is_said_read_as_text(self) -> None:
         (found,) = _asked(json.dumps({"s": "nothing of the kind"}))
 
@@ -234,3 +332,43 @@ class TestOnlyTheCitedEntryTestReadsBytes:
         assert texts.holds("ev_0001", SWITCH, fields=True, as_bytes=True) is True
         assert texts.holding(SWITCH, fields=True) == []
         assert texts.may_hold(SWITCH, fields=True) == set()
+
+
+def _odd_separators(size: int) -> str:
+    rng = random.Random(888)
+    separators = [" ", "  ", "\t", ":", "-", " ,", "\n", "|"]
+    out: list[str] = []
+    written = 0
+    while written < size:
+        out.append(f"{rng.randrange(256):02x}{rng.choice(separators)}")
+        written += len(out[-1])
+    return "".join(out)
+
+
+class TestNoReadingIsMoreThanLinear:
+    @pytest.mark.parametrize(
+        "cited",
+        [
+            "\\" * 1_000_000,
+            json.dumps({"s": "\\" * 500_000}),
+            "\\" * 1_000_000 + "x41",
+            _odd_separators(1_000_000),
+            json.dumps({"hex": _odd_separators(1_000_000)}),
+            json.dumps([at % 256 for at in range(250_000)]),
+        ],
+        ids=[
+            "backslashes",
+            "json-backslashes",
+            "backslashes-then-an-escape",
+            "odd-separators",
+            "json-odd-separators",
+            "number-array",
+        ],
+    )
+    def test_a_megabyte_is_read_in_bounded_time(self, cited: str) -> None:
+        # Each takes well under a second; the ceiling is generous so a slow runner passes.
+        started = time.perf_counter()
+        byte_runs(cited)
+        _asked(cited)
+
+        assert time.perf_counter() - started < 5.0
