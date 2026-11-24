@@ -1524,9 +1524,12 @@ Two producers use it:
   with). A run the entry's own call wrote, or its echo, holds nothing: a run
   the call's arguments write as bytes, and a run equal to the UTF-8 or
   UTF-16LE bytes of one of its string arguments, as written or lower-cased (a
-  longer run holding them is data). A run's end bounds a value only where the
-  run ends its JSON string or array, or the text: a line break, a column gap
-  or a split between a list's rows, at any depth below them, bounds nothing.
+  longer run holding them is data; a hit an answer reports without what
+  stands around it, equal to an argument's bytes, is not told from the echo
+  and holds nothing). A run's end bounds a value only where the run ends its
+  JSON string or array, or the text: a line break, a column gap or a split
+  between two rows of one list, read at the same place in each row at any
+  depth below them, bounds nothing.
   `0x` lists, brace arrays, octal, percent and entity escapes, UTF-16BE,
   base64 and a value split across two strings are not read. Only
   this test reads bytes; the entries offered, and every other check that
@@ -1534,7 +1537,8 @@ Two producers use it:
   a cited entry's bytes had a place to read; where those bytes write the value
   whole and only the chance bound refuses the holding, the question and the
   mark printed beside the citation say that the bytes hold it and why that is
-  not counted. Of each entry it offers, it says
+  not counted, and such an entry is not named among the entries read as
+  bytes for the question's other values. Of each entry it offers, it says
   "found whole in" only where no letter, digit or `_` of the run the value
   stands in, read decoded, touches the value; of every other entry it says
   that the value stands there only inside a longer run of text, where the

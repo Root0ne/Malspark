@@ -10097,6 +10097,9 @@ class EntryTexts:
     # The byte runs each entry's text writes outside the echo of its own call
     # (:meth:`byte_runs_of`), read once per entry.
     _bytes: dict[str, tuple[Any, ...]] = field(default_factory=dict, compare=False, repr=False)
+    _byte_chances: dict[tuple[str, str], float | None] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
     @classmethod
     def from_ledger(cls, ledger: Iterable[Any], corpus: Any = None) -> EntryTexts:
@@ -10248,16 +10251,21 @@ class EntryTexts:
 
         ``None`` where no byte run of the entry decodes to text holding one of
         the value's spellings whole, or the value is not one this check decides.
+        Read once per entry and value: the test, the question and the mark
+        beside the citation each ask it.
         """
         from malspark.utils.written_bytes import chance_in, holds_whole
 
-        if not decidable(value):
-            return None
-        runs = self.byte_runs_of(entry_id)
-        spellings = library_spellings(value)
-        if not runs or not holds_whole(runs, spellings):
-            return None
-        return chance_in(runs, spellings[0], spellings)
+        key = (str(entry_id).strip().lower(), value)
+        if key not in self._byte_chances:
+            chance: float | None = None
+            if decidable(value):
+                runs = self.byte_runs_of(entry_id)
+                spellings = library_spellings(value)
+                if runs and holds_whole(runs, spellings):
+                    chance = chance_in(runs, spellings[0], spellings)
+            self._byte_chances[key] = chance
+        return self._byte_chances[key]
 
     def byte_runs_of(self, entry_id: str) -> tuple[Any, ...]:
         """The byte runs an entry's text writes, outside the echo of its own call.
@@ -11125,7 +11133,8 @@ def _wrong_entry_message(
             text, lowered = run
             case = f", {RUN_IN_LOWER_CASE}" if lowered else ""
             listed = f"{where}{case}: {safe_finding_value(text)!r}"
-        return f"{listed}{extra}; {found}{unread} {INSIDE_A_TOKEN_ENDS}"
+        held = _held_by_chance(shown, _bytes_holding_by_chance(values, cited, entries), entries)
+        return f"{listed}{extra}{held}; {found}{unread} {INSIDE_A_TOKEN_ENDS}"
     quoted = safe_finding_value(", ".join(repr(value) for value in shown))
     answers = "the answer of" if len(cited) == 1 else "the answers of"
     named = safe_finding_value(_named_entries(entries, cited), whole=True)
@@ -11921,8 +11930,11 @@ def _not_found_whole_label(
     if len(values) > _MAX_NAMED_IDS:
         said += f" and {len(values) - _MAX_NAMED_IDS} more"
     one = len(values) == 1
-    head = f"{said} {'was' if one else 'were'} not found whole in {', '.join(cited)}; "
-    head += _label_held_by_chance(values, cited, entries)
+    by_chance = _label_held_by_chance(values, cited, entries)
+    # Beside a clause on what the bytes hold, the search said not to have found is the text's.
+    where = "the text of " if by_chance else ""
+    head = f"{said} {'was' if one else 'were'} not found whole in {where}{', '.join(cited)}; "
+    head += by_chance
     if all(found_in[(holder, value)].whole for value in values for holder in holders):
         where = entries.named(holders[0]) if len(holders) == 1 else f"{len(holders)} other entries"
         return f"{head}{'it was' if one else 'they were'} found whole in {where}"

@@ -322,10 +322,10 @@ class TestTheQuestionNamesTheByteReading:
         (found,) = _asked(json.dumps({"hex": _large_dump_writing(b"cmd")}), value="cmd")
 
         assert found.labels == (
-            '"cmd" was not found whole in ev_0001; the bytes ev_0001 writes hold it whole, but '
-            "at its length and among so many bytes chance alone would put it there at least as "
-            "often as the platform's chance bound allows, so that is not counted as holding it; "
-            "it was found whole in ev_0002 (t)",
+            '"cmd" was not found whole in the text of ev_0001; the bytes ev_0001 writes hold it '
+            "whole, but at its length and among so many bytes chance alone would put it there "
+            "at least as often as the platform's chance bound allows, so that is not counted as "
+            "holding it; it was found whole in ev_0002 (t)",
         )
 
     def test_the_label_names_the_one_of_two_values_bytes_hold_by_chance(self) -> None:
@@ -336,9 +336,9 @@ class TestTheQuestionNamesTheByteReading:
 
         (label,) = found.labels
         assert (
-            'not found whole in ev_0001; the bytes ev_0001 writes hold "cmd" whole, but at its '
-            "length and among so many bytes chance alone would put it there at least as often "
-            "as the platform's chance bound allows, so that is not counted as holding it; "
+            'not found whole in the text of ev_0001; the bytes ev_0001 writes hold "cmd" whole, '
+            "but at its length and among so many bytes chance alone would put it there at least "
+            "as often as the platform's chance bound allows, so that is not counted as holding it; "
         ) in label
         assert f'hold "{SWITCH}" whole' not in label
 
@@ -346,6 +346,38 @@ class TestTheQuestionNamesTheByteReading:
         (found,) = _asked(json.dumps({"hex": LONGER_HEX}))
 
         assert all("the bytes" not in label for label in found.labels)
+        assert all("not found whole in ev_0001; " in label for label in found.labels)
+
+    def test_a_value_inside_a_run_whose_bytes_hold_it_by_chance_is_said_both(self) -> None:
+        cited = json.dumps({"hex": _large_dump_writing(b"cmd"), "s": "xcmdy"})
+
+        (found,) = _asked(cited, value="cmd")
+
+        assert "only inside a longer run of text" in found.message
+        assert (
+            "; the bytes the text of ev_0001 (t) writes hold it whole, but at its length and "
+            "among so many bytes chance alone would put it there at least as often as the "
+            "platform's chance bound allows, so that is not counted as holding it; "
+        ) in found.message
+
+    def test_the_chance_of_an_entry_s_bytes_holding_a_value_is_read_once(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.utils import written_bytes
+
+        reads: list[str] = []
+        chance_in_ = written_bytes.chance_in
+
+        def counted(runs: Any, spelling: str, spellings: Any) -> float:
+            reads.append(spelling)
+            return chance_in_(runs, spelling, spellings)
+
+        monkeypatch.setattr(written_bytes, "chance_in", counted)
+
+        (found,) = _asked(json.dumps({"hex": _large_dump_writing(b"cmd")}), value="cmd")
+
+        assert found.labels and "the bytes" in found.message
+        assert len(reads) == 1
 
     def test_an_entry_writing_no_bytes_is_said_read_as_text(self) -> None:
         (found,) = _asked(json.dumps({"s": "nothing of the kind"}))
