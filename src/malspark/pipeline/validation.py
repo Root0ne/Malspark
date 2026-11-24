@@ -10100,6 +10100,12 @@ class EntryTexts:
     _byte_chances: dict[tuple[str, str], float | None] = field(
         default_factory=dict, compare=False, repr=False
     )
+    # Each text an entry was read in, twice, both written as
+    # :func:`_without_call_echoes` writes a text: with nothing taken out, and
+    # without the echo of the entry's own call (:meth:`echo_free_parts`).
+    _echo_free: dict[str, tuple[tuple[str, str | None], ...]] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
     @classmethod
     def from_ledger(cls, ledger: Iterable[Any], corpus: Any = None) -> EntryTexts:
@@ -10205,28 +10211,11 @@ class EntryTexts:
         :func:`wrong_entry_citations` alone, the entry also holds a value its
         text writes as bytes (:meth:`holds_as_bytes`).
         """
-        from malspark.agents._indicator_denylists import whole_value_in
-
         text = self.text_of(entry_id)
         if not text:
             return False
-        if any(
-            whole_value_in(form, text)
-            for spelling in library_spellings(value)
-            for form in written_forms(spelling)
-        ):
-            return True
-        if str(entry_id).strip().lower() in self.code_listings and any(
-            whole_value_in(form, text)
-            for spelling in library_spellings(value)
-            for form in code_literal_forms(spelling)
-        ):
-            return True
-        if fields and any(
-            field_pair_in(form, text)
-            for spelling in field_value_spellings(value)
-            for form in written_forms(spelling)
-        ):
+        listing = str(entry_id).strip().lower() in self.code_listings
+        if _text_holds(text, value, fields=fields, listing=listing):
             return True
         return as_bytes and self.holds_as_bytes(entry_id, value)
 
@@ -10293,15 +10282,37 @@ class EntryTexts:
                     written.add(form.encode("utf-8", errors="surrogatepass"))
                     written.add(form.encode("utf-16-le", errors="surrogatepass"))
             runs: list[Any] = []
-            for part in self.parts_of(key):
-                try:
-                    read = _without_call_echoes(part, arguments)
-                except RecursionError:
+            for _whole, read in self.echo_free_parts(key):
+                if read is None:
                     # Nested past what can be walked: no echo is told apart, so none is read.
                     continue
                 runs.extend(run for run in byte_runs(read) if run.data not in written)
             self._bytes[key] = tuple(runs)
         return self._bytes[key]
+
+    def echo_free_parts(self, entry_id: str) -> tuple[tuple[str, str | None], ...]:
+        """Each text an entry was read in, as a pair written the same way: whole, and echo-free.
+
+        Both as :func:`_without_call_echoes` writes a text — a JSON one read
+        and written again, any other as it is — the first with nothing taken
+        out, the second with the echo of the entry's own call taken out
+        (``None`` for a text nested past what can be walked). The two are
+        equal where nothing echoes the call, so comparing them compares like
+        with like. Read once per entry; the byte reading reads the second.
+        """
+        key = str(entry_id).strip().lower()
+        if key not in self._echo_free:
+            arguments = _call_arguments(self, key)
+            read: list[tuple[str, str | None]] = []
+            for part in self.parts_of(key):
+                try:
+                    whole = _without_call_echoes(part, None)
+                    rest: str | None = _without_call_echoes(part, arguments)
+                except RecursionError:
+                    whole, rest = part, None
+                read.append((whole, rest))
+            self._echo_free[key] = tuple(read)
+        return self._echo_free[key]
 
     def text_of(self, cited: str) -> str:
         """The text of a cited entry or a cited sandbox item, ``""`` when the run holds none."""
@@ -10893,9 +10904,11 @@ def wrong_entry_citations(
     in one of them, the citation stands.
     Found in none of them but in another entry of the run, the citation points
     a reader at the wrong answer, and the model is asked once, with the entry
-    that holds it offered. Found nowhere, nothing is said: a value the run's
-    texts do not spell as the sentence does is a paraphrase or a composition
-    this check cannot judge. The id is never rewritten: a citation kept after
+    that holds it offered; an entry that holds it whole only in the echo of
+    its own call, and elsewhere only inside a longer run of text, is not
+    offered (:func:`_an_echo_holding_inside`). Found nowhere, nothing is said:
+    a value the run's texts do not spell as the sentence does is a paraphrase
+    or a composition this check cannot judge. The id is never rewritten: a citation kept after
     the question is marked where it stands, each place it is written with its
     own label (``quoted``, ``labels``; :func:`_not_found_whole_label`).
 
@@ -10943,7 +10956,11 @@ def wrong_entry_citations(
             # A cited entry that is not the whole answer may hold it in the
             # part that is missing; nothing is said of what it lacks.
             return
-        holders = entries.holding(value, fields=True)
+        holders = [
+            holder
+            for holder in entries.holding(value, fields=True)
+            if not _an_echo_holding_inside(entries, holder, value)
+        ]
         if not holders:
             return
         # An id the run never issued is left to :func:`citation_violations`.
@@ -11046,6 +11063,31 @@ def wrong_entry_citations(
             )
         )
     return violations
+
+
+def _an_echo_holding_inside(entries: EntryTexts, holder: str, value: str) -> bool:
+    """Whether an entry the holder search found holds ``value`` whole only in its call's echo,
+    and elsewhere only inside a longer run of text.
+
+    :func:`held_only_in_its_echo` with :meth:`EntryTexts.holds`' own test and
+    the spellings it reads: such an entry holds the value no more than the
+    cited one may, and is not offered. One whose echo-free text holds no
+    spelling of the value (a search that found nothing, a lookup about its own
+    argument) is offered as before: by shape it is an answer about the value.
+    """
+    listing = str(holder).strip().lower() in entries.code_listings
+    forms = [form for spelling in library_spellings(value) for form in written_forms(spelling)]
+    if listing:
+        forms += [
+            form for spelling in library_spellings(value) for form in code_literal_forms(spelling)
+        ]
+    found = held_only_in_its_echo(
+        entries,
+        holder,
+        lambda text: _text_holds(text, value, fields=True, listing=listing),
+        forms,
+    )
+    return found == ECHO_FREE_HOLDS_IT_INSIDE
 
 
 # One question of :func:`wrong_entry_citations`: the cited entries searched,
@@ -11695,6 +11737,83 @@ def _without_call_echoes(text: str, arguments: Any = None) -> str:
 
         return _json.dumps(_drop(parsed, ((),)), ensure_ascii=False, indent=1)
     return str(text or "")
+
+
+def _text_holds(text: str, value: str, *, fields: bool = False, listing: bool = False) -> bool:
+    """Whether one text holds ``value`` as :meth:`EntryTexts.holds` reads an entry's text.
+
+    Each spelling whole (``whole_value_in``), a code listing's literal too
+    (``listing``), and with ``fields`` a field name's pair with its value.
+    """
+    from malspark.agents._indicator_denylists import whole_value_in
+
+    if any(
+        whole_value_in(form, text)
+        for spelling in library_spellings(value)
+        for form in written_forms(spelling)
+    ):
+        return True
+    if listing and any(
+        whole_value_in(form, text)
+        for spelling in library_spellings(value)
+        for form in code_literal_forms(spelling)
+    ):
+        return True
+    return fields and any(
+        field_pair_in(form, text)
+        for spelling in field_value_spellings(value)
+        for form in written_forms(spelling)
+    )
+
+
+# What an entry's text holds of a value its own lookup finds whole only in the
+# echo of the entry's call (:func:`held_only_in_its_echo`): a spelling of the
+# value at a place no word character of the run around it touches, read
+# decoded; spellings only at places one touches; or no spelling at all.
+ECHO_FREE_HOLDS_IT = "echo_free_holds_it"
+ECHO_FREE_HOLDS_IT_INSIDE = "echo_free_holds_it_inside"
+ECHO_FREE_HOLDS_NONE = "echo_free_holds_none"
+
+
+def held_only_in_its_echo(
+    entries: EntryTexts, entry_id: str, held: Callable[[str], bool], forms: Iterable[str]
+) -> str:
+    """What an entry holds of a value that a lookup's own test finds whole only in its call's echo.
+
+    ``""`` unless the test (``held``, the lookup's own, asked of one text)
+    holds the value on a text the entry was read in with nothing taken out,
+    something echoing the entry's call was taken out of that text, and the
+    test holds it on none of the entry's texts once the echo is out
+    (:meth:`EntryTexts.echo_free_parts`: the two texts are written the same
+    way, so an entry nothing echoes never answers here). Otherwise what the
+    echo-free texts hold of the value's spellings (``forms``):
+    :data:`ECHO_FREE_HOLDS_IT` where one stands at a place no letter, digit or
+    ``_`` of its run touches, the run read decoded (:func:`_touched_by_none`);
+    :data:`ECHO_FREE_HOLDS_IT_INSIDE` where each place is touched;
+    :data:`ECHO_FREE_HOLDS_NONE` where they hold no spelling. A text nested
+    past what can be walked tells no echo apart: ``""``.
+    """
+    parts = entries.echo_free_parts(entry_id)
+    if any(rest is None for _whole, rest in parts):
+        return ""
+    if not any(rest != whole and held(whole) for whole, rest in parts):
+        return ""
+    if any(held(rest) for _whole, rest in parts if rest is not None):
+        return ""
+    wanted = [form for form in dict.fromkeys(str(form).lower() for form in forms) if form]
+    placed = False
+    for _whole, rest in parts:
+        if rest is None:
+            continue
+        notation = _a_json_document(rest)
+        for form in wanted:
+            at = rest.find(form)
+            while at != -1:
+                placed = True
+                if _touched_by_none(rest, at, at + len(form), notation):
+                    return ECHO_FREE_HOLDS_IT
+                at = rest.find(form, at + 1)
+    return ECHO_FREE_HOLDS_IT_INSIDE if placed else ECHO_FREE_HOLDS_NONE
 
 
 def _echoed_label(values: Sequence[str], holding: Sequence[str]) -> str:

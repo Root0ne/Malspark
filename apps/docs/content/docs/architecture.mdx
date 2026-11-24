@@ -1509,7 +1509,14 @@ Two producers use it:
   not held. Only the table and citation checks read pairs; a sample-string
   read never takes a tool's own field and value for a string. Held by a cited entry, the citation stands; held only by another
   entry, the model is asked once with that entry named; held by none, nothing
-  is said, because a paraphrase or a composed value cannot be judged. "Held"
+  is said, because a paraphrase or a composed value cannot be judged. An
+  entry that holds the value whole only where its answer repeats its own
+  call's arguments, while the rest of its text holds the value's spellings
+  only at places a letter, digit or `_` of the run around them touches, read
+  decoded, is not offered: it holds the value no more than the cited entry
+  may. One whose rest holds no spelling of the value (a search that found
+  nothing, the right citation of a sentence saying the value is absent) is
+  offered as before. "Held"
   means held as a whole value in one of its spellings, never as a slice of a
   longer run; a value that is only a number raises no question (an answer may
   write it another way, and every reputation report holds short numbers), and
@@ -6354,10 +6361,20 @@ is assembled from what the run gathered rather than recomputed beside it:
   part of an argument, a value between spaces anywhere else, and an object
   with an id and a command line but no parent (a configuration's entry, a
   tool's echo of its arguments) are not. An entry that quotes a whole process
-  row is read as one. The same scan records, for a row no cited entry holds
+  row is read as one. A cited entry this reading finds the value whole in
+  only where its answer repeats its own call's arguments (a search's pattern,
+  a lookup's path: whole in its text written again with nothing taken out,
+  whole nowhere once the echo is out; `validation.held_only_in_its_echo`)
+  holds nothing, unless the rest of its text holds a spelling of the value at
+  a place no letter, digit or `_` of the run around it touches, read decoded:
+  a model's own question echoed back is no record of the value, so a search
+  that found nothing or a lookup about its own argument is no holder here,
+  for the answer, the reason or the row's evidence ids. The same scan records, for a row no cited entry holds
   whole, what the entries it read (the first `MAX_CITED`) hold instead
   (`HostIdentifier.unheld_as`, never in the model's schema), and the refusal
-  says it: the text only inside a longer run of letters or digits, only
+  says it: the value whole only where a cited entry's answer repeats what its
+  call asked for (and, where the rest of that answer holds its text only
+  inside a longer run, that too), the text only inside a longer run of letters or digits, only
   between spaces, or somewhere else not counted as the whole value; the
   earlier words where no entry read holds the text at all (`nowhere`); and,
   where the row cites more entries than were read, the count read and the

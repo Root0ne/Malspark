@@ -46,6 +46,8 @@ from malspark.reporting.stated_host_values import (
     NOT_RECORDED_AS_HELD,
     NOT_WHOLE,
     NOWHERE,
+    ONLY_IN_ITS_CALL,
+    ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE,
     READ_OF_THE_CITED,
     UNHELD_WORDS,
     command_line_arguments,
@@ -222,6 +224,13 @@ class TestARefusalSaysWhatTheScanFound:
 
     def test_the_words(self) -> None:
         assert UNHELD_WORDS == {
+            ONLY_IN_ITS_CALL: (
+                "a cited entry holds it whole only where its answer repeats what its call asked for"
+            ),
+            ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE: (
+                "a cited entry holds it whole only where its answer repeats what its call asked "
+                "for; elsewhere only inside a longer run of text"
+            ),
             INSIDE_A_LONGER_RUN: (
                 "a cited entry holds its text only inside a longer run of letters or digits"
             ),
