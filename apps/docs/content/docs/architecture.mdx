@@ -1514,6 +1514,27 @@ Two producers use it:
   longer run; a value that is only a number raises no question (an answer may
   write it another way, and every reputation report holds short numbers), and
   a cited entry whose text is known to be partial is never said to lack one.
+  A cited entry also holds a value its text writes as bytes
+  (`utils/written_bytes.py`): a token of hex pairs, spaced or not and in
+  either case, a JSON array of numbers 0–255, or a run of `\xNN` escapes at a
+  byte-escape level, decoded as UTF-8 or UTF-16LE and holding the value whole,
+  where the chance of that among the entry's byte runs is under the
+  platform's one chance bound (`code_constants.CHANCE_BOUND`, computed by
+  `code_constants.chance_of_spelling` over the symbols each token is written
+  with). A run the entry's own call wrote, or its echo, holds nothing, and a
+  run's end bounds a value only where the run ends its JSON string or array,
+  or the text: a line break, a column gap or a split between a list's rows
+  bounds nothing. `0x` lists, brace arrays, octal, percent and entity escapes,
+  UTF-16BE, base64 and a value split across two strings are not read. Only
+  this test reads bytes; the entries offered, and every other check that
+  reads an entry's text, read text. The question names the byte reading where
+  a cited entry's bytes had a place to read. Of each entry it offers, it says
+  "found whole in" only where no letter, digit or `_` of the run the value
+  stands in, read decoded, touches the value; of every other entry it says
+  that the value stands there only inside a longer run of text, where the
+  search matched it (between which characters, or at the start or the end of
+  the run) and the run, or that the run is not shown; in a question about
+  several values, each value for itself.
   The id is never rewritten. **An entry said to hold nothing, or one line**
   (`report.entry_contents_misstated`): a sentence saying a cited entry holds
   nothing, is empty, or holds only a header, a line or a row is checked against

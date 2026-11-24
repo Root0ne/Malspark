@@ -377,6 +377,37 @@ def chance_of_matches(matched: int, candidates: int, names: int, algorithms: int
         tried = float(max(1, algorithms))
     except OverflowError:
         return 1.0
+    chance = tried * _poisson_tail(matched, lam)
+    return min(1.0, chance) if math.isfinite(chance) else 1.0
+
+
+def chance_of_spelling(readings: Iterable[tuple[int, int, int, int]]) -> float:
+    """The chance that random symbols spell a value at one place or more, by chance.
+
+    Each reading is ``(places, ways, length, symbols)``: at each of ``places``
+    places a run of ``length`` symbols, each one of ``symbols`` equally likely,
+    spells the value in one of ``ways`` ways (a letter compared without regard
+    to case is two). One place spells it with the chance ``ways /
+    symbols**length``, so the count of places that spell it by chance is close
+    to Poisson with the mean summed over every reading, and the chance of one
+    or more is the tail :func:`chance_of_matches` reads, from one. A reading
+    with no place adds nothing; the held test compares the chance with
+    :data:`CHANCE_BOUND`.
+    """
+    lam = 0.0
+    for places, ways, length, symbols in readings:
+        if places <= 0 or ways <= 0 or symbols <= 1:
+            continue
+        lam += math.exp(math.log(places) + math.log(ways) - length * math.log(symbols))
+    return min(1.0, _poisson_tail(1, lam))
+
+
+def _poisson_tail(matched: int, lam: float) -> float:
+    """``P(X >= matched)`` for a Poisson count of mean ``lam``; 1 for a mean past computing.
+
+    A tail far past the mean is summed term by term from ``matched`` up, each
+    term in logarithms, so it is not lost to rounding.
+    """
     if not math.isfinite(lam):
         return 1.0
     if lam == 0.0:
@@ -393,10 +424,8 @@ def chance_of_matches(matched: int, candidates: int, names: int, algorithms: int
             tail += step
             if step <= tail * 1e-17:
                 break
-    else:
-        tail = max(0.0, 1.0 - sum(term(i) for i in range(matched)))
-    chance = tried * tail
-    return min(1.0, chance) if math.isfinite(chance) else 1.0
+        return tail
+    return max(0.0, 1.0 - sum(term(i) for i in range(matched)))
 
 
 def little_endian(value: Any) -> bytes | None:
