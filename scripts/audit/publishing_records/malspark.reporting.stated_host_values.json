@@ -49,12 +49,12 @@
   },
   {
    "constant": "malspark.reporting.stated_host_values:UNHELD_WORDS",
-   "condition": "the refusal of a stated host value no cited entry holds whole where the scan found its text in a cited entry: only inside a longer run of letters or digits, only between spaces, or somewhere not counted as the whole value",
+   "condition": "the refusal of a stated host value no cited entry holds whole where the scan found it in a cited entry: whole only where the entry's answer repeats what its call asked for (and, where the rest of the answer shows it, elsewhere only inside a longer run of text), only as bytes the entry's text writes, only inside a longer run of letters or digits, only between spaces, or somewhere not counted as the whole value",
    "basis": [
     "HostIdentifier.unheld_as, written by stated_host_values.scan_cited"
    ],
    "test": "tests/unit/reporting/test_a_cited_command_line_argument_holds_a_value_and_a_refusal_says_what_the_scan_found.py::TestARefusalSaysWhatTheScanFound::test_the_words",
-   "text_digest": "ccfa8e93f82e74857748bd45824cce2d1efe19d4a67f5ef91a12e8f711a9d1c9"
+   "text_digest": "505d332529b8025aceaaa1009f1ec32a31c069692b2a685fbda0df22dc218ed7"
   },
   {
    "constant": "malspark.reporting.stated_host_values:NOT_IN_THE_CITED",
