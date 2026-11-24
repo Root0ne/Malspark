@@ -1222,6 +1222,8 @@ class MarkdownRenderer:
         # 5.7 Command and control.
         measured = []
         if report.c2_channels:
+            from malspark.reporting.section_agreement import channel_cells
+
             measured.extend([f"_{REPORT_MODEL}:_ channels", ""])
             measured.append(
                 _row(
@@ -1234,16 +1236,19 @@ class MarkdownRenderer:
                 )
             )
             measured.append(_divider(6))
-            for ch in report.c2_channels:
+            for index, ch in enumerate(report.c2_channels, 1):
                 fmt = " / ".join(part for part in (ch.beacon_format, ch.packet_layout) if part)
                 refs = list(ch.evidence_refs) + ([ch.evidence_ref] if ch.evidence_ref else [])
+                # A value cell the agreement round answers is marked where it kept a sentence
+                # of it as written on its quote (T-881).
+                answered = channel_cells(index)
                 measured.append(
                     _row(
                         ctx.cell(ch.name),
-                        ctx.cell(ch.protocol or "-"),
+                        ctx.cell(ch.protocol or "-", kept=answered["protocol"]),
                         "; ".join(_endpoint_with_state(e, ctx) for e in ch.endpoints) or "-",
-                        ctx.cell(ch.encryption or "-"),
-                        ctx.cell(fmt or "-"),
+                        ctx.cell(ch.encryption or "-", kept=answered["encryption"]),
+                        ctx.cell(fmt or "-", kept=answered["packet_layout"]),
                         (", ".join(dict.fromkeys(refs)) or "no evidence cited")
                         + ctx.cited_row_mark(ch),
                     )
@@ -2892,6 +2897,11 @@ class _Context:
         self.unresolved = [
             row for row in (validation.get("unresolved") or []) if isinstance(row, dict)
         ]
+        # The sentences the agreement round kept as written on their quote, by passage, read
+        # off its records now: each prints with the platform's mark beside it (T-881).
+        from malspark.reporting.section_agreement import kept_on_its_quote
+
+        self.kept_on_quote = kept_on_its_quote(report)
         self.verdict_findings = [
             {
                 "code": str(row.get("code", "")),
@@ -3523,15 +3533,59 @@ class _Context:
             self._labels = {str(label) for label in held} if isinstance(held, list) else set()
         return self._labels
 
-    def cell(self, text: Any) -> str:
+    def cell(self, text: Any, *, kept: Iterable[str] = ()) -> str:
         """A model-written table cell: defanged like prose, and whole, as every body cell is;
-        its citations written as the layout's prose writes them (``cell_citations``)."""
+        its citations written as the layout's prose writes them (``cell_citations``). ``kept``
+        names the value cells the agreement round answers whose text it prints: a sentence of
+        one kept as written on its quote is marked after the cell (:meth:`kept_cell_mark`)."""
         raw = str(text or "")
         whole = self._defang(raw)
         if self.cell_citations is not None:
             whole = self.cell_citations(whole)
-        marks = self.cell_marks(raw)
+        marks = [*self.kept_cell_mark(kept, raw), *self.cell_marks(raw)]
         return f"{whole} {' '.join(marks)}" if marks else whole
+
+    def kept_pieces(self, passage: str, pieces: Sequence[str]) -> list[tuple[str, str]]:
+        """Each of ``pieces``, the printed parts of the agreement round's ``passage`` in order,
+        with the platform's mark after each sentence of it the round kept as written on its
+        quote (``kept_places``), and what follows the piece's own note marker: the mark of a
+        sentence that ends the piece, and, after the last piece printing words, the one passage
+        note where two different sentences answer a record (``KEPT_IN_PASSAGE_NOTE``). The words are
+        unchanged; a passage printing none of them comes back as it is (T-881)."""
+        said = self.kept_on_quote.get(passage, ())
+        if not said:
+            return [(piece, "") for piece in pieces]
+        from malspark.reporting.section_agreement import kept_places
+
+        mark = f" {_kept_mark()}"
+        places, note = kept_places(pieces, said)
+        out: list[tuple[str, str]] = []
+        for piece, ends in zip(pieces, places, strict=True):
+            tail = ""
+            for end in reversed(ends):
+                if piece.startswith(mark, end):
+                    continue
+                if not piece[end:].strip():
+                    piece, tail = piece[:end], mark
+                else:
+                    piece = piece[:end] + mark + piece[end:]
+            out.append((piece, tail))
+        if note:
+            last = max(i for i, piece in enumerate(pieces) if piece.strip())
+            out[last] = (out[last][0], f"{out[last][1]} **[{note}]**")
+        return out
+
+    def kept_cell_mark(self, passages: Iterable[str], text: str) -> list[str]:
+        """The platform's mark, once, where a value cell's printed ``text`` holds a sentence one
+        of the agreement round's ``passages`` kept as written on its quote (``kept_cell_said``);
+        else none. A cell's marks follow its text, as a flagged sentence's do (T-881)."""
+        said = [words for passage in passages for words in self.kept_on_quote.get(passage, ())]
+        if not said:
+            return []
+        from malspark.reporting.section_agreement import kept_cell_said
+
+        shown = kept_cell_said(text, said)
+        return [f"**[{shown}]**"] if shown else []
 
     def cell_marks(self, text: Any) -> list[str]:
         """The marks :meth:`cell` prints after a cell's text: each flagged sentence's that
@@ -5721,6 +5775,14 @@ def _flag_mark(code: str, label: str, *, asked: bool = True) -> str:
     return f"**[{said}; not asked]**" if not asked else f"**[{said}]**"
 
 
+def _kept_mark() -> str:
+    """The mark printed beside a sentence the agreement round kept as written on its quote, in
+    the platform's voice (``section_agreement.KEPT_ON_ITS_QUOTE_MARK``, T-881)."""
+    from malspark.reporting.section_agreement import KEPT_ON_ITS_QUOTE_MARK
+
+    return f"**[{KEPT_ON_ITS_QUOTE_MARK}]**"
+
+
 def _findings_beside(rows: list[dict[str, str]], plain: Callable[[str], str]) -> list[str]:
     """The platform's unresolved findings on a section, printed under it."""
     if not rows:
@@ -6562,14 +6624,21 @@ def _encryption_table(enc: Any, ctx: _Context) -> list[str]:
         ),
     ]
     present = [
-        (label, value if _said(value) else "-")
+        (label, field, value if _said(value) else "-")
         for label, field, value in rows
         if _said(value) or ctx.left_out(f"encryption_scheme.{field}")
     ]
     if not present:
         return []
+    from malspark.reporting.section_agreement import scheme_cells
+
     out = [f"_{REPORT_MODEL}:_ encryption scheme", "", _row("Property", "Value"), _divider(2)]
-    out.extend(_row(label, ctx.cell(value)) for label, value in present)
+    # A value cell the agreement round answers is marked where it kept a sentence of it as
+    # written on its quote (T-881).
+    out.extend(
+        _row(label, ctx.cell(value, kept=scheme_cells().get(field, ())))
+        for label, field, value in present
+    )
     out.append(
         _row(
             "Evidence",

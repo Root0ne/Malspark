@@ -82,8 +82,13 @@ export function formatValue(value: DiffValue | undefined): string {
   return JSON.stringify(value);
 }
 
-/** Field names read better in words than as keys. */
-const FIELD_WORDS: Record<string, string> = { stated_by: "who stated it" };
+/** Field names read better in words than as keys. A channel cell's mark is the platform's,
+ *  shown beside the cell and never compared (`run_diff._KEPT_CELL_FIELDS`). */
+const FIELD_WORDS: Record<string, string> = {
+  stated_by: "who stated it",
+  protocol_mark: "platform's mark on the protocol",
+  encryption_mark: "platform's mark on the encryption",
+};
 
 /** A field name as a reader reads it. */
 export function fieldLabel(name: string): string {

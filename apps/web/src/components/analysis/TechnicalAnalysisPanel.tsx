@@ -24,6 +24,7 @@ import {
   technicalSubsections,
 } from "./reportProse";
 import type { MalwareReport } from "@/types/malware-report";
+import { KEPT_ON_ITS_QUOTE_MARK, channelCellLabel, keptCellSaid } from "@/lib/keptOnItsQuote";
 
 /**
  * The report model's technical analysis: the execution flow, the host
@@ -36,7 +37,9 @@ import type { MalwareReport } from "@/types/malware-report";
  * are printed as written; a step's mark (observed or assessed) is the model's
  * own; a row that cites nothing says so. The platform's unresolved finding on
  * a step is printed beside it, as the exported report prints it, and a
- * channel's endpoints are defanged as they are there.
+ * channel's endpoints are defanged as they are there. A value cell holding a
+ * sentence the agreement round kept as written on its quote carries the
+ * platform's mark after it, in the report's words (`lib/keptOnItsQuote`).
  */
 export default function TechnicalAnalysisPanel({ report }: { report: MalwareReport }) {
   const { jobId } = useReport();
@@ -190,12 +193,21 @@ export default function TechnicalAnalysisPanel({ report }: { report: MalwareRepo
                 <li key={`${ch.name}-${i}`} className="text-xs text-text-secondary">
                   <span className="text-text-primary font-medium">{ch.name}</span>
                   {ch.protocol && <span className="ml-2 font-mono">{ch.protocol}</span>}
+                  <KeptMark said={ch.protocol ? keptCellSaid(report, channelCellLabel(i + 1, "protocol"), ch.protocol) : ""} />
                   {ch.encryption && <span className="ml-2">encryption: {ch.encryption}</span>}
+                  <KeptMark said={ch.encryption ? keptCellSaid(report, channelCellLabel(i + 1, "encryption"), ch.encryption) : ""} />
                   {(ch.beacon_format || ch.packet_layout) && (
                     <span className="ml-2">
                       format: {[ch.beacon_format, ch.packet_layout].filter(Boolean).join(" / ")}
                     </span>
                   )}
+                  <KeptMark
+                    said={keptCellSaid(
+                      report,
+                      channelCellLabel(i + 1, "packet_layout"),
+                      [ch.beacon_format, ch.packet_layout].filter(Boolean).join(" / "),
+                    )}
+                  />
                   {(ch.endpoints ?? []).length > 0 && (
                     <div className="mt-0.5 font-mono break-all text-text-muted">
                       {(ch.endpoints ?? []).map(defangEndpoint).join(", ")}
@@ -228,7 +240,10 @@ export default function TechnicalAnalysisPanel({ report }: { report: MalwareRepo
                 {block.facts.map(([label, value]) => (
                   <div key={label} className="contents">
                     <dt className="text-text-muted">{label}</dt>
-                    <dd className="min-w-0 font-mono break-all text-text-secondary"><CitedProse text={value} /></dd>
+                    <dd className="min-w-0 font-mono break-all text-text-secondary">
+                      <CitedProse text={value} />
+                      <KeptMark said={(block.marked ?? []).includes(label) ? KEPT_ON_ITS_QUOTE_MARK : ""} />
+                    </dd>
                   </div>
                 ))}
               </dl>
@@ -247,6 +262,17 @@ export default function TechnicalAnalysisPanel({ report }: { report: MalwareRepo
         ))}
       </div>
     </div>
+  );
+}
+
+/** The platform's mark after a value cell holding a sentence the agreement round kept as
+ *  written on its quote, in the words the exported report prints. */
+function KeptMark({ said }: { said: string }) {
+  if (!said) return null;
+  return (
+    <span data-mark="kept-on-its-quote" className="ml-2 text-[10px] italic text-status-orange">
+      [{said}]
+    </span>
   );
 }
 

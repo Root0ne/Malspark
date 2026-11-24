@@ -119,7 +119,17 @@ holding what it denies something of, is shown; rewrites it; or leaves it out
 source with its reason, and every drop, is recorded. A kept closing sentence
 the ledger itself says otherwise of (a failed call a later call redid), or kept
 on no source or a quote a check refused, is left out after the retry, and
-recorded (a section 5 keep a check refuses stands, as before); a number of
+recorded (a section 5 keep a check refuses stands, as before); but one whose
+quote the checks refused only on the words of what it denies something of, the
+whole quote standing in one sentence of a section 5 passage the round leaves as
+it is, stands as written, recorded (``KEPT_ON_ITS_QUOTE_CODE``, T-736), and every
+report printing it prints the platform's mark beside it, drawn from that record
+when the report is rendered (``KEPT_ON_ITS_QUOTE_MARK``: kept as the report
+model wrote it, the check did not agree to it, its quote, from the technical
+analysis as the check read it, holds too few of the words of what it denies, the
+bundle lists the quote; T-881), and a passage a report prints where two sentences
+answer that record ends in one note naming neither (``KEPT_IN_PASSAGE_NOTE``).
+A number of
 failed calls the ledger's count does not hold is recorded, never a reason to
 leave a sentence out. A rewrite
 resting on a fact that states again the
@@ -292,6 +302,7 @@ from malspark.reporting.models import (
     KeyFinding,
     LimitationInventory,
     MalwareReport,
+    TechnicalAnalysis,
     TechnicalSubsection,
 )
 from malspark.reporting.sentence_ends import close_end, ends_sentence, pieces
@@ -429,7 +440,10 @@ KEEP_UNQUOTED_CODE = "agreement.keep_unquoted"
 # sentence is not moved (T-736). A quote no one sentence of a section 5 passage it names holds
 # (one running across two, one standing only in a fact or a debate round, which the report
 # does not print), or one whose sentence the round itself leaves out or changes, leaves the
-# sentence out as before (``DROPPED_CODE``).
+# sentence out as before (``DROPPED_CODE``). Every report printing such a sentence prints the
+# platform's mark beside it (``KEPT_ON_ITS_QUOTE_MARK``), drawn from this record when the
+# report is rendered; a passage the report prints in which two different sentences answer this
+# record ends in one note naming neither (``KEPT_IN_PASSAGE_NOTE``) (T-881).
 KEPT_ON_ITS_QUOTE_CODE = "agreement.kept_on_its_quote"
 # A row of the answer the row schema accepts, naming a passage no list of the question
 # writes, whose copy exactly one passage a row may answer holds, each of its sentences once
@@ -1110,21 +1124,7 @@ def passages_of(
     if ta is not None:
         # The summary's capability bullets, each answered whole (T-600): a bullet is a
         # passage of its own, tied to no key finding.
-        uncoded.extend(
-            Passage(
-                id=f"capability_summary.{index}",
-                label=f"1. Executive summary, capability bullet {index}",
-                text=bullet.text,
-                kind=CLAIM_LED,
-                cites=_ids(bullet.evidence_refs, bullet.text),
-                write=_setter(bullet, "text"),
-                closing=True,
-                whole=_BULLET_WHOLE,
-                emptied=_BULLET_EMPTIED,
-            )
-            for index, bullet in enumerate(ta.capability_summary, 1)
-            if bullet.text.strip()
-        )
+        uncoded.extend(_capability_passages(ta))
         steps = sorted(ta.execution_flow, key=lambda step: step.order)
         uncoded.extend(
             _record_passages("execution_flow", "4. Execution flow, step", steps, CLAIM_LED)
@@ -1134,27 +1134,10 @@ def passages_of(
                 "host_identifiers", "9. Host identifiers, row", ta.host_identifiers, CLAIM_LED
             )
         )
-        if ta.encryption_scheme is not None and not reads_code("encryption_scheme"):
-            uncoded.extend(
-                _record_passages(
-                    "encryption_scheme",
-                    "5. Technical analysis, encryption scheme",
-                    [ta.encryption_scheme],
-                    CLAIM_LED,
-                    number=False,
-                    record="encryption scheme",
-                )
-            )
+        if not reads_code("encryption_scheme"):
+            uncoded.extend(_scheme_passages(ta))
     if not reads_code("communications"):
-        uncoded.extend(
-            _record_passages(
-                "communications",
-                "5. Technical analysis, channel row",
-                report.c2_channels,
-                CLAIM_LED,
-                record="channel",
-            )
-        )
+        uncoded.extend(_channel_passages(report))
     if ta is not None and ta.technique_procedures:
         # The ATT&CK table's procedures are written from the claims, one sentence
         # each, beside section 5 (T-494): asked like every other such passage,
@@ -1629,6 +1612,99 @@ def _closing_passage(sub: TechnicalSubsection | None, pid: str, label: str) -> l
             closing=True,
         )
     ]
+
+
+# The label of the limitations paragraph where it is held to the failed calls (T-526).
+_LIMITATIONS_HELD_LABEL = (
+    "11. Limitations, the composed paragraph (each sentence saying a call failed or a "
+    "reading could not be made is held to the failed calls, the tools not run, the "
+    "recorded limitations and the open questions among the facts)"
+)
+
+
+def _capability_passages(ta: TechnicalAnalysis) -> list[Passage]:
+    """The summary's capability bullets, each answered whole (T-600): a bullet is a passage of
+    its own, tied to no key finding, numbered by its place in the list."""
+    return [
+        Passage(
+            id=f"capability_summary.{index}",
+            label=f"1. Executive summary, capability bullet {index}",
+            text=bullet.text,
+            kind=CLAIM_LED,
+            cites=_ids(bullet.evidence_refs, bullet.text),
+            write=_setter(bullet, "text"),
+            closing=True,
+            whole=_BULLET_WHOLE,
+            emptied=_BULLET_EMPTIED,
+        )
+        for index, bullet in enumerate(ta.capability_summary, 1)
+        if bullet.text.strip()
+    ]
+
+
+def _scheme_passages(ta: TechnicalAnalysis) -> list[Passage]:
+    """The encryption scheme's written fields, its value cells among them, or none."""
+    if ta.encryption_scheme is None:
+        return []
+    return _record_passages(
+        "encryption_scheme",
+        "5. Technical analysis, encryption scheme",
+        [ta.encryption_scheme],
+        CLAIM_LED,
+        number=False,
+        record="encryption scheme",
+    )
+
+
+# The label a channel row's passages stand under, its place in the list after it.
+_CHANNEL_ROW_LABEL = "5. Technical analysis, channel row"
+
+
+def _channel_passages(report: MalwareReport) -> list[Passage]:
+    """Each channel's written fields, its value cells, numbered from 1."""
+    return _record_passages(
+        "communications",
+        _CHANNEL_ROW_LABEL,
+        report.c2_channels,
+        CLAIM_LED,
+        record="channel",
+    )
+
+
+def channel_cells(index: int) -> dict[str, tuple[str, ...]]:
+    """The id of each value cell of the channel at ``index`` (from 1), by its field, as the
+    round names it (:func:`_channel_passages`): what a report printing the cell reads its
+    records by (T-881)."""
+    return {name: (f"communications.{index}.{name}",) for name in _VALUE_FIELDS[C2Channel]}
+
+
+def channel_cell_label(index: int, name: str) -> str:
+    """The label the round shows the value cell ``name`` of the channel at ``index`` (its place
+    in the list, from 1, a channel with no name counted) under (:func:`_channel_passages`):
+    what a surface reading the records off a stored channel row reads them by (T-881)."""
+    return f"{_CHANNEL_ROW_LABEL} {index}, {name.replace('_', ' ')}"
+
+
+def scheme_cells() -> dict[str, tuple[str, ...]]:
+    """The id of each value cell of the encryption scheme, by its field, as the round names it
+    (:func:`_scheme_passages`) (T-881)."""
+    return {name: (f"encryption_scheme.{name}",) for name in _VALUE_FIELDS[EncryptionScheme]}
+
+
+def _closing_places(report: MalwareReport) -> list[Passage]:
+    """Every passage the round may keep a sentence of as written on its quote
+    (:func:`_in_source_words`), as the report holds it now: the conclusion, the limitations
+    paragraph under either label, each capability bullet and each value cell (T-881)."""
+    ta = report.technical_analysis
+    out: list[Passage] = []
+    if ta is not None:
+        out.extend(_closing_passage(ta.analyst_conclusion, "conclusion", "7. Conclusion"))
+        out.extend(_closing_passage(ta.analyst_limitations, "limitations", "11. Limitations"))
+        out.extend(_closing_passage(ta.analyst_limitations, "limitations", _LIMITATIONS_HELD_LABEL))
+        out.extend(_capability_passages(ta))
+        out.extend(_scheme_passages(ta))
+    out.extend(_channel_passages(report))
+    return [passage for passage in out if passage.closing]
 
 
 def _one_line(text: Any, limit: int = 40) -> str:
@@ -4157,11 +4233,7 @@ def _limitation_passages(
             held_to[sentence] = (True, stale)
     paragraph = Passage(
         id="limitations",
-        label=(
-            "11. Limitations, the composed paragraph (each sentence saying a call failed or a "
-            "reading could not be made is held to the failed calls, the tools not run, the "
-            "recorded limitations and the open questions among the facts)"
-        ),
+        label=_LIMITATIONS_HELD_LABEL,
         text=sub.body,
         kind=CLAIM_LED,
         cites=_ids(sub.evidence_refs, sub.body),
@@ -8651,6 +8723,28 @@ def _holding(text: str, quote: str) -> list[str]:
     ]
 
 
+# The words of the mark beside a sentence kept as written on its quote (``KEPT_ON_ITS_QUOTE_CODE``),
+# wherever a report prints it: what the round's record holds and no more. They quote nothing and
+# never say which part of the sentence the quote does not back (T-881).
+KEPT_ON_ITS_QUOTE_MARK = (
+    "kept as the report model wrote it; the report's check did not agree to it: the quote "
+    "given for it, from the report's technical analysis as the check read it, holds too few "
+    "of the words of what the sentence denies; the bundle lists the quote"
+)
+# The words of the one note at the end of a passage the report prints where two different
+# sentences of it answer a record of a sentence kept as written on its quote: it says the
+# refusal and never which sentence. A record no printed sentence answers prints nothing (T-881).
+KEPT_IN_PASSAGE_NOTE = (
+    "a sentence of this passage was kept as the report model wrote it although the report's "
+    "check did not agree to it; the bundle lists it"
+)
+# How the record of such a sentence opens, names its source and ends: the one writer of the
+# record (:func:`_kept_on_its_quote`) and its one reader (:func:`kept_on_its_quote_named`).
+_KEPT_HEAD = "The agreement question keeps a sentence of "
+_KEPT_SOURCE = " as written on "
+_KEPT_TAIL = " stands as written."
+
+
 def _kept_on_its_quote(
     passage: Passage, path: str, sentence: str, row: AgreementRow, source: Passage
 ) -> Violation:
@@ -8659,16 +8753,225 @@ def _kept_on_its_quote(
     return Violation(
         code=KEPT_ON_ITS_QUOTE_CODE,
         message=(
-            f"The agreement question keeps a sentence of {safe_finding_value(passage.label)} "
-            f"as written on {safe_finding_value(source.id)}, quoting "
+            f"{_KEPT_HEAD}{safe_finding_value(passage.label)}"
+            f"{_KEPT_SOURCE}{safe_finding_value(source.id)}, quoting "
             f"{safe_finding_value(row.quote)!r}, which stands whole in one sentence there, "
             "though the keep was refused only on the words of what the sentence denies "
-            f"something of ({KEEP_UNQUOTED_CODE}): {safe_finding_value(sentence)!r} stands as "
-            "written."
+            f"something of ({KEEP_UNQUOTED_CODE}): {safe_finding_value(sentence)!r}{_KEPT_TAIL}"
         ),
         path=path,
         answered=True,
     )
+
+
+# What a backslash in a string literal ``repr`` writes stands for: one character, or the code
+# point the hex digits after it write, by their count.
+_LITERAL_ESCAPES = {"\\": "\\", "'": "'", '"': '"', "n": "\n", "r": "\r", "t": "\t"}
+_LITERAL_WIDTHS = {"x": 2, "u": 4, "U": 8}
+_HEX_DIGITS = re.compile(r"[0-9a-fA-F]+")
+
+
+def _written_text(literal: str) -> str | None:
+    """The text one string literal holds, written as ``repr`` writes one (in single or double
+    quotes, each escape a backslash with one character or hex digits), or ``None`` where
+    ``literal`` is anything else: two literals, or one with text after it (T-881)."""
+    if len(literal) < 2 or literal[0] not in "'\"" or literal[-1] != literal[0]:
+        return None
+    quote, end, at = literal[0], len(literal) - 1, 1
+    out: list[str] = []
+    while at < end:
+        char = literal[at]
+        if char == quote:
+            return None
+        if char != "\\":
+            out.append(char)
+            at += 1
+            continue
+        mark = literal[at + 1] if at + 1 < end else ""
+        if mark and mark in _LITERAL_ESCAPES:
+            out.append(_LITERAL_ESCAPES[mark])
+            at += 2
+            continue
+        width = _LITERAL_WIDTHS.get(mark, 0)
+        digits = literal[at + 2 : at + 2 + width]
+        if not width or at + 2 + width > end or not _HEX_DIGITS.fullmatch(digits):
+            return None
+        point = int(digits, 16)
+        if point > 0x10FFFF:
+            return None
+        out.append(chr(point))
+        at += 2 + width
+    return "".join(out)
+
+
+def kept_on_its_quote_named(message: str) -> tuple[str, str] | None:
+    """The label of the passage and the sentence a record of a sentence kept as written on its
+    quote names (:func:`_kept_on_its_quote`), as its message writes them: each one line and
+    bounded, so either may end in the cut mark; ``None`` for a message that writer did not
+    write. The sentence is the first literal after the refusal's code that reads whole to the
+    record's last words (T-881)."""
+    if not message.startswith(_KEPT_HEAD) or not message.endswith(_KEPT_TAIL):
+        return None
+    at = message.find(_KEPT_SOURCE, len(_KEPT_HEAD))
+    if at < 0:
+        return None
+    body = message[: -len(_KEPT_TAIL)]
+    refused = f" ({KEEP_UNQUOTED_CODE}): "
+    start = body.find(refused, at)
+    while start >= 0:
+        said = _written_text(body[start + len(refused) :])
+        if said is not None:
+            return message[len(_KEPT_HEAD) : at], said
+        start = body.find(refused, start + 1)
+    return None
+
+
+def _cut_head(words: str) -> str:
+    """What stands before the cut mark of a text a record bounded, or ``""`` for one ending in
+    no cut mark."""
+    from malspark.utils.marked_cut import CUT_MARK
+
+    return words[: -len(CUT_MARK)].rstrip() if words.endswith(CUT_MARK) else ""
+
+
+def _label_names(written: str, label: str) -> bool:
+    """Whether a record's bounded copy of a passage's label (``written``) is that label."""
+    said = " ".join(label.split())
+    head = _cut_head(written)
+    return written == said or bool(head) and said.startswith(head) and len(said) > len(head)
+
+
+def kept_on_its_quote_records(summary: Any) -> list[tuple[str, str]]:
+    """The label and the sentence each record of a sentence kept as written on its quote in a
+    run summary's validation names (:func:`kept_on_its_quote_named`), in order (T-881)."""
+    validation = summary.get("validation") if isinstance(summary, Mapping) else None
+    rows = validation.get("unresolved") if isinstance(validation, Mapping) else None
+    return [
+        found
+        for row in rows or ()
+        if isinstance(row, Mapping) and row.get("code") == KEPT_ON_ITS_QUOTE_CODE
+        if (found := kept_on_its_quote_named(str(row.get("message") or ""))) is not None
+    ]
+
+
+def kept_under(named: Iterable[tuple[str, str]], label: str) -> tuple[str, ...]:
+    """The sentences records (:func:`kept_on_its_quote_records`) name under the passage
+    ``label``, once each (T-881)."""
+    return tuple(
+        dict.fromkeys(
+            said for written, said in named if said.strip() and _label_names(written, label)
+        )
+    )
+
+
+def kept_on_its_quote(report: MalwareReport) -> dict[str, tuple[str, ...]]:
+    """By passage id, the sentences the round kept as written on their quote
+    (``KEPT_ON_ITS_QUOTE_CODE``), each as its record writes it (one line, bounded: a long one
+    ends in the cut mark), read off the run's own records (``run_summary.validation``) when
+    the report is rendered: the report holds no field of them, and a stored report reads as a
+    new one. A record naming a passage the report does not hold names none (T-881)."""
+    named = kept_on_its_quote_records(report.run_summary)
+    if not named:
+        return {}
+    places = _closing_places(report)
+    out: dict[str, list[str]] = {}
+    for label, said in named:
+        passage = next((p for p in places if _label_names(label, p.label)), None)
+        if passage is not None and said.strip():
+            out.setdefault(passage.id, []).append(said)
+    return {pid: tuple(dict.fromkeys(said)) for pid, said in out.items()}
+
+
+def _bounded_from(unit: str, head: str) -> bool:
+    """Whether a text of one line (``unit``) is one a record bounded to ``head`` and the cut
+    mark: it opens with ``head`` and is longer than a record's bound, the only text a record
+    cuts (``events.FINDING_VALUE_LIMIT``)."""
+    from malspark.pipeline.events import FINDING_VALUE_LIMIT
+
+    return bool(head) and unit.startswith(head) and len(unit) > FINDING_VALUE_LIMIT
+
+
+def _as_recorded(unit: str, words: str) -> bool:
+    """Whether a printed text of one line (``unit``) is the sentence a record names as
+    ``words``: by its words, in the form the record stores it (the record's own value
+    cleaning, ``events.safe_finding_value``, which may mask, drop or bound), or, for one the
+    record bounded (ending in the cut mark), as a text the record bounded so
+    (:func:`_bounded_from`)."""
+    from malspark.pipeline.events import safe_finding_value
+
+    return (
+        unit == words or _bounded_from(unit, _cut_head(words)) or safe_finding_value(unit) == words
+    )
+
+
+def kept_places(pieces: Sequence[str], said: Iterable[str]) -> tuple[list[list[int]], str]:
+    """Where in each of ``pieces``, the printed parts of one passage in order, a sentence that
+    ``said`` names ends, in order, once each, and the note the passage ends in: the passage
+    note where two different printed sentences answer a name, else ``""`` (T-881).
+
+    A name is found in the one sentence (:func:`_sentence_units`) whose words, whatever the
+    white space between them, are the record's (:func:`_as_recorded`): at each place that
+    sentence stands. Where no sentence answers it, the whole passage, where it is the
+    record's, ends at the end of the last piece. Where two different sentences answer it (a
+    cut copy fits both), the kept sentence stands in the passage but no sentence is named:
+    the passage is then owed one note (``KEPT_IN_PASSAGE_NOTE``). Where none answers it, the
+    passage does not print the sentence (another rule left it out, or the text changed), and
+    nothing is owed: no mark, no note.
+    """
+    units = [
+        (index, start + len(unit), " ".join(unit.split()))
+        for index, piece in enumerate(pieces)
+        for unit, starts in _sentence_units(piece)[0].items()
+        for start in starts
+    ]
+    whole = " ".join(" ".join(pieces).split())
+    ends: list[set[int]] = [set() for _piece in pieces]
+    unplaced = False
+    for words in said:
+        found = [(index, end, unit) for index, end, unit in units if _as_recorded(unit, words)]
+        if len({unit for _index, _end, unit in found}) == 1:
+            for index, end, _unit in found:
+                ends[index].add(end)
+        elif found:
+            unplaced = True
+        elif whole and _as_recorded(whole, words):
+            last = max(index for index, piece in enumerate(pieces) if piece.strip())
+            ends[last].add(len(pieces[last].rstrip()))
+    return [sorted(found) for found in ends], KEPT_IN_PASSAGE_NOTE if unplaced else ""
+
+
+def holds_kept(text: str, said: Iterable[str]) -> bool:
+    """Whether a value cell's printed ``text`` holds a sentence ``said`` names, by its words
+    whatever the white space between them: one of them whole, or, for one a record bounded,
+    what stands before its cut mark followed by enough of the cell for a text the record
+    bounded so (:func:`_bounded_from`) (T-881)."""
+    shown = " ".join(str(text or "").split())
+    for words in said:
+        head = _cut_head(words)
+        if words and words in shown:
+            return True
+        at = shown.find(head) if head else -1
+        while at >= 0:
+            if _bounded_from(shown[at:], head):
+                return True
+            at = shown.find(head, at + 1)
+    return False
+
+
+def kept_cell_said(text: Any, said: Sequence[str]) -> str:
+    """What a value cell printing ``text`` carries after it where records name sentences of it
+    kept as written on their quote (``said``): the mark (``KEPT_ON_ITS_QUOTE_MARK``) where the
+    cell holds one (:func:`holds_kept`, or a sentence of it in the form the record stores it,
+    :func:`_as_recorded`); else ``""``: a cell that does not print the sentence carries
+    nothing, never the passage note (T-881)."""
+    shown = str(text or "")
+    if not said or not shown.strip():
+        return ""
+    units = [" ".join(unit.split()) for unit in _sentence_units(shown)[0]]
+    units.append(" ".join(shown.split()))
+    if holds_kept(shown, said) or any(_as_recorded(u, w) for u in units for w in said):
+        return KEPT_ON_ITS_QUOTE_MARK
+    return ""
 
 
 def _left_out(

@@ -1469,19 +1469,42 @@ class _Analyst:
             and not self._unflagged(_one_line(text), count=False).strip()
         )
 
-    def _prose(self, text: str, ids: Iterable[Any] = ()) -> str:
+    def _prose(self, text: str, ids: Iterable[Any] = (), *, passage: str = "") -> str:
         """Model prose as a paragraph: its flagged sentences left out, defanged, its
-        citations moved to note markers."""
-        kept = self._unflagged(str(text or "").strip())
-        return _escape_block(self.notes.moved(self.ctx.plain(kept), ids))
+        citations moved to note markers. Each sentence of the agreement round's ``passage``
+        it kept as written on its quote is marked after it (:meth:`_passage_prose`, T-881)."""
+        return self._passage_prose([text], [ids], passage)[0]
 
-    def _line(self, text: Any, ids: Iterable[Any] = ()) -> str:
+    def _passage_prose(
+        self, texts: Sequence[str], ids: Sequence[Iterable[Any]], passage: str
+    ) -> list[str]:
+        """The paragraphs of one passage (``texts``, each citing its ``ids``) as
+        :meth:`_prose` writes one. Each sentence of the agreement round's ``passage`` it kept
+        as written on its quote is marked after it, and a paragraph's note marker stands
+        before a mark that ends it, so the note is not read as citing the mark; where two
+        different sentences answer a record of the passage, it ends in one note
+        (``_Context.kept_pieces``, T-881)."""
+        kept = [self._unflagged(str(text or "").strip()) for text in texts]
+        return [
+            _escape_block(self.notes.moved(self.ctx.plain(body), refs) + self.ctx.plain(tail))
+            for (body, tail), refs in zip(self.ctx.kept_pieces(passage, kept), ids, strict=True)
+        ]
+
+    def _line(
+        self, text: Any, ids: Iterable[Any] = (), *, passage: str = "", cell: Iterable[str] = ()
+    ) -> str:
         """Model prose on one line, for an item, a step or a cell; ``-`` where every
-        sentence of it was flagged."""
+        sentence of it was flagged. A sentence the agreement round kept as written on its
+        quote is marked: after it, of ``passage``, a note marker ending the line before the
+        mark; after the cell, of a value cell ``cell`` names (``_Context.kept_cell_mark``,
+        T-881)."""
         kept = self._unflagged(_one_line(text))
         if not kept.strip():
             return "-"
-        return _one_line(self.notes.moved(self.ctx.plain(kept), ids))
+        marks = self.ctx.kept_cell_mark(cell, kept)
+        [(body, tail)] = self.ctx.kept_pieces(passage, [kept])
+        line = _one_line(self.notes.moved(self.ctx.plain(body), ids) + self.ctx.plain(tail))
+        return " ".join([line, *marks])
 
     def _as_written[T](self, build: Callable[[], T]) -> T:
         """What ``build`` writes with the shared writers, each cell's citations as written.
@@ -1503,8 +1526,8 @@ class _Analyst:
             for row in rows
         ]
 
-    def _cell(self, text: Any) -> str:
-        return self._line(text) if str(text or "").strip() else "-"
+    def _cell(self, text: Any, *, cell: Iterable[str] = ()) -> str:
+        return self._line(text, cell=cell) if str(text or "").strip() else "-"
 
     def _verdict(self) -> str:
         report = self.report
@@ -1651,11 +1674,18 @@ class _Analyst:
         else:
             self.left += len(report.key_findings) - len(findings)
             self._prints("key_findings", "executive_summary")
-        for bullet in bullets:
+        # Each bullet by its place in the list, as the agreement question names it (T-881).
+        listed = self.ta.capability_summary if self.ta is not None and bullets else []
+        for index, bullet in enumerate(listed, 1):
+            if not bullet.text.strip():
+                continue
             if self._flagged_whole(bullet.text):
                 self.left += 1
             else:
-                lines.append(_prose_item(self._line(bullet.text, bullet.evidence_refs)))
+                said = self._line(
+                    bullet.text, bullet.evidence_refs, passage=f"capability_summary.{index}"
+                )
+                lines.append(_prose_item(said))
         for finding in findings:
             lines.append(_prose_item(self._line(finding.text, finding.evidence_ids)))
         summary = report.executive_summary.strip()
@@ -2146,16 +2176,20 @@ class _Analyst:
             _row("Channel", "Protocol", "Endpoint(s)", "Encryption", "Message format"),
             _divider(5),
         ]
-        for ch in channels:
+        from malspark.reporting.section_agreement import channel_cells
+
+        for index, ch in enumerate(channels, 1):
             fmt = " / ".join(part for part in (ch.beacon_format, ch.packet_layout) if part)
             refs = list(ch.evidence_refs) + ([ch.evidence_ref] if ch.evidence_ref else [])
+            # A value cell the agreement question answers, by its id (T-881).
+            cells = channel_cells(index)
             lines.append(
                 _row(
                     self._cell(ch.name) + self.notes.marker(refs),
-                    self._cell(ch.protocol),
+                    self._cell(ch.protocol, cell=cells["protocol"]),
                     "; ".join(_endpoint(e) for e in ch.endpoints) or "-",
-                    self._cell(ch.encryption),
-                    self._cell(fmt),
+                    self._cell(ch.encryption, cell=cells["encryption"]),
+                    self._cell(fmt, cell=cells["packet_layout"]),
                 )
             )
         return [*lines, ""]
@@ -2258,12 +2292,14 @@ class _Analyst:
             # was left out says so, and the judge's words stay the bundle's (T-555).
             lines.append("")
             paragraphs = [p for p in re.split(r"\n\s*\n", composed.body.strip()) if p.strip()]
-            written = [
-                self._prose(
-                    paragraph, composed.evidence_refs if index == len(paragraphs) - 1 else ()
-                )
-                for index, paragraph in enumerate(paragraphs)
-            ]
+            written = self._passage_prose(
+                paragraphs,
+                [
+                    composed.evidence_refs if index == len(paragraphs) - 1 else ()
+                    for index in range(len(paragraphs))
+                ],
+                "conclusion",
+            )
             written = [paragraph for paragraph in written if paragraph.strip()]
             if not written:
                 written = [_LEFT_OUT_WHOLE.format(what="conclusion", verb="was")]
@@ -2956,7 +2992,9 @@ class _Analyst:
             # to the bundle. A paragraph every sentence of which was left out
             # says so (T-555).
             kept = said
-            paragraph = self._prose(" ".join(composed.body.split()), composed.evidence_refs)
+            paragraph = self._prose(
+                " ".join(composed.body.split()), composed.evidence_refs, passage="limitations"
+            )
             if not paragraph.strip():
                 paragraph = _LEFT_OUT_WHOLE.format(what="limitations", verb="were")
             if kept:
@@ -3021,7 +3059,9 @@ class _Analyst:
         if composed is not None:
             # The composer's paragraph: what the list does not state. A paragraph
             # every sentence of which was left out says so (T-555).
-            paragraph = self._prose(" ".join(composed.body.split()), composed.evidence_refs)
+            paragraph = self._prose(
+                " ".join(composed.body.split()), composed.evidence_refs, passage="limitations"
+            )
             if not paragraph.strip():
                 paragraph = _LEFT_OUT_WHOLE.format(what="limitations", verb="were")
         if said:

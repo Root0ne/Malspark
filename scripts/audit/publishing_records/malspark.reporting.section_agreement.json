@@ -1,0 +1,154 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.reporting.section_agreement:KEPT_ON_ITS_QUOTE_MARK",
+   "condition": "beside each sentence the agreement round kept as written on its quote, wherever a report prints it: after the sentence in the analyst report's conclusion, limitations and capability bullets (after the paragraph's trailing note marker where the sentence ends it), after the cell in a value cell of the analyst report and of the single-file report the bundle prints (channel protocol, encryption and packet layout; the encryption scheme's cipher, mode, library and IV), in the console's value cells, and beside a channel's protocol or encryption cell in the run comparison, shown and never compared; only where the record finds one sentence (two candidates print KEPT_IN_PASSAGE_NOTE instead; none prints nothing)",
+   "basis": [
+    "run_summary.validation.unresolved: the agreement round's records, each with its code and message (written by section_agreement.apply_rows): each agreement.kept_on_its_quote record's passage label and sentence (kept_on_its_quote_named)",
+    "the report's closing passages as stored (technical_analysis.analyst_conclusion and analyst_limitations, each capability bullet, the encryption scheme's and each channel's value cells): the sentence a record names, found by its words, also in the form the record stores it (kept_places, holds_kept, kept_cell_said)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_sentence_kept_on_its_quote_prints_with_its_mark.py::test_each_kept_sentence_prints_as_written_with_one_mark_beside_it",
+    "tests/unit/reporting/test_the_console_marks_a_kept_cell_as_the_report_does.py::test_the_fixture_is_what_the_report_s_functions_give",
+    "tests/unit/reporting/test_a_kept_sentence_s_mark_never_lands_beside_another.py::test_only_the_sentence_a_record_names_is_marked",
+    "tests/unit/reporting/test_a_kept_sentence_s_mark_never_lands_beside_another.py::test_the_run_comparison_shows_a_kept_cell_s_mark_and_never_compares_it"
+   ],
+   "text_digest": "694534778ed4015a3edd7c4330097da47ccc91f2179340fd9a8ecbb142cd32e8"
+  },
+  {
+   "constant": "malspark.reporting.section_agreement:_KEPT_HEAD",
+   "condition": "within an agreement.kept_on_its_quote record's message (its opening, the words before its source, its last words), printed in the bundle's and the single-file report's list of unresolved findings; on a render it is read only to recognise such a record (kept_on_its_quote_named), never printed beside a sentence",
+   "basis": [
+    "run_summary.validation.unresolved: the agreement round's records, each with its code and message (written by section_agreement.apply_rows): the record's message as _kept_on_its_quote writes it"
+   ],
+   "test": [
+    "tests/unit/reporting/test_the_console_marks_a_kept_cell_as_the_report_does.py::test_the_fixture_is_what_the_report_s_functions_give",
+    "tests/unit/reporting/test_the_console_marks_a_kept_cell_as_the_report_does.py::test_the_fixture_holds_every_shape_the_rules_tell_apart"
+   ],
+   "text_digest": "fed62b0de47d0ba9ad208ddf04541124b701d76954e2d4d7ca48b5fefd6c0549"
+  },
+  {
+   "constant": "malspark.reporting.section_agreement:_KEPT_SOURCE",
+   "condition": "within an agreement.kept_on_its_quote record's message (its opening, the words before its source, its last words), printed in the bundle's and the single-file report's list of unresolved findings; on a render it is read only to recognise such a record (kept_on_its_quote_named), never printed beside a sentence",
+   "basis": [
+    "run_summary.validation.unresolved: the agreement round's records, each with its code and message (written by section_agreement.apply_rows): the record's message as _kept_on_its_quote writes it"
+   ],
+   "test": [
+    "tests/unit/reporting/test_the_console_marks_a_kept_cell_as_the_report_does.py::test_the_fixture_is_what_the_report_s_functions_give",
+    "tests/unit/reporting/test_the_console_marks_a_kept_cell_as_the_report_does.py::test_the_fixture_holds_every_shape_the_rules_tell_apart"
+   ],
+   "text_digest": "b019269df0d79efc881f179bebc7e6bd3ea490f507ddbb9f8e2ca6680c6c0f5d"
+  },
+  {
+   "constant": "malspark.reporting.section_agreement:_KEPT_TAIL",
+   "condition": "within an agreement.kept_on_its_quote record's message (its opening, the words before its source, its last words), printed in the bundle's and the single-file report's list of unresolved findings; on a render it is read only to recognise such a record (kept_on_its_quote_named), never printed beside a sentence",
+   "basis": [
+    "run_summary.validation.unresolved: the agreement round's records, each with its code and message (written by section_agreement.apply_rows): the record's message as _kept_on_its_quote writes it"
+   ],
+   "test": [
+    "tests/unit/reporting/test_the_console_marks_a_kept_cell_as_the_report_does.py::test_the_fixture_is_what_the_report_s_functions_give",
+    "tests/unit/reporting/test_the_console_marks_a_kept_cell_as_the_report_does.py::test_the_fixture_holds_every_shape_the_rules_tell_apart"
+   ],
+   "text_digest": "d48dbd4165f199c6de2305b9af6afc45283e5511578de1a286427dd975519bfb"
+  },
+  {
+   "constant": "malspark.reporting.section_agreement:_BULLET_WHOLE",
+   "condition": "within the agreement round's refusal and left-out record of a capability bullet or a value cell (what holds a capability bullet's sentence), printed in the bundle's and the single-file report's list of unresolved findings; on a render it is read only to name the passage a kept-on-its-quote record names (kept_on_its_quote), never printed beside a sentence",
+   "basis": [
+    "run_summary.validation.unresolved: the agreement round's records, each with its code and message (written by section_agreement.apply_rows): the record of a sentence left out of a bullet or a cell, and the refusal before it"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_value_cell_and_a_capability_bullet_are_answered_whole.py::test_a_cell_unanswered_in_the_first_turn_is_asked_again_told_what_it_is",
+    "tests/unit/reporting/test_a_value_cell_and_a_capability_bullet_are_answered_whole.py::test_a_cell_and_a_bullet_no_row_answers_are_left_out_and_print_so"
+   ],
+   "text_digest": "b1a994fbdd2f49a10d92bdc7e93fa0ea68357b0df02c592b76ff57e8b9000e2e"
+  },
+  {
+   "constant": "malspark.reporting.section_agreement:_BULLET_EMPTIED",
+   "condition": "within the agreement round's refusal and left-out record of a capability bullet or a value cell (what an emptied capability bullet prints), printed in the bundle's and the single-file report's list of unresolved findings; on a render it is read only to name the passage a kept-on-its-quote record names (kept_on_its_quote), never printed beside a sentence",
+   "basis": [
+    "run_summary.validation.unresolved: the agreement round's records, each with its code and message (written by section_agreement.apply_rows): the record of a sentence left out of a bullet or a cell, and the refusal before it"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_value_cell_and_a_capability_bullet_are_answered_whole.py::test_a_cell_unanswered_in_the_first_turn_is_asked_again_told_what_it_is",
+    "tests/unit/reporting/test_a_value_cell_and_a_capability_bullet_are_answered_whole.py::test_a_cell_and_a_bullet_no_row_answers_are_left_out_and_print_so"
+   ],
+   "text_digest": "0ec4575c393d66550fcc06a8a73221c2b9ed4b0f451bd9455c1f5ca85ef76a2c"
+  },
+  {
+   "constant": "malspark.reporting.section_agreement:_CELL_WHOLE",
+   "condition": "within the agreement round's refusal and left-out record of a capability bullet or a value cell (what holds a value cell's sentence), printed in the bundle's and the single-file report's list of unresolved findings; on a render it is read only to name the passage a kept-on-its-quote record names (kept_on_its_quote), never printed beside a sentence",
+   "basis": [
+    "run_summary.validation.unresolved: the agreement round's records, each with its code and message (written by section_agreement.apply_rows): the record of a sentence left out of a bullet or a cell, and the refusal before it"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_value_cell_and_a_capability_bullet_are_answered_whole.py::test_a_cell_unanswered_in_the_first_turn_is_asked_again_told_what_it_is",
+    "tests/unit/reporting/test_a_value_cell_and_a_capability_bullet_are_answered_whole.py::test_a_cell_and_a_bullet_no_row_answers_are_left_out_and_print_so"
+   ],
+   "text_digest": "2e03baa3b703f9bbd4ab7754b60d6f33c5d4389df5338c8a681cdeea854f0d3d"
+  },
+  {
+   "constant": "malspark.reporting.section_agreement:_CELL_EMPTIED",
+   "condition": "within the agreement round's refusal and left-out record of a capability bullet or a value cell (what an emptied value cell prints), printed in the bundle's and the single-file report's list of unresolved findings; on a render it is read only to name the passage a kept-on-its-quote record names (kept_on_its_quote), never printed beside a sentence",
+   "basis": [
+    "run_summary.validation.unresolved: the agreement round's records, each with its code and message (written by section_agreement.apply_rows): the record of a sentence left out of a bullet or a cell, and the refusal before it"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_value_cell_and_a_capability_bullet_are_answered_whole.py::test_a_cell_unanswered_in_the_first_turn_is_asked_again_told_what_it_is",
+    "tests/unit/reporting/test_a_value_cell_and_a_capability_bullet_are_answered_whole.py::test_a_cell_and_a_bullet_no_row_answers_are_left_out_and_print_so"
+   ],
+   "text_digest": "66a17859651a91c750ba34d88946f992637d4603161e51c83217741bd2e8a558"
+  },
+  {
+   "constant": "malspark.reporting.section_agreement:_LIMITATIONS_HELD_LABEL",
+   "condition": "the limitations paragraph's label where it is held to the failed calls, within the agreement round's records and refusals of it, printed in the bundle's and the single-file report's list of unresolved findings; on a render it is read only to name the passage a kept-on-its-quote record names (kept_on_its_quote), never printed beside a sentence",
+   "basis": [
+    "run_summary.validation.unresolved: the agreement round's records, each with its code and message (written by section_agreement.apply_rows): a record or refusal naming a sentence of the limitations paragraph held to the failed calls"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_held_sentence_whose_last_answer_is_refused_is_left_out.py::test_a_held_sentence_whose_last_answer_is_refused_is_left_out",
+    "tests/unit/reporting/test_a_sentence_kept_on_its_quote_prints_with_its_mark.py::test_a_record_naming_a_sentence_the_text_no_longer_holds_prints_nothing"
+   ],
+   "text_digest": "7c8a65c6c8870a76e30a335619c84def4484ac83d81792ec750eef7a2e37fb43"
+  },
+  {
+   "function": "malspark.reporting.section_agreement:_capability_passages",
+   "condition": "each capability bullet's label (\"1. Executive summary, capability bullet N\"), within the agreement round's records and refusals of that passage, printed in the bundle's and the single-file report's list of unresolved findings; on a render it is read only to name the passage a kept-on-its-quote record names (kept_on_its_quote), never printed beside a sentence",
+   "basis": [
+    "the report's closing passages as stored (technical_analysis.analyst_conclusion and analyst_limitations, each capability bullet, the encryption scheme's and each channel's value cells)",
+    "run_summary.validation.unresolved: the agreement round's records, each with its code and message (written by section_agreement.apply_rows): the records naming the passage by its label"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_value_cell_and_a_capability_bullet_are_answered_whole.py::test_each_cell_and_bullet_is_a_passage_answered_whole_and_told_its_ends",
+    "tests/unit/reporting/test_the_console_marks_a_kept_cell_as_the_report_does.py::test_the_fixture_holds_every_shape_the_rules_tell_apart"
+   ],
+   "text_digest": "9b909ce47c3af0b075ac5fb3359a0315d64162b748e97f9e8fb5810d9eabe501"
+  },
+  {
+   "function": "malspark.reporting.section_agreement:_scheme_passages",
+   "condition": "the encryption scheme's field labels, within the agreement round's records and refusals of that passage, printed in the bundle's and the single-file report's list of unresolved findings; on a render it is read only to name the passage a kept-on-its-quote record names (kept_on_its_quote), never printed beside a sentence",
+   "basis": [
+    "the report's closing passages as stored (technical_analysis.analyst_conclusion and analyst_limitations, each capability bullet, the encryption scheme's and each channel's value cells)",
+    "run_summary.validation.unresolved: the agreement round's records, each with its code and message (written by section_agreement.apply_rows): the records naming the passage by its label"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_value_cell_and_a_capability_bullet_are_answered_whole.py::test_each_cell_and_bullet_is_a_passage_answered_whole_and_told_its_ends",
+    "tests/unit/reporting/test_the_console_marks_a_kept_cell_as_the_report_does.py::test_the_fixture_holds_every_shape_the_rules_tell_apart"
+   ],
+   "text_digest": "991251be3e17399fa3e03b406fd5d4d3bc6d3fc2d6d927e5c9164a2401d8bbd0"
+  },
+  {
+   "constant": "malspark.reporting.section_agreement:_CHANNEL_ROW_LABEL",
+   "condition": "each channel's field labels (\"5. Technical analysis, channel row N\"), within the agreement round's records and refusals of that passage, printed in the bundle's and the single-file report's list of unresolved findings; on a render and in the run comparison it is read only to name the passage or the channel cell a kept-on-its-quote record names (kept_on_its_quote, channel_cell_label), never printed beside a sentence",
+   "basis": [
+    "the report's closing passages as stored (technical_analysis.analyst_conclusion and analyst_limitations, each capability bullet, the encryption scheme's and each channel's value cells)",
+    "run_summary.validation.unresolved: the agreement round's records, each with its code and message (written by section_agreement.apply_rows): the records naming the passage by its label"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_value_cell_and_a_capability_bullet_are_answered_whole.py::test_each_cell_and_bullet_is_a_passage_answered_whole_and_told_its_ends",
+    "tests/unit/reporting/test_a_kept_sentence_s_mark_never_lands_beside_another.py::test_the_run_comparison_shows_a_kept_cell_s_mark_and_never_compares_it"
+   ],
+   "text_digest": "e71049204bac8bfc82371aea90d3594fb2e0b3b5005bbc3f312236c4e99597c0"
+  }
+ ]
+}

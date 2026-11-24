@@ -21,6 +21,7 @@ import type {
   QuestionOutcome,
   TechnicalSubsection,
 } from "@/types/malware-report";
+import { keptCellSaid, schemeCellLabel } from "@/lib/keptOnItsQuote";
 
 /** The voice every block in this module speaks with. */
 export const REPORT_MODEL_VOICE = "AI-written";
@@ -176,6 +177,10 @@ export interface TechnicalBlock {
   items: string[];
   /** Labelled facts, in declaration order, each with a value. */
   facts: Array<[string, string]>;
+  /** The labels of the facts whose value cell holds a sentence the agreement round kept as
+   *  written on its quote, which carry the platform's mark (`lib/keptOnItsQuote`); absent
+   *  where none does. */
+  marked?: string[];
   evidence: string[];
 }
 
@@ -257,15 +262,20 @@ export function technicalSubsections(mr: MalwareReport | null | undefined): Tech
   const enc = ta.encryption_scheme;
   if (enc) {
     const facts: Array<[string, string]> = [];
-    const field = (label: string, value: unknown) => {
-      if (said(value)) facts.push([label, said(value)]);
+    const marked: string[] = [];
+    const field = (label: string, value: unknown, cell?: "cipher" | "mode" | "library" | "iv") => {
+      if (!said(value)) return;
+      facts.push([label, said(value)]);
+      // A value cell the agreement round answers carries the mark where it kept a sentence of
+      // it as written on its quote.
+      if (cell && keptCellSaid(mr, schemeCellLabel(cell), value)) marked.push(label);
     };
-    field("Cipher", enc.cipher);
-    field("Mode", enc.mode);
-    field("Library", enc.library);
+    field("Cipher", enc.cipher, "cipher");
+    field("Mode", enc.mode, "mode");
+    field("Library", enc.library, "library");
     field("Key source", enc.key_source);
     field("Key management", enc.key_management);
-    field("IV", enc.iv);
+    field("IV", enc.iv, "iv");
     field("File marker", enc.file_marker);
     field("Extension", enc.extension);
     field("Partial encryption", enc.partial_threshold);
@@ -278,6 +288,7 @@ export function technicalSubsections(mr: MalwareReport | null | undefined): Tech
       body: "",
       items: [],
       facts,
+      ...(marked.length > 0 ? { marked } : {}),
       evidence: said(enc.evidence_ref) ? [said(enc.evidence_ref)] : [],
     });
   }
