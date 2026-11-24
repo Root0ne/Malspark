@@ -42,6 +42,14 @@ drafted rule matches on it (:func:`held`):
   pointer naming several numbers gives their sum (:func:`_count`). A figure
   too large to compute with gives the chance 1.
 
+That standing is one test for the platform (T-850): :func:`hash_standing` gives
+each value an answer of the ``api_hash_resolution`` kind matched its chance and
+whether it is held, computed over every value the answer matched under each
+algorithm, and the draft (:func:`held`), the triage pack's hand-off of names to
+the API catalogue and the report's count of names resolved at runtime all read
+it. It works from an answer, which always holds its figures; refusing a value
+read back from a stored report is the draft's rule alone.
+
 The chance, and the mark that the value was read from its answer in this
 process, are kept on the value for the draft built in the same process and are
 never written to the report document, which carries the words only. A hash read
@@ -78,9 +86,10 @@ import math
 import re
 import unicodedata
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from typing import Any
 
-from malspark.core.tool_declarations import EVERY, parse_path, select
+from malspark.core.tool_declarations import EVERY, ToolFacts, parse_path, select
 from malspark.reporting import tool_kinds
 from malspark.reporting.call_bindings import _field, _file_of
 from malspark.reporting.models import CodeConstant
@@ -173,21 +182,18 @@ def code_constants_from_ledger(ledger: Iterable[Any] | None) -> list[CodeConstan
         if facts.kind == _DECODED:
             seeds.extend(_seeds(rows, str(values.get("seed") or _SEED), said, seen))
         elif facts.kind == _HASHES:
-            figures = _Figures(
-                candidates=_count(data, str(values.get("candidates_tested") or _CANDIDATES_TESTED)),
-                names=_count(data, str(values.get("names_tried") or _NAMES_TRIED)),
-                algorithms=_count(data, str(values.get("algorithms_tried") or _ALGORITHMS_TRIED)),
-            )
+            value_path = str(values.get("value") or _VALUE)
+            algorithm_path = str(values.get("algorithm") or _ALGORITHM)
             hashes.extend(
                 _hashes(
                     rows,
-                    str(values.get("value") or _VALUE),
-                    str(values.get("algorithm") or _ALGORITHM),
+                    value_path,
+                    algorithm_path,
                     str(values.get("name") or _NAME),
                     str(values.get("set") or _SET),
                     said,
                     seen,
-                    figures,
+                    _standing(rows, value_path, algorithm_path, _figures(data, values)),
                 )
             )
     for constant in (*seeds, *hashes):
@@ -208,13 +214,146 @@ def held(constant: CodeConstant) -> bool:
         return constant.places >= LEAST_RESULTS_PER_SEED
     if read_back(constant):
         return False
-    chance = constant.chance
-    return chance is None or chance < CHANCE_BOUND
+    # The chance is its answer's standing (:func:`hash_standing`); a drafted
+    # hash stands under an algorithm that resolves a second value it reads.
+    return _holds(constant.chance, paired=True)
 
 
 def read_back(constant: CodeConstant) -> bool:
     """Whether a hash was read back from a stored report rather than from its answer."""
     return constant.role == "hash" and not constant.built
+
+
+@dataclass(frozen=True)
+class Standing:
+    """How far its answer's own figures hold a value, or an algorithm's count of matches.
+
+    ``chance`` is the chance of the algorithm's count of matched values
+    arising by chance, over the algorithms tried (:func:`chance_of_matches`):
+    for a value, the least of its algorithms'; ``None`` where the answer
+    states no candidates tested or no names tried. ``held`` is whether it is
+    under :data:`CHANCE_BOUND`, and with no figures whether the algorithm
+    matched a second distinct value.
+    """
+
+    chance: float | None
+    held: bool
+
+
+@dataclass(frozen=True)
+class HashStanding:
+    """The standing of every value one hash resolution matched, and of each algorithm.
+
+    ``matched`` is how many distinct values the answer matched under each
+    algorithm, the count each chance is computed on.
+    """
+
+    values: Mapping[int, Standing]
+    algorithms: Mapping[str, Standing]
+    matched: Mapping[str, int]
+
+    def of(self, value: Any) -> Standing | None:
+        """The standing of a value as a row states it (int, ``0x`` text or decimal text)."""
+        number = _number(value)
+        return None if number is None else self.values.get(number)
+
+    def holds(self, value: Any) -> bool:
+        """Whether a value as a row states it is held; ``False`` for one the answer matched not."""
+        standing = self.of(value)
+        return standing is not None and standing.held
+
+    def reads(self, value: Any, algorithm: Any) -> bool:
+        """Whether a value as a row states it is held under the algorithm one reading names.
+
+        Each algorithm keeps its own names: a value held under one algorithm
+        does not carry a name another algorithm reads at chance.
+        """
+        stood = self.algorithms.get(_word(algorithm))
+        return self.of(value) is not None and stood is not None and stood.held
+
+
+def hash_standing(entry: Any) -> HashStanding | None:
+    """Each value an answer of the ``api_hash_resolution`` kind matched, with its standing.
+
+    The one held test of a hash value for the platform. Read from the
+    entry's answer where its declaration points (rows, ``value``,
+    ``algorithm``, and the figures ``candidates_tested``, ``names_tried`` and
+    ``algorithms_tried``), where it points none where the built-in resolver
+    keeps them; never by a tool's name. ``None`` for a failed call, an answer
+    that states an error, or an entry of another kind.
+    """
+    if not bool(_field(entry, "ok")):
+        return None
+    facts = tool_kinds.facts_of(entry)
+    if facts is None or facts.kind != _HASHES:
+        return None
+    data = _field(entry, "structured")
+    if not isinstance(data, Mapping) or data.get("error"):
+        return None
+    return answer_standing(data, facts)
+
+
+def answer_standing(data: Mapping[str, Any], facts: ToolFacts | None = None) -> HashStanding:
+    """:func:`hash_standing` of one answer, read where ``facts`` points.
+
+    With no ``facts``, where the built-in resolver keeps its rows, values and
+    figures: for a line that renders that resolver's own answer.
+    """
+    values = (facts.values if facts is not None else None) or {}
+    rows_path = (facts.rows if facts is not None else None) or _DEFAULT_ROWS[_HASHES]
+    rows = [row for row in select(data, rows_path) if isinstance(row, Mapping)]
+    return _standing(
+        rows,
+        str(values.get("value") or _VALUE),
+        str(values.get("algorithm") or _ALGORITHM),
+        _figures(data, values),
+    )
+
+
+def _holds(chance: float | None, *, paired: bool) -> bool:
+    """The held test: a chance under :data:`CHANCE_BOUND`; with none, a second value paired."""
+    return paired if chance is None else chance < CHANCE_BOUND
+
+
+def _figures(data: Mapping[str, Any], values: Mapping[str, Any]) -> _Figures:
+    """The figures a hash answer states of its scan, where its declaration points them."""
+    return _Figures(
+        candidates=_count(data, str(values.get("candidates_tested") or _CANDIDATES_TESTED)),
+        names=_count(data, str(values.get("names_tried") or _NAMES_TRIED)),
+        algorithms=_count(data, str(values.get("algorithms_tried") or _ALGORITHMS_TRIED)),
+    )
+
+
+def _standing(
+    rows: list[Mapping[str, Any]], value_path: str, algorithm_path: str, figures: _Figures
+) -> HashStanding:
+    """Every distinct value matched under each algorithm, read or not, and its standing.
+
+    An algorithm's chance is that of its count of matched values; a value's,
+    the least of its algorithms'. A value its row states under no algorithm
+    is matched under none and is not held.
+    """
+    matched: dict[str, set[int]] = {}
+    of_value: dict[int, set[str]] = {}
+    for row in rows:
+        number = _first_number(row, value_path)
+        if number is None:
+            continue
+        algorithms = {_word(a) for a in select(row, algorithm_path)} - {""}
+        of_value.setdefault(number, set()).update(algorithms)
+        for algorithm in algorithms:
+            matched.setdefault(algorithm, set()).add(number)
+    by_algorithm: dict[str, Standing] = {}
+    for algorithm, numbers in matched.items():
+        chance = figures.chance(len(numbers), len(matched))
+        paired = len(numbers) >= _LEAST_PER_ALGORITHM
+        by_algorithm[algorithm] = Standing(chance, _holds(chance, paired=paired))
+    by_value: dict[int, Standing] = {}
+    for number, algorithms in of_value.items():
+        stood = [by_algorithm[a] for a in sorted(algorithms)]
+        known = [s.chance for s in stood if s.chance is not None]
+        by_value[number] = Standing(min(known) if known else None, any(s.held for s in stood))
+    return HashStanding(by_value, by_algorithm, {a: len(n) for a, n in matched.items()})
 
 
 def chance_of_matches(matched: int, candidates: int, names: int, algorithms: int) -> float:
@@ -342,14 +481,16 @@ def _hashes(
     set_path: str,
     said: _Said,
     seen: set[int],
-    figures: _Figures,
+    standing: HashStanding,
 ) -> list[CodeConstant]:
-    """The values a hash resolver's hits state under an algorithm that resolves two or more."""
+    """The values a hash resolver's hits state under an algorithm that resolves two or more.
+
+    Each with its chance from the answer's standing (:func:`_standing`),
+    whose count of every distinct value matched under each algorithm, read or
+    not, is also the count a meaning states.
+    """
     read: list[tuple[int, list[str], list[Any], Mapping[str, Any]]] = []
     resolved: dict[str, set[int]] = {}
-    # Every distinct value the answer matched under each algorithm, read or
-    # not: the count a meaning states and the chance is computed on.
-    matched: dict[str, set[int]] = {}
     # Only a value that is read at all counts toward its algorithm's two: a
     # plain value, or one stated with no place, is no second resolution.
     for row in rows:
@@ -357,8 +498,6 @@ def _hashes(
         if number is None:
             continue
         algorithms = sorted({_word(a) for a in select(row, algorithm_path)} - {""})
-        for algorithm in algorithms:
-            matched.setdefault(algorithm, set()).add(number)
         if not _telling(number):
             continue
         offsets = [o for o in select(row, _OFFSETS) if o not in (None, "")]
@@ -378,8 +517,7 @@ def _hashes(
         # The set each reading was resolved in, in the tool's own word: a list of sets is
         # read as its words, and they are said as the names are, the rest counted.
         sets = _sets(select(row, set_path))
-        counts = [(a, len(matched[a])) for a in algorithms]
-        chances = [figures.chance(count, len(matched)) for _a, count in counts]
+        counts = [(a, standing.matched[a]) for a in algorithms]
         meaning = _hash_meaning(said.subject, counts, names, sets)
         if len(counts) > 1:
             readings = _by_algorithm(row, algorithm_path, name_path, set_path)
@@ -394,8 +532,7 @@ def _hashes(
             first_offset=_word(offsets[0]),
             places=len(offsets),
         )
-        known = [c for c in chances if c is not None]
-        constant.chance = min(known) if known else None
+        constant.chance = standing.values[number].chance
         out.append(constant)
     return out
 

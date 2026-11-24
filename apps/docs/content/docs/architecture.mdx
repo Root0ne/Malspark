@@ -533,10 +533,20 @@ pushed one, or a call through a register leave it absent. After that call, the w
 around each from the file's own function table (`tools.pe_image`), and neither
 guesses one. The decoder runs after FLOSS so it can read FLOSS's kept result;
 both run after every other step so no earlier id moves. Where the resolution names
-functions the import table lacks, the pack then records one more
+functions the import table lacks under an algorithm whose standing holds the
+value (the stored-value test of `code_constants.hash_standing`: that
+algorithm's count of matched values under a chance of 0.001, or with no figures
+stated, a second value under it; a value held under one algorithm does not
+carry a name another algorithm reads), the pack then records one more
 `api_capability` entry, last, with those names as `resolved_names` and no
 import names, under the platform the import-set lookup was asked under: the
-capability picture of what the sample resolves at runtime, marked as such. The analysis server
+capability picture of what the sample resolves at runtime, marked as such.
+With no such name the catalogue is not asked and no entry is recorded, and the
+resolver's pack line says, for each algorithm whose values are not held, how
+many values the file holds equal hashes of names under it and why their names
+are not handed on, in the words a YARA draft's closing comment uses; in a
+room too small for any value the line still says those counts and that reason.
+An agent may still ask the catalogue about any names it chooses. The analysis server
 serves the same two functions (see its README for the algorithms, the schemes
 and the readability test). A domain, an address or a URL in a decoded text is
 hidden text the platform recovered, and the publish rule reads it as it reads
@@ -1638,9 +1648,14 @@ Two producers use it:
   A function name the run resolved at runtime from a stored value is not an
   import. `api_capability` takes such names as `resolved_names` and marks them
   in its answer (`obtained`, `resolved_at_runtime_from_hashes`); the report's
-  projection also reads the ledger's `resolve_api_hashes` answers, and a name
-  one resolved that the import table lacks is counted apart
-  (`static.api_capabilities_resolved`). A knowledge-table rule row names which
+  projection also reads the ledger's answers of the API hash resolution kind,
+  and a name one resolved under an algorithm its answer's own figures hold the
+  value under, that the import table lacks, is counted apart
+  (`static.api_capabilities_resolved`). A name read only under values not held,
+  which neither the import table nor the delay-import table holds, is counted
+  in neither profile when an agent asks the catalogue about it as a plain
+  name, and a rule is read on the names it matched without it, so the rule's
+  own floor decides whether it still fires. A knowledge-table rule row names which
   of its matched names were resolved (`resolved_apis`), and the ATT&CK table,
   the static properties, the narrative prompt and the string-resolution
   bundle say "resolved at runtime from hashes" for them; a rule that matched

@@ -125,7 +125,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from functools import partial
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from malspark.agents.evidence_recorder import EvidenceRecorder, result_text
 from malspark.analysis import behaviour_code, directed_text, sandbox_sections
@@ -213,6 +213,9 @@ from malspark.utils.written_forms import (
     pack_escaped,
     sample_written_out,
 )
+
+if TYPE_CHECKING:
+    from malspark.reporting.code_constants import HashStanding
 
 __all__ = [
     "PACK_HEADING",
@@ -735,6 +738,8 @@ class _Pack:
         self.routed = (inputs.file_type or "").strip().lower()
         self.format_facts: dict[str, Any] | None = None
         self.resolved: dict[str, Any] | None = None
+        # The entry that answer was recorded in, read for its declared figures.
+        self.resolved_entry: LedgerEntry | None = None
         # The steps started beside the rest of the pack, by id; each is
         # recorded in its own place at the end, so every id keeps its value.
         self._early: dict[str, _Early] = {}
@@ -1717,6 +1722,7 @@ class _Pack:
         """A PE's hash values named by the platform, from its bytes alone, in seconds."""
         path = self.inputs.sample_path
         args, label, starts = self._starts_args()
+        held = len(self.recorder.entries)
         self.resolved = self.record(
             "resolve_api_hashes",
             args,
@@ -1724,6 +1730,7 @@ class _Pack:
                 "resolve_api_hashes", path=path, function_starts=starts, function_source=label
             ),
         )
+        self.resolved_entry = next((e for e in self.recorder.entries[held:] if e.ok), None)
 
     def _decode_string_blobs(self, step: PackStep) -> None:
         """A PE's encoded strings decoded by the platform, compared with any decoder's strings.
@@ -1777,10 +1784,16 @@ class _Pack:
         """The catalogue asked about the names the resolution read that the import table lacks.
 
         As resolved at runtime (``resolved_names``), under the same platform
-        the import-set lookup was asked under.
+        the import-set lookup was asked under. Only names read under a value
+        the answer's own figures hold (``code_constants.hash_standing``): with
+        none, the catalogue is not asked and no entry is recorded.
         """
+        from malspark.reporting.code_constants import hash_standing
+
         platform = _BEHAVIOUR_PLATFORM_BY_FORMAT.get(self.routed)
-        names = _resolved_not_imported(self.resolved, _imported_names(self.format_facts))
+        entry = self.resolved_entry
+        standing = hash_standing(entry) if entry is not None else None
+        names = _resolved_not_imported(self.resolved, _imported_names(self.format_facts), standing)
         if names and platform is not None:
             self.record(
                 "api_capability",
@@ -3036,13 +3049,17 @@ def _carries_signature(signing: dict[str, Any] | None) -> bool:
     return False
 
 
-def _resolved_not_imported(resolved: dict[str, Any] | None, imported: list[str]) -> list[str]:
+def _resolved_not_imported(
+    resolved: dict[str, Any] | None, imported: list[str], standing: HashStanding | None
+) -> list[str]:
     """The function names a ``resolve_api_hashes`` answer read that the import table lacks.
 
     Readings from the export-name set only (a module name is not a function),
-    once each, in the answer's order; a value read two ways gives both names.
+    each under an algorithm its answer's own figures hold the value under
+    (``standing``), once each, in the answer's order; a value read two ways
+    gives both names where both algorithms hold it. None without a standing.
     """
-    if not isinstance(resolved, dict):
+    if not isinstance(resolved, dict) or standing is None:
         return []
     from malspark.analysis.api_capability_db import canonical_name
 
@@ -3054,6 +3071,8 @@ def _resolved_not_imported(resolved: dict[str, Any] | None, imported: list[str])
             continue
         for reading in hit.get("readings") or []:
             if not isinstance(reading, dict) or str(reading.get("set") or "exports") != "exports":
+                continue
+            if not standing.reads(hit.get("value"), reading.get("algorithm")):
                 continue
             name = str(reading.get("name") or "").strip()
             key = canonical_name(name)
@@ -3749,6 +3768,9 @@ class _View:
 # line that names another tool's answer reads its name from those before it.
 _IN_VIEW: ContextVar[_View | None] = ContextVar("pack_in_view", default=None)
 _CURRENT: ContextVar[LedgerEntry | None] = ContextVar("pack_current", default=None)
+# The entry whose line is being fit to the room left (:func:`_within_room`), for
+# a renderer that reads its answer's declared figures (:func:`_hash_standing`).
+_FITTED: ContextVar[LedgerEntry | None] = ContextVar("pack_fitted", default=None)
 
 
 @contextmanager
@@ -4178,10 +4200,13 @@ def _within_room(entry: LedgerEntry, room: int) -> str | None:
     if shorter is None or not entry.ok or data is None:
         return None
     head = f"[{entry.id}] {_label_of(entry)}: "
+    token = _FITTED.set(entry)
     try:
         body = shorter(_guarded(data), room - len(head))
     except Exception:  # noqa: BLE001 — a renderer must never cost the block
         return None
+    finally:
+        _FITTED.reset(token)
     line = _line_safe(head + body)
     return line if body and len(line) <= room else None
 
@@ -5352,11 +5377,78 @@ def _fit(line: Callable[[int], str], shown: int, max_chars: int | None) -> str:
     return text if len(text) <= max_chars else ""
 
 
+def _hash_standing(data: dict[str, Any]) -> HashStanding:
+    """The standing of each value of the resolver's answer the line renders.
+
+    Read from the entry being rendered, by its declared figures; an answer
+    rendered alone, by the built-in resolver's own places.
+    """
+    from malspark.reporting.code_constants import answer_standing, hash_standing
+
+    entry = _FITTED.get() or _CURRENT.get()
+    standing = hash_standing(entry) if entry is not None else None
+    return standing if standing is not None else answer_standing(data)
+
+
+def _not_held(rows: list[dict[str, Any]], standing: HashStanding) -> list[tuple[str, str]]:
+    """What the line says of the values its answer's own figures do not hold; none for none.
+
+    For each algorithm they are under, what the tool reported of them and
+    why their names are not handed to the API catalogue, as two parts: the
+    reason a YARA draft's closing comment gives (``detection_signatures``);
+    for a value that is no 32-bit number, that; with no figures to compute a
+    chance with, that the algorithm names nothing else; with no algorithm
+    stated, that.
+    """
+    from malspark.reporting.code_constants import CHANCE_BOUND
+    from malspark.reporting.detection_signatures import STORED_HASHES_NOT_HELD
+
+    # Grouped by the algorithms stated and by whether the value is a 32-bit
+    # number at all: one that is not has no standing to give a reason from.
+    grouped: dict[tuple[tuple[str, ...], bool], list[dict[str, Any]]] = {}
+    for row in rows:
+        if standing.holds(row.get("value")):
+            continue
+        readings = [r for r in row.get("readings") or [] if isinstance(r, dict)]
+        algorithms = sorted({str(r.get("algorithm") or "") for r in readings} - {""})
+        number = standing.of(row.get("value")) is not None
+        grouped.setdefault((tuple(algorithms), number), []).append(row)
+    said: list[tuple[str, str]] = []
+    for (stated, _number), unheld in grouped.items():
+        n = len(unheld)
+        under = f" under {' and '.join(stated)}" if stated else ""
+        stood = standing.of(unheld[0].get("value"))
+        if not stated:
+            why = f"{_n(n)} stated under no algorithm"
+        elif stood is None:
+            why = f"{_n(n)} stated as no 32-bit value"
+        elif stood.chance is not None:
+            what, its = ("a name hash", "its") if n == 1 else ("name hashes", "their")
+            why = STORED_HASHES_NOT_HELD.format(
+                n=_n(n), what=what, bound=f"{CHANCE_BOUND:g}", its=its
+            )
+        else:
+            why = f"{_n(n)} under an algorithm that names nothing else in the file"
+        names = "its name is" if n == 1 else "their names are"
+        said.append(
+            (
+                f"{_n(n)} value{'' if n == 1 else 's'} the file holds equal hashes of Windows "
+                f"function or module names{under}",
+                f"{why}, so {names} not handed to the API catalogue",
+            )
+        )
+    return said
+
+
 def _resolved_hashes(data: dict[str, Any], max_chars: int | None = None) -> str:
     """The values the platform named, each with its readings and where it stands.
 
     Every hit whole with no ``max_chars`` and the pack's whole detail;
-    otherwise as many as fit. ``""`` when not even the counts fit.
+    otherwise as many as fit. ``""`` when not even the counts fit. A value its
+    answer's own figures do not hold (:func:`_hash_standing`) is not said to
+    name a function: its algorithm's clause says what the tool reported and
+    why its names are not handed on (:func:`_not_held`), and in a room too
+    small for any value the line still says the counts and that reason.
     """
     rows = [r for r in (data.get("hits") or []) if isinstance(r, dict)]
     lone = [r for r in (data.get("lone_hits") or []) if isinstance(r, dict)]
@@ -5370,6 +5462,15 @@ def _resolved_hashes(data: dict[str, Any], max_chars: int | None = None) -> str:
     names = data.get("names") or {}
     # Said when the answer listed fewer places than hold the values it found.
     cut = f" ({data['occurrences_cut']})" if data.get("occurrences_cut") else ""
+    standing = _hash_standing(data)
+    unheld = sum(1 for row in rows if not standing.holds(row.get("value")))
+    not_held = _not_held(rows, standing) if unheld else []
+    scanned = (
+        f"({looked}, {len(data.get('algorithms') or [])} algorithms over "
+        f"{_n(names.get('names'))} function names of {_n(names.get('dlls'))} DLLs and "
+        f"{_n(names.get('modules'))} module names)"
+    )
+    name = "values the file holds name Windows functions or modules"
 
     def _lone(listed: bool) -> str:
         if not lone:
@@ -5387,11 +5488,17 @@ def _resolved_hashes(data: dict[str, Any], max_chars: int | None = None) -> str:
                 f"no value the file holds names a Windows function or module ({looked})"
                 f"{_lone(listed)}{cut}"
             )
+        if not unheld:
+            opening = f"{_n(total)} {name} {scanned}"
+        else:
+            clauses = [f"{subject}: {why}" for subject, why in not_held]
+            if unheld < total:
+                opening = "; ".join([f"{_n(total - unheld)} {name} {scanned}", *clauses])
+            else:
+                subject, why = not_held[0]
+                opening = "; ".join([f"{subject} {scanned}: {why}", *clauses[1:]])
         return (
-            f"{_n(total)} values the file holds name Windows functions or modules ({looked}, "
-            f"{len(data.get('algorithms') or [])} algorithms over {_n(names.get('names'))} "
-            f"function names of {_n(names.get('dlls'))} DLLs and {_n(names.get('modules'))} "
-            f"module names){_lone(listed)}; each as value = DLL!name [algorithm] or module name "
+            f"{opening}{_lone(listed)}; each as value = DLL!name [algorithm] or module name "
             "[algorithm] @ the offsets from the image base where the value stands (in the "
             "function the file's table puts around it, or after the nearest function start "
             f"another tool listed){cut}"
@@ -5417,7 +5524,21 @@ def _resolved_hashes(data: dict[str, Any], max_chars: int | None = None) -> str:
         return whole
     # The lone hits are said as a count, with the call that lists them, before
     # any hit is left out: the hits are the facts, the lone hits the chances.
-    return _fit(lambda count: _line(count, False), shown, max_chars)
+    fitted = _fit(lambda count: _line(count, False), shown, max_chars)
+    if fitted or not unheld:
+        return fitted
+    # A line with values not held sheds its list of values, its figures and
+    # its key before it sheds itself: the counts and the reason, then where
+    # the values are, as long as that fits.
+    if unheld < total:
+        counts = [f"{_n(total - unheld)} {name}", *(f"{s}: {w}" for s, w in not_held)]
+    else:
+        counts = [f"{s}: {w}" for s, w in not_held]
+    rest = RESOLVED_HASHES_ROOM_SENTENCE.format(shown=0, total=_n(total), offset=0)
+    for shortest in ("; ".join([*counts, rest]), "; ".join(counts)):
+        if len(shortest) <= max_chars:
+            return shortest
+    return ""
 
 
 # What the resolved-hashes line says of the lone hits when it has no room to

@@ -334,10 +334,13 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # `(rule match)` (T-845), the line over an analyst's table of values, which counts its rows by
 # where the values it types as an indicator are (C15), and the methodology's sentence on where
 # the JSON report holds the text a page cut was made from (T-780).
+# Re-pinned when every count of the sandbox's signatures a report prints came to be the rows
+# its signature table prints (T-882): a stored report that holds each signature row twice
+# prints the table's count in the two lines saying what the held sandbox report lists.
 STORED_RENDERS = {
-    "run7": ("0e069ba49a5c6f03", "c1ef647839eb8368"),
-    "run5": ("1630a64187441867", "0d564f60a9856e15"),
-    "run4": ("4142ffee296025e6", "346c5d707e423707"),
+    "run7": ("bff9f09dec63c45a", "4bd6a1f77dfc769e"),
+    "run5": ("967237627a0887f3", "8b0b43b078596609"),
+    "run4": ("c40089e6e512c7c6", "3e010be2a6089945"),
     "local8": ("24fa7a43d8606b6e", "ec2ed9879be550b4"),
     "haiku4": ("545e013bf79b3641", "f7d6e5f46c07308c"),
 }

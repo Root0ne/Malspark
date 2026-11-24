@@ -220,6 +220,21 @@ describe("a field shown but not compared", () => {
   });
 });
 
+describe("a channel cell kept on its quote", () => {
+  const mark = "kept as the report model wrote it";
+  const kept: DiffRow = {
+    ...row("relay", "unchanged"),
+    a: { protocol: "TCP", encryption: "Not keyed in the run", endpoints: [] },
+    b: { protocol: "TCP", encryption: "Not keyed in the run", endpoints: [], encryption_mark: mark },
+  };
+
+  it("shows the platform's mark beside the cell on the side that holds it", () => {
+    expect(sideLines(kept, "b")).toContain(`platform's mark on the encryption: ${mark}`);
+    expect(sideLines(kept, "a").join("\n")).not.toContain(mark);
+    expect(statusWord(kept)).toBe("Unchanged");
+  });
+});
+
 describe("a capped section on paper", () => {
   it("says how many rows it holds of how many", () => {
     expect(cappedNote(200, 350)).toBe(

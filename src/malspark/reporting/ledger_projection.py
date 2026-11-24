@@ -29,7 +29,7 @@ import bisect
 import hashlib
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
@@ -44,6 +44,7 @@ from malspark.analysis.technique_ids import (
 from malspark.core.logger import logger
 from malspark.core.tool_declarations import first, select
 from malspark.reporting import tool_kinds
+from malspark.reporting.code_constants import hash_standing
 from malspark.reporting.dedupe import distinct_signatures, process_identity, signature_identity
 from malspark.reporting.models import (
     DirectedText,
@@ -841,16 +842,24 @@ def static_from_ledger(ledger: list[LedgerEntry]) -> StaticAnalysis | None:
     # (``_names_resolved_at_runtime``) and every rule row says which it matched.
     resolved_keys = {_canonical(name) for name in _names_resolved_at_runtime(ledger, static)}
     imported_keys = {_canonical(row.function) for row in static.imports if row.function}
+    not_held_keys = _names_read_not_held(ledger, static)
     for entry, data in _payloads(ledger, "api_catalogue"):
         rows = [row for row in data.get("capabilities") or [] if isinstance(row, dict)]
         # The names the caller said it resolved, and the ones the ledger's own
         # resolutions name; an import-table name is an import either way.
         said = {_canonical(n) for n in (data.get("resolved_at_runtime_from_hashes") or [])}
         runtime = (said | resolved_keys) - imported_keys
+        # A name read only under values their answers do not hold, which the
+        # import table lacks and the caller asked about as a plain name, is no
+        # import and was not resolved: counted in neither profile, and a rule
+        # is read on the names it matched without it (``_without_names``).
+        neither = not_held_keys - said
         imported_rows = False
         resolved_rows = False
         for row in rows:
             name = str(row.get("api") or "")
+            if _canonical(name) in neither:
+                continue
             at_runtime = _canonical(name) in runtime
             if at_runtime:
                 row_counts = static.api_capabilities_resolved
@@ -868,7 +877,7 @@ def static_from_ledger(ledger: list[LedgerEntry]) -> StaticAnalysis | None:
         corpus = (data.get("corpora") or {}).get("benign")
         if isinstance(corpus, str) and corpus and not static.api_capability_corpus:
             static.api_capability_corpus = corpus
-        for hit in api_capability_hits(data):
+        for hit in api_capability_hits(_without_names(data, neither)):
             matched = [str(a) for a in hit.get("matched_apis") or []]
             matched_at_runtime = [a for a in matched if _canonical(a) in runtime]
             row_hit = {**hit, "source": tool_kinds.declared_name(entry), "evidence_id": entry.id}
@@ -975,13 +984,76 @@ def _names_resolved_at_runtime(ledger: list[LedgerEntry], static: StaticAnalysis
 
     Read from every ``resolve_api_hashes`` answer in the ledger: each reading
     of a value from the export-name set is a function name the program can
-    look up at runtime by that value. A name the import table also holds is an
-    import, and stays one. With no import table recorded, every such name is
-    counted as resolved, which is what the ledger says of it.
+    look up at runtime by that value, where its answer's own figures hold the
+    value under the reading's algorithm (``code_constants.hash_standing``, the
+    platform's one held test; each algorithm keeps its own names). A name the
+    import table also holds is an import, and stays one. With no import table
+    recorded, every such name is counted as resolved, which is what the ledger
+    says of it.
     """
     imported = {_canonical(row.function) for row in static.imports if row.function}
-    found: set[str] = set()
-    for _entry, data in _payloads(ledger, "api_hash_resolution"):
+    return {
+        name
+        for name, held in _resolver_readings(ledger)
+        if held and _canonical(name) not in imported
+    }
+
+
+def _names_read_not_held(ledger: list[LedgerEntry], static: StaticAnalysis) -> set[str]:
+    """The names, compared canonically, a resolution read only under values not held.
+
+    Read as :func:`_names_resolved_at_runtime` reads them: a name some
+    reading holds is resolved, and one the import table or the delay-import
+    table holds is an import; the rest were read only where their answer's own
+    figures do not hold the value under the reading's algorithm.
+    """
+    imported = {
+        _canonical(row.function) for row in (*static.imports, *static.delay_imports) if row.function
+    }
+    held: set[str] = set()
+    not_held: set[str] = set()
+    for name, holds in _resolver_readings(ledger):
+        (held if holds else not_held).add(_canonical(name))
+    return not_held - held - imported
+
+
+def _without_names(data: Mapping[str, Any], names: set[str]) -> Mapping[str, Any]:
+    """A catalogue answer without ``names``: neither as a row nor in a rule's matched list.
+
+    A rule is then read on the names that stand, so its own floor decides
+    whether it still fires. With no name to leave out the answer is returned
+    as it is.
+    """
+    if not names:
+        return data
+    rows: list[Any] = []
+    for row in data.get("capabilities") or []:
+        if not isinstance(row, Mapping):
+            rows.append(row)
+            continue
+        if _canonical(str(row.get("api") or "")) in names:
+            continue
+        rules: list[Any] = []
+        for rule in row.get("techniques") or []:
+            if isinstance(rule, Mapping):
+                matched = [a for a in rule.get("matched") or [] if _canonical(str(a)) not in names]
+                rule = {**rule, "matched": matched}
+            rules.append(rule)
+        rows.append({**row, "techniques": rules})
+    return {**data, "capabilities": rows}
+
+
+def _resolver_readings(ledger: list[LedgerEntry]) -> Iterator[tuple[str, bool]]:
+    """Each function name a resolution read from the export-name set, and whether it holds.
+
+    From every answer of the API hash resolution kind that has a standing; a
+    reading holds where its answer's own figures hold the value under the
+    reading's algorithm.
+    """
+    for entry, data in _payloads(ledger, "api_hash_resolution"):
+        standing = hash_standing(entry)
+        if standing is None:
+            continue
         for hit in data.get("hits") or []:
             if not isinstance(hit, dict):
                 continue
@@ -991,9 +1063,8 @@ def _names_resolved_at_runtime(ledger: list[LedgerEntry], static: StaticAnalysis
                 if str(reading.get("set") or "exports") != "exports":
                     continue
                 name = str(reading.get("name") or "").strip()
-                if name and _canonical(name) not in imported:
-                    found.add(name)
-    return found
+                if name:
+                    yield name, standing.reads(hit.get("value"), reading.get("algorithm"))
 
 
 def _not_held(

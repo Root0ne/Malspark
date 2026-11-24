@@ -760,23 +760,47 @@ def _command_items(run: RunRecord) -> list[_Item]:
     return items
 
 
+# A channel cell holding a sentence the agreement round kept as written on its quote shows the
+# platform's mark beside it, as every report printing the cell does: shown, never compared, so
+# the mark alone is never a difference between two runs. A cell not holding it shows none (T-881).
+_KEPT_CELL_FIELDS = {"protocol": "protocol_mark", "encryption": "encryption_mark"}
+
+
 def _c2_items(run: RunRecord) -> list[_Item]:
+    from malspark.reporting.section_agreement import (
+        channel_cell_label,
+        kept_cell_said,
+        kept_on_its_quote_records,
+        kept_under,
+    )
+
+    mr = _map(run.malware_report)
+    named = kept_on_its_quote_records(mr.get("run_summary"))
     items: list[_Item] = []
-    for raw in _list(_map(run.malware_report).get("c2_channels")):
+    # Each channel by its place in the list, a channel with no name counted, as the round
+    # numbers its cells.
+    for index, raw in enumerate(_list(mr.get("c2_channels")), 1):
         row = _map(raw)
         name = _text(row.get("name"))
         if not name:
             continue
+        fields: dict[str, Any] = {
+            "protocol": row.get("protocol"),
+            "encryption": row.get("encryption"),
+            "endpoints": sorted(_text(e) for e in _list(row.get("endpoints")) if _text(e)),
+        }
+        for cell, shown in _KEPT_CELL_FIELDS.items():
+            said = kept_under(named, channel_cell_label(index, cell)) if named else ()
+            mark = kept_cell_said(row.get(cell), said)
+            if mark:
+                fields[shown] = mark
         items.append(
             _Item(
                 name,
                 name,
-                {
-                    "protocol": row.get("protocol"),
-                    "encryption": row.get("encryption"),
-                    "endpoints": sorted(_text(e) for e in _list(row.get("endpoints")) if _text(e)),
-                },
+                fields,
                 _ids(row.get("evidence_ref"), _list(row.get("evidence_refs"))),
+                derived=frozenset(_KEPT_CELL_FIELDS.values()),
             )
         )
     return items

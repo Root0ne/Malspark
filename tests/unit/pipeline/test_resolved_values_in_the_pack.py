@@ -95,14 +95,27 @@ class TestThePackRunsThem:
         assert "names resolved at runtime from hashes, not imports" in line
 
     def test_a_resolved_name_the_import_table_holds_is_not_asked_again(self) -> None:
+        from malspark.reporting.code_constants import answer_standing
+
         answer = {
             "hits": [
-                {"readings": [{"set": "exports", "name": "CreateFileW"}]},
-                {"readings": [{"set": "modules", "name": "kernel32.dll"}]},
-                {"readings": [{"set": "exports", "name": "VirtualAlloc"}]},
+                {
+                    "value": f"{n + 0x10000:#010x}",
+                    "readings": [{"set": s, "name": name, "algorithm": "a"}],
+                }
+                for n, (s, name) in enumerate(
+                    (
+                        ("exports", "CreateFileW"),
+                        ("modules", "kernel32.dll"),
+                        ("exports", "VirtualAlloc"),
+                    )
+                )
             ]
         }
-        assert triage_pack._resolved_not_imported(answer, ["CreateFileW"]) == ["VirtualAlloc"]
+        standing = answer_standing(answer)
+        assert triage_pack._resolved_not_imported(answer, ["CreateFileW"], standing) == [
+            "VirtualAlloc"
+        ]
 
     def test_a_file_that_is_not_routed_as_a_pe_does_not(self, tmp_path: Path) -> None:
         target = tmp_path / "a.txt"
