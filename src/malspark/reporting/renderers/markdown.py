@@ -91,6 +91,7 @@ from malspark.reporting.category_words import category_shown
 from malspark.reporting.dedupe import (
     distinct_processes,
     distinct_signatures,
+    printed_signatures,
     signature_identity_without_processes,
 )
 from malspark.reporting.defang import ProseDefanger, defang
@@ -1473,9 +1474,7 @@ class MarkdownRenderer:
             lines.append("")
 
         # Told apart by what the table prints: the processes are not among it.
-        signatures = distinct_signatures(
-            dyn.sandbox_signatures, signature_identity_without_processes
-        )
+        signatures = printed_signatures(dyn.sandbox_signatures)
         if signatures:
             lines.extend(
                 [
@@ -3748,7 +3747,7 @@ def _sandbox_held(report: MalwareReport) -> list[str]:
         dropped, mutexes = operations("write"), operations("mutex")
         counted = (
             (processes(dyn.process_tree), "process", "processes"),
-            (len(dyn.sandbox_signatures), "signature", "signatures"),
+            (len(printed_signatures(dyn.sandbox_signatures)), "signature", "signatures"),
             (dropped, "row of its dropped-files list", "rows of its dropped-files list"),
             (mutexes, "mutex name", "mutex names"),
             (

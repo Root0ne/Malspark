@@ -44,6 +44,7 @@ import yaml
 
 from malspark.core import ctype_locale
 from malspark.core.logger import logger
+from malspark.reporting.dedupe import printed_signatures
 from malspark.reporting.models import (
     DetectionRule,
     DraftNotBuilt,
@@ -2302,7 +2303,9 @@ def drafts_not_built(report: MalwareReport, rules: list[DetectionRule]) -> list[
             are="is" if len(every_host) == 1 else "are",
             reasons=" and ".join(dict.fromkeys(every_host)),
         )
-    count = len(_collect_signature_names(report))
+    # The rows the report's signature table prints, not the texts a draft's
+    # description lists (two signatures may share one description).
+    count = len(printed_signatures(report.dynamic.sandbox_signatures)) if report.dynamic else 0
     if count:
         why += _SIGMA_SIGNATURES_SELECT_NOTHING.format(
             count="signature" if count == 1 else f"{count} signatures",

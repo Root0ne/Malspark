@@ -507,3 +507,13 @@ def distinct_signatures(
             seen.add(key)
             out.append(signature)
     return out
+
+
+def printed_signatures(signatures: list[Any]) -> list[Any]:
+    """The sandbox signature rows the report's signature table prints, once each, in order.
+
+    Told apart by what the table prints (:func:`signature_identity_without_processes`).
+    Every count of the sandbox's signatures a report prints is the length of this list,
+    so a sentence never counts the rows otherwise than the table shows them.
+    """
+    return distinct_signatures(signatures, signature_identity_without_processes)
