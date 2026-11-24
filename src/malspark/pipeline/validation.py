@@ -11910,7 +11910,9 @@ def _not_found_whole_label(
     found whole in the holder, or only inside a longer run of text there (with
     the run, or that it is not shown), or in how many entries of each where
     several hold it (:class:`_Found`). Where one of several values stands only
-    inside a run, each value is said for itself.
+    inside a run, each value is said for itself. Where a cited entry's bytes
+    write a value whole and chance alone explains it, the label says so
+    (:func:`_label_held_by_chance`), as the question does.
     """
     if found_in is None:
         found_in = {(h, value): _found_in(entries, h, value) for value in values for h in holders}
@@ -11920,6 +11922,7 @@ def _not_found_whole_label(
         said += f" and {len(values) - _MAX_NAMED_IDS} more"
     one = len(values) == 1
     head = f"{said} {'was' if one else 'were'} not found whole in {', '.join(cited)}; "
+    head += _label_held_by_chance(values, cited, entries)
     if all(found_in[(holder, value)].whole for value in values for holder in holders):
         where = entries.named(holders[0]) if len(holders) == 1 else f"{len(holders)} other entries"
         return f"{head}{'it was' if one else 'they were'} found whole in {where}"
@@ -11929,6 +11932,27 @@ def _not_found_whole_label(
         _label_of_value(f'"{value}"', value, holders, entries, found_in)
         for value in values[:_MAX_NAMED_IDS]
     )
+
+
+def _label_held_by_chance(values: Sequence[str], cited: Sequence[str], entries: EntryTexts) -> str:
+    """:func:`_not_found_whole_label`'s clause for bytes that write a value whole by chance.
+
+    Empty where no cited entry's bytes hold a value named. Otherwise, of each
+    such value, the cited entries whose bytes write it whole and why that is
+    not counted (:func:`_bytes_holding_by_chance`), in the question's own
+    words; ids and values stand as the label writes them.
+    """
+    by_chance = _bytes_holding_by_chance(values, cited, entries)
+    one = len(values) == 1
+    said = ""
+    for value in values[:_MAX_NAMED_IDS]:
+        ids = by_chance.get(value)
+        if not ids:
+            continue
+        what = "it" if one else f'"{value}"'
+        writes = "writes" if len(ids) == 1 else "write"
+        said += f"the bytes {', '.join(ids)} {writes} hold {what} whole, {BYTES_HELD_BY_CHANCE}; "
+    return said
 
 
 def _label_of_value(

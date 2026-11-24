@@ -318,6 +318,35 @@ class TestTheQuestionNamesTheByteReading:
         ) in found.message
         assert "as the bytes its text writes" not in found.message
 
+    def test_the_label_says_what_bytes_holding_the_value_by_chance_hold(self) -> None:
+        (found,) = _asked(json.dumps({"hex": _large_dump_writing(b"cmd")}), value="cmd")
+
+        assert found.labels == (
+            '"cmd" was not found whole in ev_0001; the bytes ev_0001 writes hold it whole, but '
+            "at its length and among so many bytes chance alone would put it there at least as "
+            "often as the platform's chance bound allows, so that is not counted as holding it; "
+            "it was found whole in ev_0002 (t)",
+        )
+
+    def test_the_label_names_the_one_of_two_values_bytes_hold_by_chance(self) -> None:
+        cited = json.dumps({"hex": _large_dump_writing(b"cmd")})
+        sentence = f"It runs `cmd` with `{SWITCH}` [ev_0001]."
+
+        (found,) = wrong_entry_citations({"body": sentence}, _texts(cited), prose=("body",))
+
+        (label,) = found.labels
+        assert (
+            'not found whole in ev_0001; the bytes ev_0001 writes hold "cmd" whole, but at its '
+            "length and among so many bytes chance alone would put it there at least as often "
+            "as the platform's chance bound allows, so that is not counted as holding it; "
+        ) in label
+        assert f'hold "{SWITCH}" whole' not in label
+
+    def test_the_label_of_bytes_that_do_not_hold_the_value_says_nothing_of_bytes(self) -> None:
+        (found,) = _asked(json.dumps({"hex": LONGER_HEX}))
+
+        assert all("the bytes" not in label for label in found.labels)
+
     def test_an_entry_writing_no_bytes_is_said_read_as_text(self) -> None:
         (found,) = _asked(json.dumps({"s": "nothing of the kind"}))
 
