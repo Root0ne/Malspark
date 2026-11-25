@@ -3917,7 +3917,60 @@ def current_run_state(agent: Any) -> str:
     is never told the ledger ends before it. An agent briefed without the
     state (``run_state_source``), or with no entry of its own yet, reads the
     block it was briefed with.
+
+    An agent holding a tool of the request kind reads the job's detonations
+    as they stand at that turn too (:func:`_with_detonations`).
     """
+    return _with_detonations(agent, _ledger_run_state(agent))
+
+
+def _holds_request_kind(agent: Any) -> bool:
+    """Whether a tool ``agent`` holds declares the request kind; read once per tool list."""
+    from malspark.agents.tool_pinning import declared_facts_of
+    from malspark.providers.detonation_requests import REQUEST_KIND
+
+    tools = tuple(getattr(agent, "tools", None) or ())
+    held = getattr(agent, "_request_kind_held", None)
+    # The tools themselves are kept with the answer, so the list it was read
+    # from is the same objects, never another list at the same addresses.
+    if (
+        isinstance(held, tuple)
+        and len(held) == 2
+        and isinstance(held[0], tuple)
+        and len(held[0]) == len(tools)
+        and all(a is b for a, b in zip(held[0], tools, strict=True))
+    ):
+        return bool(held[1])
+    holds = any(getattr(declared_facts_of(tool), "kind", "") == REQUEST_KIND for tool in tools)
+    with contextlib.suppress(Exception):
+        agent._request_kind_held = (tools, holds)
+    return holds
+
+
+def _with_detonations(agent: Any, body: str) -> str:
+    """``body`` and the job's detonations line, for an agent holding a tool of the request kind.
+
+    Keyed on the declared kind, never on a name: every other agent reads
+    ``body`` as it is. Regenerated at every turn from the job's records
+    (``detonation_requests.detonations_line``). Never raises: a line that
+    cannot be built is left out.
+    """
+    try:
+        container = getattr(agent, "_container", None)
+        if container is None or not _holds_request_kind(agent):
+            return body
+        from malspark.providers.detonation_requests import detonations_line
+
+        line = detonations_line(container)
+    except Exception:  # noqa: BLE001 — the block without the line still holds
+        return body
+    if not line:
+        return body
+    return f"{body}\n{line}" if body else line
+
+
+def _ledger_run_state(agent: Any) -> str:
+    """:func:`current_run_state`'s ledger lines: the block briefed, with the agent's own entries."""
     body = str(getattr(agent, "run_state_block", "") or "")
     source = getattr(agent, "run_state_source", None)
     if not body or not isinstance(source, Mapping):

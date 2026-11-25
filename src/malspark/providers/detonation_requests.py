@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 from malspark.core.logger import logger
 from malspark.providers.detonation import detonation_name
 from malspark.schemas.evidence import unissued_ids
+from malspark.utils.written_forms import pack_escaped
 
 if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
@@ -354,7 +355,128 @@ def _later_step(container: Any) -> tuple[str, bool]:
         return "", False
 
 
-def _limits(container: Any) -> str:
+def detonations_left(container: Any) -> int:
+    """How many more detonations the job can accept now: its ceiling less every one held."""
+    with _LOCK:
+        return max(0, ceiling_of(container) - len(_detonations_held(container)))
+
+
+# The run-state line of the job's detonations (:func:`detonations_line`).
+DETONATIONS_LINE = (
+    "detonations: the job can accept {left} more (its ceiling is {ceiling}, the job's own "
+    "included); {items}"
+)
+# A further detonation's launch, where the sandbox was handed the sample
+# without the arguments asked for.
+SUBMITTED_WITHOUT_ARGUMENTS = "submitted without its arguments (the provider did not pass them)"
+
+
+def _askers(requests: list[Any]) -> str:
+    """``dynamic (r1) and network (r3)``: each agent that asked, with its request."""
+    named = []
+    for asker in requests:
+        agent = pack_escaped(str(asker.get("agent") or "an agent"))
+        request = pack_escaped(str(asker.get("request") or ""))
+        named.append(f"{agent} ({request})" if request else agent)
+    return " and ".join(named)
+
+
+def _asked_with(name: str, askers: list[Any], arguments: str, *, reads: bool) -> str:
+    """``asked for by … with `<launch text>```, with the escape hint where it is shown changed.
+
+    The hint names where the exact text is (the ``launched_with`` of a read
+    of the detonation), so it is said only where such reads exist.
+    """
+    from malspark.pipeline.triage_pack import LAUNCH_SHOWN_ESCAPED
+    from malspark.reporting.detonation_marks import launch_text
+
+    shown = launch_text(arguments)
+    hint = f" {LAUNCH_SHOWN_ESCAPED.format(name=name)}" if reads and shown != arguments else ""
+    return f"asked for by {_askers(askers)} with `{shown}`{hint}"
+
+
+def _state_words(record: Any) -> str:
+    """How a detonation with a record stands, from that record alone."""
+    failure = str(getattr(record, "failure", "") or "")
+    said = f" ({pack_escaped(failure)})" if failure else ""
+    if getattr(record, "running", False):
+        return "being carried out now"
+    if getattr(record, "reported", False):
+        return "made, reported"
+    if getattr(record, "submit_returned", False):
+        return f"submitted, no report{said}"
+    return f"not made{said}"
+
+
+def _honoured(record: Any) -> bool:
+    launch = getattr(record, "launch", None)
+    return isinstance(launch, dict) and launch.get("honoured") is True
+
+
+def _record_item(record: Any) -> str:
+    """One detonation the job holds a record of, as the run-state line names it."""
+    from malspark.providers.detonation import JOB_ORIGIN
+    from malspark.reporting.detonation_marks import launch_text
+
+    name = str(record.name)
+    arguments = str(getattr(record, "arguments", "") or "")
+    submitted = bool(getattr(record, "submit_returned", False))
+    if getattr(record, "origin", JOB_ORIGIN) == JOB_ORIGIN:
+        who = "the job's own"
+        if submitted and arguments and _honoured(record):
+            who += f", launched with `{launch_text(arguments)}`"
+        elif submitted and arguments:
+            who += f", {SUBMITTED_WITHOUT_ARGUMENTS}"
+        elif submitted:
+            who += ", launched without arguments"
+    else:
+        askers = [a for a in getattr(record, "requested_by", ()) or () if isinstance(a, dict)]
+        who = _asked_with(name, askers, arguments, reads=bool(getattr(record, "reported", False)))
+        if submitted and not _honoured(record):
+            who += f", {SUBMITTED_WITHOUT_ARGUMENTS}"
+    return f"{name}, {who}: {_state_words(record)}"
+
+
+def detonations_line(container: Any) -> str:
+    """The job's detonations as one run-state line, from its records as they stand now.
+
+    Every detonation the job holds, in order, by the rule the ceiling counts
+    them by (:func:`_detonations_held`): each made one by its record (who
+    asked for it and with what launch text, and how it stands: made and
+    reported, submitted with no report, not made, being carried out now),
+    the job's own with no record yet as such, and each accepted one not
+    carried out yet with every request it carries out. "launched with" is
+    said only where the sandbox honoured the launch. The launch text is
+    written as every surface writes it (``detonation_marks.launch_text``).
+    States no time, no promise and no instruction.
+    """
+    with _LOCK:
+        records = list(getattr(container, "detonations", ()) or ())
+        requests = list(getattr(container, "detonation_requests", ()) or ())
+        ceiling = ceiling_of(container)
+        held = _detonations_held(container)
+    items = [_record_item(record) for record in records]
+    if not records:
+        items.append("d1, the job's own: no record yet")
+    named = {str(record.name) for record in records} | ({"d1"} if not records else set())
+    for request in requests:
+        name = str(request.detonation or "")
+        if request.state != ACCEPTED or not name or name in named:
+            continue
+        named.add(name)
+        askers = [
+            r.asker() for r in requests if r.state in (ACCEPTED, JOINED) and r.detonation == name
+        ]
+        items.append(
+            f"{name}, {_asked_with(name, askers, request.arguments, reads=False)}: "
+            "accepted, not carried out yet"
+        )
+    return DETONATIONS_LINE.format(
+        left=max(0, ceiling - len(held)), ceiling=ceiling, items="; ".join(items)
+    )
+
+
+def limits_sentence(container: Any) -> str:
     """The physical limits the tool's description states, from the job's settings."""
     ceiling = ceiling_of(container)
     sandbox = getattr(getattr(container, "config", None), "sandbox", None)
@@ -459,6 +581,6 @@ def request_tool(container: Any) -> BaseTool:
         "one made after the last of them began is refused as too late. A detonation "
         "already made is compared on its exact launch text: the pack shows a later "
         "detonation's launch text escaped, and the exact text is the launched_with of any "
-        "read of that detonation. " + _limits(container)
+        "read of that detonation. " + limits_sentence(container)
     )
     return StructuredTool.from_function(func=_request, name=REQUEST_TOOL, description=description)

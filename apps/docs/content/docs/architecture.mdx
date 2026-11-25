@@ -1277,7 +1277,9 @@ turn after it: the node briefs the agent with the state it rendered the block
 from, and each turn renders it again with the entries the agent filed since
 appended (`base_agent.current_run_state`), so the ledger line and the failed
 tools are those of that turn, and a retry is never told the ledger ends before
-the entries its answer cites. It comes off
+the entries its answer cites. An agent holding a tool of the request kind reads
+one more line, the job's detonations as their records stand at that turn
+(`detonation_requests.detonations_line`). It comes off
 a message again, leaving its bytes exactly as they were, once that message is
 no longer last, so a prompt carries exactly one block. It goes at the end
 because it changes every turn: anywhere earlier, the changed line would change

@@ -950,6 +950,22 @@ step, so steps running at once never read each other's): a stage running beside
 the asker's is not after it. An accepted answer promises a further turn only
 where the debate's first negotiation is still ahead.
 
+**What a holder reads.** Every turn of an agent holding a tool of the request
+kind (`detonation_request`, read through the tool's declaration, never its
+name) carries one more run-state line, built again at each turn from the job's
+records: how many more detonations the job can accept, and each detonation it
+holds. A requested one is "asked for by" each agent that asked, with its
+request, "with" its launch text; "launched with" is said only where the
+sandbox honoured the launch, and a submission the provider made without the
+arguments says so. Each is made and reported, submitted with no report (its
+failure as recorded), not made (its failure), being carried out now, or
+accepted and not carried out yet; the job's own detonation with no record yet
+says so, and its launch arguments, where the operator gave the job some, are
+stated as its launch. The launch text is written as every surface writes it,
+and a reported detonation's escaped text carries the pack's hint that its exact
+text is the `launched_with` of a read. Every other agent's run state is
+unchanged.
+
 **Carrying out.** An accepted request is carried out on entry of the next step
 of the graph that has an agent reading the sandbox (an agent whose tools come
 from the sandbox source, or whose definition holds it), or of the debate's first
