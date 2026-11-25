@@ -31,6 +31,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from pydantic import BaseModel, model_validator
+
 from malspark.core.logger import logger
 from malspark.providers.detonation import detonation_name
 from malspark.schemas.evidence import unissued_ids
@@ -52,7 +54,9 @@ REFUSED = "refused"
 # What the tool answers, by the check that refused it.
 REFUSED_NO_REASON = "give the reason the sample should be detonated with these arguments"
 REFUSED_NO_CITATIONS = (
-    "cite the ledger entries (ev_…) that led you to these arguments, as cited_entries"
+    "cite as cited_entries the ledger entries (ev_…) these arguments rest on, whichever call "
+    "filed them (yours, another agent's or the platform's): at least one, each issued earlier "
+    "in this run"
 )
 REFUSED_UNISSUED = "these cited entries were not issued earlier in this run: {ids}"
 REFUSED_NOT_ONE_LINE = "the arguments are not one command line: {problem}"
@@ -629,11 +633,14 @@ def request_tool(container: Any) -> BaseTool:
         return answer
 
     description = (
-        "Ask for a further detonation of the sample, started with launch arguments you "
-        "found by your own analysis (a password the sample checks, an installer switch). "
+        "Ask for a further detonation of the sample, started with launch arguments (a "
+        "password the sample checks, an installer switch). "
         "``arguments`` is one command line as typed after the program's name; "
-        "``reason`` says why; ``cited_entries`` are the ledger entries (ev_…) that led "
-        "you to the arguments. The tool detonates nothing itself: it answers whether the "
+        "``reason`` says why; ``cited_entries`` are the ledger entries (ev_…) the "
+        "arguments rest on, whichever call filed them (yours, another agent's or the "
+        "platform's): the platform checks that at least one is given and that each was "
+        "issued earlier in this run, and nothing else about them. "
+        "The tool detonates nothing itself: it answers whether the "
         "request is accepted, as which detonation (d2, d3…) and when it will be run, "
         "joined to an identical pending one, or refused and why. A request is carried out "
         "on entry of the next step of the run that has an agent reading the sandbox, so it "
@@ -643,4 +650,32 @@ def request_tool(container: Any) -> BaseTool:
         "detonation's launch text escaped, and the exact text is the launched_with of any "
         "read of that detonation. " + limits_sentence(container)
     )
-    return StructuredTool.from_function(func=_request, name=REQUEST_TOOL, description=description)
+    return StructuredTool.from_function(
+        func=_request,
+        name=REQUEST_TOOL,
+        description=description,
+        args_schema=RequestArguments,
+        infer_schema=False,
+    )
+
+
+class RequestArguments(BaseModel):
+    """The arguments of one request for a further detonation.
+
+    ``cited_entries`` has no default, so the schema a model reads marks it
+    required: a request that cites no entry is refused
+    (:data:`REFUSED_NO_CITATIONS`). A call that leaves it out or sends
+    ``null`` all the same is read as citing none, so it is refused in the
+    tool's own words and filed on the job's record like every other request.
+    """
+
+    arguments: str
+    reason: str
+    cited_entries: list[str] | str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _none_cited(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("cited_entries") is None:
+            return {**data, "cited_entries": ""}
+        return data

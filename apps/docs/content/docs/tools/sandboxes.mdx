@@ -938,6 +938,15 @@ the request and answers at once, in code:
 | refused, naming `dN` | a detonation already made was launched with exactly these arguments: read it if it reported, read it once it returns if it is running, and it is not launched again if it returned no report |
 | refused | the value is not one command line; no reason; no cited entries, or entries the run had not issued before the call (named); mock mode, no sample, or a provider that detonates nothing or cannot pass the arguments (with the provider's note); the ceiling is reached; no later step of the run has an agent that reads the sandbox |
 
+`cited_entries` is required: the ledger entries the arguments rest on,
+whichever call filed them (the asking agent's own, another agent's or the
+platform's). The tool checks that at least one is given and that each id was
+issued earlier in the run, and nothing else about them; its description, its
+schema and its refusal say exactly that, and none of them asks that the
+arguments be the asking agent's own finding. A call that leaves the field out or
+sends `null` is read as citing none: it is refused in the tool's own words and
+filed like every other request.
+
 The tool's description states the sandbox's physical limits: the ceiling
 (`core.sandbox.max_detonations_per_job`, default 4, the job's own detonation
 included), the provider's detonation time, that each submission sends the

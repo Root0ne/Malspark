@@ -1,0 +1,3 @@
+### Fixed
+
+- **The request for a further detonation says what it checks of the entries it cites (T-904).** The tool's description, its schema and its refusal for a request that cites no entry state one rule: `cited_entries` is required and names the ledger entries the arguments rest on, whichever call filed them (the asking agent's own, another agent's or the platform's); the tool checks that at least one is given and that each was issued earlier in the run, and nothing else about them. No text says the arguments must be the asking agent's own finding. A call that leaves the field out is still refused in the tool's own words and filed like every other request.
