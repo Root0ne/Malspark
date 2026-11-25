@@ -1,9 +1,10 @@
-"""An agent asks for a further detonation of the sample, with launch arguments it found.
+"""An agent asks for a further detonation of the sample, with launch arguments the team found.
 
 Some samples show their behaviour only when started with an argument an
 analyst has to find: a locker's password held in the binary, an installer's
 switch. The operator hands the run nothing the agents could find themselves,
-so the agent that finds it asks for a further detonation with it, through the
+so an agent asks for a further detonation with it (the one that found it, or
+another that holds the tool and cites the entries it rests on), through the
 ``request_detonation`` tool of the in-process ``sandbox`` source: any agent
 whose definition holds that source may ask, and no agent is named here.
 
