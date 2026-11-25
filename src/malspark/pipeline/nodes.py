@@ -3461,7 +3461,7 @@ UPSTREAM_QUESTIONS_HEADING = (
     "words, one line, under the platform's field labels):"
 )
 UPSTREAM_QUESTIONS_LEFT_OUT = (
-    "- {count} more open question(s) are not shown here (the upstream block's room)"
+    "- {count} more open question(s) are not shown here (no room was left for them)"
 )
 
 
@@ -3554,8 +3554,8 @@ def upstream_findings(
     fits. A block of claims cut at the limit takes no question. ``full``
     carries the upstream answers whole and gets no questions block, so no
     question is shown twice. ``fits`` is a further test the whole block must
-    pass for each line: the node's, that the questions cost no claim its place
-    in the agent's input (:func:`_keeps_the_claims`).
+    pass for each line: the node's, that the block stands whole in the first
+    chunk of the agent's input (:func:`_keeps_the_claims`).
     """
     mode = str(getattr(stage, "inject_upstream", "findings"))
     if mode == "none":
@@ -3804,17 +3804,19 @@ def _with_upstream(chunks: list, block: str) -> list:
     return [replace(head, content=content, char_count=len(content)), *chunks[1:]]
 
 
-def _keeps_the_claims(chunks: list, claims: str, room: Room | None) -> bool:
-    """Whether the first of ``chunks`` holds ``claims`` whole and is sent whole.
+def _keeps_the_claims(chunks: list, handed: str, room: Room | None) -> bool:
+    """Whether the first of ``chunks`` holds the ``handed`` block whole and is sent whole.
 
-    Where :func:`_with_upstream` put them: at the head of a prose chunk, or
-    in the ``upstream_findings`` field of a JSON head. A single chunk must
-    also fit the analyst's room, which its prompt would otherwise shorten.
+    ``handed`` is the whole hand-off, claims and the questions shown, so no
+    claim and no question line is cut or moved to another chunk. Where
+    :func:`_with_upstream` put it: at the head of a prose chunk, or in the
+    ``upstream_findings`` field of a JSON head. A single chunk must also fit
+    the analyst's room, which its prompt would otherwise shorten.
     """
     if not chunks:
         return True
     head = str(chunks[0].content)
-    if claims and not (head.startswith(claims) or json.dumps(claims)[1:-1] in head):
+    if handed and not (head.startswith(handed) or json.dumps(handed)[1:-1] in head):
         return False
     if len(chunks) == 1 and room is not None:
         bound = room(head)
@@ -3832,22 +3834,22 @@ def _handed_upstream(
     """``chunks`` with the upstream ``block`` in their head, joined where sources fit together.
 
     ``block`` is the hand-off the head source was sized for. Where, with its
-    open questions, a claim of it is not whole in the first chunk or a single
+    open questions, the block is not whole in the first chunk or a single
     chunk is past the analyst's room (:func:`_keeps_the_claims`), the
-    questions are fitted again, line by line, to the chunks as they are; with
-    none fitting the block is its claims alone (``handoff`` asked with no
-    room for a question).
+    questions are fitted again, line by line with the line counting those
+    left out, to the chunks as they are; with none fitting the block is its
+    claims alone (``handoff`` asked with no room for a question).
     """
     shown = joined_when_it_fits(_with_upstream(chunks, block), config, room)
     if not block:
         return shown
     claims = handoff(_no_question_fits)
-    if claims == block or _keeps_the_claims(shown, claims, room):
+    if claims == block or _keeps_the_claims(shown, block, room):
         return shown
 
     def fits(candidate: str) -> bool:
         joined = joined_when_it_fits(_with_upstream(chunks, candidate), config, room)
-        return _keeps_the_claims(joined, claims, room)
+        return _keeps_the_claims(joined, candidate, room)
 
     return joined_when_it_fits(_with_upstream(chunks, handoff(fits)), config, room)
 
@@ -4778,8 +4780,8 @@ def make_stage_agent_node(
                 )
 
             # Sources that fit the room together are one chunk, and one loop.
-            # The upstream questions stay only as far as they cost no claim
-            # its place in the first chunk.
+            # The upstream questions stay only as far as the whole hand-off
+            # stands in the first chunk.
             chunks = _handed_upstream(
                 chunks,
                 upstream_block,

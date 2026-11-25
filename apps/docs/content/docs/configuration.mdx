@@ -3460,8 +3460,11 @@ gets no questions block. Both are capped by
 The claims come first and are never cut for a question: the questions take
 only the room the claims leave under the cap, line by line, with a last line
 counting those left out, and none where not one line fits. In the agent's
-input they stay only as far as every claim stays whole in its first chunk and
-a single chunk stays inside the agent's room.
+input they stay only as far as the whole hand-off, claims and the questions
+shown, stays in its first chunk and a single chunk stays inside the agent's
+room; otherwise they are fitted again, line by line, or left out. The first
+piece of the input is sized with the hand-off whole, so source text can start
+in a later piece than without the questions; no claim moves.
 The triage pack is capped by it too; the further detonations' lines take a room
 the size of the cap of their own after the job's own, and each further
 detonation is named on at least one line even where that passes the cap.

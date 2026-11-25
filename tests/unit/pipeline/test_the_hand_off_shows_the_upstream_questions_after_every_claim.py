@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 
+from malspark.core.config import ProfileDefinition, StageDefinition
 from malspark.pipeline.nodes import (
     UPSTREAM_QUESTIONS_HEADING,
     upstream_findings,
@@ -140,3 +141,18 @@ def test_no_hand_off_and_no_upstream_stay_empty() -> None:
     built = h.container()
     first = built.active_profile().stage("first")
     assert upstream_findings(first, h.state(sets), built) == ""  # type: ignore[arg-type]
+
+
+def test_an_agent_listed_twice_upstream_gives_its_questions_once(monkeypatch) -> None:
+    # A checked team puts an agent in one stage; a team handed in unchecked
+    # that lists one twice still shows each of its questions once.
+    built = h.container()
+    first = built.active_profile().stage("first")
+    second = StageDefinition(key="second", kind="analysis", agents=["reader"])
+    later = h.later_stage(built).model_copy(update={"depends_on": ["first", "second"]})
+    team = ProfileDefinition.model_construct(label="Team", stages=[first, second, later])
+    monkeypatch.setattr(built, "active_profile", lambda: team)
+    shown = upstream_findings(later, h.state(h.with_questions()), built)  # type: ignore[arg-type]
+    questions = shown.split("\n\n" + UPSTREAM_QUESTIONS_HEADING + "\n")[1]
+
+    assert questions.split("\n") == QUESTION_LINES

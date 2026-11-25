@@ -35,7 +35,9 @@ from tests.unit.test_an_input_that_fits_its_window_runs_one_loop import (
 )
 
 FULL = "\n".join([CLAIMS, "", UPSTREAM_QUESTIONS_HEADING, *QUESTION_LINES])
-LEFT_OUT = re.compile(r"^- (\d+) more open question\(s\) are not shown here")
+LEFT_OUT = re.compile(
+    r"^- (\d+) more open question\(s\) are not shown here \(no room was left for them\)$"
+)
 PARSED = "".join(f"- flow {i:05d} to a host of the test network\n" for i in range(600))
 TARGET = {f"field_{i:03d}": f"an invented value {i}" for i in range(60)}
 
@@ -139,3 +141,73 @@ class TestAJsonHeadThatIsTheOnlySource:
         (now,) = _shown("static", sets, before, sandbox_report=self.REPORT)
         assert now == dev
         assert json.loads(now)["upstream_findings"] == CLAIMS
+
+
+def _long_questions(count: int) -> list[str]:
+    """``count`` invented questions, each longer than a small room's share."""
+    return [
+        f"Which of the invented hosts does routine {i:02d} reach "
+        + " ".join(f"step{i:02d}x{k:02d}" for k in range(20))
+        + f" end{i:02d}?"
+        for i in range(count)
+    ]
+
+
+class TestAQuestionsBlockLongerThanTheRoom:
+    """A limit above the agent's room lets the block pass the room; no line is cut by the chunk."""
+
+    QUESTIONS = _long_questions(12)
+    LINES = [f"- reader: {text} | Why open: needs_sandbox_run" for text in QUESTIONS]
+    REPORT = {"network": {"hosts": ["192.0.2.10"]}}
+
+    def _sets(self) -> dict:
+        asked = [h.question(text, "needs_sandbox_run") for text in self.QUESTIONS]
+        return {
+            "reader": h.isr("reader", h.READER_CLAIMS, asked),
+            "lister": h.isr("lister", h.LISTER_CLAIMS, []),
+        }
+
+    def test_every_room_keeps_each_line_whole_in_the_first_chunk_or_counts_it(self) -> None:
+        handed = len("\n".join([CLAIMS, "", UPSTREAM_QUESTIONS_HEADING, *self.LINES]))
+        seen: set[int] = set()
+        for room in range(600, handed + 400, 150):
+            shown = _shown("network", self._sets(), room, sandbox_report=self.REPORT)
+            assert shown[0].startswith(CLAIMS), room
+            for chunk in shown[1:]:
+                assert not any(f"end{i:02d}?" in chunk for i in range(12)), room
+                assert not any(f"routine {i:02d}" in chunk for i in range(12)), room
+            if not shown[0].startswith(CLAIMS + "\n\n" + UPSTREAM_QUESTIONS_HEADING + "\n"):
+                # Not one line fits: no block, every claim where it was.
+                assert all(f"routine {i:02d}" not in shown[0] for i in range(12)), room
+                seen.add(0)
+                continue
+            block = shown[0][len(CLAIMS) + 2 :].split("\n\n", 1)[0]
+            lines = block.split("\n")[1:]
+            tail = LEFT_OUT.match(lines[-1])
+            questions = lines[:-1] if tail else lines
+            assert questions == self.LINES[: len(questions)], room
+            if tail:
+                assert int(tail.group(1)) == len(self.LINES) - len(questions), room
+            else:
+                assert questions == self.LINES, room
+            seen.add(len(questions))
+        # The sweep walks through no block, partial blocks with their count and the whole one.
+        assert 0 in seen and len(self.LINES) in seen and len(seen) > 3
+
+
+class TestClaimsLongerThanTheRoom:
+    """Where the claims alone do not stand whole in the first chunk, no question is added."""
+
+    ROOM = 200
+
+    def test_the_input_is_the_one_sent_before(self) -> None:
+        report = {"network": {"hosts": ["192.0.2.10"]}}
+        sets = h.with_questions()
+        assert len(CLAIMS) > self.ROOM
+        before = _shown("network", h.without_questions(sets), self.ROOM, sandbox_report=report)
+        after = _shown("network", sets, self.ROOM, sandbox_report=report)
+
+        # Read across the chunks the input is the one sent before: claims, then the source.
+        assert "".join(after) == "".join(before)
+        assert "Why open" not in "".join(after)
+        assert after[0] == before[0]

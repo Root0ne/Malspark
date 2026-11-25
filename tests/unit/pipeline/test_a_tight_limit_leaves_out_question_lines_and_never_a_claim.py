@@ -23,7 +23,7 @@ from tests.unit.pipeline.test_the_hand_off_shows_the_upstream_questions_after_ev
 
 FULL = "\n".join([CLAIMS, "", UPSTREAM_QUESTIONS_HEADING, *QUESTION_LINES])
 LEFT_OUT = re.compile(
-    r"^- (\d+) more open question\(s\) are not shown here \(the upstream block's room\)$"
+    r"^- (\d+) more open question\(s\) are not shown here \(no room was left for them\)$"
 )
 
 
@@ -41,7 +41,7 @@ def _block(shown: int) -> str:
 
 def test_the_tail_line_s_words() -> None:
     assert UPSTREAM_QUESTIONS_LEFT_OUT.format(count=3) == (
-        "- 3 more open question(s) are not shown here (the upstream block's room)"
+        "- 3 more open question(s) are not shown here (no room was left for them)"
     )
 
 
