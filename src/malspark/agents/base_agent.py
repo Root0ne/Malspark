@@ -10516,8 +10516,9 @@ class BaseAnalyst(BudgetMeter, ABC):
     def _with_own_question(self, checked: AgentISR, evidence: str) -> AgentISR:
         """The stage answer ``checked``, validated and settled, after its own question.
 
-        Only the stage answer comes here: not a revision, a delegated ask, a
-        salvaged answer or a chunk's cut turn. The analyst may be put one more
+        Only the stage answer comes here, an answer salvaged inside the loop
+        included: not a revision, a delegated ask, an answer salvaged after the
+        loop failed or a chunk's cut turn. The analyst may be put one more
         question about its own open questions (:meth:`_own_question_turn`);
         whatever that turn does or raises, ``checked`` is returned as it was
         given. Only the job's cancellation propagates.

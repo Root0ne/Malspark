@@ -257,6 +257,9 @@ def file_request(
     checked = not (problem or not why or not cited)
     cannot = _cannot_detonate(container, text) if checked else ""
     later, turn = _later_step(container) if checked else ("", False)
+    # A request joined to an accepted one is promised the further turn only
+    # where the asker is one of the agents the turns are given to.
+    joiner_turn = turn and _given_further_turns(container, str(agent or ""))
     with _LOCK:
         requests: list[DetonationRequest] = container.detonation_requests
         request = DetonationRequest(
@@ -290,7 +293,8 @@ def file_request(
             request.answer = (
                 f"joined to {same}, already accepted with exactly these arguments "
                 f"(asked for by {pending.agent or 'another agent'}, {pending.name}); "
-                "it is one detonation, and its record names every agent that asked"
+                "it is one detonation, and its record names every agent that asked; "
+                + _carried_out_and_read(same, later, joiner_turn)
             )
         else:
             ceiling = ceiling_of(container)
@@ -312,8 +316,7 @@ def file_request(
                     "the sample with these arguments on entry of the next step of the run "
                     f"that has an agent reading the sandbox ({later}). "
                     + (FURTHER_TURN_PROMISE if turn else "")
-                    + "Read it with the sandbox tools' detonation argument "
-                    f"({request.detonation})."
+                    + _READ_IT.format(name=request.detonation)
                 )
     logger.info(
         "Detonation request %s by %s: %s%s",
@@ -339,6 +342,33 @@ def _made_answer(record: Any) -> str:
         return REFUSED_RUNNING.format(name=name)
     failure = str(getattr(record, "failure", "") or "")
     return REFUSED_NO_REPORT.format(name=name) + (f": {failure}" if failure else "")
+
+
+# How a detonation an answer names is read, as the accepted answer ends.
+_READ_IT = "Read it with the sandbox tools' detonation argument ({name})."
+
+
+def _carried_out_and_read(name: str, later: str, turn: bool) -> str:
+    """When and how the accepted detonation a joined request names is read, in the accepted
+    answer's own clauses: the step it is carried out on entry of, the further turn where
+    ``turn``, and the read.
+    """
+    step = f" ({later})" if later else ""
+    return (
+        "it is carried out on entry of the next step of the run that has an agent reading "
+        f"the sandbox{step}. " + (FURTHER_TURN_PROMISE if turn else "") + _READ_IT.format(name=name)
+    )
+
+
+def _given_further_turns(container: Any, agent: str) -> bool:
+    """Whether ``agent`` is of the agents the further turns are given to; False where unread."""
+    from malspark.pipeline.detonations import given_further_turns
+
+    try:
+        return given_further_turns(container, agent)
+    except Exception as exc:  # noqa: BLE001 — an agent that cannot be placed is promised nothing
+        logger.warning("No further turn could be read for %s (%s).", agent or "an agent", exc)
+        return False
 
 
 def _later_step(container: Any) -> tuple[str, bool]:
@@ -413,22 +443,41 @@ def _honoured(record: Any) -> bool:
     return isinstance(launch, dict) and launch.get("honoured") is True
 
 
+def launch_words(record: Any, *, reads: bool = False) -> str:
+    """How a submitted detonation was launched, from its record; one wording on every surface.
+
+    "launched with" its launch text only where the run records the launch as
+    honoured, :data:`SUBMITTED_WITHOUT_ARGUMENTS` where it does not, and
+    "launched without arguments" where none were asked. ``reads``: the
+    detonation has reads holding its exact text, so an escaped launch text
+    carries the pack's hint.
+    """
+    from malspark.pipeline.triage_pack import LAUNCH_SHOWN_ESCAPED
+    from malspark.reporting.detonation_marks import launch_text
+
+    arguments = str(getattr(record, "arguments", "") or "")
+    if not arguments:
+        return "launched without arguments"
+    if not _honoured(record):
+        return SUBMITTED_WITHOUT_ARGUMENTS
+    shown = launch_text(arguments)
+    hint = (
+        f" {LAUNCH_SHOWN_ESCAPED.format(name=record.name)}" if reads and shown != arguments else ""
+    )
+    return f"launched with `{shown}`{hint}"
+
+
 def _record_item(record: Any) -> str:
     """One detonation the job holds a record of, as the run-state line names it."""
     from malspark.providers.detonation import JOB_ORIGIN
-    from malspark.reporting.detonation_marks import launch_text
 
     name = str(record.name)
     arguments = str(getattr(record, "arguments", "") or "")
     submitted = bool(getattr(record, "submit_returned", False))
     if getattr(record, "origin", JOB_ORIGIN) == JOB_ORIGIN:
         who = "the job's own"
-        if submitted and arguments and _honoured(record):
-            who += f", launched with `{launch_text(arguments)}`"
-        elif submitted and arguments:
-            who += f", {SUBMITTED_WITHOUT_ARGUMENTS}"
-        elif submitted:
-            who += ", launched without arguments"
+        if submitted:
+            who += f", {launch_words(record)}"
     else:
         askers = [a for a in getattr(record, "requested_by", ()) or () if isinstance(a, dict)]
         who = _asked_with(name, askers, arguments, reads=bool(getattr(record, "reported", False)))

@@ -96,6 +96,8 @@ def test_a_further_turn_goes_through_the_real_revision(
         arguments="-p hunter2",
         report=D2_REPORT,
         requested_by=[{"agent": "reversing", "cited_entries": ["ev_0001"]}],
+        submit_returned=True,
+        launch={"honoured": True},
     )
     container.detonation_requests = []
     container.detonations.append(record)
@@ -128,7 +130,7 @@ def test_a_further_turn_goes_through_the_real_revision(
     assert container.further_turns[0]["outcome"] == "revised", container.further_turns
     # The directive reached the model's prompt.
     prompt = " ".join(str(m.content) for m in analyst.seen_turns[0])
-    assert "detonation d2: launched with '-p hunter2', asked for by reversing" in prompt
+    assert "detonation d2: launched with `-p hunter2`, asked for by reversing" in prompt
     # The answer replaced the one in force.
     assert update["revised_reports"]["dynamic"].startswith("CLAIM 1: Started with the password")
     assert update["isr_reports"]["dynamic"].claims

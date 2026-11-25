@@ -160,6 +160,42 @@ class TestAsked:
             assert agent._analyze_isr_guarded("the raw data") is checked
         assert len(llm.seen) == 1
 
+    def test_an_answer_salvaged_inside_the_loop_is_the_stage_answer_and_is_asked(self) -> None:
+        from malspark.schemas.isr_models import AgentISR
+
+        agent, llm, _job = _holder(["No."])
+        salvaged = answer(marked())
+        empty = AgentISR(agent_id="dynamic", domain="dynamic", claims=[])
+        with (
+            patch.object(Holder, "analyze_isr", lambda self, data: empty),
+            patch.object(Holder, "_synthesise_from_answered_asks", lambda self: salvaged),
+            patch.object(BaseAnalyst, "_validate_isr", lambda self, isr, evidence: isr),
+        ):
+            assert agent._analyze_isr_guarded("the raw data") is salvaged
+        assert len(llm.seen) == 1
+        assert _record(agent)["outcome"] == "asked; it filed no request"
+
+
+class TestTheJobIsMarkedAsked:
+    @pytest.mark.parametrize("files", [False, True])
+    def test_once_the_question_reached_the_model_filed_or_not(self, files: bool) -> None:
+        script: list[Any] = [call(REQUEST_TOOL, "--key k1"), "Filed."] if files else ["No."]
+        agent, _llm, job = _holder(script)
+        _ask(agent, answer(marked()))
+        assert len(job.detonation_requests) == (1 if files else 0)
+        assert agent._own_question_asked_job == "job-1"
+
+    def test_a_question_that_never_reached_the_model_is_asked_with_a_later_stage_answer(
+        self,
+    ) -> None:
+        agent, llm, _job = _holder(["No."])
+        with patch.object(BaseAnalyst, "_answer_after_loop", side_effect=TimeoutError("cap")):
+            _ask(agent, answer(marked()))
+        assert llm.seen == [] and not hasattr(agent, "_own_question_asked_job")
+        _ask(agent, answer(marked()))
+        assert len(llm.seen) == 1
+        assert agent._own_question_asked_job == "job-1"
+
 
 class TestTheAnswerInForceStands:
     def test_a_reply_with_another_answer_changes_nothing(self) -> None:
@@ -185,6 +221,57 @@ class TestTheAnswerInForceStands:
             agent._artifacts_buffer,
             agent._open_questions_buffer,
         ) == buffers
+
+    def test_what_a_tool_of_the_turn_writes_to_the_buffers_and_the_cut_note_is_undone(
+        self,
+    ) -> None:
+        from langchain_core.tools import StructuredTool
+
+        job = container()
+        llm = Scripted(script=[{"name": "scribble", "args": {}, "id": "s1"}, "Done."], seen=[])
+        ran: list[str] = []
+        agent = Holder(llm, [], job)
+
+        def _scribble() -> str:
+            ran.append("scribble")
+            agent._findings_buffer.append({"claim": "written in the turn"})
+            agent._artifacts_buffer.append({"artifact": "written in the turn"})
+            agent._open_questions_buffer.append(marked("Written in the turn?"))
+            agent._last_answer_cut = None
+            agent._last_answer_ended = False
+            return "written"
+
+        scribble = StructuredTool.from_function(
+            func=_scribble, name="scribble", description="Any tool."
+        )
+        agent.tools = [scribble, held_tool(job)]
+        agent._findings_buffer = [{"claim": "the stage's"}]
+        agent._artifacts_buffer = [{"artifact": "the stage's"}]
+        agent._open_questions_buffer = [marked()]
+        agent._last_answer_cut = (512, "the stage answer's cut text")
+        agent._last_answer_ended = True
+        checked = answer(marked())
+
+        assert _ask(agent, checked) is checked
+        assert ran == ["scribble"]
+        assert agent._findings_buffer == [{"claim": "the stage's"}]
+        assert agent._artifacts_buffer == [{"artifact": "the stage's"}]
+        assert agent._open_questions_buffer == [marked()]
+        assert agent._last_answer_cut == (512, "the stage answer's cut text")
+        assert agent._last_answer_ended is True
+
+    def test_a_failure_while_the_question_is_built_returns_the_same_answer(self) -> None:
+        from malspark.providers import detonation_requests
+
+        agent, llm, _job = _holder(["No."])
+        checked = answer(marked())
+        before = copy.deepcopy(checked)
+        with patch.object(
+            detonation_requests, "limits_sentence", side_effect=RuntimeError("unreadable")
+        ):
+            assert _ask(agent, checked) is checked
+        assert checked == before
+        assert llm.seen == []
 
     @pytest.mark.parametrize(
         "failure", [TimeoutError("the hard cap"), RuntimeError("the transport closed")]

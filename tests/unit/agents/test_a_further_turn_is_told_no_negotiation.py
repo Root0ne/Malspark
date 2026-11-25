@@ -29,6 +29,7 @@ from malspark.agents.configurable_analyst import ConfigurableAnalyst
 from malspark.agents.dynamic_analyst import DynamicAnalyst
 from malspark.agents.network_analyst import NetworkAnalyst
 from malspark.agents.static_analyst import StaticAnalyst
+from malspark.core.exceptions import AnalystError
 
 PLATFORM = "Further detonations of the sample were made after your turn."
 ANSWER = "CLAIM 1: the sample writes a file\nEVIDENCE: [ev_0002]\nCONFIDENCE: 0.6\n"
@@ -155,6 +156,27 @@ def test_the_flag_is_set_for_the_turn_alone() -> None:
         agent.safe_revise_isr("RAW", "OWN", {}, PLATFORM, 0, further_turn=True)
         agent.safe_revise_isr("RAW", "OWN", {"peer": "P"}, "FB", 1)
     assert seen == [True, False]
+    assert agent._further_turn is False
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_the_flag_is_reset_after_the_turn_whatever_it_did(fails: bool) -> None:
+    agent = DynamicAnalyst(llm=MagicMock(), name="dynamic")
+
+    def _revise(self: Any, *args: Any) -> Any:
+        assert self._further_turn is True
+        if fails:
+            raise RuntimeError("the transport closed")
+        return ANSWER, self._text_to_isr(ANSWER, 0)
+
+    with (
+        patch.object(DynamicAnalyst, "revise_isr", _revise),
+        patch.object(BaseAnalyst, "_validate_isr", lambda self, isr, evidence: isr),
+    ):
+        try:
+            agent.safe_revise_isr("RAW", "OWN", {}, PLATFORM, 0, further_turn=True)
+        except AnalystError:
+            assert fails
     assert agent._further_turn is False
 
 

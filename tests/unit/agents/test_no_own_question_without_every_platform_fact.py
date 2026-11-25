@@ -214,6 +214,17 @@ class TestNotAskedAndSaidWhy:
             "s of the loop's time were left, and an answer needs 60s"
         )
 
+    def test_the_loop_s_time_left_and_what_an_answer_needs_are_stated(self) -> None:
+        agent = _holder()
+        with (
+            patch.object(BaseAnalyst, "_seconds_the_last_loop_left", lambda _s, _f: 5.0),
+            patch.object(BaseAnalyst, "seconds_an_answer_needs", lambda _s: 60.0),
+        ):
+            _run(agent, answer(marked()))
+        assert self._said(agent) == (
+            "not asked: 5s of the loop's time were left, and an answer needs 60s"
+        )
+
     def test_a_conversation_the_window_cannot_hold(self) -> None:
         agent = _holder()
         with patch.object(BaseAnalyst, "_fits_the_window", lambda *_a: False):
@@ -242,7 +253,7 @@ class TestOnlyTheStageAnswer:
             agent.answer_task("Read the routine at 0x1000.")
         own.assert_not_called()
 
-    def test_a_salvaged_answer_puts_no_own_question(self) -> None:
+    def test_an_answer_salvaged_after_the_loop_failed_puts_no_own_question(self) -> None:
         agent = _holder()
         with (
             patch.object(BaseAnalyst, "_own_question_turn") as own,

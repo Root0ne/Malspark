@@ -289,6 +289,8 @@ class TestTheFurtherTurn:
                 arguments="-a",
                 report=REPORTS["-a"],
                 requested_by=[{"agent": "dynamic", "cited_entries": ["ev_0003"]}],
+                submit_returned=True,
+                launch={"honoured": True},
             )
         )
         # The analyst's own turn began before d2 returned.
@@ -317,7 +319,7 @@ class TestTheFurtherTurn:
         assert out["revised_reports"] == {"dynamic": "revised with d2"}
         assert out["iteration_count"] == 1
         (asked,) = _turns.asked
-        assert "detonation d2: launched with '-a', asked for by dynamic citing ev_0003" in asked
+        assert "detonation d2: launched with `-a`, asked for by dynamic citing ev_0003" in asked
         (turn,) = container.further_turns
         assert turn["agent"] == "dynamic" and turn["outcome"] == "revised"
         assert turn["detonations"] == ["d2"] and turn["step"] == "negotiation"
@@ -340,6 +342,53 @@ class TestTheFurtherTurn:
         )
         asyncio.run(entered({"reports": {"dynamic": "first answer"}}))
         assert container.further_turns == [] and _turns.asked == []
+
+
+class TestTheFurtherTurnSaysHowEachWasLaunched:
+    """It says "launched with" only where the run records the launch as honoured."""
+
+    @staticmethod
+    def _record(arguments: str, launch: dict[str, Any] | None) -> DetonationRecord:
+        return DetonationRecord(
+            ordinal=2,
+            origin="agent",
+            arguments=arguments,
+            report=REPORTS["-a"],
+            requested_by=[{"agent": "dynamic", "cited_entries": ["ev_0003"]}],
+            submit_returned=True,
+            launch=launch,
+        )
+
+    def test_an_honoured_launch_is_said_launched_with_its_text(self) -> None:
+        text = dt._directive([self._record("-a", {"honoured": True})])
+        assert text.startswith(
+            "Further detonations of the sample were made after your turn, with launch "
+            "arguments an agent found:\n- detonation d2: launched with `-a`, asked for by "
+            "dynamic citing ev_0003\n"
+        )
+
+    @pytest.mark.parametrize("launch", [{"honoured": False}, {"honoured": None}, None])
+    def test_a_launch_not_recorded_as_honoured_is_said_as_the_run_state_line_says_it(
+        self, launch: dict[str, Any] | None
+    ) -> None:
+        from malspark.providers.detonation_requests import SUBMITTED_WITHOUT_ARGUMENTS
+
+        text = dt._directive([self._record("-a", launch)])
+        assert "launched with" not in text and "turn, with launch" not in text
+        assert text.startswith(
+            "Further detonations of the sample were made after your turn, asked for with launch "
+            f"arguments an agent found:\n- detonation d2: {SUBMITTED_WITHOUT_ARGUMENTS}, asked "
+            "for by dynamic citing ev_0003\n"
+        )
+
+    def test_an_escaped_launch_text_points_to_its_exact_text(self) -> None:
+        from malspark.pipeline.triage_pack import LAUNCH_SHOWN_ESCAPED
+
+        text = dt._directive([self._record("-k `x`", {"honoured": True})])
+        assert (
+            "- detonation d2: launched with `-k \\x60x\\x60` "
+            f"{LAUNCH_SHOWN_ESCAPED.format(name='d2')}, asked for by dynamic" in text
+        )
 
 
 def test_a_read_of_a_detonation_not_held_yet_is_never_served_again() -> None:

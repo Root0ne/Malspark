@@ -252,6 +252,17 @@ def further_turn_ahead(container: Any, current: str) -> bool:
     )
 
 
+def given_further_turns(container: Any, agent: str) -> bool:
+    """Whether ``agent`` is of the agents a further turn is given to (:func:`_readers_owed`).
+
+    An agent of an analysis step that reads the sandbox; whether it is owed
+    one also depends on its answer and on what it read, known only then.
+    """
+    return any(
+        step.kind == "analysis" and agent in step.agents for step in steps_of(container)
+    ) and reads_the_sandbox(container, agent)
+
+
 # The step the code running now belongs to, set on each node's entry
 # (:func:`on_entry`): per context, so steps running at once never overwrite
 # each other's, and a tool call made inside a step reads its own.
@@ -634,17 +645,24 @@ def _asker_words(asker: dict[str, Any]) -> str:
 
 
 def _directive(records: list[DetonationRecord]) -> str:
-    """What a further turn is asked: the new detonations, each with who asked and why."""
+    """What a further turn is asked: the new detonations, each with who asked and why.
+
+    How each was launched is worded as the run-state line words it
+    (``detonation_requests.launch_words``): "launched with" only where the
+    run records the launch as honoured.
+    """
+    from malspark.providers.detonation_requests import launch_words
+
     lines = []
     for record in records:
         askers = ", ".join(_asker_words(a) for a in record.requested_by)
-        lines.append(
-            f"- detonation {record.name}: launched with {record.arguments!r}, asked for by "
-            f"{askers or 'an agent'}"
-        )
+        launched = launch_words(record, reads=bool(getattr(record, "reported", False)))
+        lines.append(f"- detonation {record.name}: {launched}, asked for by {askers or 'an agent'}")
+    honoured = all(launch_words(record).startswith("launched with") for record in records)
     return (
-        "Further detonations of the sample were made after your turn, with launch "
-        "arguments an agent found:\n"
+        "Further detonations of the sample were made after your turn, "
+        + ("with" if honoured else "asked for with")
+        + " launch arguments an agent found:\n"
         + "\n".join(lines)
         + "\nRead them with the sandbox tools' detonation argument (the item ids of a "
         "later detonation are qualified by it, d2/proc:<pid>), and revise your answer "
