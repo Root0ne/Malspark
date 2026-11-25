@@ -14,6 +14,8 @@ from typing import Any
 
 from malspark.agents.base_agent import (
     BaseAnalyst,
+    further_turn_messages,
+    in_a_further_turn,
     prompt_to_messages,
     read_claim_blocks,
     strip_tool_call_scaffolding,
@@ -707,8 +709,16 @@ class StaticAnalyst(BaseAnalyst):
         # Built as messages rather than through a template: the resolved system
         # prompt carries a literal JSON example (the findings block), and a
         # ``ChatPromptTemplate`` reads every ``{...}`` in it as a variable.
+        # A further turn is no negotiation round (``further_turn_messages``).
         messages = prompt_to_messages(
-            [
+            further_turn_messages(
+                self._system_prompt(self._fallback_prompt, tools=self.revision_tools()),
+                _reframe_static_raw_data(original_data, bool(self.tools)),
+                own_report,
+                mediator_feedback,
+            )
+            if in_a_further_turn(self)
+            else [
                 (
                     "system",
                     # A revision carries this agent's tools where its model

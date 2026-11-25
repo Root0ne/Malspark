@@ -26,6 +26,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from malspark.agents.base_agent import (
     BaseAnalyst,
     describe_exception_for_log,
+    in_a_further_turn,
     revision_messages,
 )
 from malspark.agents.composition import ResolvedAgent
@@ -500,6 +501,7 @@ class ConfigurableAnalyst(BaseAnalyst):
                 isr=True,
                 revision_round=revision_round,
                 techniques=self.asks_for_techniques(),
+                further_turn=in_a_further_turn(self),
             ),
             "ISR revision",
         )

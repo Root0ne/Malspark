@@ -25,7 +25,12 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
-from malspark.agents.base_agent import BaseAnalyst, prompt_to_messages, revision_messages
+from malspark.agents.base_agent import (
+    BaseAnalyst,
+    in_a_further_turn,
+    prompt_to_messages,
+    revision_messages,
+)
 from malspark.agents.prompt_fragments import (
     CLAIM_FORMAT_FRAGMENT,
     FINDINGS_BLOCK_FRAGMENT,
@@ -406,6 +411,7 @@ class NetworkAnalyst(BaseAnalyst):
             mediator_feedback,
             isr=True,
             revision_round=revision_round,
+            further_turn=in_a_further_turn(self),
         )
         # Through the findings capture like every other answer: the resolved
         # system prompt ends with the findings-block instruction, so a model

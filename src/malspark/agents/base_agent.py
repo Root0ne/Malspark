@@ -3874,6 +3874,56 @@ _REVISION_ISR_FORMAT_WITHOUT_TECHNIQUES = (
 )
 
 
+# The turn in which an analyst reads a further detonation it did not see
+# (``pipeline.detonations.further_turns``) goes through the revision path, and
+# is no negotiation round: no peer report is handed and no mediator wrote its
+# text. So it is told none of that: the platform's text is headed as the
+# platform's, and the claim shape it is read in asks for no disputes.
+_FURTHER_TURN_HEADING = "FROM THE PLATFORM:"
+_FURTHER_TURN_FORMAT = (
+    "Format your response as structured claims (CLAIM/EVIDENCE/CONFIDENCE/TECHNIQUE).\n"
+    f"{TECHNIQUE_LINE_RULE}\n"
+    "Example:\n"
+    "CLAIM: ...\nEVIDENCE: ...\nCONFIDENCE: 0.8\nTECHNIQUE: T1071\n---\n"
+)
+_FURTHER_TURN_FORMAT_WITHOUT_TECHNIQUES = (
+    "Format your response as structured claims (CLAIM/EVIDENCE/CONFIDENCE).\n"
+    "Example:\n"
+    "CLAIM: ...\nEVIDENCE: ...\nCONFIDENCE: 0.8\n---\n"
+)
+
+
+def further_turn_messages(
+    system_prompt: str,
+    original_data: str,
+    own_report: str,
+    platform_text: str,
+    *,
+    techniques: bool = True,
+) -> list[tuple[str, str]]:
+    """The prompt of a further turn, as ``(role, text)`` pairs, for every revise implementation.
+
+    The agent's system prompt as it is, its own report, the platform's text
+    under :data:`_FURTHER_TURN_HEADING`, the raw data, and the claim shape:
+    no negotiation framing, no peer reports, no disputes section.
+    """
+    return [
+        ("system", system_prompt),
+        (
+            "human",
+            f"YOUR ORIGINAL REPORT:\n{own_report}\n\n"
+            f"{_FURTHER_TURN_HEADING}\n{platform_text}\n\n"
+            f"RAW DATA:\n{original_data}\n\n"
+            + (_FURTHER_TURN_FORMAT if techniques else _FURTHER_TURN_FORMAT_WITHOUT_TECHNIQUES),
+        ),
+    ]
+
+
+def in_a_further_turn(agent: Any) -> bool:
+    """Whether ``agent``'s revision now is a further turn (``safe_revise_isr(further_turn=True)``)."""
+    return getattr(agent, "_further_turn", False) is True
+
+
 def asks_for_techniques(agent: Any) -> bool:
     """Whether ``agent`` is asked for an ATT&CK technique line on each claim.
 
@@ -4678,6 +4728,7 @@ def revision_messages(
     isr: bool = False,
     revision_round: int = 1,
     techniques: bool = True,
+    further_turn: bool = False,
 ) -> list[tuple[str, str]]:
     """The revision prompt every analyst sends, as ``(role, text)`` pairs.
 
@@ -4700,7 +4751,15 @@ def revision_messages(
     ``techniques=False`` is the negotiation round for an agent whose
     definition turns the technique line off: the same text with the
     TECHNIQUE label and example line left out.
+
+    ``further_turn`` is a further turn, which is no negotiation round
+    (:func:`further_turn_messages`): ``mediator_feedback`` is then the
+    platform's text, and no peer report is handed.
     """
+    if further_turn:
+        return further_turn_messages(
+            system_prompt, original_data, own_report, mediator_feedback, techniques=techniques
+        )
     logger.debug(
         "Building revision prompt (isr=%s, round=%d, peers=%d).",
         isr,
@@ -13089,6 +13148,7 @@ class BaseAnalyst(BudgetMeter, ABC):
         *,
         read_places: bool = False,
         cited_entries: Mapping[str, str] | None = None,
+        further_turn: bool = False,
     ) -> tuple[str, AgentISR]:
         """Wrapper around revise_isr() with error handling, checked like a first answer.
 
@@ -13111,6 +13171,11 @@ class BaseAnalyst(BudgetMeter, ABC):
         by id: shown after the feedback, whole, as many as the input room
         leaves beside the raw data, which they never shorten
         (:meth:`_revision_entries`).
+
+        ``further_turn`` is the turn in which a further detonation is read
+        (``pipeline.detonations.further_turns``): every revise implementation
+        then sends :func:`further_turn_messages`, which tells no negotiation
+        round, and ``mediator_feedback`` is the platform's text.
         """
         self.current_round = int(revision_round)
         with lock_for(self):
@@ -13128,6 +13193,7 @@ class BaseAnalyst(BudgetMeter, ABC):
                     revision_round,
                     read_places=read_places,
                     cited_entries=cited_entries,
+                    further_turn=further_turn,
                 )
             finally:
                 self._measured_peers = ()
@@ -13143,6 +13209,7 @@ class BaseAnalyst(BudgetMeter, ABC):
         *,
         read_places: bool,
         cited_entries: Mapping[str, str] | None = None,
+        further_turn: bool = False,
     ) -> tuple[str, AgentISR]:
         """:meth:`safe_revise_isr`'s body, run under the agent's lock."""
         self.revision_entries_shown: tuple[str, ...] = ()
@@ -13171,6 +13238,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             self._revision_reads = bool(read_places)
             # Its own tools, as its loop had them, where its model binds them.
             self._revision_tooled = BaseAnalyst._turns_carry_tools(self, "revision")  # type: ignore[arg-type]
+            self._further_turn = bool(further_turn)
             try:
                 text, isr = self.revise_isr(
                     truncated, own_report, peer_reports, mediator_feedback, revision_round
@@ -13178,6 +13246,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             finally:
                 self._revision_reads = False
                 self._revision_tooled = False
+                self._further_turn = False
             isr = self._drain_findings(isr)
             if not isr.answer_text:
                 isr.note_answer_text(strip_tool_call_scaffolding(str(text or "")))

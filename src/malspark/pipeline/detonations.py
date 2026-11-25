@@ -743,8 +743,10 @@ async def further_turns(container: Any, state: Any, step: str) -> dict[str, Any]
             else:
                 agent = container.get_agent(agent_name)
                 brief_agent(agent, state, container)
+                # A further turn, not a negotiation round: the revision tells
+                # the model so (``base_agent.further_turn_messages``).
                 text, isr = await asyncio.to_thread(
-                    agent.safe_revise_isr,
+                    functools.partial(agent.safe_revise_isr, further_turn=True),
                     got.text,
                     str(reports.get(agent_name, "") or ""),
                     {},

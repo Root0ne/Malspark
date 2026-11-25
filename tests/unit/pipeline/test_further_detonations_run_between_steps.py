@@ -251,7 +251,10 @@ class _Analyst:
     def __init__(self) -> None:
         self.asked: list[str] = []
 
-    def safe_revise_isr(self, data: str, own: str, peers: Any, feedback: str, rnd: int) -> Any:
+    def safe_revise_isr(
+        self, data: str, own: str, peers: Any, feedback: str, rnd: int, *, further_turn: bool
+    ) -> Any:
+        assert further_turn is True
         self.asked.append(feedback)
         return "revised with d2", SimpleNamespace(claims=["c"])
 

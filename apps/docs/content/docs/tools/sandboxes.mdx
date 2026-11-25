@@ -1013,8 +1013,11 @@ that fails is recorded with its reason; neither fails the run.
 that reads the sandbox and whose own turn began before a further detonation
 returned its report gets one further turn: its answer in force is revised with
 the new detonations named (who asked and the entries they cited), and it reads
-them with the sandbox tools' `detonation` argument. The turn is recorded with
-its step, start, end, duration and outcome, and announced with
+them with the sandbox tools' `detonation` argument. The turn goes through the
+analyst's revision path but is no negotiation round: the platform's text is
+headed `FROM THE PLATFORM:`, and no negotiation framing, peer-reports line or
+disputes section is sent (`base_agent.further_turn_messages`). The turn is
+recorded with its step, start, end, duration and outcome, and announced with
 `further_turn_started` and `further_turn_finished`.
 
 **Each detonation apart.** Each detonation has its own report, launch record,

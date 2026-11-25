@@ -10,7 +10,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from malspark.agents.base_agent import BaseAnalyst, prompt_to_messages
+from malspark.agents.base_agent import (
+    BaseAnalyst,
+    further_turn_messages,
+    in_a_further_turn,
+    prompt_to_messages,
+)
 from malspark.agents.prompt_fragments import (
     CLAIM_FORMAT_FRAGMENT,
     FINDINGS_BLOCK_FRAGMENT,
@@ -291,8 +296,16 @@ class DynamicAnalyst(BaseAnalyst):
         # Built as messages rather than through a template: the resolved system
         # prompt carries a literal JSON example (the findings block), and a
         # ``ChatPromptTemplate`` reads every ``{...}`` in it as a variable.
+        # A further turn is no negotiation round (``further_turn_messages``).
         messages = prompt_to_messages(
-            [
+            further_turn_messages(
+                self._system_prompt(_dynamic_prompt, tools=self.revision_tools()),
+                original_data,
+                own_report,
+                mediator_feedback,
+            )
+            if in_a_further_turn(self)
+            else [
                 (
                     "system",
                     # A revision carries this agent's tools where its model
