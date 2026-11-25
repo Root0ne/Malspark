@@ -966,6 +966,29 @@ and a reported detonation's escaped text carries the pack's hint that its exact
 text is the `launched_with` of a read. Every other agent's run state is
 unchanged.
 
+**The holder's own question.** Once an agent's stage answer is validated and
+settled, it is put one more question, once per agent and job, over its own
+loop conversation with its tools, where all of these hold: its answer holds an
+open question of its own whose reason the core relation
+(`builtin_declarations.REQUEST_KIND_BY_OPEN_QUESTION_REASON`: a question
+marked `needs_sandbox_run`, and the request kind) relates to the declared kind
+of a tool it holds; the job's record holds no request of this agent; the
+answer holds a claim or a written answer. The question states its own marked
+questions as it filed them, the tool by the name its tool list gives, how many
+more detonations the job can accept and the tool's limits sentence whole; that
+the decision is the agent's and the platform makes no further detonation of
+its own; that the reply is recorded and not read as its answer; and that the
+tool's answer says when and how a detonation it requests is read. It is not
+asked, and the agent's loop record says why
+(`run_summary.budget.<agent>.own_question`), where the ceiling is reached, the
+job's time limit leaves less than a detonation takes, the model cannot bind
+its tools, or the loop's steps, time or window cannot hold the turn. A
+revision, a delegated ask, a salvaged answer or a chunk's cut turn never opens
+it. The reply is never parsed: the answer in force is the one validated before
+it, whatever it says, and nothing the turn raises loses it (only the job's
+cancellation goes on). A request filed in it is on the job's record like any
+other and takes the route below.
+
 **Carrying out.** An accepted request is carried out on entry of the next step
 of the graph that has an agent reading the sandbox (an agent whose tools come
 from the sandbox source, or whose definition holds it), or of the debate's first

@@ -325,6 +325,22 @@ def _needs_seconds(container: Any) -> float | None:
     return None
 
 
+def too_little_time(container: Any, state: Any) -> str:
+    """Why the job's time limit leaves no room for a detonation now; ``""`` where it does.
+
+    The test :func:`_detonate` makes before it submits: what the limit leaves
+    against the provider's own detonation time. A job with no time limit
+    leaves room, and so does one with time left whose provider states no
+    detonation time.
+    """
+    left, needs = _seconds_left(container, state), _needs_seconds(container)
+    if left is None or (left > 0 and (needs is None or left >= needs)):
+        return ""
+    return f"the job's time limit leaves {max(0, int(left))} seconds" + (
+        f", and a detonation may take {int(needs)}" if needs is not None else ""
+    )
+
+
 def _stage_of_step(container: Any, step: str) -> str:
     """The key of the stage ``step`` belongs to; empty where no step of the run is named so."""
     return next((s.stage for s in steps_of(container) if s.name == step), "")

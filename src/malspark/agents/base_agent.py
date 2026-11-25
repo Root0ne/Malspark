@@ -59,6 +59,7 @@ from malspark.agents.claim_headings import (
     disputes_section,
     writes_claim_fields,
 )
+from malspark.agents.own_question import OWN_QUESTION_CALL
 from malspark.agents.prompt_fragments import (
     CLAIM_FORMAT_FRAGMENT,
     CLAIM_FORMAT_WITHOUT_TECHNIQUE_FRAGMENT,
@@ -9829,7 +9830,13 @@ class BaseAnalyst(BudgetMeter, ABC):
                 salvaged = self._synthesise_from_answered_asks()
                 if salvaged is not None and salvaged.claims:
                     isr = salvaged
-            return self._validate_isr(self._apply_consistency_gate(isr, truncated), truncated)
+            # The stage answer: once validated, the analyst may be put its own
+            # question (:meth:`_with_own_question`).
+            return BaseAnalyst._with_own_question(  # type: ignore[arg-type]
+                self,
+                self._validate_isr(self._apply_consistency_gate(isr, truncated), truncated),
+                truncated,
+            )
         except SampleNotOpened:
             # Nothing to salvage: every call the loop made was against no
             # program, and writing it up would be a report about nothing.
@@ -10162,7 +10169,11 @@ class BaseAnalyst(BudgetMeter, ABC):
         # validation turn marks and slices the findings buffer in ``_parse``,
         # and a delegated ask of this agent landing between the mark and the
         # slice would move its own findings onto this ISR, or these onto its.
-        checked = self._validate_isr(self._apply_consistency_gate(merged, evidence), evidence)
+        checked = BaseAnalyst._with_own_question(  # type: ignore[arg-type]
+            self,
+            self._validate_isr(self._apply_consistency_gate(merged, evidence), evidence),
+            evidence,
+        )
         # Noted on the answer kept, after its validation turn: a retry's answer
         # is parsed afresh, and the chunks it does not cover are the same.
         return _with_parts_not_analysed(
@@ -10442,6 +10453,199 @@ class BaseAnalyst(BudgetMeter, ABC):
                 self.validation_unparsed_answers = kept
             kept.append(replaced)
         return checked
+
+    def _with_own_question(self, checked: AgentISR, evidence: str) -> AgentISR:
+        """The stage answer ``checked``, validated and settled, after its own question.
+
+        Only the stage answer comes here: not a revision, a delegated ask, a
+        salvaged answer or a chunk's cut turn. The analyst may be put one more
+        question about its own open questions (:meth:`_own_question_turn`);
+        whatever that turn does or raises, ``checked`` is returned as it was
+        given. Only the job's cancellation propagates.
+        """
+        try:
+            BaseAnalyst._own_question_turn(self, checked, evidence)  # type: ignore[arg-type]
+        except Exception as exc:  # noqa: BLE001 — the validated answer stands
+            self.logger.warning(
+                "%s: the %s failed (%s); the answer stands.",
+                self.name,
+                OWN_QUESTION_CALL,
+                describe_exception_for_log(exc),
+            )
+        return checked
+
+    def _own_question_turn(self, checked: AgentISR, evidence: str) -> None:
+        """Put the analyst one question about its own open questions, where the platform's facts hold.
+
+        The facts and the words are :mod:`agents.own_question`'s. Asked once
+        per agent and job, after the validation turn settled ``checked``, over
+        the loop's own conversation where the answer is the one the loop ended
+        on (else over the conversation rebuilt from text), with the agent's
+        tools: a turn that cannot carry them is not asked. The reply is never
+        parsed: the findings and open-question buffers are as they were before
+        it, and ``checked`` is the answer in force whatever it says. Returns
+        nothing and raises nothing but the job's cancellation; any other
+        failure is recorded on the loop's record, and the answer stands.
+        """
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+        from malspark.agents import own_question as oq
+        from malspark.pipeline.detonations import too_little_time
+        from malspark.pipeline.events import describe_exception
+        from malspark.providers.detonation_requests import (
+            ceiling_of,
+            detonations_left,
+            detonations_line,
+            limits_sentence,
+        )
+
+        container = getattr(self, "_container", None)
+        job = str(getattr(self, "_job_id", None) or "job")
+        if container is None or getattr(self, "_own_question_asked_job", None) == job:
+            return
+        marked = oq.marked_questions(
+            [*checked.open_questions, *(getattr(self, "_open_questions_buffer", None) or ())]
+        )
+        held = oq.tools_serving(getattr(self, "tools", None) or (), marked) if marked else []
+        if not held or oq.requests_of(container, str(self.name)):
+            return
+        if not checked.claims and not checked.unparsed_answer:
+            return
+        names = [str(getattr(tool, "name", "")) for tool in held]
+        left = detonations_left(container)
+
+        def _note(record: dict[str, Any]) -> None:
+            BaseAnalyst._note_on_last_loop(self, oq.OWN_QUESTION_RECORD, record)  # type: ignore[arg-type]
+
+        def _not_asked(why: str) -> None:
+            self.logger.info("%s: the %s was %s.", self.name, oq.OWN_QUESTION_CALL, why)
+            _note(
+                oq.own_question_record(
+                    asked=False,
+                    questions=len(marked),
+                    tools=names,
+                    left=left,
+                    outcome=oq.NOT_ASKED.format(why=why),
+                )
+            )
+
+        if left < 1:
+            _not_asked(oq.CEILING_REACHED.format(ceiling=ceiling_of(container)))
+            return
+        short = too_little_time(container, getattr(self, "run_state_source", None))
+        if short:
+            _not_asked(short)
+            return
+        if not BaseAnalyst._turns_carry_tools(self, oq.OWN_QUESTION_CALL):  # type: ignore[arg-type]
+            _not_asked(oq.TOOLS_NOT_BOUND)
+            return
+        known = bool(getattr(self, "_last_loop_steps_known", False))
+        steps = getattr(self, "_last_loop_steps_left", None) if known else None
+        if isinstance(steps, int) and steps < 3:
+            _not_asked(oq.STEPS_SHORT.format(steps=steps))
+            return
+        timeout, _steps = loop_limits(self.name, getattr(self, "_budget_ceiling", None))
+        seconds = BaseAnalyst._seconds_the_last_loop_left(self, timeout)  # type: ignore[arg-type]
+        needs = BaseAnalyst.seconds_an_answer_needs(self)  # type: ignore[arg-type]
+        if seconds is not None and seconds < needs:
+            _not_asked(oq.TIME_SHORT.format(left=max(0.0, seconds), needs=needs))
+            return
+
+        question = oq.question_text(
+            marked,
+            names,
+            left,
+            limits_sentence(container),
+            run_state_lists=bool(detonations_line(container)),
+        )
+        # Nothing of the reply enters the answer: what the buffers and the
+        # answer-cut notes held before it is what they hold after it.
+        findings = list(getattr(self, "_findings_buffer", None) or [])
+        artifacts = list(getattr(self, "_artifacts_buffer", None) or [])
+        questions = list(getattr(self, "_open_questions_buffer", None) or [])
+        cut = getattr(self, "_last_answer_cut", None)
+        ended = bool(getattr(self, "_last_answer_ended", False))
+        entries_before = len(getattr(self, "_evidence_entries", None) or [])
+        filed_before = len(getattr(container, "detonation_requests", ()) or ())
+        sent_before = getattr(self, "_last_request_sent", None)
+        reply = ""
+        failed = ""
+        try:
+            self._questions_carry_tools = True
+            shown = answer_shown_back(checked)
+            self._question_base = BaseAnalyst._question_base_of(  # type: ignore[arg-type]
+                self, shown, tools=True
+            )
+            messages: list[BaseMessage] = []
+            prompt = self._system_prompt("", tools=None)
+            if prompt:
+                messages.append(SystemMessage(content=prompt))
+            messages.append(HumanMessage(content=self._truncate_input(evidence)))
+            rebuilt = frame_messages(
+                messages,
+                facts_block=str(getattr(self, "facts_block", "") or ""),
+                run_state=current_run_state(self),
+            )
+            turns: list[Any] = [*rebuilt, AIMessage(content=shown), HumanMessage(content=question)]
+            cap = int(self.output_cap_tokens() or 0)
+            continued = BaseAnalyst._continued_question(  # type: ignore[arg-type]
+                self, turns, rebuilt, cap, tools=True
+            )
+            plain = frame_messages(turns, run_state=current_run_state(self))
+            if continued is None and not BaseAnalyst._fits_the_window(self, plain, cap):  # type: ignore[arg-type]
+                _not_asked(oq.WINDOW_SHORT.format(cap=cap))
+                return
+            reply = BaseAnalyst._answer_after_loop(  # type: ignore[arg-type]
+                self,
+                plain
+                if continued is None
+                else frame_messages(continued, run_state=current_run_state(self)),
+                seconds,
+                what=oq.OWN_QUESTION_CALL,
+                tools=True,
+                plain=plain if continued is not None else None,
+                refuse_tools_free=True,
+            )
+        except Exception as exc:  # noqa: BLE001 — the validated answer stands
+            failed = describe_exception(exc)
+            self.logger.warning(
+                "%s: the %s found no answer (%s); the answer stands.",
+                self.name,
+                oq.OWN_QUESTION_CALL,
+                describe_exception_for_log(exc),
+            )
+        finally:
+            self._questions_carry_tools = False
+            self._question_base = None
+            self._findings_buffer = findings
+            self._artifacts_buffer = artifacts
+            self._open_questions_buffer = questions
+            self._last_answer_cut = cut
+            self._last_answer_ended = ended
+        asked = getattr(self, "_last_request_sent", None) != sent_before
+        if asked:
+            self._own_question_asked_job = job
+        filed = [
+            r
+            for r in list(getattr(container, "detonation_requests", ()) or ())[filed_before:]
+            if str(r.agent) == str(self.name)
+        ]
+        if not asked and not filed:
+            _not_asked(failed or "no request reached the model")
+            return
+        calls = len(getattr(self, "_evidence_entries", None) or []) - entries_before
+        _note(
+            oq.own_question_record(
+                asked=True,
+                questions=len(marked),
+                tools=names,
+                left=left,
+                outcome=oq.outcome_words(filed, failed),
+                requests=[r.name for r in filed],
+                calls=max(0, calls),
+                reply=str(reply or ""),
+            )
+        )
 
     def _validation_turn(
         self,
