@@ -294,7 +294,7 @@ def file_request(
                 f"joined to {same}, already accepted with exactly these arguments "
                 f"(asked for by {pending.agent or 'another agent'}, {pending.name}); "
                 "it is one detonation, and its record names every agent that asked; "
-                + _carried_out_and_read(same, later, joiner_turn)
+                + _carried_out_and_read(same, joiner_turn)
             )
         else:
             ceiling = ceiling_of(container)
@@ -348,15 +348,15 @@ def _made_answer(record: Any) -> str:
 _READ_IT = "Read it with the sandbox tools' detonation argument ({name})."
 
 
-def _carried_out_and_read(name: str, later: str, turn: bool) -> str:
+def _carried_out_and_read(name: str, turn: bool) -> str:
     """When and how the accepted detonation a joined request names is read, in the accepted
-    answer's own clauses: the step it is carried out on entry of, the further turn where
-    ``turn``, and the read.
+    answer's own clauses: when it is carried out, the further turn where ``turn``, and the
+    read. No step is named: on a team whose steps branch, the step the joining agent would
+    reach next is not always the one that carries the detonation out.
     """
-    step = f" ({later})" if later else ""
     return (
         "it is carried out on entry of the next step of the run that has an agent reading "
-        f"the sandbox{step}. " + (FURTHER_TURN_PROMISE if turn else "") + _READ_IT.format(name=name)
+        "the sandbox. " + (FURTHER_TURN_PROMISE if turn else "") + _READ_IT.format(name=name)
     )
 
 
@@ -438,7 +438,8 @@ def _state_words(record: Any) -> str:
     return f"not made{said}"
 
 
-def _honoured(record: Any) -> bool:
+def launch_honoured(record: Any) -> bool:
+    """Whether the run records ``record``'s launch as honoured by the sandbox."""
     launch = getattr(record, "launch", None)
     return isinstance(launch, dict) and launch.get("honoured") is True
 
@@ -458,7 +459,7 @@ def launch_words(record: Any, *, reads: bool = False) -> str:
     arguments = str(getattr(record, "arguments", "") or "")
     if not arguments:
         return "launched without arguments"
-    if not _honoured(record):
+    if not launch_honoured(record):
         return SUBMITTED_WITHOUT_ARGUMENTS
     shown = launch_text(arguments)
     hint = (
@@ -467,23 +468,33 @@ def launch_words(record: Any, *, reads: bool = False) -> str:
     return f"launched with `{shown}`{hint}"
 
 
+def asked_launch_words(record: Any, *, reads: bool, submitted: bool = True) -> str:
+    """``asked for by … with `<launch text>```, then, where ``submitted`` and the run does not
+    record the launch as honoured, :data:`SUBMITTED_WITHOUT_ARGUMENTS`: a further detonation's
+    launch as the run-state line and a further turn word it. ``reads`` as for
+    :func:`launch_words`.
+    """
+    askers = [a for a in getattr(record, "requested_by", ()) or () if isinstance(a, dict)]
+    arguments = str(getattr(record, "arguments", "") or "")
+    words = _asked_with(str(record.name), askers, arguments, reads=reads)
+    if submitted and not launch_honoured(record):
+        words += f", {SUBMITTED_WITHOUT_ARGUMENTS}"
+    return words
+
+
 def _record_item(record: Any) -> str:
     """One detonation the job holds a record of, as the run-state line names it."""
     from malspark.providers.detonation import JOB_ORIGIN
 
-    name = str(record.name)
-    arguments = str(getattr(record, "arguments", "") or "")
     submitted = bool(getattr(record, "submit_returned", False))
     if getattr(record, "origin", JOB_ORIGIN) == JOB_ORIGIN:
         who = "the job's own"
         if submitted:
             who += f", {launch_words(record)}"
     else:
-        askers = [a for a in getattr(record, "requested_by", ()) or () if isinstance(a, dict)]
-        who = _asked_with(name, askers, arguments, reads=bool(getattr(record, "reported", False)))
-        if submitted and not _honoured(record):
-            who += f", {SUBMITTED_WITHOUT_ARGUMENTS}"
-    return f"{name}, {who}: {_state_words(record)}"
+        reads = bool(getattr(record, "reported", False))
+        who = asked_launch_words(record, reads=reads, submitted=submitted)
+    return f"{record.name}, {who}: {_state_words(record)}"
 
 
 def detonations_line(container: Any) -> str:

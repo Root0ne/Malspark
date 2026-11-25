@@ -78,6 +78,17 @@ class TestTheJobsOwn:
         line = detonations_line(container(detonations=[record]))
         assert line.endswith("d1, the job's own, launched with `/quiet`: made, reported")
 
+    def test_an_escaped_launch_text_of_the_job_s_own_carries_no_hint(self) -> None:
+        """The job's own detonation's escaped launch text is shown without the pack's hint."""
+        record = first_detonation()
+        record.arguments, record.launch = "/k `x`", {"honoured": True}
+        line = detonations_line(container(detonations=[record]))
+        assert line.endswith(
+            f"d1, the job's own, launched with `{launch_text('/k `x`')}`: made, reported"
+        )
+        assert launch_text("/k `x`") != "/k `x`"
+        assert LAUNCH_SHOWN_ESCAPED.format(name="d1") not in line and "shown escaped" not in line
+
     def test_launch_arguments_not_passed_are_never_launched_with(self) -> None:
         record = first_detonation()
         record.arguments, record.launch = "/quiet", {"honoured": False}

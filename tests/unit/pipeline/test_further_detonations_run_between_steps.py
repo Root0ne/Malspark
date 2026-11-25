@@ -345,16 +345,19 @@ class TestTheFurtherTurn:
 
 
 class TestTheFurtherTurnSaysHowEachWasLaunched:
-    """It says "launched with" only where the run records the launch as honoured."""
+    """It says "launched with" only where the run records the launch as honoured; where it
+    was not, the text asked for is still named, as the run-state line names it."""
 
     @staticmethod
-    def _record(arguments: str, launch: dict[str, Any] | None) -> DetonationRecord:
+    def _record(
+        arguments: str, launch: dict[str, Any] | None, ordinal: int = 2
+    ) -> DetonationRecord:
         return DetonationRecord(
-            ordinal=2,
+            ordinal=ordinal,
             origin="agent",
             arguments=arguments,
             report=REPORTS["-a"],
-            requested_by=[{"agent": "dynamic", "cited_entries": ["ev_0003"]}],
+            requested_by=[{"request": "r1", "agent": "dynamic", "cited_entries": ["ev_0003"]}],
             submit_returned=True,
             launch=launch,
         )
@@ -371,14 +374,53 @@ class TestTheFurtherTurnSaysHowEachWasLaunched:
     def test_a_launch_not_recorded_as_honoured_is_said_as_the_run_state_line_says_it(
         self, launch: dict[str, Any] | None
     ) -> None:
-        from malspark.providers.detonation_requests import SUBMITTED_WITHOUT_ARGUMENTS
+        from malspark.providers.detonation_requests import (
+            SUBMITTED_WITHOUT_ARGUMENTS,
+            detonations_line,
+        )
 
-        text = dt._directive([self._record("-a", launch)])
+        record = self._record("-a", launch)
+        text = dt._directive([record])
         assert "launched with" not in text and "turn, with launch" not in text
         assert text.startswith(
             "Further detonations of the sample were made after your turn, asked for with launch "
-            f"arguments an agent found:\n- detonation d2: {SUBMITTED_WITHOUT_ARGUMENTS}, asked "
-            "for by dynamic citing ev_0003\n"
+            "arguments an agent found:\n- detonation d2: asked for by dynamic (r1) with `-a`, "
+            f"{SUBMITTED_WITHOUT_ARGUMENTS}, asked for by dynamic citing ev_0003\n"
+        )
+        # The same words, in the same order, as the run-state line's of the same record.
+        container = SimpleNamespace(detonations=[record], detonation_requests=[])
+        assert (
+            f"d2, asked for by dynamic (r1) with `-a`, {SUBMITTED_WITHOUT_ARGUMENTS}: made"
+            in detonations_line(container)
+        )
+
+    def test_an_escaped_text_not_honoured_points_to_its_exact_text(self) -> None:
+        from malspark.pipeline.triage_pack import LAUNCH_SHOWN_ESCAPED
+
+        text = dt._directive([self._record("-k `x`", {"honoured": False})])
+        assert (
+            "- detonation d2: asked for by dynamic (r1) with `-k \\x60x\\x60` "
+            f"{LAUNCH_SHOWN_ESCAPED.format(name='d2')}, submitted without its arguments"
+        ) in text
+
+    def test_over_a_list_with_one_not_honoured_the_heading_says_asked_for_with(self) -> None:
+        text = dt._directive(
+            [self._record("-a", {"honoured": True}), self._record("-b", {"honoured": False}, 3)]
+        )
+        assert text.startswith(
+            "Further detonations of the sample were made after your turn, asked for with launch "
+            "arguments an agent found:\n- detonation d2: launched with `-a`, asked for by "
+            "dynamic citing ev_0003\n- detonation d3: asked for by dynamic (r1) with `-b`, "
+            "submitted without its arguments (the provider did not pass them), asked for by "
+            "dynamic citing ev_0003\n"
+        )
+
+    def test_the_heading_reads_the_records_not_the_printed_words(self) -> None:
+        """A launch not recorded as honoured gives the "asked for with" heading even where its
+        line would begin as an honoured one's does."""
+        record = self._record("", {"honoured": False})
+        assert dt._directive([record]).startswith(
+            "Further detonations of the sample were made after your turn, asked for with"
         )
 
     def test_an_escaped_launch_text_points_to_its_exact_text(self) -> None:

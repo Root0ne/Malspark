@@ -647,18 +647,29 @@ def _asker_words(asker: dict[str, Any]) -> str:
 def _directive(records: list[DetonationRecord]) -> str:
     """What a further turn is asked: the new detonations, each with who asked and why.
 
-    How each was launched is worded as the run-state line words it
-    (``detonation_requests.launch_words``): "launched with" only where the
-    run records the launch as honoured.
+    How each was launched is worded as the run-state line words it: "launched
+    with" only where the run records the launch as honoured
+    (``detonation_requests.launch_words``); otherwise the text asked for and
+    that it was submitted without it (``detonation_requests.asked_launch_words``).
+    The heading reads the same records.
     """
-    from malspark.providers.detonation_requests import launch_words
+    from malspark.providers.detonation_requests import (
+        asked_launch_words,
+        launch_honoured,
+        launch_words,
+    )
 
     lines = []
     for record in records:
         askers = ", ".join(_asker_words(a) for a in record.requested_by)
-        launched = launch_words(record, reads=bool(getattr(record, "reported", False)))
+        reads = bool(getattr(record, "reported", False))
+        if launch_honoured(record) or not getattr(record, "arguments", ""):
+            launched = launch_words(record, reads=reads)
+        else:
+            # A further turn is given over detonations made, so each was submitted.
+            launched = asked_launch_words(record, reads=reads)
         lines.append(f"- detonation {record.name}: {launched}, asked for by {askers or 'an agent'}")
-    honoured = all(launch_words(record).startswith("launched with") for record in records)
+    honoured = all(launch_honoured(record) for record in records)
     return (
         "Further detonations of the sample were made after your turn, "
         + ("with" if honoured else "asked for with")

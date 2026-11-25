@@ -934,7 +934,7 @@ the request and answers at once, in code:
 | Answer | When |
 |---|---|
 | accepted, as detonation `d2`, `d3`… | the request passes every check below |
-| joined to `dN` | an identical argument set is already accepted and pending: it is one detonation, and its record names every agent that asked; it says, in the accepted answer's own words, the step it is carried out on entry of, the further turn where one is ahead for the joining agent, and how to read it |
+| joined to `dN` | an identical argument set is already accepted and pending: it is one detonation, and its record names every agent that asked; it says, in the accepted answer's own words, that it is carried out on entry of the next step of the run that has an agent reading the sandbox (no step is named: on a team whose steps branch, the joining agent's next step is not always the one that carries it out), the further turn where one is ahead for the joining agent, and how to read it |
 | refused, naming `dN` | a detonation already made was launched with exactly these arguments: read it if it reported, read it once it returns if it is running, and it is not launched again if it returned no report |
 | refused | the value is not one command line; no reason; no cited entries, or entries the run had not issued before the call (named); mock mode, no sample, or a provider that detonates nothing or cannot pass the arguments (with the provider's note); the ceiling is reached; no later step of the run has an agent that reads the sandbox |
 
@@ -1017,8 +1017,11 @@ that reads the sandbox and whose own turn began before a further detonation
 returned its report gets one further turn: its answer in force is revised with
 the new detonations named (who asked and the entries they cited, and how each
 was launched in the run-state line's words: "launched with" its launch text only
-where the run records the launch as honoured, and otherwise "submitted without
-its arguments (the provider did not pass them)"), and it reads
+where the run records the launch as honoured, and otherwise "asked for by" each
+agent that asked "with" its launch text, "submitted without its arguments (the
+provider did not pass them)"; the heading says "with launch arguments an agent
+found" only where every launch is recorded as honoured, and otherwise "asked for
+with"), and it reads
 them with the sandbox tools' `detonation` argument. The turn goes through the
 analyst's revision path but is no negotiation round: the platform's text is
 headed `FROM THE PLATFORM:`, and no negotiation framing, peer-reports line or
