@@ -49,6 +49,8 @@ from malspark.reporting.stated_host_values import (
     NOWHERE,
     ONLY_IN_ITS_CALL,
     ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE,
+    ONLY_IN_ITS_LAUNCH,
+    ONLY_IN_ITS_LAUNCH_ELSEWHERE_INSIDE,
     READ_OF_THE_CITED,
     UNHELD_WORDS,
     command_line_arguments,
@@ -231,6 +233,15 @@ class TestARefusalSaysWhatTheScanFound:
             ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE: (
                 "a cited entry holds it whole only where its answer repeats what its call asked "
                 "for; elsewhere only inside a longer run of text"
+            ),
+            ONLY_IN_ITS_LAUNCH: (
+                "a cited entry holds it whole only where it states the launch text of detonation "
+                "{number}{shown}, which the request for that detonation supplied"
+            ),
+            ONLY_IN_ITS_LAUNCH_ELSEWHERE_INSIDE: (
+                "a cited entry holds it whole only where it states the launch text of detonation "
+                "{number}{shown}, which the request for that detonation supplied; elsewhere only "
+                "inside a longer run of text"
             ),
             AS_BYTES: (
                 "a cited entry writes its whole value only as bytes, which the export does not "

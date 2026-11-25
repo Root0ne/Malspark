@@ -1793,6 +1793,12 @@ class SecondSourceRead(BaseModel):
     standing: str
     cited: bool = False
     holds: list[str] = Field(default_factory=list)
+    # On a read of a further detonation: each asked value its answer holds
+    # whole only where it states that detonation's launch text
+    # (``reporting.launch_echo``), which ``holds`` leaves out, and the
+    # detonation. Empty, and left out of the dump, on every other entry.
+    launch_echo: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    detonation: str = Field(default="", exclude_if=lambda value: not value)
 
 
 class CodeConstant(BaseModel):

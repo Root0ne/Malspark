@@ -10081,6 +10081,11 @@ class EntryTexts:
     # Each repeat (``repeated_of``) mapped to the entry that holds its answer:
     # a repeat's text is that answer, so its echo is the echo of that entry's call.
     holder_of: Mapping[str, str] = field(default_factory=dict)
+    # Each read of a further detonation, with that detonation and its launch
+    # text: a second echo the texts of :meth:`echo_free_parts` are read
+    # without. Empty on every index but the publish route's
+    # (:meth:`with_launch_echoes`), so the citation checks read as before.
+    launches: Mapping[str, tuple[str, str]] = field(default_factory=dict)
     # Each letter-and-digit run of the texts, and the entries it is a whole run
     # of: built once, on first use, by :meth:`may_hold`.
     _runs: dict[str, frozenset[str]] = field(default_factory=dict, compare=False, repr=False)
@@ -10329,30 +10334,74 @@ class EntryTexts:
             self._decoded[key] = readings_of(self.byte_runs_of(key))
         return self._decoded[key]
 
-    def echo_free_parts(self, entry_id: str) -> tuple[tuple[str, str | None], ...]:
+    def echo_free_parts(
+        self, entry_id: str, *, launch: bool = True
+    ) -> tuple[tuple[str, str | None], ...]:
         """Each text an entry was read in, as a pair written the same way: whole, and echo-free.
 
         Both as :func:`_without_call_echoes` writes a text — a JSON one read
         and written again, any other as it is — the first with nothing taken
         out, the second with the echo of the entry's own call taken out
         (``None`` for a text nested past what can be walked); a repeat's call
-        is the one whose answer it repeats (:meth:`_answer_arguments`). The two
-        are equal where nothing echoes the call, so comparing them compares
-        like with like. Read once per entry; the byte reading reads the second.
+        is the one whose answer it repeats (:meth:`_answer_arguments`). On a
+        read of a further detonation this index holds a launch for
+        (:attr:`launches`), the second is also without where it states that
+        detonation's launch text; ``launch`` false leaves that echo in. The two
+        are equal where nothing echoes, so comparing them compares like with
+        like. Read once per entry; the byte reading reads the second.
         """
         key = str(entry_id).strip().lower()
-        if key not in self._echo_free:
+        stated = self.launches.get(key, ("", ""))[1] if launch else ""
+        held = key if launch or key not in self.launches else f"{key}\0call"
+        if held not in self._echo_free:
             arguments = self._answer_arguments(key)
             read: list[tuple[str, str | None]] = []
             for part in self.parts_of(key):
                 try:
                     whole = _without_call_echoes(part, None)
-                    rest: str | None = _without_call_echoes(part, arguments)
+                    rest: str | None = _without_call_echoes(part, arguments, launch=stated)
                 except RecursionError:
                     whole, rest = part, None
                 read.append((whole, rest))
-            self._echo_free[key] = tuple(read)
-        return self._echo_free[key]
+            self._echo_free[held] = tuple(read)
+        return self._echo_free[held]
+
+    def launch_of(self, entry_id: str) -> tuple[str, str]:
+        """The further detonation an entry reads and its launch text, as :attr:`launches`
+        holds them; ``("", "")`` for any other entry."""
+        return self.launches.get(str(entry_id).strip().lower(), ("", ""))
+
+    def with_launch_echoes(self) -> EntryTexts:
+        """This index as the publish route reads it: a read of a further detonation also echoes
+        that detonation's launch text.
+
+        Each entry the platform filed as its read of a further detonation
+        (``detonation_reads.later_detonation_name``: a repeat by the entry
+        holding its answer) is held in :attr:`launches` with that detonation and
+        the launch text its answer states, where it states one. Every text-only
+        lookup is shared; the echo-free readings are read anew. The index itself
+        is returned where no entry reads a launched detonation.
+        """
+        from malspark.analysis.detonation_reads import later_detonation_name
+
+        launches: dict[str, tuple[str, str]] = {}
+        for entry_id in self.texts:
+            holder = self.entries.get(self.holder_of.get(entry_id) or entry_id)
+            name = later_detonation_name(holder) if holder is not None else ""
+            data = getattr(holder, "structured", None)
+            stated = str(data.get("launched_with") or "") if isinstance(data, Mapping) else ""
+            if name and stated.strip():
+                launches[entry_id] = (name, stated)
+        if not launches:
+            return self
+        return replace(
+            self,
+            launches=launches,
+            _echo_free={},
+            _bytes={},
+            _decoded={},
+            _byte_chances={},
+        )
 
     def _answer_arguments(self, entry_id: str) -> Any:
         """The arguments of the call whose answer an entry's text is.
@@ -11730,7 +11779,7 @@ def _echo_holders(value: str, cited: Sequence[str], entries: EntryTexts) -> tupl
     return tuple(holding) if longer else ()
 
 
-def _without_call_echoes(text: str, arguments: Any = None) -> str:
+def _without_call_echoes(text: str, arguments: Any = None, *, launch: str = "") -> str:
     """An entry's text with what echoes its own call taken out.
 
     Read through its JSON where it is JSON: a string is dropped where it
@@ -11745,6 +11794,11 @@ def _without_call_echoes(text: str, arguments: Any = None) -> str:
     cannot be told from a match. So is one that writes a key twice in one
     object: a parser keeps the last of the two, and what the first held would
     be read as absent.
+
+    With ``launch``, the launch text of the further detonation the entry
+    reads, what states that launch text is taken out too
+    (:func:`_launch_dropped`): the answer's ``launched_with`` field where it
+    is that text, and the end of a process row's command line where it is.
     """
     import json as _json
 
@@ -11789,8 +11843,87 @@ def _without_call_echoes(text: str, arguments: Any = None) -> str:
                 return [_drop(item, ()) for item in node]
             return node
 
+        if launch.strip():
+            parsed = _launch_dropped(parsed, launch)
         return _json.dumps(_drop(parsed, ((),)), ensure_ascii=False, indent=1)
     return str(text or "")
+
+
+# The field a read of a further detonation states its launch text in
+# (``providers.detonation.DetonationRecord.stated``).
+LAUNCH_FIELD = "launched_with"
+
+
+def _launch_dropped(node: Any, launch: str) -> Any:
+    """A JSON value without where it states a further detonation's launch text.
+
+    The :data:`LAUNCH_FIELD` field whose string is that text, compared
+    case-insensitively, is dropped; a process row (an object stating its own
+    process id and its parent's, under the platform's sandbox document's
+    fields, ``sandbox_document.PROCESS_ID_KEYS`` and ``PROCESS_PARENT_KEYS``)
+    whose command line (``PROCESS_COMMAND_LINE_PATHS``) ends with that text,
+    after white space, keeps the command line before it. Everything else is as
+    it is; the value is copied, never edited.
+    """
+    from malspark.schemas.sandbox_document import (
+        PROCESS_COMMAND_LINE_PATHS,
+        PROCESS_ID_KEYS,
+        PROCESS_PARENT_KEYS,
+    )
+
+    wanted = launch.strip().lower()
+    ids = {key.lower() for key in PROCESS_ID_KEYS}
+    parents = {key.lower() for key in PROCESS_PARENT_KEYS}
+    paths = [tuple(step.lower() for step in path) for path in PROCESS_COMMAND_LINE_PATHS]
+
+    def _cut(line: Any) -> Any:
+        # The command line before the launch text it ends with.
+        if not isinstance(line, str):
+            return line
+        written = line.rstrip()
+        head = written[: len(written) - len(wanted)]
+        if (
+            len(written.lower()) == len(written)
+            and written.lower().endswith(wanted)
+            and len(written) > len(wanted)
+            and head[-1:].isspace()
+        ):
+            return head.rstrip()
+        return line
+
+    def _in_a_row(node: dict[Any, Any], path: tuple[str, ...]) -> dict[Any, Any]:
+        # The row with the command line at ``path`` cut, where it stands there.
+        out = dict(node)
+        for key, item in node.items():
+            if str(key).strip().lower() != path[0]:
+                continue
+            if len(path) == 1:
+                out[key] = _cut(item)
+            elif isinstance(item, dict):
+                out[key] = _in_a_row(item, path[1:])
+        return out
+
+    def _walk(node: Any) -> Any:
+        if isinstance(node, list):
+            return [_walk(item) for item in node]
+        if not isinstance(node, dict):
+            return node
+        folded = {str(key).strip().lower() for key in node}
+        out = {
+            key: _walk(item)
+            for key, item in node.items()
+            if not (
+                str(key).strip().lower() == LAUNCH_FIELD
+                and isinstance(item, str)
+                and item.strip().lower() == wanted
+            )
+        }
+        if ids & folded and parents & folded:
+            for path in paths:
+                out = _in_a_row(out, path)
+        return out
+
+    return _walk(node)
 
 
 def _text_holds(text: str, value: str, *, fields: bool = False, listing: bool = False) -> bool:
@@ -11830,7 +11963,12 @@ ECHO_FREE_HOLDS_NONE = "echo_free_holds_none"
 
 
 def held_only_in_its_echo(
-    entries: EntryTexts, entry_id: str, held: Callable[[str], bool], forms: Iterable[str]
+    entries: EntryTexts,
+    entry_id: str,
+    held: Callable[[str], bool],
+    forms: Iterable[str],
+    *,
+    launch: bool = True,
 ) -> str:
     """What an entry holds of a value that a lookup's own test finds whole only in its call's echo.
 
@@ -11845,9 +11983,16 @@ def held_only_in_its_echo(
     ``_`` of its run touches, the run read decoded (:func:`_touched_by_none`);
     :data:`ECHO_FREE_HOLDS_IT_INSIDE` where each place is touched;
     :data:`ECHO_FREE_HOLDS_NONE` where they hold no spelling. A text nested
-    past what can be walked tells no echo apart: ``""``.
+    past what can be walked tells no echo apart: ``""``. The echo is the
+    call's and, on the publish route's index, a read's launch text
+    (:meth:`EntryTexts.with_launch_echoes`); ``launch`` false reads the call's
+    alone.
     """
-    parts = entries.echo_free_parts(entry_id)
+    parts = (
+        entries.echo_free_parts(entry_id)
+        if launch
+        else entries.echo_free_parts(entry_id, launch=False)
+    )
     if any(rest is None for _whole, rest in parts):
         return ""
     if not any(rest != whole and held(whole) for whole, rest in parts):
