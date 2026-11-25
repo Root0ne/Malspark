@@ -1,0 +1,41 @@
+{
+ "entries": [
+  {
+   "constant": "malspark.reporting.launch_echo:LAUNCH_SUPPLIED",
+   "condition": "the first words of the refusal of a value a further detonation's launch text supplies, on which such a detonation's mark stands and which no entry of the run holds whole outside the reads of the detonations launched with it, what an entry's own call asked for and a call given their launch text; on every surface the publish answer reaches, a judge's value included",
+   "basis": [
+    "MalwareReport.launch_values, written by launch_echo.launch_record at build time",
+    "the rows of the report's network and dynamic blocks of the value's kind and value"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_value_a_further_detonation_s_launch_text_supplies_is_not_published.py::TestTheWords::test_a_value_the_launch_text_holds",
+    "tests/unit/reporting/test_a_value_a_further_detonation_s_launch_text_supplies_is_not_published.py::TestAValueOnlyTheLaunchedDetonationsObservedIsRefused::test_the_host_of_user_at_host_the_judge_names"
+   ],
+   "text_digest": "410f005f25fccc8cab5bc96b07a4919b07b3ec6ead06a797f6abf0ab3f82a1f9"
+  },
+  {
+   "constant": "malspark.reporting.launch_echo:COMPARED",
+   "condition": "in that refusal, how the launch text was compared with the value: without case and with / read as \\",
+   "basis": [
+    "launch_echo.launch_form"
+   ],
+   "test": "tests/unit/reporting/test_a_value_a_further_detonation_s_launch_text_supplies_is_not_published.py::TestTheWords::test_a_value_the_launch_text_holds",
+   "text_digest": "a3a2e73b357bb4e512965f6707f209bd8b5b4ebf004281166ed0d111b7364bc6"
+  },
+  {
+   "function": "malspark.reporting.launch_echo:_refusal_words",
+   "condition": "the refusal of a value a further detonation's launch text supplies: which detonation's launch text holds it and how (whole, its end after an environment variable, or an address that detonation resolved for a host the launch text holds), the launch text as every surface writes one, and which entries the run's search left out (the reads of the detonations launched with it, named, the entries whose call was given their launch text, the entries holding it only where their answer repeats their own call)",
+   "basis": [
+    "the record's detonation, launched_with, form and through",
+    "every detonation of the record that supplies the value"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_value_a_further_detonation_s_launch_text_supplies_is_not_published.py::TestTheWords::test_a_value_the_launch_text_holds",
+    "tests/unit/reporting/test_a_value_a_further_detonation_s_launch_text_supplies_is_not_published.py::TestTheWords::test_two_detonations_launched_with_it",
+    "tests/unit/reporting/test_a_value_a_further_detonation_s_launch_text_supplies_is_not_published.py::TestAValueOnlyTheLaunchedDetonationsObservedIsRefused::test_an_address_the_detonation_resolved_for_a_launch_host",
+    "tests/unit/reporting/test_a_value_a_further_detonation_s_launch_text_supplies_is_not_published.py::TestAValueOnlyTheLaunchedDetonationsObservedIsRefused::test_a_folder_an_environment_variable_of_the_launch_expands_to"
+   ],
+   "text_digest": "44d4d1c9d96c17d92846547f7f0bd63cb2ec1d6c408fe770f9d0dd6af5c56a01"
+  }
+ ]
+}

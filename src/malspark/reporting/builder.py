@@ -378,6 +378,13 @@ class MalwareReportBuilder:
         report.second_source_reads = second_source_reads(
             report, self.evidence_ledger, self.evidence_corpus
         )
+        # Each value a further detonation's launch text supplies, with the
+        # entries that hold it beside the reads of the detonations launched
+        # with it: what the publish rule asks before it publishes a value only
+        # those detonations observed. Nothing on a run with one detonation.
+        from malspark.reporting.launch_echo import launch_record
+
+        report.launch_values = launch_record(report, self.evidence_ledger, self.evidence_corpus)
 
         # Deterministic front-matter, version history,
         # and consolidated IOC table (the professional-report scaffolding the
@@ -921,8 +928,12 @@ def _build_consolidated_iocs(
     # verdict's table reads every row alike, whoever recorded it.
     verdict = stated_verdict(report)
 
-    def publish_answer(kind: str, value: str, source: Any, *args: Any, **kwargs: Any) -> str:
-        return _publish_answer(kind, value, source, *args, **{**kwargs, "verdict": verdict})
+    def publish_answer(
+        kind: str, value: str, source: Any, *args: Any, report: Any, **kwargs: Any
+    ) -> str:
+        return _publish_answer(
+            kind, value, source, *args, report=report, **{**kwargs, "verdict": verdict}
+        )
 
     rows: list[ConsolidatedIOC] = []
     seen: set[tuple[str, str]] = set()
@@ -990,6 +1001,7 @@ def _build_consolidated_iocs(
             kind,
             value,
             "strings",
+            report=report,
             corroborating=corroborating,
             # A value the judge's indicator names is the judge's, whichever
             # row holds it: the sweep did not bring it alone.
@@ -1001,7 +1013,7 @@ def _build_consolidated_iocs(
     # the rule by its class (``identity_rows``): its own bytes' digests are
     # published under every verdict, its similarity digests as the verdict's
     # table says.
-    for identity in identity_rows(report.identity.hashes, verdict):
+    for identity in identity_rows(report.identity.hashes, verdict, report=report):
         _add(
             identity.type,
             "hash",
@@ -1023,7 +1035,9 @@ def _build_consolidated_iocs(
     # (``stix_renderer.sandbox_host_kwargs``). Every other is withheld with
     # the reason.
     def _sandbox_host(kind: str, value: str) -> str:
-        return publish_answer(kind, value, "sandbox", **sandbox_host_kwargs(report, kind, value))
+        return publish_answer(
+            kind, value, "sandbox", report=report, **sandbox_host_kwargs(report, kind, value)
+        )
 
     def _digest_type(value: str) -> str:
         # A digest is named by its length; any other length names none.
@@ -1074,6 +1088,7 @@ def _build_consolidated_iocs(
                     bound.kind,
                     bound.value,
                     BOUND_SOURCE,
+                    report=report,
                     **bound_kwargs(report, bound.kind, bound.value),
                 ),
                 is_network=network,
@@ -1205,7 +1220,7 @@ def _build_consolidated_iocs(
         if row.source == "strings":
             row.published = _from_strings(row.kind or "", row.value)
         else:
-            row.published = publish_answer(row.kind or "", row.value, row.source)
+            row.published = publish_answer(row.kind or "", row.value, row.source, report=report)
 
     # The host values the analysis states (the report model's identifier
     # table) that the one rule publishes, each under source ``analysis`` with
@@ -1281,6 +1296,7 @@ def _build_consolidated_iocs(
                         ioc_kind,
                         value,
                         "analyst",
+                        report=report,
                         listed_by=listed,
                         seen_in=sighted,
                         tool_search=searched,
@@ -1299,7 +1315,9 @@ def _build_consolidated_iocs(
     # which names no process beside them: each is refused as an unattributed
     # flow is, on every surface, and STIX has no object for one either.
     def _captured(kind: str, value: str) -> str:
-        return publish_answer(kind, value, "sandbox", unattributed=UNATTRIBUTED_CAPTURE_VALUE)
+        return publish_answer(
+            kind, value, "sandbox", report=report, unattributed=UNATTRIBUTED_CAPTURE_VALUE
+        )
 
     # The network block's record of each name whose row it wrote, so a form
     # row's context is written again without the block's reading of it as a host.
@@ -1320,6 +1338,7 @@ def _build_consolidated_iocs(
                     d.fqdn,
                     d.source,
                     d.reputation,
+                    report=report,
                     corroborating=corroborating,
                     **emulation_kwargs(report, "domain", d.fqdn, emulated),
                 ),
@@ -1344,6 +1363,7 @@ def _build_consolidated_iocs(
                     ip.address,
                     ip.source,
                     ip.reputation,
+                    report=report,
                     corroborating=corroborating,
                     **emulation_kwargs(report, "ip", ip.address, emulated),
                 ),
@@ -1371,6 +1391,7 @@ def _build_consolidated_iocs(
                     u.url,
                     source,
                     reputations.get(url_host(u.url)),
+                    report=report,
                     corroborating=corroborating,
                     **emulation_kwargs(report, "url", u.url, emulated),
                 ),
@@ -1505,12 +1526,13 @@ def with_record(rows: Iterable[ConsolidatedIOC], report: Any) -> list[Consolidat
     return out
 
 
-def identity_rows(hashes: Any, verdict: Any) -> list[ConsolidatedIOC]:
+def identity_rows(hashes: Any, verdict: Any, report: Any = None) -> list[ConsolidatedIOC]:
     """The sample's own digests as the IOC table lists them, each with the rule's answer.
 
     In the table's order (``stix_renderer.SAMPLE_DIGESTS``); a digest the
     identity does not hold is no row. ``verdict`` is the one the rule is asked
-    under (``stix_renderer.stated_verdict``).
+    under (``stix_renderer.stated_verdict``); ``report`` the report they are
+    of, which the rule is handed as every row's is.
     """
     from malspark.reporting.renderers.stix_renderer import (
         SAMPLE_DIGESTS,
@@ -1532,7 +1554,12 @@ def identity_rows(hashes: Any, verdict: Any) -> list[ConsolidatedIOC]:
                 context="the sample",
                 description="the sample",
                 published=publish_answer(
-                    "hash", value, "identity", verdict=verdict, digest=sample_digest_role(label)
+                    "hash",
+                    value,
+                    "identity",
+                    verdict=verdict,
+                    digest=sample_digest_role(label),
+                    report=report,
                 ),
             )
         )
@@ -1707,6 +1734,7 @@ def _with_the_hosts_of_published_urls(
                     "domain",
                     host,
                     source,
+                    report=report,
                     **{**emulation_kwargs(report, "domain", host), "verdict": verdict},
                 ),
                 is_network=True,

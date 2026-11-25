@@ -976,13 +976,17 @@ def identifier_answers(report: Any) -> list[tuple[StatedHostValue, str]]:
     for index, item in enumerate(rows):
         kwargs = analysis_kwargs(report, item, beyond_rows=index >= MAX_STATED_ROWS)
         stated = kwargs["stated"]
-        answer = publish_answer(stated.table_kind, stated.value, ANALYSIS_SOURCE, **kwargs)
+        answer = publish_answer(
+            stated.table_kind, stated.value, ANALYSIS_SOURCE, report=report, **kwargs
+        )
         for sandbox_kind in stated.kind.sandbox_kinds if stated.kind is not None else ():
             if not publishes(answer):
                 break
             placed: dict[str, Any] = dict(sandbox_host_kwargs(report, sandbox_kind, stated.value))
             if placed.get("unattributed"):
-                refused = publish_answer(sandbox_kind, stated.value, "sandbox", **placed)
+                refused = publish_answer(
+                    sandbox_kind, stated.value, "sandbox", report=report, **placed
+                )
                 if not publishes(refused):
                     answer = refused
         out.append((stated, answer))

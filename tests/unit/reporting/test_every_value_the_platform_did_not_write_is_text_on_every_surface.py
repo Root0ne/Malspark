@@ -927,6 +927,14 @@ NOT_PRINTED = frozenset(
         "front_matter.team",
         "identity.platform",
         "identity.signing.signer_thumbprint",
+        # The build's record of each value a further detonation's launch text
+        # supplies: a refusal says what it read, a payload matches no row.
+        "launch_values[].detonation",
+        "launch_values[].form",
+        "launch_values[].held_by[]",
+        "launch_values[].launched_with",
+        "launch_values[].through",
+        "launch_values[].value",
         "limitation_inventory.failed[].answered[][]",
         "limitation_inventory.failed[].error",
         "limitation_inventory.questions[].agent",

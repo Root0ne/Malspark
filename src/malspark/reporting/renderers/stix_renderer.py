@@ -5958,6 +5958,7 @@ def publish_answer(
     digest: str = "",
     judge_s_value: bool = False,
     judge_names_none: bool = False,
+    report: Any = None,
 ) -> str:
     """The publish rule's answer for one row, as the report prints it.
 
@@ -5975,8 +5976,19 @@ def publish_answer(
     (:func:`withheld_by_the_verdict`) is ``no: <the verdict's reason>; the evidence
     alone would publish it (<what it stands on>)``: the verdict first, and what the
     evidence said of it kept after it as a clause of its own, the judge's keep among it.
+
+    ``report`` is the report the row is of. Asked first after the sample's
+    own digests: a value only further detonations launched with it observed,
+    which their launch text supplies, is refused, whoever recorded or named
+    it (``launch_echo.launch_supplied_refusal``). Every call site passes it.
     """
     text = str(value or "").strip()
+    if report is not None and not digest:
+        from malspark.reporting.launch_echo import launch_supplied_refusal
+
+        supplied = launch_supplied_refusal(report, kind, text)
+        if supplied:
+            return refused(supplied)
     from_strings = str(source or "").strip().lower() in ("", "strings")
     corroborated = second_source(text, corroborating, path=kind == "path") if from_strings else ""
     admitted = (
@@ -6227,13 +6239,15 @@ def judge_value_answer(
     if said:
         # A value the code passes whole to an API argument of its role is
         # asked as that binding's row is: the chain is its source.
-        return publish_answer(kind, text, BOUND_SOURCE, **{**said, "verdict": verdict})
+        return publish_answer(
+            kind, text, BOUND_SOURCE, report=report, **{**said, "verdict": verdict}
+        )
     host = sandbox_host_kwargs(report, kind, text)
     if host:
         # A file, digest, key or mutex the sandbox recorded and attributes to
         # no process of the sample's tree: the judge's indicator for it is
         # asked as the sandbox's row is, never corroborated by that row.
-        return publish_answer(kind, text, "sandbox", **{**host, "verdict": verdict})
+        return publish_answer(kind, text, "sandbox", report=report, **{**host, "verdict": verdict})
     emulated = {**emulation_kwargs(report, kind, text), "verdict": verdict}
     if emulated.get("unattributed"):
         # A value the sandbox attributes no flow of the sample to is the
@@ -6275,11 +6289,23 @@ def judge_value_answer(
     )
     if kind == "domain" and row is not None:
         return publish_answer(
-            "domain", text, row.source, row.reputation, corroborating=corroborating, **emulated
+            "domain",
+            text,
+            row.source,
+            row.reputation,
+            corroborating=corroborating,
+            report=report,
+            **emulated,
         )
     if kind == "ip" and row is not None:
         return publish_answer(
-            "ip", text, row.source, row.reputation, corroborating=corroborating, **emulated
+            "ip",
+            text,
+            row.source,
+            row.reputation,
+            corroborating=corroborating,
+            report=report,
+            **emulated,
         )
     if kind == "url" and row is not None:
         return publish_answer(
@@ -6288,6 +6314,7 @@ def judge_value_answer(
             row.source or "strings",
             _host_reputation(report, url_host(text)),
             corroborating=corroborating,
+            report=report,
             **emulated,
         )
     if kind == "hash":
@@ -6300,7 +6327,12 @@ def judge_value_answer(
         own.pop("", None)
         if text.lower() in own:
             return publish_answer(
-                "hash", text, "identity", verdict=verdict, digest=own[text.lower()]
+                "hash",
+                text,
+                "identity",
+                verdict=verdict,
+                digest=own[text.lower()],
+                report=report,
             )
     reputation = _host_reputation(report, url_host(text)) if kind == "url" else None
     # Asked as the string sweep's, and refused naming the source that holds
@@ -6332,6 +6364,7 @@ def judge_value_answer(
         # Asked as the string sweep's for its sources, and not the sweep's own
         # value: its shape is not asked.
         judge_s_value=True,
+        report=report,
         # The search's own facts win over the emulation record's on a shared key.
         **{**emulated, **sourced},
     )
