@@ -240,6 +240,7 @@ from malspark.schemas.isr_models import (
     AgentISR,
     ClaimEvidence,
     carried_note,
+    open_question_line,
     retry_added_marker,
 )
 from malspark.schemas.stix_models import Bundle, SimilarCases
@@ -3455,7 +3456,85 @@ def stage_record(
     return {"stage_results": {str(getattr(stage, "key", "")): entry}}
 
 
-def upstream_findings(stage: Any, state: AnalysisState, container: ServiceContainer) -> str:
+UPSTREAM_QUESTIONS_HEADING = (
+    "Open questions the upstream agents left (unknowns, not absences; each in its filer's "
+    "words, one line, under the platform's field labels):"
+)
+UPSTREAM_QUESTIONS_LEFT_OUT = (
+    "- {count} more open question(s) are not shown here (the upstream block's room)"
+)
+
+
+def _no_question_fits(_block: str) -> bool:
+    """A ``fits`` no block passes: the hand-off with its claims alone."""
+    return False
+
+
+def _upstream_question_lines(wanted: list[str], isr_reports: Mapping[str, Any]) -> list[str]:
+    """One line per open question the ``wanted`` agents left, in their order and each one's own.
+
+    The question as every summary writes it (``open_question_line``), behind
+    the agent whose answer holds it, and behind the agent that left it open
+    where that is another one (``OpenQuestion.source``, a callee's question
+    handed to its lead).
+    """
+    lines: list[str] = []
+    for agent in dict.fromkeys(wanted):
+        isr = isr_reports.get(agent)
+        for question in list(getattr(isr, "open_questions", []) or []) if isr is not None else []:
+            filer = agent
+            source = " ".join(str(getattr(question, "source", "") or "").split())
+            if source:
+                filer = f"{agent}, left open by {source}"
+            lines.append(f"- {filer}: {open_question_line(question)}")
+    return lines
+
+
+def _questions_block(lines: list[str], shown: int) -> str:
+    """The heading and the first ``shown`` of ``lines``, and a line counting any left out."""
+    block = [UPSTREAM_QUESTIONS_HEADING, *lines[:shown]]
+    if shown < len(lines):
+        block.append(UPSTREAM_QUESTIONS_LEFT_OUT.format(count=len(lines) - shown))
+    return "\n".join(block)
+
+
+def _with_questions(
+    claims: str, lines: list[str], room: int | None, fits: Callable[[str], bool] | None
+) -> str:
+    """``claims`` and as many of ``lines`` as fit, line by line; ``claims`` alone where none does.
+
+    A line is shown only while the questions block, with the line that counts
+    what is left out, fits ``room`` (the characters the claims leave under the
+    hand-off's limit; ``None`` for no limit) and the whole hand-off passes
+    ``fits``. Every line or the first ones in order, never a line cut.
+    """
+    separator = "\n\n" if claims else ""
+
+    def passes(shown: int) -> str:
+        block = _questions_block(lines, shown)
+        if room is not None and len(block) > room:
+            return ""
+        handoff = f"{claims}{separator}{block}"
+        return handoff if fits is None or fits(handoff) else ""
+
+    whole = passes(len(lines))
+    if whole:
+        return whole
+    kept = claims
+    for shown in range(1, len(lines)):
+        handoff = passes(shown)
+        if not handoff:
+            break
+        kept = handoff
+    return kept
+
+
+def upstream_findings(
+    stage: Any,
+    state: AnalysisState,
+    container: ServiceContainer,
+    fits: Callable[[str], bool] | None = None,
+) -> str:
     """What the stages this one depends on found, as a prompt block.
 
     ``findings`` is the claim spine — title, technique, confidence, evidence id
@@ -3465,6 +3544,18 @@ def upstream_findings(stage: Any, state: AnalysisState, container: ServiceContai
     ``none`` is what the default profile uses, because its analysts have never
     seen each other's work before the debate and changing that would change
     every number the paper reports.
+
+    Under ``findings`` the open questions the upstream agents left follow the
+    claims as one block (:data:`UPSTREAM_QUESTIONS_HEADING`), each on one line
+    as every summary writes it. The claims come first and are exactly what they
+    are without the questions: the questions take only the room the claims
+    leave under the block's limit (``upstream_chars``), fitted line by line,
+    with a last line counting those left out, and no block where not one line
+    fits. A block of claims cut at the limit takes no question. ``full``
+    carries the upstream answers whole and gets no questions block, so no
+    question is shown twice. ``fits`` is a further test the whole block must
+    pass for each line: the node's, that the questions cost no claim its place
+    in the agent's input (:func:`_keeps_the_claims`).
     """
     mode = str(getattr(stage, "inject_upstream", "findings"))
     if mode == "none":
@@ -3516,13 +3607,20 @@ def upstream_findings(stage: Any, state: AnalysisState, container: ServiceContai
                 lines.extend(["", prose])
         lines.append("")
 
-    if len(lines) <= 2:
+    asked = [] if mode == "full" else _upstream_question_lines(wanted, isr_reports)
+    if len(lines) <= 2 and not asked:
         return ""
-    block = "\n".join(lines).rstrip()
+    block = "\n".join(lines).rstrip() if len(lines) > 2 else ""
     limit = upstream_chars(container)
     if limit and len(block) > limit:
         block = block[:limit].rstrip() + "\n\n[upstream findings truncated]"
-    return block
+        return block
+    if not asked:
+        return block
+    room = None
+    if limit:
+        room = limit - len(block) - (len("\n\n") if block else 0)
+    return _with_questions(block, asked, room, fits)
 
 
 def input_room_of(agent: Any) -> Room:
@@ -3704,6 +3802,54 @@ def _with_upstream(chunks: list, block: str) -> list:
     if content is None:
         content = f"{block}\n\n{head.content}"
     return [replace(head, content=content, char_count=len(content)), *chunks[1:]]
+
+
+def _keeps_the_claims(chunks: list, claims: str, room: Room | None) -> bool:
+    """Whether the first of ``chunks`` holds ``claims`` whole and is sent whole.
+
+    Where :func:`_with_upstream` put them: at the head of a prose chunk, or
+    in the ``upstream_findings`` field of a JSON head. A single chunk must
+    also fit the analyst's room, which its prompt would otherwise shorten.
+    """
+    if not chunks:
+        return True
+    head = str(chunks[0].content)
+    if claims and not (head.startswith(claims) or json.dumps(claims)[1:-1] in head):
+        return False
+    if len(chunks) == 1 and room is not None:
+        bound = room(head)
+        return bound is None or len(head) <= bound
+    return True
+
+
+def _handed_upstream(
+    chunks: list,
+    block: str,
+    handoff: Callable[[Callable[[str], bool] | None], str],
+    config: Any,
+    room: Room | None,
+) -> list:
+    """``chunks`` with the upstream ``block`` in their head, joined where sources fit together.
+
+    ``block`` is the hand-off the head source was sized for. Where, with its
+    open questions, a claim of it is not whole in the first chunk or a single
+    chunk is past the analyst's room (:func:`_keeps_the_claims`), the
+    questions are fitted again, line by line, to the chunks as they are; with
+    none fitting the block is its claims alone (``handoff`` asked with no
+    room for a question).
+    """
+    shown = joined_when_it_fits(_with_upstream(chunks, block), config, room)
+    if not block:
+        return shown
+    claims = handoff(_no_question_fits)
+    if claims == block or _keeps_the_claims(shown, claims, room):
+        return shown
+
+    def fits(candidate: str) -> bool:
+        joined = joined_when_it_fits(_with_upstream(chunks, candidate), config, room)
+        return _keeps_the_claims(joined, claims, room)
+
+    return joined_when_it_fits(_with_upstream(chunks, handoff(fits)), config, room)
 
 
 def _corroboration_with_publication(report: Any, state: AnalysisState) -> dict[str, Any] | None:
@@ -4631,9 +4777,16 @@ def make_stage_agent_node(
                     }
                 )
 
-            chunks = _with_upstream(chunks, upstream_block)
             # Sources that fit the room together are one chunk, and one loop.
-            chunks = joined_when_it_fits(chunks, container.config.chunking, room)
+            # The upstream questions stay only as far as they cost no claim
+            # its place in the first chunk.
+            chunks = _handed_upstream(
+                chunks,
+                upstream_block,
+                lambda fits: upstream_findings(stage, state, container, fits),
+                container.config.chunking,
+                room,
+            )
 
             if len(chunks) == 1:
                 # View-decomposition pilot (findings-log §3.6): when enabled,

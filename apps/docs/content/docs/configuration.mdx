@@ -3451,9 +3451,17 @@ not triage.has_signature and triage.reputation_malicious != None and triage.repu
 `inject_upstream` decides what a stage is told about the stages it depends on.
 `none` tells it nothing, which is what the default team uses — its analysts
 have never seen each other's work before the debate. `findings` gives it each
-upstream agent's claims with their technique, confidence and evidence id.
-`full` adds each upstream agent's prose report. Both are capped by
+upstream agent's claims with their technique, confidence and evidence id,
+and after all of them one block of the open questions those agents left, of
+every reason, each on one line under the agents' names. `full` adds each
+upstream agent's prose report, which already lists its open questions, so it
+gets no questions block. Both are capped by
 `core.reporting.upstream_findings_max_chars`, and a block that is cut says so.
+The claims come first and are never cut for a question: the questions take
+only the room the claims leave under the cap, line by line, with a last line
+counting those left out, and none where not one line fits. In the agent's
+input they stay only as far as every claim stays whole in its first chunk and
+a single chunk stays inside the agent's room.
 The triage pack is capped by it too; the further detonations' lines take a room
 the size of the cap of their own after the job's own, and each further
 detonation is named on at least one line even where that passes the cap.
