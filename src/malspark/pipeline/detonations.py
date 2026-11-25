@@ -252,6 +252,17 @@ def further_turn_ahead(container: Any, current: str) -> bool:
     )
 
 
+def given_further_turns(container: Any, agent: str) -> bool:
+    """Whether ``agent`` is of the agents a further turn is given to (:func:`_readers_owed`).
+
+    An agent of an analysis step that reads the sandbox; whether it is owed
+    one also depends on its answer and on what it read, known only then.
+    """
+    return any(
+        step.kind == "analysis" and agent in step.agents for step in steps_of(container)
+    ) and reads_the_sandbox(container, agent)
+
+
 # The step the code running now belongs to, set on each node's entry
 # (:func:`on_entry`): per context, so steps running at once never overwrite
 # each other's, and a tool call made inside a step reads its own.
@@ -323,6 +334,22 @@ def _needs_seconds(container: Any) -> float | None:
     if isinstance(timeout, int | float) and not isinstance(timeout, bool):
         return float(timeout)
     return None
+
+
+def too_little_time(container: Any, state: Any) -> str:
+    """Why the job's time limit leaves no room for a detonation now; ``""`` where it does.
+
+    The test :func:`_detonate` makes before it submits: what the limit leaves
+    against the provider's own detonation time. A job with no time limit
+    leaves room, and so does one with time left whose provider states no
+    detonation time.
+    """
+    left, needs = _seconds_left(container, state), _needs_seconds(container)
+    if left is None or (left > 0 and (needs is None or left >= needs)):
+        return ""
+    return f"the job's time limit leaves {max(0, int(left))} seconds" + (
+        f", and a detonation may take {int(needs)}" if needs is not None else ""
+    )
 
 
 def _stage_of_step(container: Any, step: str) -> str:
@@ -618,17 +645,35 @@ def _asker_words(asker: dict[str, Any]) -> str:
 
 
 def _directive(records: list[DetonationRecord]) -> str:
-    """What a further turn is asked: the new detonations, each with who asked and why."""
+    """What a further turn is asked: the new detonations, each with who asked and why.
+
+    How each was launched is worded as the run-state line words it: "launched
+    with" only where the run records the launch as honoured
+    (``detonation_requests.launch_words``); otherwise the text asked for and
+    that it was submitted without it (``detonation_requests.asked_launch_words``).
+    The heading reads the same records.
+    """
+    from malspark.providers.detonation_requests import (
+        asked_launch_words,
+        launch_honoured,
+        launch_words,
+    )
+
     lines = []
     for record in records:
         askers = ", ".join(_asker_words(a) for a in record.requested_by)
-        lines.append(
-            f"- detonation {record.name}: launched with {record.arguments!r}, asked for by "
-            f"{askers or 'an agent'}"
-        )
+        reads = bool(getattr(record, "reported", False))
+        if launch_honoured(record) or not getattr(record, "arguments", ""):
+            launched = launch_words(record, reads=reads)
+        else:
+            # A further turn is given over detonations made, so each was submitted.
+            launched = asked_launch_words(record, reads=reads)
+        lines.append(f"- detonation {record.name}: {launched}, asked for by {askers or 'an agent'}")
+    honoured = all(launch_honoured(record) for record in records)
     return (
-        "Further detonations of the sample were made after your turn, with launch "
-        "arguments an agent found:\n"
+        "Further detonations of the sample were made after your turn, "
+        + ("with" if honoured else "asked for with")
+        + " launch arguments an agent found:\n"
         + "\n".join(lines)
         + "\nRead them with the sandbox tools' detonation argument (the item ids of a "
         "later detonation are qualified by it, d2/proc:<pid>), and revise your answer "
@@ -727,8 +772,10 @@ async def further_turns(container: Any, state: Any, step: str) -> dict[str, Any]
             else:
                 agent = container.get_agent(agent_name)
                 brief_agent(agent, state, container)
+                # A further turn, not a negotiation round: the revision tells
+                # the model so (``base_agent.further_turn_messages``).
                 text, isr = await asyncio.to_thread(
-                    agent.safe_revise_isr,
+                    functools.partial(agent.safe_revise_isr, further_turn=True),
                     got.text,
                     str(reports.get(agent_name, "") or ""),
                     {},

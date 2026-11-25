@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -774,6 +774,10 @@ class StatedHostValue:
     # How many distinct entries the row cites, of which the check reads the
     # first :data:`MAX_CITED`.
     cited: int = 0
+    # Each further detonation the report's index marks a read of, with its
+    # launch text: what a refusal names where a cited read holds the value
+    # only in that text (:data:`ONLY_IN_ITS_LAUNCH`).
+    launches: tuple[tuple[str, str], ...] = ()
 
     @property
     def table_kind(self) -> str:
@@ -809,7 +813,17 @@ def read_stated(item: Any, report: Any = None, *, beyond_rows: bool = False) -> 
         written_kind=" ".join(str(getattr(item, "kind", "") or "").split()),
         unheld_as=str(getattr(item, "unheld_as", None) or ""),
         cited=len(_cited(getattr(item, "evidence_refs", None) or [], bound=None)),
+        launches=_launches(report),
     )
+
+
+def _launches(report: Any) -> tuple[tuple[str, str], ...]:
+    """Each further detonation the report's evidence index marks a read of, with its launch text."""
+    held: dict[str, str] = {}
+    for row in getattr(report, "evidence_index", None) or ():
+        for mark in getattr(row, "observed_in", None) or ():
+            held.setdefault(str(mark.detonation), str(mark.launched_with or ""))
+    return tuple(held.items())
 
 
 def _unheld_refusal(stated: StatedHostValue) -> str:
@@ -824,12 +838,27 @@ def _unheld_refusal(stated: StatedHostValue) -> str:
         if fewer:
             return NOT_IN_THE_READ.format(read=read, cited=stated.cited)
         return NOT_IN_THE_CITED
-    words = UNHELD_WORDS.get(stated.unheld_as, "")
+    key, _, detonation = stated.unheld_as.partition(":")
+    words = UNHELD_WORDS.get(key, "")
+    if key in _LAUNCH_KEYS:
+        words = _launch_words(words, detonation, dict(stated.launches)) if detonation else ""
     if not words:
         return NOT_RECORDED_AS_HELD
     if fewer:
         return f"{words} ({READ_OF_THE_CITED.format(read=read, cited=stated.cited)})"
     return words
+
+
+def _launch_words(words: str, detonation: str, launches: Mapping[str, str]) -> str:
+    """:data:`ONLY_IN_ITS_LAUNCH_WORDS` for ``detonation``, with its launch text as every surface
+    writes one (``detonation_marks.launch_text``) where the report holds it."""
+    from malspark.reporting.detonation_marks import launch_text
+
+    launch = launches.get(detonation, "")
+    return words.format(
+        number=detonation[1:] if detonation.startswith("d") else detonation,
+        shown=f" (`{launch_text(launch)}`)" if launch.strip() else "",
+    )
 
 
 def stated_refusal(stated: StatedHostValue, verdict: Any) -> str:
@@ -947,13 +976,17 @@ def identifier_answers(report: Any) -> list[tuple[StatedHostValue, str]]:
     for index, item in enumerate(rows):
         kwargs = analysis_kwargs(report, item, beyond_rows=index >= MAX_STATED_ROWS)
         stated = kwargs["stated"]
-        answer = publish_answer(stated.table_kind, stated.value, ANALYSIS_SOURCE, **kwargs)
+        answer = publish_answer(
+            stated.table_kind, stated.value, ANALYSIS_SOURCE, report=report, **kwargs
+        )
         for sandbox_kind in stated.kind.sandbox_kinds if stated.kind is not None else ():
             if not publishes(answer):
                 break
             placed: dict[str, Any] = dict(sandbox_host_kwargs(report, sandbox_kind, stated.value))
             if placed.get("unattributed"):
-                refused = publish_answer(sandbox_kind, stated.value, "sandbox", **placed)
+                refused = publish_answer(
+                    sandbox_kind, stated.value, "sandbox", report=report, **placed
+                )
                 if not publishes(refused):
                     answer = refused
         out.append((stated, answer))
@@ -1146,8 +1179,9 @@ def _delimited_shape(kind: HostKind | None) -> bool:
 
 # What a refusal says of a value no cited entry holds whole, by what the one scan
 # that wrote ``held_in`` found (:class:`HeldScan`): the value whole only where a
-# cited entry's answer repeats its own call (and, where that answer shows it,
-# elsewhere only inside a longer run of text), the text only inside a longer run
+# cited entry's answer repeats its own call, or only where a cited read of a
+# further detonation states that detonation's launch text (and, where that
+# answer shows it, elsewhere only inside a longer run of text), the text only inside a longer run
 # of letters or digits, only between spaces, or somewhere this check does not
 # count as the value's whole. A value whose text no cited entry holds in any
 # spelling (:data:`NOWHERE`) keeps :data:`NOT_IN_THE_CITED`; a row whose record
@@ -1155,6 +1189,11 @@ def _delimited_shape(kind: HostKind | None) -> bool:
 # it) says only what its record holds (:data:`NOT_RECORDED_AS_HELD`).
 ONLY_IN_ITS_CALL = "only_in_its_call"
 ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE = "only_in_its_call_elsewhere_inside"
+# A cited read of a further detonation holding it whole only where it states that
+# detonation's launch text, recorded with the detonation after a ``:``
+# (``only_in_its_launch:d2``), and with what its echo-free text holds inside a run.
+ONLY_IN_ITS_LAUNCH = "only_in_its_launch"
+ONLY_IN_ITS_LAUNCH_ELSEWHERE_INSIDE = "only_in_its_launch_elsewhere_inside"
 AS_BYTES = "as_bytes"
 INSIDE_A_LONGER_RUN = "inside_a_longer_run"
 BETWEEN_SPACES = "between_spaces"
@@ -1173,8 +1212,18 @@ READ_OF_THE_CITED = "this check reads the first {read} of the {cited} entries it
 ONLY_IN_ITS_CALL_WORDS = (
     "a cited entry holds it whole only where its answer repeats what its call asked for"
 )
+# What a cited read of a further detonation holds whole only where it states that
+# detonation's launch text, with the launch text where the report holds it.
+ONLY_IN_ITS_LAUNCH_WORDS = (
+    "a cited entry holds it whole only where it states the launch text of detonation "
+    "{number}{shown}, which the request for that detonation supplied"
+)
 UNHELD_WORDS = {
     ONLY_IN_ITS_CALL: ONLY_IN_ITS_CALL_WORDS,
+    ONLY_IN_ITS_LAUNCH: ONLY_IN_ITS_LAUNCH_WORDS,
+    ONLY_IN_ITS_LAUNCH_ELSEWHERE_INSIDE: (
+        f"{ONLY_IN_ITS_LAUNCH_WORDS}; elsewhere only inside a longer run of text"
+    ),
     ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE: (
         f"{ONLY_IN_ITS_CALL_WORDS}; elsewhere only inside a longer run of text"
     ),
@@ -1336,12 +1385,19 @@ def scan_cited(entries: Any, item: Any) -> HeldScan:
             held = any(argument in arguments for line in lines for argument in line)
         echo = _echo_holding(entries, ref, _held_in_one, forms) if held else ""
         if echo and echo != ECHO_FREE_HOLDS_IT:
-            # Held only in the echo of the entry's own call: no holder.
+            # Held only in the echo of the entry's own call, or of its
+            # detonation's launch text: no holder.
             held = False
         if held:
             out.append(ref)
         elif not out:
             # What this entry holds of the text, read only while no entry holds it.
+            launched = _launch_echo_of(entries, ref, _held_in_one, forms) if echo else ""
+            if launched:
+                inside = echo == ECHO_FREE_HOLDS_IT_INSIDE
+                key = ONLY_IN_ITS_LAUNCH_ELSEWHERE_INSIDE if inside else ONLY_IN_ITS_LAUNCH
+                found.append(f"{key}:{launched}")
+                continue
             if echo == ECHO_FREE_HOLDS_IT_INSIDE:
                 found.append(ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE)
                 continue
@@ -1405,7 +1461,8 @@ def _writes_as_bytes(entries: Any, ref: str, value: str) -> bool:
 
 def _echo_holding(entries: Any, ref: str, held: Any, forms: Sequence[str]) -> str:
     """What a cited entry holds of a value this scan's own test (``held``) finds whole only
-    in the echo of the entry's call (``validation.held_only_in_its_echo``); ``""`` where it
+    in the echo of the entry's call, or, on the publish route's index, of the launch text of
+    the further detonation it reads (``validation.held_only_in_its_echo``); ``""`` where it
     is held elsewhere too, or the entries tell no echo apart."""
     if not callable(getattr(entries, "echo_free_parts", None)):
         return ""
@@ -1414,30 +1471,50 @@ def _echo_holding(entries: Any, ref: str, held: Any, forms: Sequence[str]) -> st
     return held_only_in_its_echo(entries, ref, held, forms)
 
 
+def _launch_echo_of(entries: Any, ref: str, held: Any, forms: Sequence[str]) -> str:
+    """The further detonation whose launch text is why a cited read holds a value only in an
+    echo, or ``""``: a read the index holds a launch for (``EntryTexts.launch_of``) whose
+    call's echo alone does not take the value out."""
+    launch_of = getattr(entries, "launch_of", None)
+    detonation = launch_of(ref)[0] if callable(launch_of) else ""
+    if not detonation:
+        return ""
+    from malspark.pipeline.validation import ECHO_FREE_HOLDS_IT, held_only_in_its_echo
+
+    alone = held_only_in_its_echo(entries, ref, held, forms, launch=False)
+    return detonation if not alone or alone == ECHO_FREE_HOLDS_IT else ""
+
+
 # What one entry's reading says of a value no cited entry holds whole, in the fixed
 # order :func:`_unheld_as` picks among them: each says what one cited entry holds, so
 # the first found is true of the row whatever the others hold.
 _UNHELD_ORDER = (
     ONLY_IN_ITS_CALL_ELSEWHERE_INSIDE,
     ONLY_IN_ITS_CALL,
+    ONLY_IN_ITS_LAUNCH_ELSEWHERE_INSIDE,
+    ONLY_IN_ITS_LAUNCH,
     AS_BYTES,
     INSIDE_A_LONGER_RUN,
 )
+# The readings recorded with the detonation whose launch text holds the value.
+_LAUNCH_KEYS = frozenset({ONLY_IN_ITS_LAUNCH, ONLY_IN_ITS_LAUNCH_ELSEWHERE_INSIDE})
 
 
 def _unheld_as(found: Sequence[str]) -> str:
     """What the cited entries hold of a value none holds whole, from each entry's reading:
     the first reading of :data:`_UNHELD_ORDER` an entry gives (an entry holding it whole
-    only in the echo of its own call, then one writing it whole only as bytes, then one
-    holding it only inside a longer run); every
+    only in the echo of its own call, then a read holding it whole only where it states its
+    detonation's launch text, with that detonation, then one writing it whole only as bytes,
+    then one holding it only inside a longer run); every
     entry that holds it holding it only between spaces says that; nothing held says
     ``""``."""
     held = [what for what in found if what]
     if not held:
         return ""
     for what in _UNHELD_ORDER:
-        if what in held:
-            return what
+        for reading in held:
+            if reading.partition(":")[0] == what:
+                return reading
     if all(what == BETWEEN_SPACES for what in held):
         return BETWEEN_SPACES
     return NOT_WHOLE
@@ -1633,8 +1710,13 @@ def with_held_in(rows: list[Any], entries: Any) -> list[Any]:
     And ``unheld_as``, from the same scan (:func:`scan_cited`): what the cited
     entries hold of a value none holds whole. ``None`` on every row when the
     run holds no entry text to check against, and on each row past
-    :data:`MAX_STATED_ROWS`; whatever a model wrote there is replaced.
+    :data:`MAX_STATED_ROWS`; whatever a model wrote there is replaced. The entries
+    are read as the publish route reads them (``EntryTexts.with_launch_echoes``):
+    a read of a further detonation also echoes that detonation's launch text.
     """
+    with_launches = getattr(entries, "with_launch_echoes", None)
+    if callable(with_launches):
+        entries = with_launches()
     for index, item in enumerate(rows):
         scan = (
             scan_cited(entries, item) if entries is not None and index < MAX_STATED_ROWS else None

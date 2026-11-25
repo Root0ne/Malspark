@@ -1508,9 +1508,11 @@ def sigma_admits(report: MalwareReport) -> frozenset[str]:
     publishes (``yes``) is the run's published indicator, and a row a sandbox
     recorded is the run's own observation of the sample, which is what a
     Sigma rule over process and registry events describes. Nothing else — a
-    string sweep's row, an ``analyst`` row the table refuses — reaches a
-    selection.
+    string sweep's row, an ``analyst`` row the table refuses, a sandbox row
+    whose value a further detonation's launch text supplied
+    (``launch_echo.launch_supplied_refusal``) — reaches a selection.
     """
+    from malspark.reporting.launch_echo import launch_supplied_refusal
     from malspark.reporting.renderers.stix_renderer import publishes
 
     rows = list(getattr(report, "consolidated_iocs", None) or [])
@@ -1526,7 +1528,11 @@ def sigma_admits(report: MalwareReport) -> frozenset[str]:
         row.value.strip().lower()
         for row in rows
         if publishes(row.published)
-        or (str(row.source or "") == "sandbox" and row.kind not in _DRAFT_NETWORK_KINDS)
+        or (
+            str(row.source or "") == "sandbox"
+            and row.kind not in _DRAFT_NETWORK_KINDS
+            and not launch_supplied_refusal(report, str(row.kind or ""), row.value)
+        )
     )
 
 

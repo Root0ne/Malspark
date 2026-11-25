@@ -60,7 +60,11 @@ from malspark.reporting.models import (
     EvidenceIndexRow,
     EvidenceSection,
     ExternalReference,
+    LaunchedDetonation,
+    LaunchValue,
     MalwareReport,
+    NetworkDomain,
+    ObservedIn,
 )
 from malspark.reporting.renderers import markdown as markdown_module
 from malspark.reporting.renderers.bundle import render_products
@@ -290,6 +294,12 @@ def _marker_forms(n: int) -> str:
 # all its characters: the backtick pair, the backslash and the reference as written.
 _SHOWN_BEFORE = {"C": "`", "K": "\\*", "E": "&lt;"}
 _SHOWN_AFTER = {"C": "`"}
+# The places every surface writes as a launch text is written
+# (``detonation_marks.launch_text``): inert, a backtick written as its escape.
+WRITTEN_OUT = frozenset(
+    {"report.launch_values[].launched_with", "report.launch_values[].values[].through"}
+)
+_WRITTEN_BACKTICK = "\\x60"
 
 
 class _Tokens:
@@ -654,7 +664,9 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     the first state prints it). The fourth and the fifth: no lineage fact is
     disputed, and the report names processes it does not list, or a script
     host naming the launcher (the address's context names them as its answer
-    does). Every value keeps its token.
+    does). The sixth: a value the export publishes was resolved by a further
+    detonation for a host its launch text supplies (the launch rule's refusal,
+    which prints the launch text and the host). Every value keeps its token.
     """
     second = report.model_copy(deep=True)
     assert second.static is not None and second.network is not None
@@ -736,7 +748,34 @@ def _states(report: MalwareReport, tokens: _Tokens) -> list[MalwareReport]:
     fifth = fourth.model_copy(deep=True)
     assert fifth.network is not None
     fifth.network.ips[0].unlisted_processes = []
-    return [report, second, third, fourth, fifth]
+    # The sixth: the bound domain the export publishes was resolved by a
+    # further detonation for a host its launch text supplies, so the launch
+    # rule refuses it, printing the launch text and the host.
+    sixth = second.model_copy(deep=True)
+    assert sixth.network is not None
+    launched = tokens.value("report.launch_values[].launched_with")
+    sixth.network.domains = [
+        *sixth.network.domains,
+        NetworkDomain(
+            fqdn="bound.example",
+            source="sandbox",
+            observed_in=[ObservedIn(detonation="d2", launched_with=launched)],
+        ),
+    ]
+    sixth.launch_values = [
+        LaunchedDetonation(
+            detonation="d2",
+            launched_with=launched,
+            values=[
+                LaunchValue(
+                    value="bound.example",
+                    form="resolved",
+                    through=tokens.value("report.launch_values[].values[].through"),
+                )
+            ],
+        )
+    ]
+    return [report, second, third, fourth, fifth, sixth]
 
 
 # ---------------------------------------------------------------------------
@@ -826,14 +865,17 @@ def _faults(surface: str, rendered: str, tokens: _Tokens) -> list[str]:
     shown = " ".join("".join(tree.text).split())
     for found in re.finditer(r"z([CKE])(\d+)z", shown):
         before = _SHOWN_BEFORE[found.group(1)]
+        place = tokens.places.get(int(found.group(2)), "?")
+        if place in WRITTEN_OUT and found.group(1) == "C":
+            before = _WRITTEN_BACKTICK
         if shown[: found.start()].endswith(before):
             continue
-        place = tokens.places.get(int(found.group(2)), "?")
         faults.append(f"{surface}: {place} lost {before!r} before its token")
     for found in re.finditer(r"zC(\d+)z", shown):
-        if not shown[found.end() :].startswith(_SHOWN_AFTER["C"]):
-            place = tokens.places.get(int(found.group(1)), "?")
-            faults.append(f"{surface}: {place} lost '`' after its token")
+        place = tokens.places.get(int(found.group(1)), "?")
+        after = _WRITTEN_BACKTICK if place in WRITTEN_OUT else _SHOWN_AFTER["C"]
+        if not shown[found.end() :].startswith(after):
+            faults.append(f"{surface}: {place} lost {after!r} after its token")
     for first in re.finditer(r"zH(\d+)z", shown):
         n = first.group(1)
         last = shown.find(f"zZ{n}z", first.end())
@@ -927,6 +969,14 @@ NOT_PRINTED = frozenset(
         "front_matter.team",
         "identity.platform",
         "identity.signing.signer_thumbprint",
+        # The build's record of each value a further detonation's launch text
+        # supplies: a refusal prints the launch text and what it went through
+        # (the sixth state); a detonation is read only where it names one, a
+        # form only as one of its words, and a payload matches no row.
+        "launch_values[].detonation",
+        "launch_values[].values[].form",
+        "launch_values[].values[].held_by[]",
+        "launch_values[].values[].value",
         "limitation_inventory.failed[].answered[][]",
         "limitation_inventory.failed[].error",
         "limitation_inventory.questions[].agent",
@@ -973,8 +1023,10 @@ NOT_PRINTED = frozenset(
         "reputation[].names.key",
         "reputation[].summary",
         "reputation[].tool",
+        "second_source_reads[].detonation",
         "second_source_reads[].entry",
         "second_source_reads[].holds[]",
+        "second_source_reads[].launch_echo[]",
         "second_source_reads[].standing",
         "second_source_reads[].tool",
         "sections[].source_server",

@@ -199,7 +199,7 @@
    "text_digest": "7389a3cce4080c3b6486d77b33886b64b0984dd1aa7dbb86471e962505c7dca5"
   },
   {
-   "function": "malspark.reporting.renderers.stix_renderer:publish_answer",
+   "function": "malspark.reporting.renderers.stix_renderer:_evidence_answer",
    "condition": "every row's publish answer and every judge value's, on every surface that prints or reads it: yes with the evidence reason, or no with each refusing test as its own part and the facts after them; a listed value's answer gives the listing's test and the judge's keep for a network value, and, as facts, that the judge did not keep any other kind where the judge's indicators were read and none names it, and what the whole-value search found; a row of another source the search found is refused by its own tests with the search's entries and who lists it as facts; a path of the file's text, or a judge's path asked as the sweep's, that the declared catalogue calls every host's is refused with the catalogue's reason, the row it is from, a second source that holds it or that the publish rule's lookup found none and each cited holder, a recovery of it, and a search's finding facts after it",
    "basis": [
     "the row's kind, value, source and reputation",
@@ -333,6 +333,27 @@
    ],
    "test": "tests/unit/reporting/test_a_location_every_host_has_is_refused_on_every_route.py::TestTheStringSweepRoute::test_a_judge_s_path_asked_as_the_sweep_s_is_refused_by_the_catalogue",
    "text_digest": "ec1711bde75fe87fa84dc03d664a934dd3b153bf972be2e4963a223ef3bd063a"
+  },
+  {
+   "constant": "malspark.reporting.renderers.stix_renderer:LAUNCH_ECHO_HOLDS",
+   "condition": "a fact of the refusal of a value asked as the file's text: an analyst-cited read of a further detonation holding it whole only where it states that detonation's launch text, which holds nothing as a second source, by detonation",
+   "basis": [
+    "SecondSourceRead.launch_echo and detonation, written by stix_renderer.second_source_reads with launch_echo.launch_echoed"
+   ],
+   "test": "tests/unit/reporting/test_a_value_held_only_in_a_launch_echo_holds_nowhere_on_the_publish_route.py::TestTheSecondSourceRoute::test_it_confirms_nothing_and_the_refusal_names_it",
+   "text_digest": "e58f318b95148b048a4ce8816382a049ab04ddbbd48efa4f66aa065b5ad26b7d"
+  },
+  {
+   "function": "malspark.reporting.renderers.stix_renderer:second_source_refusal_parts",
+   "condition": "the facts of the refusal of a value asked as the file's text that name what the run's second-source record holds and why it does not count: the cut reason and the string as kept, each cited entry of a kind that confirms nothing (on a network row each cited entry, the rule asking no kind), each section holding a cited entry beside one no analyst section cites, each cited section of a tool that declares no kind on a network row, and each cited read of a further detonation holding it only in its launch text",
+   "basis": [
+    "the run's SecondSources record (stix_renderer.corroborating_values)"
+   ],
+   "test": [
+    "tests/unit/reporting/test_a_value_held_only_in_a_launch_echo_holds_nowhere_on_the_publish_route.py::TestTheSecondSourceRoute::test_it_confirms_nothing_and_the_refusal_names_it",
+    "tests/unit/reporting/test_a_strings_refusal_says_what_the_code_tested.py::TestEachCitedHolderIsAFact::test_a_cited_reading_of_the_bytes_is_named_with_its_entry_and_standing"
+   ],
+   "text_digest": "912d8101074d3ffbe6d0397e2c354ad183ef14e1c76357f2e01dfaaf0dd53e2a"
   }
  ]
 }

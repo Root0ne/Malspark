@@ -1793,6 +1793,46 @@ class SecondSourceRead(BaseModel):
     standing: str
     cited: bool = False
     holds: list[str] = Field(default_factory=list)
+    # On a read of a further detonation: each asked value its answer holds
+    # whole only where it states that detonation's launch text
+    # (``reporting.launch_echo``), which ``holds`` leaves out, and the
+    # detonation. Empty, and left out of the dump, on every other entry.
+    launch_echo: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    detonation: str = Field(default="", exclude_if=lambda value: not value)
+
+
+class LaunchValue(BaseModel):
+    """One value a further detonation's launch text supplies, as the build found it in the run.
+
+    ``value`` is the value folded as the rule compares it (lower case, ``/``
+    read as ``\\``, no trailing separator); ``form`` says how the launch text
+    supplies it (``whole``: it stands whole in it; ``variable``: it is a path
+    of that detonation's reads that ends in what the launch text writes after
+    an environment variable, whole or cut after a folder of that ending,
+    ``through`` naming the variable; ``resolved``: the
+    detonation resolved it for a host the launch text supplies, ``through``).
+    ``held_by`` lists each entry of the run that holds it whole outside the
+    reads of the detonations launched with it, outside what its own call
+    asked for and with a call not given their launch text.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    value: str
+    form: str = "whole"
+    through: str = Field(default="", exclude_if=lambda value: not value)
+    held_by: list[str] = Field(default_factory=list)
+
+
+class LaunchedDetonation(BaseModel):
+    """A further detonation whose launch the run records as honoured: its launch text, once, and
+    each value that text supplies (:class:`LaunchValue`)."""
+
+    model_config = _STRICT_CONFIG
+
+    detonation: str
+    launched_with: str
+    values: list[LaunchValue] = Field(default_factory=list)
 
 
 class CodeConstant(BaseModel):
@@ -2453,6 +2493,16 @@ class MalwareReport(BaseModel):
     # on a report stored before it existed, which is read from its sections.
     second_source_reads: list[SecondSourceRead] | None = Field(
         default=None, exclude_if=lambda value: value is None
+    )
+    # Each further detonation whose launch the run records as honoured, its
+    # launch text once, with each value that text supplies and the entries of
+    # the run that hold it beside the reads of the detonations launched with
+    # it, built from the ledger at build time (``reporting.launch_echo``): what
+    # the publish rule asks where it would publish a value. Empty, and left out
+    # of the dump, on a run with one detonation and on a report stored before
+    # it existed.
+    launch_values: list[LaunchedDetonation] = Field(
+        default_factory=list, exclude_if=lambda value: not value
     )
     # Each decoded text the code passes whole to an API argument of a known
     # role, with the chain that binds it, built from the ledger at build time

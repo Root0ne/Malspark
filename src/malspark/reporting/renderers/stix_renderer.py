@@ -28,7 +28,7 @@ import ipaddress
 import json
 import re
 import uuid
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -5958,8 +5958,90 @@ def publish_answer(
     digest: str = "",
     judge_s_value: bool = False,
     judge_names_none: bool = False,
+    report: Any = None,
 ) -> str:
     """The publish rule's answer for one row, as the report prints it.
+
+    The rule's answer on the evidence (:func:`_evidence_answer`); and where
+    that answer publishes the row, a value only further detonations launched
+    with it observed, which their launch text supplies, is refused, whoever
+    recorded or named it (``launch_echo.launch_supplied_refusal``, read off
+    ``report``, the report the row is of, which every call site passes; an
+    analysis row's cited holders, ``stated.held_in``, are its citations). A
+    row that answer refuses keeps its own reason, and the sample's own
+    digests are not asked.
+    """
+    answer = _evidence_answer(
+        kind,
+        value,
+        source,
+        reputation,
+        corroborating=corroborating,
+        recovered=recovered,
+        verdict=verdict,
+        also_plain=also_plain,
+        unattributed=unattributed,
+        kept_by=kept_by,
+        mentioned_by=mentioned_by,
+        in_published_url=in_published_url,
+        listed_by=listed_by,
+        seen_in=seen_in,
+        tool_search=tool_search,
+        asked_in=asked_in,
+        untold=untold,
+        kept_address=kept_address,
+        judge_only=judge_only,
+        url_only=url_only,
+        bound=bound,
+        stated=stated,
+        spelled=spelled,
+        digest=digest,
+        judge_s_value=judge_s_value,
+        judge_names_none=judge_names_none,
+    )
+    if report is None or digest or not publishes(answer):
+        return answer
+    from malspark.reporting.launch_echo import launch_supplied_refusal
+
+    supplied = launch_supplied_refusal(
+        report,
+        kind,
+        str(value or "").strip(),
+        cited=getattr(stated, "held_in", None) if stated is not None else None,
+    )
+    return refused(supplied) if supplied else answer
+
+
+def _evidence_answer(
+    kind: str,
+    value: str,
+    source: Any,
+    reputation: Any = None,
+    *,
+    corroborating: SecondSources | str = "",
+    recovered: str = "",
+    verdict: Any = None,
+    also_plain: str = "",
+    unattributed: str = "",
+    kept_by: str = "",
+    mentioned_by: str = "",
+    in_published_url: str = "",
+    listed_by: str = "",
+    seen_in: str = "",
+    tool_search: str = "",
+    asked_in: str = "",
+    untold: str = "",
+    kept_address: str = "",
+    judge_only: str = "",
+    url_only: str = "",
+    bound: str = "",
+    stated: Any = None,
+    spelled: str = "",
+    digest: str = "",
+    judge_s_value: bool = False,
+    judge_names_none: bool = False,
+) -> str:
+    """The publish rule's answer for one row on the evidence, as the report prints it.
 
     ``yes: <reason>`` with the reason :func:`indicator_publish_reason` gave, in
     words (:func:`published_because`), or ``no: <reason>`` naming the half of
@@ -6227,13 +6309,15 @@ def judge_value_answer(
     if said:
         # A value the code passes whole to an API argument of its role is
         # asked as that binding's row is: the chain is its source.
-        return publish_answer(kind, text, BOUND_SOURCE, **{**said, "verdict": verdict})
+        return publish_answer(
+            kind, text, BOUND_SOURCE, report=report, **{**said, "verdict": verdict}
+        )
     host = sandbox_host_kwargs(report, kind, text)
     if host:
         # A file, digest, key or mutex the sandbox recorded and attributes to
         # no process of the sample's tree: the judge's indicator for it is
         # asked as the sandbox's row is, never corroborated by that row.
-        return publish_answer(kind, text, "sandbox", **{**host, "verdict": verdict})
+        return publish_answer(kind, text, "sandbox", report=report, **{**host, "verdict": verdict})
     emulated = {**emulation_kwargs(report, kind, text), "verdict": verdict}
     if emulated.get("unattributed"):
         # A value the sandbox attributes no flow of the sample to is the
@@ -6275,11 +6359,23 @@ def judge_value_answer(
     )
     if kind == "domain" and row is not None:
         return publish_answer(
-            "domain", text, row.source, row.reputation, corroborating=corroborating, **emulated
+            "domain",
+            text,
+            row.source,
+            row.reputation,
+            corroborating=corroborating,
+            report=report,
+            **emulated,
         )
     if kind == "ip" and row is not None:
         return publish_answer(
-            "ip", text, row.source, row.reputation, corroborating=corroborating, **emulated
+            "ip",
+            text,
+            row.source,
+            row.reputation,
+            corroborating=corroborating,
+            report=report,
+            **emulated,
         )
     if kind == "url" and row is not None:
         return publish_answer(
@@ -6288,6 +6384,7 @@ def judge_value_answer(
             row.source or "strings",
             _host_reputation(report, url_host(text)),
             corroborating=corroborating,
+            report=report,
             **emulated,
         )
     if kind == "hash":
@@ -6300,7 +6397,12 @@ def judge_value_answer(
         own.pop("", None)
         if text.lower() in own:
             return publish_answer(
-                "hash", text, "identity", verdict=verdict, digest=own[text.lower()]
+                "hash",
+                text,
+                "identity",
+                verdict=verdict,
+                digest=own[text.lower()],
+                report=report,
             )
     reputation = _host_reputation(report, url_host(text)) if kind == "url" else None
     # Asked as the string sweep's, and refused naming the source that holds
@@ -6332,6 +6434,7 @@ def judge_value_answer(
         # Asked as the string sweep's for its sources, and not the sweep's own
         # value: its shape is not asked.
         judge_s_value=True,
+        report=report,
         # The search's own facts win over the emulation record's on a shared key.
         **{**emulated, **sourced},
     )
@@ -7094,7 +7197,10 @@ class SecondSources:
     confirm nothing — a cited reading of the file's bytes, and a section that
     prints a cited entry's answer beside one no claim cites — so a refusal can
     name them. ``cut`` maps each value the sweep cut out of a longer token to
-    that token. ``recovered`` holds each value the run's recovery record
+    that token. ``launch_echoes`` holds each read of a further detonation
+    whose answer holds asked values only where it states its launch text,
+    which confirms nothing, so a refusal can name it. ``recovered`` holds each
+    value the run's recovery record
     (:func:`emulation_from_ledger`) says a cited entry recovered: the record
     names the entry value by value, where a section prints several as one.
     """
@@ -7107,6 +7213,11 @@ class SecondSources:
     cut: Mapping[str, str] = dataclasses.field(default_factory=dict)
     recovered: frozenset[str] = frozenset()
     swept: Mapping[str, tuple[tuple[str, str], ...]] = dataclasses.field(default_factory=dict)
+    # Each read of a further detonation that holds asked values whole only
+    # where it states that detonation's launch text, which holds nothing
+    # (``launch_echo.launch_echoed``): its entry, tool, detonation, whether an
+    # analyst section cites it, and those values. A refusal names it.
+    launch_echoes: tuple[tuple[str, str, str, bool, frozenset[str]], ...] = ()
 
     def __contains__(self, text: object) -> bool:
         """Whether any text that can confirm a value holds ``text``, as a plain search."""
@@ -7231,6 +7342,16 @@ def second_source_refusal(
     return "; ".join(second_source_refusal_parts(value, corroborating, network=network, path=path))
 
 
+# The key a row of the dynamic block holds its detonation marks under.
+_OBSERVED_IN = "observed_in"
+# How a cited read of a further detonation holding a value only in its launch
+# text is said (``launch_echo.launch_echoed``).
+LAUNCH_ECHO_HOLDS = (
+    "{holders} {verb} it only in the launch text of detonation {number}, which the request "
+    "for that detonation supplied"
+)
+
+
 # How a holder clause says a citation, as the rule's lookup reads one
 # (:func:`_cited_entries`: the entries an analyst section cites).
 _CITED = "an analyst section cites"
@@ -7253,8 +7374,10 @@ def second_source_refusal_parts(
     why it does not count, read off the record it names: a cited entry of a
     kind that confirms nothing, by tool and entry id; on a report stored
     before the per-entry record, a cited section of such a kind, by tool; and
-    a section that holds a cited entry beside one no analyst section cites.
-    On a ``network`` row no holder's kind is asked: every cited entry (of
+    a section that holds a cited entry beside one no analyst section cites;
+    and a cited read of a further detonation that holds it only where it
+    states that detonation's launch text (:data:`LAUNCH_ECHO_HOLDS`), by
+    detonation. On a ``network`` row no holder's kind is asked: every cited entry (of
     whatever kind), every cited section and the section beside an uncited
     entry is named with :data:`_NETWORK_RULE_DOES_NOT_ASK`, never with a
     kind's standing. An entry no analyst section cites is not named. A
@@ -7318,6 +7441,19 @@ def second_source_refusal_parts(
         undeclared = holders(record.undeclared)
         if undeclared:
             said.append(f"{prints(undeclared)} {_CITED}, {why(len(undeclared))}")
+    echoed: dict[str, list[tuple[str, str]]] = {}
+    for entry, tool, detonation, cited, values in record.launch_echoes:
+        if cited and low in values:
+            echoed.setdefault(detonation, []).append((tool, entry))
+    for detonation, held in echoed.items():
+        one = len({entry for _tool, entry in held}) == 1
+        said.append(
+            LAUNCH_ECHO_HOLDS.format(
+                holders=entries_said(held),
+                verb="holds" if one else "hold",
+                number=detonation[1:] if detonation.startswith("d") else detonation,
+            )
+        )
     return tuple(said)
 
 
@@ -7449,10 +7585,17 @@ def second_source_reads(
     values. The entry's text is what the run saw of it — the corpus's read,
     which the evidence byte budget never blanks, else its stored answer — read
     entry by entry, so a section printing several entries as one decides
-    nothing. Built once at build time and stored on the report
-    (``MalwareReport.second_source_reads``): the IOC table, the feed and the
-    export read this one record.
+    nothing. A read of a further detonation holds no value it holds whole
+    only where it states that detonation's launch text
+    (``launch_echo.launch_echoed``): such a value is recorded apart
+    (``launch_echo``), with the detonation, and the entry is recorded for it
+    even where it holds no other. Built once at build time and stored on the
+    report (``MalwareReport.second_source_reads``): the IOC table, the feed
+    and the export read this one record.
     """
+    from malspark.analysis.detonation_reads import later_detonation_name
+    from malspark.reporting.launch_echo import launch_echoed
+
     asked = _asked_values(report)
     if not asked:
         return []
@@ -7483,14 +7626,19 @@ def second_source_reads(
         text = _entry_text(entry, corpus).lower()
         if not text:
             continue
-        holds = sorted(
-            value
-            for value in first_holders(asked, [text])
-            if (value not in cut or whole_as_held(value, text, True, path=value in paths))
-            and (value not in paths or whole_path_in(value, text))
-        )
+        holds = sorted(_held_asked(asked, text, cut, paths))
         if not holds:
             continue
+        # A read of a further detonation holds no value only its launch text states.
+        echoed = launch_echoed(
+            entry,
+            holds,
+            lambda value, held: (
+                value in _held_asked([value], _written_strings(held).lower(), cut, paths)
+            ),
+            corpus,
+        )
+        holds = [value for value in holds if value not in echoed]
         reads.append(
             SecondSourceRead(
                 entry=entry_id,
@@ -7498,9 +7646,24 @@ def second_source_reads(
                 standing=tool_kinds.second_source_standing(row, named, _steps_run(entry)),
                 cited=entry_id in cited,
                 holds=holds,
+                launch_echo=echoed,
+                detonation=later_detonation_name(entry) if echoed else "",
             )
         )
     return reads
+
+
+def _held_asked(
+    asked: Iterable[str], text: str, cut: Collection[str], paths: Collection[str]
+) -> list[str]:
+    """The asked values ``text`` holds whole, as :func:`second_source_reads` reads one text: a
+    value the sweep cut only as a whole token, a ``path`` only as a whole path."""
+    return [
+        value
+        for value in first_holders(asked, [text])
+        if (value not in cut or whole_as_held(value, text, True, path=value in paths))
+        and (value not in paths or whole_path_in(value, text))
+    ]
 
 
 def reads_as_held(
@@ -7556,6 +7719,7 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
     * what a sandbox watched — the process tree, the registry modifications,
       the file operations, the notable API rows;
     * what a persistence mechanism names;
+    * (never a row's detonation mark, ``observed_in``: the platform's words);
     * an entry an analyst cited in an artefact or a finding whose kind
       observes the sample or recovers the value, or whose tool declares no
       kind (``tool_kinds.second_source_standing``): read from the build's
@@ -7576,12 +7740,13 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
             parts.extend(_process_text(node))
         for mod in list(getattr(dynamic, "registry_mods", None) or []):
             parts.extend(str(getattr(mod, field, "") or "") for field in ("key", "value", "data"))
+        # A row's detonation mark is the platform's words, never what was observed.
         for operation in list(getattr(dynamic, "file_operations", None) or []):
             if isinstance(operation, dict):
-                parts.extend(str(value) for value in operation.values())
+                parts.extend(str(value) for key, value in operation.items() if key != _OBSERVED_IN)
         for api in list(getattr(dynamic, "notable_apis", None) or []):
             if isinstance(api, dict):
-                parts.extend(str(value) for value in api.values())
+                parts.extend(str(value) for key, value in api.items() if key != _OBSERVED_IN)
     for mechanism in list(getattr(report, "persistence", None) or []):
         parts.append(str(getattr(mechanism, "target", "") or ""))
         parts.append(str(getattr(mechanism, "payload", "") or ""))
@@ -7603,6 +7768,18 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
             frozenset(str(value).lower() for value in read.holds),
         )
         for read in recorded or ()
+        if read.holds
+    )
+    launch_echoes = tuple(
+        (
+            read.entry,
+            read.tool,
+            read.detonation,
+            read.cited,
+            frozenset(str(value).lower() for value in read.launch_echo),
+        )
+        for read in recorded or ()
+        if read.launch_echo
     )
     sections = list(getattr(report, "sections", None) or []) if recorded is None else []
     index = tool_kinds.index_by_id(getattr(report, "evidence_index", None) or [])
@@ -7662,6 +7839,7 @@ def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
             if getattr(row, "cut_from", None)
         },
         swept={value: tuple(held) for value, held in swept.items()},
+        launch_echoes=launch_echoes,
     )
 
 

@@ -268,6 +268,31 @@ class TestTheRowsAboutUnreadFunctions:
         assert kind == "agent_message" and secret not in data["text"]
 
 
+class TestTheRecordOfTheOwnQuestion:
+    """The loop's record of the question an analyst is put about its own open questions.
+
+    It builds no finding; its record names tools, an outcome that may carry a
+    failure's words, and the model's reply, each held to the row rule.
+    """
+
+    def test_every_text_field_goes_through_the_helpers(self) -> None:
+        from malspark.agents.own_question import NO_ANSWER, own_question_record
+
+        secret, url = credentialled_url()
+        record = own_question_record(
+            asked=True,
+            questions=1,
+            tools=[f"{url}{'K' * 3000}"],
+            left=2,
+            outcome=NO_ANSWER.format(why=f"the transport said {url}"),
+            requests=[url],
+            reply=f"I will not ask; see {url}",
+        )
+
+        assert secret not in repr(record)
+        assert len(record["tools"][0]) < MESSAGE_LIMIT
+
+
 # ---------------------------------------------------------------------------
 # The class, rather than the instances
 # ---------------------------------------------------------------------------

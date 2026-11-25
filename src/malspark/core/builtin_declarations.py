@@ -558,6 +558,21 @@ MOVING_KINDS: dict[str, str] = {
     "detonation_request": "answers by the requests and detonations the job already holds",
 }
 
+# The platform's own request capability, as two core vocabularies meet in it:
+# the reason an analyst gives for an open question
+# (``schemas.isr_models.OpenQuestionReason``), and the declared kind of the
+# platform's tool that asks for what that reason names. The kind is one that
+# files on the job's request record (``providers.detonation_requests``), whose
+# ceiling and requests a question can state. Read by the question an analyst
+# is put about its own open questions (``agents.own_question``) through each
+# held tool's declared kind, never through a name, so any tool of that kind
+# on any source takes part. It routes no question: a question of the reason
+# is often about the run already made, and the relation says only which held
+# kind is named beside the analyst's own question.
+REQUEST_KIND_BY_OPEN_QUESTION_REASON: dict[str, str] = {
+    "needs_sandbox_run": "detonation_request",
+}
+
 # Each name table the core reads tools by, as the set of kinds that is exactly
 # that table over every built-in tool (``tests/unit/core/
 # test_every_built_in_declares_what_its_name_tables_say.py`` holds each one

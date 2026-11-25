@@ -513,9 +513,13 @@ class OpenQuestion(BaseModel):
 
     Not a claim and not a finding: an open question names an unknown, and it
     is never read as an absence. "Whether the beacon interval is fixed" left
-    open says nothing about whether the sample beacons. Nothing that reads
-    claims, findings or artifacts reads it; the report prints it in its own
-    section and the analysts' summaries carry it to whoever can answer it.
+    open says nothing about whether the sample beacons. No reader of claims,
+    findings or artifacts takes it for one; the report prints it in its own
+    section, an analyst's summary carries it to the peers, the mediator and the
+    judge that read the summary, and the stage hand-off
+    (``pipeline.nodes.upstream_findings``) shows a later stage's agents the
+    questions their upstream agents left, after every claim and as far as the
+    room the claims leave holds them.
     """
 
     question: str = Field(..., min_length=1, description="The question left open, in one line.")

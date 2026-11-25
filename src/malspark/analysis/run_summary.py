@@ -2112,6 +2112,14 @@ class RunSummaryBuilder:
                 for row in loops
                 if isinstance(row.get("callees_question"), dict)
             ]
+            # The question about its own open questions beside the tool that
+            # asks for what they name (``agents.own_question``): whether it
+            # was asked, why not, and what it filed.
+            own_question = [
+                dict(row["own_question"])
+                for row in loops
+                if isinstance(row.get("own_question"), dict)
+            ]
             out[str(agent)] = {
                 "loops": len(loops),
                 "steps_used": sum(int(row.get("steps_used") or 0) for row in loops),
@@ -2129,6 +2137,7 @@ class RunSummaryBuilder:
                 **({"salvages": salvages} if salvages else {}),
                 **({"function_claims": function_claims} if function_claims else {}),
                 **({"callees_question": callees_question} if callees_question else {}),
+                **({"own_question": own_question} if own_question else {}),
                 # A validation turn a loop's time could not hold, and why.
                 **(
                     {"validation_not_asked": skipped}

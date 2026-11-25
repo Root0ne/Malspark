@@ -73,9 +73,13 @@ REVISION = "revision"
 PROMPT_SITES: dict[str, str | None] = {
     "malspark.agents.base_agent:prompt_to_messages": ANALYSTS,
     "malspark.agents.base_agent:revision_messages": REVISION,
+    # A further turn sends the analyst's own prompt, with no negotiation framing.
+    "malspark.agents.base_agent:further_turn_messages": ANALYSTS,
     "malspark.agents.base_agent:BaseAnalyst._run_tool_loop": ANALYSTS,
     "malspark.agents.base_agent:BaseAnalyst._synthesise_from_answered_asks": ANALYSTS,
     "malspark.agents.base_agent:BaseAnalyst._validation_turn": ANALYSTS,
+    # The question about an analyst's own open questions: its prompt with its tools.
+    "malspark.agents.base_agent:BaseAnalyst._own_question_turn": ANALYSTS,
     # A question asked without the tools: the analyst's tools-free prompt.
     "malspark.agents.base_agent:BaseAnalyst._tools_free_turns": ANALYSTS,
     "malspark.agents.base_agent:BaseAnalyst.answer_task": ANALYSTS,

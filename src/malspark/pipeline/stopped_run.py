@@ -443,6 +443,15 @@ def _deterministic_report(state: dict[str, Any], container: Any) -> dict[str, An
         ]
     if not judge_ran(state):
         reasons = [*reasons, NO_VERDICT_REASON]
+    # The run's record of its environment, as the judge's summary carries it: the
+    # build reads each further detonation's launch from it (``launch_echo``).
+    summary = dict(state.get("run_summary") or {})
+    if not isinstance(summary.get("environment"), dict):
+        from malspark.analysis.run_environment import environment_record
+
+        environment = environment_record(container, state.get("evidence_ledger") or [])
+        if environment:
+            summary["environment"] = environment
     builder = MalwareReportBuilder(
         file_hash=state.get("file_hash"),
         file_name=state.get("file_name"),
@@ -452,7 +461,7 @@ def _deterministic_report(state: dict[str, Any], container: Any) -> dict[str, An
         reports=state.get("reports"),
         isr_reports=dict(state.get("isr_reports") or {}),
         stix_output=state.get("stix_output"),
-        run_summary=state.get("run_summary") or {},
+        run_summary=summary,
         discussion_history=[
             arg.model_dump() if hasattr(arg, "model_dump") else dict(arg)
             for arg in (state.get("discussion_history") or [])
