@@ -1806,9 +1806,10 @@ class LaunchValue(BaseModel):
 
     ``value`` is the value folded as the rule compares it (lower case, ``/``
     read as ``\\``, no trailing separator); ``form`` says how the launch text
-    supplies it (``whole``: it stands whole in it; ``variable``: it is the
-    head an environment variable expanded to with the variable's whole tail or
-    a leading part of it, ``through`` naming the variable; ``resolved``: the
+    supplies it (``whole``: it stands whole in it; ``variable``: it is a path
+    of that detonation's reads that ends in what the launch text writes after
+    an environment variable, whole or cut after a folder of that ending,
+    ``through`` naming the variable; ``resolved``: the
     detonation resolved it for a host the launch text supplies, ``through``).
     ``held_by`` lists each entry of the run that holds it whole outside the
     reads of the detonations launched with it, outside what its own call

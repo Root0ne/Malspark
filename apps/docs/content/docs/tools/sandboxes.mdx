@@ -1094,13 +1094,14 @@ right. For each further detonation whose launch the run records as honoured
 is read as not honoured, as every reader of that flag reads it), the build
 records its launch text once with each value it supplies
 (`MalwareReport.launch_values`, nothing on a run with one detonation): a whole
-argument or a span of arguments the text writes as one value (an unquoted path
-with a space), the host of `user@host`, of a URL or of `host:port`, the value
+argument, a span of arguments the text writes as one value where a read of that
+detonation holds it whole outside its launch text (an unquoted path with a
+space), the host of `user@host`, of a URL or of `host:port`, the value
 of a switch written against it (`-oX`, `/D=X`, `/path:X`, `--x=X`), a part a
 path's separators, quotes or key-value marks delimit (a leading folder, a
-file's name), the folder an environment variable expanded to — read off a path
-a read of that detonation writes with the variable's whole tail after it —
-with that tail or a leading part of it, and an address the detonation resolved
+file's name), a path of that detonation's reads that ends in what the launch
+text writes after an environment variable, whole or cut after a folder of that
+ending, and an address the detonation resolved
 for a host the launch text supplies and no other entry holds, compared without
 case and with `/` read as `\` — read by the shape of the launch text, never by
 a program's name — with each entry that holds it whole outside the reads of the

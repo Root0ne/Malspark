@@ -6,15 +6,18 @@ asked, and a value is then refused where all three hold: a further
 detonation's mark stands on its row (a row of the report of that detonation,
 or a cited read of it holding the value outside its launch text); it stands
 whole in that detonation's launch text, read as written, in a form a command
-line writes a value in (one argument or a span of them, the host of
-``user@host``, a switch's value written against it, a path's leading part or
-component, the head an environment variable expands to with the variable's
-whole tail or a leading part of it, an address the detonation resolved for a
-host the launch text supplies; ``/`` read as ``\\`` and case folded); and no
-entry of the run holds it whole outside the reads of the detonations launched
-with it, what an entry's own call asked for, and a call given their launch
-text. A detonation whose launch the run records as not honoured supplies
-nothing. A value a row of the job's own detonation holds, of any kind, a value
+line writes a value in (one argument, a span of them a read of that detonation
+holds whole outside its launch text, the host of ``user@host``, a switch's
+value written against it, a path's leading part or component, a path of that
+detonation's reads that ends in what the launch text writes after an
+environment variable, whole or cut after a folder of that ending, an address
+the detonation resolved for a host the launch text supplies; ``/`` read as
+``\\`` and case folded); and no entry of the run holds it whole outside the
+reads of the detonations launched with it, what an entry's own call asked for,
+and a call given their launch text. A detonation whose launch the run records
+as not honoured supplies nothing; a run stopped before its judge reads the
+launches as a finished run does, and a cited repeat is read as the entry it
+repeats. A value a row of the job's own detonation holds, of any kind, a value
 another entry (the file, a decoded string, a reverser's read) holds whole, and
 a value the sample produced under a launch value publish as before; a row the
 rule's answer refuses keeps its own reason. The rule also holds for a value
@@ -104,12 +107,21 @@ class TestTheFormsACommandLineWritesAValueIn:
             ('--out "C:\\Landing Zone\\ledger.ini"', "c:\\landing zone"),
             ("--url http://relay.example.net:8080/gate", "relay.example.net"),
             ("--peer relay.example.net:8443", "relay.example.net"),
-            ("--dir C:\\Program Files\\Landing", "c:\\program files\\landing"),
-            ("--out C:\\Program Files\\Landing\\a.ini", "c:\\program files\\landing"),
         ],
     )
     def test_a_value_the_launch_text_holds_whole(self, launch: str, value: str) -> None:
         assert value in launch_values(launch)
+
+    @pytest.mark.parametrize(
+        ("launch", "value"),
+        [
+            ("--dir C:\\Program Files\\Landing", "c:\\program files\\landing"),
+            ("--out C:\\Program Files\\Landing\\a.ini", "c:\\program files\\landing"),
+        ],
+    )
+    def test_a_run_of_arguments_only_where_a_read_holds_it(self, launch: str, value: str) -> None:
+        assert value not in launch_values(launch)
+        assert value in launch_values(launch, held=lambda span: span == value)
 
     @pytest.mark.parametrize(
         ("launch", "value"),
@@ -572,3 +584,140 @@ class TestTheLaunchTextIsStoredOncePerDetonation:
         dumped = json.dumps(report.model_dump(mode="json")["launch_values"])
         assert dumped.count(json.dumps(launch)[1:-1]) == 1
         assert "launched_with" in LaunchedDetonation.model_fields
+
+
+class TestARunStoppedBeforeItsJudge:
+    """The report built from the state of a run stopped before its judge reads the launches as
+    the finished run's does: its summary carries the run's record of its detonations."""
+
+    def test_a_launch_supplied_host_and_its_address_are_refused(self) -> None:
+        from types import SimpleNamespace
+
+        from malspark.pipeline.stopped_run import partial_report
+        from malspark.providers.detonation import DetonationRecord
+        from malspark.reporting.builder import build_consolidated_iocs
+        from malspark.reporting.models import JudgeIndicator
+
+        launch = f"--server {HOST}"
+        held = further_report(command=f"x.exe {launch}", dns=((HOST, ADDRESS),), flows=(ADDRESS,))
+        ledger = [OTHER, *own_reads(), request(launch), *further_reads(launch, held)]
+        container = SimpleNamespace(
+            detonations=[
+                DetonationRecord(ordinal=1, provider="sandbox", task_id="1"),
+                DetonationRecord(
+                    ordinal=2,
+                    origin="agent",
+                    arguments=launch,
+                    provider="sandbox",
+                    task_id="2",
+                    launch={"honoured": True},
+                ),
+            ]
+        )
+        state = {
+            "file_hash": "c" * 64,
+            "file_name": "sample.exe",
+            "reports": {},
+            "isr_reports": {},
+            "evidence_ledger": [entry.model_dump(mode="json") for entry in ledger],
+            "discussion_history": [],
+            "degradation_reasons": [],
+        }
+        dump = partial_report(state, container, note="stopped")
+        assert dump is not None
+        report = MalwareReport.model_validate(dump)
+        assert [record.detonation for record in report.launch_values] == ["d2"]
+        report.judge_indicators = [
+            JudgeIndicator(kind="domain", value=HOST),
+            JudgeIndicator(kind="ip", value=ADDRESS),
+        ]
+        report.consolidated_iocs = build_consolidated_iocs(report)
+        assert _refused(answer_for(report, HOST))
+        assert _refused(answer_for(report, ADDRESS))
+
+
+class TestACitedRepeatIsReadAsTheEntryItRepeats:
+    def test_a_row_citing_a_repeat_of_a_further_detonation_s_read(self) -> None:
+        from malspark.schemas.evidence import LedgerEntry
+
+        launch = f"--dir {FOLDER}"
+        reads = further_reads(launch, further_report(command=f"x.exe {launch}", written=(WRITTEN,)))
+        dropped = next(entry for entry in reads if entry.id == "ev_0023")
+        repeat = LedgerEntry(
+            id="ev_0030",
+            tool=dropped.tool,
+            agent="dynamic",
+            server=dropped.server,
+            source=dropped.source,
+            output="This call repeats ev_0023; its answer is that entry's.",
+            repeated_of=dropped.id,
+            ran=False,
+        )
+        ledger = [OTHER, *own_reads(), request(launch), *reads, repeat]
+        for cited in ("ev_0023", "ev_0030"):
+            report = built(ledger, (stated("folder", FOLDER, cited),))
+            assert _refused(answer_for(report, FOLDER)), cited
+
+
+class TestTheRecordOfALongLaunchText:
+    """A run of more than one argument is recorded only where a read of that detonation holds it
+    whole outside the launch echo; every single argument and its forms are recorded as before."""
+
+    @staticmethod
+    def _record(arguments: int) -> tuple[str, list[str]]:
+        options = [f"--opt{n} value{n}" for n in range(arguments - 1)]
+        launch = " ".join([f"--dir {FOLDER}", *options])
+        report = _folder_run(launch)
+        return launch, [held.value for held in report.launch_values[0].values]
+
+    def test_the_record_grows_with_the_argument_count_not_its_square(self) -> None:
+        # Every word of the launch text writes one value and the typed folder adds a
+        # fixed number of delimited parts (the drive, each leading folder, each
+        # component), so the record stays under two values per word. Recording every
+        # run of arguments would hold about half the square of the word count.
+        for arguments in (20, 40):
+            launch, values = self._record(arguments)
+            words = len(launch.split())
+            assert len(values) <= 2 * words, (arguments, len(values))
+            assert not [value for value in values if " " in value]
+
+    def test_a_credential_shaped_argument_is_recorded_once(self) -> None:
+        secret = prefixed_key("ghp_", 36)
+        options = [f"--opt{n} value{n}" for n in range(18)]
+        launch = " ".join([f"--dir {FOLDER}", f"--token {secret}", *options])
+        report = _folder_run(launch)
+        dumped = json.dumps(report.model_dump(mode="json")["launch_values"])
+        # Once in the launch text, once as the argument's value.
+        assert dumped.count(secret) == 2
+
+    def test_an_unquoted_path_with_a_space_a_read_holds_is_refused(self) -> None:
+        folder = "C:\\Program Files\\Landing"
+        launch = f"--dir {folder}"
+        report = _run(
+            launch,
+            further_report(command=f"x.exe {launch}", written=(f"{folder}\\a.ini",)),
+            identifiers=(stated("folder", folder, "ev_0023"),),
+        )
+        assert folder.lower() in {held.value for held in report.launch_values[0].values}
+        assert _refused(answer_for(report, folder))
+
+
+class TestAProcessOfTheJobSOwnDetonation:
+    def test_a_process_name_its_read_no_longer_holds_is_never_refused(self) -> None:
+        from malspark.reporting.models import ProcessNode
+
+        launch = "--out C:\\Landing\\out\\ledger.ini"
+        report = _run(
+            launch,
+            further_report(command=f"x.exe {launch}", written=("C:\\Landing\\out\\ledger.ini",)),
+            identifiers=(stated("file name", "ledger.ini", "ev_0023"),),
+        )
+        assert launch_supplied_refusal(report, "file name", "ledger.ini", cited=("ev_0023",))
+        # A process of the job's own detonation, its read's text no longer in the ledger.
+        assert report.dynamic is not None
+        report.dynamic.process_tree = [
+            *report.dynamic.process_tree,
+            ProcessNode(pid=77, ppid=4, name="ledger.ini"),
+        ]
+        assert launch_supplied_refusal(report, "file name", "ledger.ini", cited=("ev_0023",)) == ""
+        assert LAUNCH_SUPPLIED not in answer_for(report, "ledger.ini")

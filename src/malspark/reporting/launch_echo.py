@@ -26,13 +26,14 @@ echo (``pipeline.validation.held_only_in_its_echo``). Two rules follow.
   the publish rule reads that record, so every surface reads one answer.
 
 The forms are read by the shape of the launch text, as a command line writes
-a value: whole as one argument or as a span of arguments the text writes as
-one value, the host of ``user@host``, the value of a switch written against
+a value: whole as one argument, or as a span of arguments the text writes as
+one value where a read of the detonation holds that span whole outside its
+launch echo, the host of ``user@host``, the value of a switch written against
 it (``-oX``, ``/D=X``, ``/path:X``, ``--x=X``), the host of a URL or of
 ``host:port``, a part a path's separators, quotes or key-value marks delimit
-(a leading folder among them), the head an environment variable expanded to
-(``%NAME%\\x``) read off a path of a read of the detonation that holds the
-variable's whole tail, with that tail or a leading part of it, and an address
+(a leading folder among them), a path of a read of the detonation that ends
+in what the launch text writes after an environment variable (``%NAME%\\x``),
+whole or cut after a folder of that ending, and an address
 the detonation resolved for a host the launch text supplies. Never by a
 program's, a tool's or a sandbox's name. A value the sample produced under a
 launch value (a file inside the given folder, a subkey of the given key) is
@@ -43,7 +44,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from functools import partial
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -85,7 +86,7 @@ def launch_form(value: Any) -> str:
     return text.rstrip("\\.") or text
 
 
-def launch_values(launch: str) -> dict[str, str]:
+def launch_values(launch: str, held: Callable[[str], bool] | None = None) -> dict[str, str]:
     """Each value ``launch`` holds whole, folded (:func:`launch_form`), with the form: ``whole``.
 
     The launch text is split as Windows splits a command line
@@ -94,8 +95,10 @@ def launch_values(launch: str) -> dict[str, str]:
     as the host of ``user@host``, of a URL or of ``host:port``
     (:func:`_written_values`); and each such text holds the parts the publish
     route's delimited test finds whole in it (:func:`_delimited_parts`). The
-    launch text is also read as written, whole (:func:`_spanning_values`), so
-    a value an unquoted text writes over several arguments is held too.
+    launch text is also read as written, whole (:func:`_spanning_values`): a
+    value an unquoted text writes over several arguments is held where
+    ``held`` (asked of the folded value) says a read holds it, and never
+    without ``held`` — a run no read holds reaches no row.
     """
     from malspark.reporting.stated_host_values import _arguments
 
@@ -104,13 +107,15 @@ def launch_values(launch: str) -> dict[str, str]:
         for text in _written_values(argument):
             for value in _delimited_parts(text):
                 out.setdefault(value, "whole")
-    for value in _spanning_values(str(launch or "")):
-        out.setdefault(value, "whole")
+    if held is not None:
+        for value in _spanning_values(str(launch or ""), held):
+            out.setdefault(value, "whole")
     return out
 
 
-def _spanning_values(launch: str) -> Iterator[str]:
-    """Each value the launch text as written holds whole across white space, folded.
+def _spanning_values(launch: str, held: Callable[[str], bool]) -> Iterator[str]:
+    """Each value the launch text as written holds whole across white space that ``held``
+    holds, folded.
 
     A span that runs over white space from the text's start, a place after
     white space or after one of :data:`_DELIMITERS` to the text's end, a
@@ -138,9 +143,9 @@ def _spanning_values(launch: str) -> Iterator[str]:
                 continue
             seen.add(part)
             if any(char.isspace() for char in part) and whole_value_in(part, written):
-                held = launch_form(part)
-                if held:
-                    yield held
+                value = launch_form(part)
+                if value and held(value):
+                    yield value
 
 
 def launch_tails(launch: str) -> list[tuple[str, str]]:
@@ -250,8 +255,8 @@ def _texts_of(entries: Any, entry_id: str) -> list[str]:
 
 
 def _expanded(tail: str, texts: Iterable[str]) -> list[str]:
-    """The paths a variable's whole ``tail`` says it expanded to, folded: each head a path of
-    ``texts`` writes the whole tail after, with each leading part of the tail and the whole.
+    """The paths of ``texts`` that end in a variable's whole ``tail``, folded: each head a path
+    of ``texts`` writes the whole tail after, with each leading part of the tail and the whole.
 
     A place of the tail counts where the path ends after it: at the text's
     end or where no letter, digit, ``.``, ``_`` or ``-`` runs on; the tail
@@ -291,7 +296,10 @@ def launch_record(
     For each detonation the ledger holds a read of that states a launch text
     (``detonation_reads.later_detonation_name``) and whose launch the run
     records as honoured (:func:`honoured_launches`): every value of
-    :func:`launch_values`; each path a variable of it expanded to
+    :func:`launch_values`, a span of arguments where a read of that detonation
+    holds it whole outside its launch echo (:func:`_read_holds`); each path a
+    read of it writes ending in what the launch text writes after an
+    environment variable, whole or cut after a folder of that ending
     (:func:`launch_tails`, :func:`_expanded` over the reads of it); and, for a
     host among those values that no other entry holds, each address the
     report's network block says a domain row that detonation observed resolved
@@ -326,8 +334,16 @@ def launch_record(
         if all(known != name for known, _form, _through in held):
             held.append((name, form, through))
 
+    echoes = entries.with_launch_echoes()
     for name, launch in launches.items():
-        for value in launch_values(launch):
+        echo_free = [
+            (rest, rest.lower())
+            for read in reads[name]
+            for _whole, rest in echoes.echo_free_parts(read)
+            if rest is not None
+        ]
+        held = partial(_read_holds, echo_free, {})
+        for value in launch_values(launch, held):
             _add(value, name, "whole")
         texts = [text for read in reads[name] for text in _texts_of(entries, read)]
         for variable, tail in launch_tails(launch):
@@ -392,6 +408,35 @@ def _spellings(value: str) -> list[str]:
     return list(dict.fromkeys([value, value.replace("\\", "/")]))
 
 
+def _read_holds(texts: list[tuple[str, str]], known: dict[str, bool], value: str) -> bool:
+    """Whether one of ``texts`` (a text and its lower case) holds ``value`` whole, in either
+    separator, by the test an entry's text is read with (``validation._text_holds``).
+
+    The texts are the reads of one detonation as tier 1 reads them, outside
+    their launch echo (``EntryTexts.echo_free_parts`` on the index with the
+    launch echoes, :meth:`EntryTexts.with_launch_echoes`). A spelling's forms
+    are read once, and the whole-value test asked only of a text a form
+    stands in. Read once per value.
+    """
+    from malspark.agents._indicator_denylists import whole_value_in
+    from malspark.pipeline.validation import library_spellings
+    from malspark.utils.written_forms import written_forms
+
+    if value not in known:
+        forms = [
+            form
+            for spelled in _spellings(value)
+            for spelling in library_spellings(spelled)
+            for form in written_forms(spelling)
+        ]
+        known[value] = any(
+            form.lower() in lowered and whole_value_in(form, text)
+            for text, lowered in texts
+            for form in forms
+        )
+    return known[value]
+
+
 def _holders(entries: Any, value: str, excluded: set[str], given: list[str]) -> list[str]:
     """Each entry that holds ``value`` whole outside the reads ``excluded``, its call's echo and
     a call given one of the launch texts ``given``, in ledger order."""
@@ -450,10 +495,12 @@ def launch_supplied_refusal(
       network or dynamic block of its kind and value names that detonation
       (``detonation_marks``), or one of ``cited`` — the entries the row cites
       that hold it whole outside their echoes, where the row states them — is
-      a read of it (``detonation_marks.entry_marks``); what a read states as
-      its launch text is no observation;
+      a read of it (``detonation_marks.entry_marks``), a cited repeat read as
+      the entry it repeats; what a read states as its launch text is no
+      observation;
     * it stands whole in that detonation's launch text in one of the forms of
-      :func:`launch_values`, as a path a variable of it expanded to, or as an
+      :func:`launch_values`, as a path a read of it writes ending in what it
+      writes after an environment variable (:func:`_expanded`), or as an
       address it resolved for a host the launch text supplies;
     * no entry of the run holds it whole outside the reads of the
       detonations supplying it, what an entry's own call asked for and the
@@ -478,7 +525,9 @@ def launch_supplied_refusal(
     from malspark.reporting.ledger_projection import value_key
 
     named = {mark.detonation for mark in _row_marks(report).get((kind, value_key(kind, value)), [])}
-    named |= {mark.detonation for mark in entry_marks(list(cited or ()), report)}
+    index = {row.id: row for row in getattr(report, "evidence_index", None) or ()}
+    answering = [_answering(ref, index) for ref in cited or ()]
+    named |= {mark.detonation for mark in entry_marks(answering, report)}
     # A stored record's detonation is read only where it names one.
     marked = [
         (launched, held)
@@ -489,6 +538,17 @@ def launch_supplied_refusal(
         return ""
     launched, held = marked[0]
     return _refusal_words(launched, held, [known.detonation for known, _held in supplied])
+
+
+def _answering(ref: Any, index: Mapping[str, Any]) -> str:
+    """The entry whose answer a cited id is: a repeat read as the entry it repeats, along the
+    evidence index's ``repeated_of``."""
+    held = str(ref or "").strip()
+    seen: set[str] = set()
+    while held in index and held not in seen and getattr(index[held], "repeated_of", None):
+        seen.add(held)
+        held = str(index[held].repeated_of).strip()
+    return held
 
 
 def _row_marks(report: Any) -> dict[tuple[str, str], list[Any]]:
