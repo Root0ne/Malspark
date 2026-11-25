@@ -199,7 +199,7 @@
    "text_digest": "7389a3cce4080c3b6486d77b33886b64b0984dd1aa7dbb86471e962505c7dca5"
   },
   {
-   "function": "malspark.reporting.renderers.stix_renderer:publish_answer",
+   "function": "malspark.reporting.renderers.stix_renderer:_evidence_answer",
    "condition": "every row's publish answer and every judge value's, on every surface that prints or reads it: yes with the evidence reason, or no with each refusing test as its own part and the facts after them; a listed value's answer gives the listing's test and the judge's keep for a network value, and, as facts, that the judge did not keep any other kind where the judge's indicators were read and none names it, and what the whole-value search found; a row of another source the search found is refused by its own tests with the search's entries and who lists it as facts; a path of the file's text, or a judge's path asked as the sweep's, that the declared catalogue calls every host's is refused with the catalogue's reason, the row it is from, a second source that holds it or that the publish rule's lookup found none and each cited holder, a recovery of it, and a search's finding facts after it",
    "basis": [
     "the row's kind, value, source and reputation",

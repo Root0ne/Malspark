@@ -5962,6 +5962,87 @@ def publish_answer(
 ) -> str:
     """The publish rule's answer for one row, as the report prints it.
 
+    The rule's answer on the evidence (:func:`_evidence_answer`); and where
+    that answer publishes the row, a value only further detonations launched
+    with it observed, which their launch text supplies, is refused, whoever
+    recorded or named it (``launch_echo.launch_supplied_refusal``, read off
+    ``report``, the report the row is of, which every call site passes; an
+    analysis row's cited holders, ``stated.held_in``, are its citations). A
+    row that answer refuses keeps its own reason, and the sample's own
+    digests are not asked.
+    """
+    answer = _evidence_answer(
+        kind,
+        value,
+        source,
+        reputation,
+        corroborating=corroborating,
+        recovered=recovered,
+        verdict=verdict,
+        also_plain=also_plain,
+        unattributed=unattributed,
+        kept_by=kept_by,
+        mentioned_by=mentioned_by,
+        in_published_url=in_published_url,
+        listed_by=listed_by,
+        seen_in=seen_in,
+        tool_search=tool_search,
+        asked_in=asked_in,
+        untold=untold,
+        kept_address=kept_address,
+        judge_only=judge_only,
+        url_only=url_only,
+        bound=bound,
+        stated=stated,
+        spelled=spelled,
+        digest=digest,
+        judge_s_value=judge_s_value,
+        judge_names_none=judge_names_none,
+    )
+    if report is None or digest or not publishes(answer):
+        return answer
+    from malspark.reporting.launch_echo import launch_supplied_refusal
+
+    supplied = launch_supplied_refusal(
+        report,
+        kind,
+        str(value or "").strip(),
+        cited=getattr(stated, "held_in", None) if stated is not None else None,
+    )
+    return refused(supplied) if supplied else answer
+
+
+def _evidence_answer(
+    kind: str,
+    value: str,
+    source: Any,
+    reputation: Any = None,
+    *,
+    corroborating: SecondSources | str = "",
+    recovered: str = "",
+    verdict: Any = None,
+    also_plain: str = "",
+    unattributed: str = "",
+    kept_by: str = "",
+    mentioned_by: str = "",
+    in_published_url: str = "",
+    listed_by: str = "",
+    seen_in: str = "",
+    tool_search: str = "",
+    asked_in: str = "",
+    untold: str = "",
+    kept_address: str = "",
+    judge_only: str = "",
+    url_only: str = "",
+    bound: str = "",
+    stated: Any = None,
+    spelled: str = "",
+    digest: str = "",
+    judge_s_value: bool = False,
+    judge_names_none: bool = False,
+) -> str:
+    """The publish rule's answer for one row on the evidence, as the report prints it.
+
     ``yes: <reason>`` with the reason :func:`indicator_publish_reason` gave, in
     words (:func:`published_because`), or ``no: <reason>`` naming the half of
     it that refused the row, given as its parts (``publish_parts.PublishAnswer``):
@@ -5976,19 +6057,8 @@ def publish_answer(
     (:func:`withheld_by_the_verdict`) is ``no: <the verdict's reason>; the evidence
     alone would publish it (<what it stands on>)``: the verdict first, and what the
     evidence said of it kept after it as a clause of its own, the judge's keep among it.
-
-    ``report`` is the report the row is of. Asked first after the sample's
-    own digests: a value only further detonations launched with it observed,
-    which their launch text supplies, is refused, whoever recorded or named
-    it (``launch_echo.launch_supplied_refusal``). Every call site passes it.
     """
     text = str(value or "").strip()
-    if report is not None and not digest:
-        from malspark.reporting.launch_echo import launch_supplied_refusal
-
-        supplied = launch_supplied_refusal(report, kind, text)
-        if supplied:
-            return refused(supplied)
     from_strings = str(source or "").strip().lower() in ("", "strings")
     corroborated = second_source(text, corroborating, path=kind == "path") if from_strings else ""
     admitted = (

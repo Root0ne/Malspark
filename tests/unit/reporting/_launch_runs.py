@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from malspark.analysis.detonation_reads import later_detonation_name
 from malspark.pipeline.detonations import platform_reads
 from malspark.pipeline.validation import EntryTexts
 from malspark.providers.detonation import DetonationRecord
@@ -108,10 +109,11 @@ def further_report(
     dns: tuple[tuple[str, str], ...] = (),
     signature: str = "",
     children: tuple[tuple[str, str], ...] = (),
+    flows: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """A further detonation's sandbox report: the launched process and the processes it
-    started (``(name, command line)``), files written, names resolved with their address, a
-    signature's text."""
+    started (``(name, command line)``), files written, names resolved with their address,
+    addresses the launched process's tree reached, a signature's text."""
     report: dict[str, Any] = {
         "behavior": {
             "processes": [
@@ -126,7 +128,10 @@ def further_report(
             "dns": [
                 {"request": host, "type": "A", "answers": [{"data": address, "type": "A"}]}
                 for host, address in dns
-            ]
+            ],
+            "tcp": [
+                {"dst": address, "dport": 443, "sample_process_tree": True} for address in flows
+            ],
         },
         "dropped": [
             {"name": path.rsplit("\\", 1)[-1], "filepath": path, "sha256": f"{n + 1:x}" * 64}
@@ -138,12 +143,39 @@ def further_report(
     return report
 
 
+def detonations_of(
+    ledger: list[LedgerEntry], not_honoured: tuple[str, ...] = ()
+) -> list[dict[str, Any]]:
+    """The run's record of its detonations (``run_environment.detonations_record``'s rows): the
+    job's own, and each further one the ledger reads, its launch honoured unless named in
+    ``not_honoured``."""
+    rows: list[dict[str, Any]] = [{"detonation": "d1", "origin": "job"}]
+    for entry in ledger:
+        name = later_detonation_name(entry)
+        if not name or any(row["detonation"] == name for row in rows):
+            continue
+        data = entry.structured if isinstance(entry.structured, dict) else {}
+        rows.append(
+            {
+                "detonation": name,
+                "origin": "agent",
+                "launched_with": str(data.get("launched_with") or ""),
+                "arguments_honoured": name not in not_honoured,
+            }
+        )
+    return rows
+
+
 def built(
     ledger: list[LedgerEntry],
     identifiers: tuple[HostIdentifier, ...] = (),
     judged: tuple[tuple[str, str], ...] = (),
+    *,
+    not_honoured: tuple[str, ...] = (),
 ) -> MalwareReport:
-    """The report the run builds, with the analysis's identifier rows and the judge's values."""
+    """The report the run builds, with the analysis's identifier rows and the judge's values;
+    the run's record states each further detonation's launch honoured unless named in
+    ``not_honoured``."""
     report = MalwareReportBuilder(
         file_hash=SHA256,
         file_name="sample.exe",
@@ -152,7 +184,7 @@ def built(
         reports={},
         isr_reports={},
         stix_output={"objects": []},
-        run_summary={},
+        run_summary={"environment": {"detonations": detonations_of(ledger, not_honoured)}},
         discussion_history=[],
         final_decision="Malware",
         overall_confidence=0.8,
