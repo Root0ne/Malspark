@@ -196,8 +196,10 @@ with the rule's refusal and its `type`, where the end of this section says):
   exactly one level below it named as Windows names the subkeys it keeps a
   service's settings in (a key or value below that one is not refused by
   this test), an
-  object-manager namespace (`Global`), Windows' own streams, services and named
-  pipes, a word of a task definition, or the sample itself as the sandbox holds
+  object-manager namespace (`Global`), Windows' own streams and named pipes, a
+  service Microsoft ships as part of Windows (every service name Microsoft's
+  system-services pages for Windows Server 2016 and Windows 10 and 11 IoT
+  Enterprise print, refused in those words), a word of a task definition, or the sample itself as the sandbox holds
   it (a file named by its digest, or by the name it was submitted under, bare
   or where a submitted file is placed: the temporary folder, the desktop, the
   downloads folder, the profile, a drive's root). A value the sandbox recorded
@@ -217,8 +219,8 @@ it may match ordinary software: it is listed on `/iocs` and in MISP with
 selection, Suricata content or STIX indicator. In STIX a registry value is a
 `windows-registry-key` with its value's name and a folder written from a drive or
 a share is a `directory`; a bare folder name, a scheduled task, a service, a named
-pipe and an alternate data stream have no STIX object, their reason says so, and
-`/iocs`, MISP and the Sigma drafts carry them. A tool's row of the same kind and
+pipe and an alternate data stream have no STIX object, their reason says so;
+`/iocs` and MISP carry them, and the Sigma drafts carry all but a service. A tool's row of the same kind and
 value that the rule refused becomes the analysis's row, so every surface reads
 one answer for it. A row that is not exported is not a row of
 the IOC table: section 9 prints the rule's answer beside every identifier, with
@@ -292,8 +294,12 @@ host value the analysis states that the table publishes is selected in the log
 that records its kind, one Sigma draft per log source: a file (past its known
 folders) and a folder (a whole path component) in `file_event`, an alternate
 data stream in `create_stream_hash`, a scheduled task in Security event 4698, a
-service in System event 7045, a named pipe in `pipe_created`, a registry key or
-value in `registry_event`. A mutex, which no Windows log records, gets none.
+named pipe in `pipe_created`, a registry key or value in `registry_event`. A
+mutex, which no Windows log records, gets none. A service gets none either: its
+log records an installation, and the record does not tell a service the sample
+installed from one that existed and was changed. Such a row is still published
+and carried by `/iocs` and MISP, and says so; where no Sigma draft is built,
+the sentence that says why counts it.
 Every Sigma selection can match alone (the condition is the one selection, or
 `1 of` them), so each holds only specific values: a value the benign-location
 catalogue calls every Windows host's (an autorun key, a file Windows ships) is

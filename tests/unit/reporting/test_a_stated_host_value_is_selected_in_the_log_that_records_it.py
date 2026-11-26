@@ -5,8 +5,9 @@ decoder recovered could reach a Sigma draft only through a sandbox's record,
 which named none of them. A value the IOC table publishes as stated by the
 analysis is now selected, whole, in the log source that records its kind: a
 file and a folder in ``file_event``, a stream in ``create_stream_hash``, a task
-in event 4698, a service in event 7045, a pipe in ``pipe_created``, a registry
-key in ``registry_event``. A generic name (a task called like an ordinary
+in event 4698, a pipe in ``pipe_created``, a registry key in ``registry_event``;
+a service in none, since its log records an installation the record does not
+tell from a change. A generic name (a task called like an ordinary
 updater) never forms a selection alone, and the report says so when nothing
 else is left. A selection the rule can match on alone holds a value of its own:
 a value every Windows host holds is never selected, and a folder a selected
@@ -190,7 +191,7 @@ class TestTheRunsValues:
 
 
 class TestEveryKind:
-    def test_a_service_a_pipe_and_a_registry_key(self) -> None:
+    def test_a_pipe_and_a_registry_key_and_no_service(self) -> None:
         report = _report(
             [
                 ("service", "ExampleSvc7731"),
@@ -200,10 +201,7 @@ class TestEveryKind:
         )
         drafts = _by_source(report)
 
-        assert drafts["system"]["detection"]["selection_service"] == {
-            "EventID": 7045,
-            "ServiceName": ["ExampleSvc7731"],
-        }
+        assert "system" not in drafts
         assert drafts["pipe_created"]["detection"]["selection_pipe"] == {
             "PipeName": ["\\examplepipe_7731"]
         }
@@ -212,7 +210,9 @@ class TestEveryKind:
         }
 
     def test_each_draft_has_its_own_name_and_id(self) -> None:
-        report = _report([("file name", "\\update_data.dat"), ("service", "ExampleSvc7731")])
+        report = _report(
+            [("file name", "\\update_data.dat"), ("named pipe", "\\\\.\\pipe\\examplepipe_7731")]
+        )
         rules = [rule for rule in report.detection_signatures if rule.kind == "sigma"]
 
         assert len({rule.name for rule in rules}) == len(rules) == 2

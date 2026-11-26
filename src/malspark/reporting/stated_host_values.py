@@ -91,8 +91,11 @@ def listed_only(answer: Any) -> bool:
     return GENERIC_NOTE in str(answer or "")
 
 
-# What an exported value of a kind STIX has no object for says.
+# What an exported value of a kind STIX has no object for says: Sigma is
+# named for a kind a stated draft selects on
+# (``detection_signatures.stated_draft_kinds``), and left out for another.
 NO_STIX_OBJECT = "no STIX object for this kind; carried by /iocs, MISP and Sigma"
+NO_STIX_OBJECT_NO_SIGMA = "no STIX object for this kind; carried by /iocs and MISP"
 
 
 @dataclass(frozen=True)
@@ -414,6 +417,17 @@ def _hiveless(value: str) -> str:
     return "\\".join(_components(hiveless_key(value, value_suffix=False)))
 
 
+# Why the key of a service in the catalogue's list is every host's: true of
+# every entry, which is a service Windows installs (by default or with a
+# feature or role), not one every installation has.
+SERVICE_KEY_REASON = "the registry key of a service Windows installs"
+# Why a rule's selection is left out that the key of such a service matches
+# under the selection's operator (:func:`shipped_match`), by the operator.
+SHIPPED_SERVICE_KEY_REASON = {
+    "endswith": f"{SERVICE_KEY_REASON} ends with it",
+    "contains": f"{SERVICE_KEY_REASON} holds it",
+    "": f"it is {SERVICE_KEY_REASON}",
+}
 # Why a key exactly one level below the key of a service Windows installs is
 # every host's, where its name is one the catalogue lists for the subkeys a
 # service's settings are kept in. True of the key as written: the catalogue
@@ -471,7 +485,7 @@ def benign_reason(
         if key in catalogue.registry_keys or key in catalogue.registry_values:
             return "a registry key or value every Windows installation has"
         if parent in _SERVICES_KEYS and last in catalogue.windows_services:
-            return "the registry key of a service Windows installs"
+            return SERVICE_KEY_REASON
         if _a_service_settings_subkey(key, catalogue):
             return SERVICE_SUBKEY_REASON
         return ""
@@ -489,6 +503,10 @@ def benign_reason(
             "service": catalogue.windows_services,
             "named_pipe": catalogue.windows_pipes,
         }.get(kind.table_kind, frozenset())
+        if name in own and kind.table_kind == "service":
+            # The list's criterion, true of every entry: not every service
+            # it lists is installed on every installation.
+            return "a service Microsoft ships as part of Windows"
         if name in own:
             return f"{_article(kind.label.lower())} Windows itself has on every installation"
         return ""
@@ -918,9 +936,11 @@ def stated_reason(stated: StatedHostValue) -> str:
     """Why an exported value stands: the analysis's statement and the entries holding it.
 
     A value STIX has no object for (a bare folder name, a task, a service, a
-    stream, a pipe) says so; a mutex, a file, a rooted folder and a registry
-    key or value are STIX indicators.
+    stream, a pipe) says so, and names Sigma only where a stated draft
+    selects on its kind (a service is never selected on); a mutex, a file, a
+    rooted folder and a registry key or value are STIX indicators.
     """
+    from malspark.reporting.detection_signatures import stated_draft_kinds
     from malspark.reporting.renderers.stix_renderer import indicator_pattern
 
     kind = stated.kind
@@ -930,7 +950,8 @@ def stated_reason(stated: StatedHostValue) -> str:
         f"found whole in {', '.join(stated.held_in or ())}"
     )
     if kind is not None and indicator_pattern(kind.table_kind, stated.value) is None:
-        said += f"; {NO_STIX_OBJECT}"
+        drafted = kind.table_kind in stated_draft_kinds()
+        said += f"; {NO_STIX_OBJECT if drafted else NO_STIX_OBJECT_NO_SIGMA}"
     if kind is not None and is_generic(kind, stated.value):
         said += f"; {GENERIC_NOTE}"
     return said

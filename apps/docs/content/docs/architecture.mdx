@@ -6404,8 +6404,9 @@ is assembled from what the run gathered rather than recomputed beside it:
   drive, or first in a path written without one), files Windows ships in its system
   folders, keys and values every installation has, a service's key and a key
   exactly one level below it named as Windows names the subkeys it keeps a
-  service's settings in (`service_settings_subkeys`), Windows' own services,
-  pipes and streams, object-manager namespaces, task-definition words) nor the sample as the sandbox holds it
+  service's settings in (`service_settings_subkeys`), Windows' own services
+  (every service name Microsoft's two system-services pages print, refused as
+  "a service Microsoft ships as part of Windows"), pipes and streams, object-manager namespaces, task-definition words) nor the sample as the sandbox holds it
   (named by its digest or its submitted name), and a verdict that publishes.
   The table adds a row for each one it publishes after every tool row, or
   turns a refused tool row of the same kind and value into it; section 9
@@ -6414,14 +6415,18 @@ is assembled from what the run gathered rather than recomputed beside it:
   Sigma selection, Suricata content or STIX indicator is made of it. A
   registry value is a STIX `windows-registry-key` with its value's name, a
   rooted folder a `directory`; a kind STIX has no object for says so, and
-  `/iocs`, MISP and Sigma carry it.
+  `/iocs` and MISP carry it, and Sigma where a stated draft selects on its
+  kind (`detection_signatures.stated_draft_kinds`): a service row names
+  `/iocs` and MISP only.
   A row under a free-text kind or without a use is refused with its reason.
   Bounds: 256 rows, 16 cited entries a row, 1024 characters a value. **A Sigma
   draft selects only whole values a log records**, one draft per log source:
   registry keys and images the table publishes or a sandbox watched, and the
-  stated values in `file_event`, `create_stream_hash`, Security 4698, System
-  7045 and `pipe_created` (`detection_signatures._stated_drafts`, at most 64
-  values a selection), each value written with Sigma's wildcards escaped
+  stated values in `file_event`, `create_stream_hash`, Security 4698 and
+  `pipe_created` (`detection_signatures._stated_drafts`, at most 64 values a
+  selection; a service is not selected on, since its log records an
+  installation the record does not tell from a change, and "No Sigma draft"
+  counts it where no draft is built), each value written with Sigma's wildcards escaped
   (`sigma_literal`). A sandbox signature selects nothing. Every selection
   holds only values that stand alone (`detection_signatures.selection_specific`):
   a value `benign_reason` calls every host's is taken out whatever its
@@ -6438,8 +6443,9 @@ is assembled from what the run gathered rather than recomputed beside it:
   time, and the keys from its keys and values, each service's key and the
   settings subkeys named under it (asked last); a value a shipped path ends
   with (`endswith`), holds (`contains`) or is, is taken out, and one a
-  service's settings subkey matches says so in the catalogue's words for that
-  key, never that every installation has it. A path matched by
+  listed service's own key (`SHIPPED_SERVICE_KEY_REASON`) or a service's
+  settings subkey matches says so in the catalogue's words for that key,
+  never that every installation has it. A path matched by
   `contains` that names no folder is taken out (`NO_FOLDER_REASON`); a `contains` value another
   selected value lies under, or a longer spelling of a selected `contains`
   value, is taken out for the narrower one, case and separators folded
