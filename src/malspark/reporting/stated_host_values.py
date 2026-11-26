@@ -417,6 +417,17 @@ def _hiveless(value: str) -> str:
     return "\\".join(_components(hiveless_key(value, value_suffix=False)))
 
 
+# Why the key of a service in the catalogue's list is every host's: true of
+# every entry, which is a service Windows installs (by default or with a
+# feature or role), not one every installation has.
+SERVICE_KEY_REASON = "the registry key of a service Windows installs"
+# Why a rule's selection is left out that the key of such a service matches
+# under the selection's operator (:func:`shipped_match`), by the operator.
+SHIPPED_SERVICE_KEY_REASON = {
+    "endswith": f"{SERVICE_KEY_REASON} ends with it",
+    "contains": f"{SERVICE_KEY_REASON} holds it",
+    "": f"it is {SERVICE_KEY_REASON}",
+}
 # Why a key exactly one level below the key of a service Windows installs is
 # every host's, where its name is one the catalogue lists for the subkeys a
 # service's settings are kept in. True of the key as written: the catalogue
@@ -474,7 +485,7 @@ def benign_reason(
         if key in catalogue.registry_keys or key in catalogue.registry_values:
             return "a registry key or value every Windows installation has"
         if parent in _SERVICES_KEYS and last in catalogue.windows_services:
-            return "the registry key of a service Windows installs"
+            return SERVICE_KEY_REASON
         if _a_service_settings_subkey(key, catalogue):
             return SERVICE_SUBKEY_REASON
         return ""

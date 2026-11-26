@@ -1469,9 +1469,9 @@ def _stated_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, int]:
 
     Each draft holds, for each selected value, every row that reduces to it
     (``held``), which the value's further detonations are read over once the
-    draft is narrowed (:func:`_sigma_drafts`). A generic name is counted as
-    one, whatever its kind; a service that is not one is counted as a service
-    (:data:`_STATED_NOT_SELECTED`).
+    draft is narrowed (:func:`_sigma_drafts`). A service is counted as a
+    service, its name generic or not (:data:`_STATED_NOT_SELECTED`); a generic
+    name of another kind as a generic name.
     """
     from malspark.reporting.ledger_projection import marks_of
 
@@ -1481,14 +1481,14 @@ def _stated_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, int]:
     services = 0
     for row in _stated_rows(report):
         kind = str(row.kind or "")
+        if kind in _STATED_NOT_SELECTED:
+            services += 1
+            continue
         placed = _STATED_FIELDS.get(kind)
-        if placed is None and kind not in _STATED_NOT_SELECTED:
+        if placed is None:
             continue
         if _generic(row):
             generic += 1
-            continue
-        if placed is None:
-            services += 1
             continue
         suffix, selection, field_name = placed
         value = _stated_value(kind, row.value)
@@ -2031,10 +2031,14 @@ def _why_not_specific(selection: str, field_name: str, value: str, stated: str) 
     value as it is printed and the way the rule matches it
     (``stated_host_values.shipped_match``): a value some path or key Windows
     ships matches under the field's operator fires on every host, and its
-    reason says that (:data:`_SHIPPED_REASON`).
+    reason says that (:data:`_SHIPPED_REASON`); where that key is a listed
+    service's own key or a settings subkey under one, the catalogue's words
+    for it.
     """
     from malspark.reporting.stated_host_values import (
+        SERVICE_KEY_REASON,
         SERVICE_SUBKEY_REASON,
+        SHIPPED_SERVICE_KEY_REASON,
         SHIPPED_SUBKEY_REASON,
         benign_reason,
         shipped_match,
@@ -2055,6 +2059,10 @@ def _why_not_specific(selection: str, field_name: str, value: str, stated: str) 
     if matched and kind.shape == "key" and benign_reason(kind, matched) == SERVICE_SUBKEY_REASON:
         # A service's settings subkey the value matches: the catalogue's words for it.
         return SHIPPED_SUBKEY_REASON[operator]
+    if matched and kind.shape == "key" and benign_reason(kind, matched) == SERVICE_KEY_REASON:
+        # A listed service's own key, which not every installation has: the
+        # catalogue's words for it.
+        return SHIPPED_SERVICE_KEY_REASON[operator]
     if matched:
         return _SHIPPED_REASON[kind.shape == "key"][operator]
     return ""

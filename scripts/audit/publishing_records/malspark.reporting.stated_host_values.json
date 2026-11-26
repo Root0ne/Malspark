@@ -13,7 +13,7 @@
     "tests/unit/reporting/test_a_location_every_host_has_is_refused_on_every_route.py::TestTheNameMatchingBranchSaysWhatItFound::test_one_wording_for_every_value_it_answers",
     "tests/unit/reporting/test_a_windows_service_is_refused_by_its_criterion_and_a_stated_service_builds_no_install_draft.py::TestTheRefusalSaysTheCriterion::test_a_listed_service_is_refused_in_the_criterion_s_words"
    ],
-   "text_digest": "4984669ceac961873cbf8b8f18ce7b8cc66902617bcb73fc7b6535100a7a4ab2"
+   "text_digest": "1d3e35fd0e4fcdb93fc6f2134b7766bf78167eab8c95064e5071b231a8675135"
   },
   {
    "constant": "malspark.reporting.stated_host_values:NO_STIX_OBJECT_NO_SIGMA",
@@ -24,6 +24,15 @@
    ],
    "test": "tests/unit/reporting/test_a_windows_service_is_refused_by_its_criterion_and_a_stated_service_builds_no_install_draft.py::TestAStatedServiceIsExportedAndBuildsNoInstallDraft::test_it_is_published_and_says_where_it_is_carried",
    "text_digest": "e8086849993f25f101d85f383588c407aa4d03ef34e9fc35f28ccde2cb983158"
+  },
+  {
+   "constant": "malspark.reporting.stated_host_values:SERVICE_KEY_REASON",
+   "condition": "the refusal of the registry key of a service the catalogue's windows_services lists, directly under either Services key, on every route that asks the catalogue, and the subject of the reason a Sigma selection the key matches is left out with",
+   "basis": [
+    "the catalogue's windows_services and registry_keys"
+   ],
+   "test": "tests/unit/reporting/test_a_windows_service_is_refused_by_its_criterion_and_a_stated_service_builds_no_install_draft.py::TestAValueAListedServiceSKeyMatches::test_the_reason_is_the_catalogue_s_words_by_operator",
+   "text_digest": "b9173716b5f517f8f82ae6831b1d4e97745299be16b60af95ff5342911f981e2"
   },
   {
    "constant": "malspark.reporting.stated_host_values:SERVICE_SUBKEY_REASON",

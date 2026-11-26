@@ -11,7 +11,9 @@ A service row the analysis states and the IOC table publishes is exported to
 /iocs and MISP and says so. It builds no Sigma selection on the install event:
 the record does not tell a service the sample installed from one that existed
 and was changed. Where no Sigma draft is built at all, the sentence that says
-why counts it; every other draft keeps its bytes.
+why counts it, once, whether its name is generic or not; every other draft
+keeps its bytes. A registry value left out of a draft because the key of a
+listed service matches it says so in the catalogue's words for that key.
 """
 
 from __future__ import annotations
@@ -20,7 +22,6 @@ import json
 from typing import Any
 
 import pytest
-import yaml
 
 from malspark.pipeline.validation import EntryTexts
 from malspark.reporting.builder import MalwareReportBuilder, build_consolidated_iocs
@@ -36,6 +37,8 @@ from malspark.reporting.renderers.stix_renderer import publishes
 from malspark.reporting.stated_host_values import (
     DEFAULT_CATALOGUE,
     NO_STIX_OBJECT,
+    SERVICE_KEY_REASON,
+    SHIPPED_SERVICE_KEY_REASON,
     benign_catalogue,
     benign_reason,
     host_kinds,
@@ -189,17 +192,122 @@ class TestAStatedServiceIsExportedAndBuildsNoInstallDraft:
             assert OWN_SERVICE not in body
 
     def test_a_task_of_the_same_shape_keeps_its_creation_draft(self) -> None:
-        beside = _sigma(_report([("scheduled task", OWN_TASK), ("service", OWN_SERVICE)]))
-        task = _sigma(_report([("scheduled task", OWN_TASK)]))
+        report = _report([("scheduled task", OWN_TASK), ("service", OWN_SERVICE)])
+        date = report.generated_at.strftime("%Y/%m/%d")
 
-        assert beside == task
-        (body,) = task.values()
-        assert yaml.safe_load(body)["detection"]["selection_task"] == {
-            "EventID": 4698,
-            "TaskName|endswith": [f"\\{OWN_TASK}"],
-        }
+        assert list(_sigma(report).values()) == [
+            "title: Malspark AutoGen - loader (scheduled tasks)\n"
+            "id: 5a1e035d-8ab6-0ded-5579-20e902131cf7\n"
+            "status: experimental\n"
+            "description: Auto-generated for sha256 777777777777\n"
+            "author: Malspark Auto-Generator\n"
+            f"date: {date}\n"
+            "logsource:\n"
+            "  product: windows\n"
+            "  service: security\n"
+            "detection:\n"
+            "  selection_task:\n"
+            "    EventID: 4698\n"
+            "    TaskName|endswith:\n"
+            "    - \\ExampleTask7731\n"
+            "  condition: selection_task\n"
+            "falsepositives:\n"
+            "- Legitimate software installers\n"
+            "- Unknown\n"
+            "level: high\n"
+        ]
+
+    def test_a_pipe_beside_it_keeps_its_draft(self) -> None:
+        report = _report(
+            [("named pipe", "\\\\.\\pipe\\examplepipe_7731"), ("service", OWN_SERVICE)]
+        )
+        date = report.generated_at.strftime("%Y/%m/%d")
+
+        assert list(_sigma(report).values()) == [
+            "title: Malspark AutoGen - loader (named pipes)\n"
+            "id: 67ac23b7-bd21-316a-45ba-4f20c8fcb14c\n"
+            "status: experimental\n"
+            "description: Auto-generated for sha256 777777777777\n"
+            "author: Malspark Auto-Generator\n"
+            f"date: {date}\n"
+            "logsource:\n"
+            "  product: windows\n"
+            "  category: pipe_created\n"
+            "detection:\n"
+            "  selection_pipe:\n"
+            "    PipeName:\n"
+            "    - \\examplepipe_7731\n"
+            "  condition: selection_pipe\n"
+            "falsepositives:\n"
+            "- Legitimate software installers\n"
+            "- Unknown\n"
+            "level: high\n"
+        ]
+
+    def test_a_generic_named_service_is_counted_as_a_service(self) -> None:
+        report = _report([("service", "Updater"), ("service", OWN_SERVICE)])
+
+        (item,) = report.drafts_not_built
+        assert "; the 2 services the analysis states are never selected on:" in item.why
+        assert "a name ordinary software also uses" not in item.why
+
+    def test_a_generic_name_of_another_kind_keeps_its_clause(self) -> None:
+        report = _report([("scheduled task", "Updater"), ("service", OWN_SERVICE)])
+
+        (item,) = report.drafts_not_built
+        assert (
+            "; the value the analysis states is a name ordinary software also uses, which is "
+            "never selected on alone; the service the analysis states is never selected on:"
+        ) in item.why
 
     def test_a_benign_verdict_still_publishes_nothing(self) -> None:
         report = _report([("service", OWN_SERVICE)], verdict="Benign")
 
         assert not publishes(_answer(report, OWN_SERVICE))
+
+
+class TestTheLongStandingEntriesStay:
+    @pytest.mark.parametrize(
+        "name",
+        ["appinfo", "bits", "dnscache", "lanmanserver", "schedule", "spooler", "winmgmt"]
+        + ["wscsvc", "tokenbroker", "afd", "tcpip", "volsnap"],
+    )
+    def test_is_still_listed(self, name: str) -> None:
+        assert name in benign_catalogue().windows_services
+
+
+class TestAValueAListedServiceSKeyMatches:
+    """A registry value the key of a listed service matches, which not every host has."""
+
+    def test_the_reason_is_the_catalogue_s_words_by_operator(self) -> None:
+        assert SERVICE_KEY_REASON == "the registry key of a service Windows installs"
+        assert SHIPPED_SERVICE_KEY_REASON == {
+            "endswith": "the registry key of a service Windows installs ends with it",
+            "contains": "the registry key of a service Windows installs holds it",
+            "": "it is the registry key of a service Windows installs",
+        }
+
+    @pytest.mark.parametrize(
+        ("operator", "value"),
+        [
+            ("contains", "CurrentControlSet\\Services\\Fax"),
+            ("endswith", "currentcontrolset\\services\\fax"),
+            ("contains", "\\services\\xblgamesave\\"),
+        ],
+    )
+    def test_an_optional_feature_s_key_is_named_so(self, operator: str, value: str) -> None:
+        from malspark.reporting.detection_signatures import _why_not_specific
+
+        why = _why_not_specific("selection_registry", f"TargetObject|{operator}", value, value)
+        assert why == SHIPPED_SERVICE_KEY_REASON[operator]
+        assert "every Windows installation" not in why
+
+    def test_the_report_says_why_no_draft_was_built(self) -> None:
+        report = _report([("registry key", "CurrentControlSet\\Services\\Fax")])
+
+        assert _sigma(report) == {}
+        (item,) = report.drafts_not_built
+        assert item.why.endswith(
+            "; the value a sandbox watched or the run publishes is never selected on: "
+            "the registry key of a service Windows installs holds it"
+        )

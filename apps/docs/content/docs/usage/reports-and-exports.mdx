@@ -219,8 +219,8 @@ it may match ordinary software: it is listed on `/iocs` and in MISP with
 selection, Suricata content or STIX indicator. In STIX a registry value is a
 `windows-registry-key` with its value's name and a folder written from a drive or
 a share is a `directory`; a bare folder name, a scheduled task, a service, a named
-pipe and an alternate data stream have no STIX object, their reason says so, and
-`/iocs`, MISP and the Sigma drafts carry them. A tool's row of the same kind and
+pipe and an alternate data stream have no STIX object, their reason says so;
+`/iocs` and MISP carry them, and the Sigma drafts carry all but a service. A tool's row of the same kind and
 value that the rule refused becomes the analysis's row, so every surface reads
 one answer for it. A row that is not exported is not a row of
 the IOC table: section 9 prints the rule's answer beside every identifier, with
