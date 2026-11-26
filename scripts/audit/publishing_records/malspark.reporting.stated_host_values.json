@@ -2,7 +2,7 @@
  "entries": [
   {
    "function": "malspark.reporting.stated_host_values:benign_reason",
-   "condition": "why the declared catalogue calls a host value every Windows host's, asked of an analysis row, of a Sigma selection's value and of a path of the file's text: a key or value every installation has, a service's key or a settings subkey exactly one level below it, a path made only of drives, names Windows gives its own folders and a profile name, a file Windows ships in its folder, Windows' own name, and the sample as the sandbox holds it",
+   "condition": "why the declared catalogue calls a host value every Windows host's, asked of an analysis row, of a Sigma selection's value and of a path of the file's text: a key or value every installation has, a service's key or a settings subkey exactly one level below it, a path made only of drives, names Windows gives its own folders and a profile name, a file Windows ships in its folder, Windows' own name (a service by its list's criterion, a service Microsoft ships as part of Windows), and the sample as the sandbox holds it",
    "basis": [
     "the value and its vocabulary kind",
     "the declared catalogue data/host_benign_locations_v1.json",
@@ -10,9 +10,20 @@
    ],
    "test": [
     "tests/unit/reporting/test_a_location_every_host_has_is_refused_on_every_route.py::TestAServiceSubkey::test_is_refused_in_every_spelling_for_both_registry_kinds",
-    "tests/unit/reporting/test_a_location_every_host_has_is_refused_on_every_route.py::TestTheNameMatchingBranchSaysWhatItFound::test_one_wording_for_every_value_it_answers"
+    "tests/unit/reporting/test_a_location_every_host_has_is_refused_on_every_route.py::TestTheNameMatchingBranchSaysWhatItFound::test_one_wording_for_every_value_it_answers",
+    "tests/unit/reporting/test_a_windows_service_is_refused_by_its_criterion_and_a_stated_service_builds_no_install_draft.py::TestTheRefusalSaysTheCriterion::test_a_listed_service_is_refused_in_the_criterion_s_words"
    ],
-   "text_digest": "f5e69371cc6c4f945487dc8f1f4d2747d04469e9fb36170ae8c57b4f8b070869"
+   "text_digest": "4984669ceac961873cbf8b8f18ce7b8cc66902617bcb73fc7b6535100a7a4ab2"
+  },
+  {
+   "constant": "malspark.reporting.stated_host_values:NO_STIX_OBJECT_NO_SIGMA",
+   "condition": "the closing clause of a published stated row of a kind STIX has no object for and no stated Sigma draft selects on (detection_signatures.stated_draft_kinds; a service): where the value is carried",
+   "basis": [
+    "the row's vocabulary kind",
+    "the kinds the stated Sigma drafts select on"
+   ],
+   "test": "tests/unit/reporting/test_a_windows_service_is_refused_by_its_criterion_and_a_stated_service_builds_no_install_draft.py::TestAStatedServiceIsExportedAndBuildsNoInstallDraft::test_it_is_published_and_says_where_it_is_carried",
+   "text_digest": "e8086849993f25f101d85f383588c407aa4d03ef34e9fc35f28ccde2cb983158"
   },
   {
    "constant": "malspark.reporting.stated_host_values:SERVICE_SUBKEY_REASON",
