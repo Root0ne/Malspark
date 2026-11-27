@@ -50,6 +50,8 @@ OTHERS = [
     ("folder", "C:\\ExampleStage7731"),
     ("registry value", "HKCU\\Software\\Example7731\\Stage"),
 ]
+# Those of them STIX has no object for, whose answer closes with where the value is carried.
+NO_STIX_OBJECT_KINDS = {"alternate data stream", "named pipe"}
 # An entry that lists the name among the services installed, as an item of the
 # platform's sandbox document carries its place.
 INSTALLED = json.dumps(
@@ -182,7 +184,9 @@ class TestEveryOtherKindIsAnsweredAsBefore:
             "yes: stated by the analysis (scheduled task, creates/writes), found whole in "
             "ev_0021; no STIX object for this kind; carried by /iocs, MISP and Sigma"
         )
-        assert [a["to_ids"] for a in build_misp_attributes(report, owner="t") if a["value"] == TASK]
+        assert [
+            a["to_ids"] for a in build_misp_attributes(report, owner="t") if a["value"] == TASK
+        ] == [True]
         assert list(_sigma(report).values()) == [
             "title: Malspark AutoGen - loader (scheduled tasks)\n"
             "id: 5a1e035d-8ab6-0ded-5579-20e902131cf7\n"
@@ -234,7 +238,10 @@ class TestEveryOtherKindIsAnsweredAsBefore:
     def test_another_kind_is_published_as_before(self, kind: str, value: str) -> None:
         report = _report([(kind, value)])
 
-        assert _answer(report, value).startswith(f"yes: stated by the analysis ({kind}, ")
+        said = f"yes: stated by the analysis ({kind}, creates/writes), found whole in ev_0021"
+        if kind in NO_STIX_OBJECT_KINDS:
+            said += "; no STIX object for this kind; carried by /iocs, MISP and Sigma"
+        assert _answer(report, value) == said
 
     def test_beside_a_service_the_other_kinds_keep_their_answers_drafts_and_attributes(
         self,
