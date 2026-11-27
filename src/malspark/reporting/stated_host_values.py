@@ -34,8 +34,12 @@ one of these holds:
   file named by its digest or by the name it was submitted under).
 * **A verdict that publishes.** Not Benign, and stated with a confidence, as a
   call binding's value is asked.
+* **Not a service.** A service row every check above lets through is still
+  refused: the statement does not tell a service the sample installed from
+  one that already existed, so a service is not published on the analysis's
+  statement alone.
 
-A name ordinary software also gives its own tasks, services and files (the
+A name ordinary software also gives its own tasks and files (the
 catalogue's ``generic_names``) is exported with a note that it may match
 ordinary software (:func:`listed_only`): listed, and never a matcher on its
 own.
@@ -91,11 +95,8 @@ def listed_only(answer: Any) -> bool:
     return GENERIC_NOTE in str(answer or "")
 
 
-# What an exported value of a kind STIX has no object for says: Sigma is
-# named for a kind a stated draft selects on
-# (``detection_signatures.stated_draft_kinds``), and left out for another.
+# What an exported value of a kind STIX has no object for says.
 NO_STIX_OBJECT = "no STIX object for this kind; carried by /iocs, MISP and Sigma"
-NO_STIX_OBJECT_NO_SIGMA = "no STIX object for this kind; carried by /iocs and MISP"
 
 
 @dataclass(frozen=True)
@@ -929,18 +930,24 @@ def stated_refusal(stated: StatedHostValue, verdict: Any) -> str:
     benign = benign_reason(kind, stated.value, stated.sample_digests, stated.sample_name)
     if benign:
         return benign
+    if kind.table_kind == "service":
+        # True of every service row, whatever its entries hold: the words speak
+        # of the rule and the statement, never of the record.
+        return (
+            "a service is not published on the analysis's statement alone, since the statement "
+            "does not tell a service the sample installed from one that already existed"
+        )
     return ""
 
 
 def stated_reason(stated: StatedHostValue) -> str:
     """Why an exported value stands: the analysis's statement and the entries holding it.
 
-    A value STIX has no object for (a bare folder name, a task, a service, a
-    stream, a pipe) says so, and names Sigma only where a stated draft
-    selects on its kind (a service is never selected on); a mutex, a file, a
-    rooted folder and a registry key or value are STIX indicators.
+    A value STIX has no object for (a bare folder name, a task, a stream, a
+    pipe) says so; a mutex, a file, a rooted folder and a registry key or
+    value are STIX indicators. A service is never exported
+    (:func:`stated_refusal`).
     """
-    from malspark.reporting.detection_signatures import stated_draft_kinds
     from malspark.reporting.renderers.stix_renderer import indicator_pattern
 
     kind = stated.kind
@@ -950,8 +957,7 @@ def stated_reason(stated: StatedHostValue) -> str:
         f"found whole in {', '.join(stated.held_in or ())}"
     )
     if kind is not None and indicator_pattern(kind.table_kind, stated.value) is None:
-        drafted = kind.table_kind in stated_draft_kinds()
-        said += f"; {NO_STIX_OBJECT if drafted else NO_STIX_OBJECT_NO_SIGMA}"
+        said += f"; {NO_STIX_OBJECT}"
     if kind is not None and is_generic(kind, stated.value):
         said += f"; {GENERIC_NOTE}"
     return said
