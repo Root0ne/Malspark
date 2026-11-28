@@ -16,16 +16,6 @@
    "text_digest": "1d3e35fd0e4fcdb93fc6f2134b7766bf78167eab8c95064e5071b231a8675135"
   },
   {
-   "constant": "malspark.reporting.stated_host_values:NO_STIX_OBJECT_NO_SIGMA",
-   "condition": "the closing clause of a published stated row of a kind STIX has no object for and no stated Sigma draft selects on (detection_signatures.stated_draft_kinds; a service): where the value is carried",
-   "basis": [
-    "the row's vocabulary kind",
-    "the kinds the stated Sigma drafts select on"
-   ],
-   "test": "tests/unit/reporting/test_a_windows_service_is_refused_by_its_criterion_and_a_stated_service_builds_no_install_draft.py::TestAStatedServiceIsExportedAndBuildsNoInstallDraft::test_it_is_published_and_says_where_it_is_carried",
-   "text_digest": "e8086849993f25f101d85f383588c407aa4d03ef34e9fc35f28ccde2cb983158"
-  },
-  {
    "constant": "malspark.reporting.stated_host_values:SERVICE_KEY_REASON",
    "condition": "the refusal of the registry key of a service the catalogue's windows_services lists, directly under either Services key, on every route that asks the catalogue, and the subject of the reason a Sigma selection the key matches is left out with",
    "basis": [
@@ -54,7 +44,7 @@
   },
   {
    "function": "malspark.reporting.stated_host_values:stated_refusal",
-   "condition": "why the rule refuses a host value the analysis states, printed in the identifier table, the analyst report and the full export list: the first of its checks that fails, a value no cited entry holds whole said by what the scan that wrote held_in found (with the count read and the count cited where the row cites more than are read), and a stored row without that finding by what its record holds",
+   "condition": "why the rule refuses a host value the analysis states, printed in the identifier table, the analyst report and the full export list: the first of its checks that fails, a value no cited entry holds whole said by what the scan that wrote held_in found (with the count read and the count cited where the row cites more than are read), a stored row without that finding by what its record holds, and a service row every earlier check lets through by the rule: a service is not published on the analysis's statement alone, since the statement does not tell a service the sample installed from one that already existed",
    "basis": [
     "the row's kind, use and value",
     "held_in and unheld_as, written by stated_host_values.scan_cited",
@@ -63,9 +53,10 @@
    ],
    "test": [
     "tests/unit/reporting/test_a_cited_command_line_argument_holds_a_value_and_a_refusal_says_what_the_scan_found.py::TestOneScanOneAnswerOnEverySurface::test_every_surface_prints_the_one_answer",
-    "tests/unit/reporting/test_a_cited_command_line_argument_holds_a_value_and_a_refusal_says_what_the_scan_found.py::TestOneScanOneAnswerOnEverySurface::test_a_value_no_cited_entry_holds_in_any_spelling_keeps_the_earlier_words"
+    "tests/unit/reporting/test_a_cited_command_line_argument_holds_a_value_and_a_refusal_says_what_the_scan_found.py::TestOneScanOneAnswerOnEverySurface::test_a_value_no_cited_entry_holds_in_any_spelling_keeps_the_earlier_words",
+    "tests/unit/reporting/test_a_stated_service_is_not_published_on_the_statement_alone.py::TestAStatedServiceIsRefused::test_held_whole_and_stated_as_created_it_is_refused_with_the_rule_s_words"
    ],
-   "text_digest": "0bfdd7b3259c7edfceff5a9e75c91977007f10fda397ef0efe5aa718a2d49266"
+   "text_digest": "c665d0ec2543b847d5019c2457e25a80977f1a0f074f04ccb39f39613fc0f35f"
   },
   {
    "constant": "malspark.reporting.stated_host_values:UNHELD_WORDS",

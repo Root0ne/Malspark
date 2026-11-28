@@ -207,20 +207,24 @@ with the rule's refusal and its `type`, where the end of this section says):
   answered with that refusal whatever the analysis states. The
   declared catalogue `data/host_benign_locations_v1.json` lists each, with the
   criterion that admits an entry and its source;
-- the verdict is not Benign and was stated with a confidence.
+- the verdict is not Benign and was stated with a confidence;
+- it is not a service: a service row every check above lets through is
+  refused, since the statement does not tell a service the sample installed
+  from one that already existed — a service is not published on the
+  analysis's statement alone. Section 9 prints it with that refusal.
 
 An exported row carries the entries that hold the value in `evidence_ids` and
 its reason in `publish_answer`, for example `yes: stated by the analysis
 (folder, creates/writes), found whole in ev_0021`. A file name is exported
 without the separators written before it. A name ordinary software also gives
-its tasks, services and files (an `Updater` task) is exported with a note that
+its tasks and files (an `Updater` task) is exported with a note that
 it may match ordinary software: it is listed on `/iocs` and in MISP with
 `to_ids` off, and never becomes a matcher on its own — no YARA string, Sigma
 selection, Suricata content or STIX indicator. In STIX a registry value is a
 `windows-registry-key` with its value's name and a folder written from a drive or
-a share is a `directory`; a bare folder name, a scheduled task, a service, a named
-pipe and an alternate data stream have no STIX object, their reason says so;
-`/iocs` and MISP carry them, and the Sigma drafts carry all but a service. A tool's row of the same kind and
+a share is a `directory`; a bare folder name, a scheduled task, a named pipe and
+an alternate data stream have no STIX object, their reason says so, and
+`/iocs`, MISP and the Sigma drafts carry them. A tool's row of the same kind and
 value that the rule refused becomes the analysis's row, so every surface reads
 one answer for it. A row that is not exported is not a row of
 the IOC table: section 9 prints the rule's answer beside every identifier, with
@@ -295,11 +299,8 @@ that records its kind, one Sigma draft per log source: a file (past its known
 folders) and a folder (a whole path component) in `file_event`, an alternate
 data stream in `create_stream_hash`, a scheduled task in Security event 4698, a
 named pipe in `pipe_created`, a registry key or value in `registry_event`. A
-mutex, which no Windows log records, gets none. A service gets none either: its
-log records an installation, and the record does not tell a service the sample
-installed from one that existed and was changed. Such a row is still published
-and carried by `/iocs` and MISP, and says so; where no Sigma draft is built,
-the sentence that says why counts it.
+mutex, which no Windows log records, gets none. A service gets none either: a
+service the analysis states is never published.
 Every Sigma selection can match alone (the condition is the one selection, or
 `1 of` them), so each holds only specific values: a value the benign-location
 catalogue calls every Windows host's (an autorun key, a file Windows ships) is

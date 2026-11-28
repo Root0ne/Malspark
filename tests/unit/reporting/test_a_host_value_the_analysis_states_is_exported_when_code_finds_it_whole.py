@@ -298,7 +298,6 @@ class TestEveryExportedKind:
         ("kind", "value", "table_kind"),
         [
             ("named pipe", "examplepipe_7731", "named_pipe"),
-            ("service", "ExampleSvc7731", "service"),
             ("registry value", "HKCU\\Software\\ExampleVendor7731\\state", "registry_value"),
             ("registry key", "HKCU\\Software\\ExampleVendor7731", "registry"),
             ("file path", "%APPDATA%\\ExampleVendor7731\\run.dll", "path"),

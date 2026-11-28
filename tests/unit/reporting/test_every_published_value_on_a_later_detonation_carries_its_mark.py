@@ -47,7 +47,8 @@ D1 = ObservedIn(detonation="d1")
 D2 = ObservedIn(detonation="d2", launched_with=ARGS)
 MARK = f"observed in detonation 2, launched with `{ARGS}`"
 
-# One value of each host kind the analysis may state, each one the table publishes.
+# One value of each host kind the analysis may state, each one the table publishes
+# (a service the analysis states never is).
 VALUES = {
     "mutex": "Global\\ExampleMutex7731",
     "file path": "C:\\Users\\Public\\ExampleVendor7731\\payload7731.exe",
@@ -56,7 +57,6 @@ VALUES = {
     "registry key": "HKCU\\Software\\ExampleVendor7731",
     "registry value": "HKCU\\Software\\ExampleVendor7732\\Updater7731",
     "scheduled task": "ExampleTask7731",
-    "service": "ExampleSvc7731",
     "named pipe": "\\\\.\\pipe\\examplepipe_7731",
     "alternate data stream": ":example7731",
 }
@@ -122,8 +122,10 @@ def _stated(report: MalwareReport) -> dict[str, Any]:
 class TestEveryKind:
     def test_every_published_kind_resting_on_a_later_read_carries_the_mark(self) -> None:
         rows = _stated(_report([LATER]))
-        # Every table kind the vocabulary publishes a value under is walked.
+        # Every table kind the vocabulary publishes a value under is walked; a
+        # stated service is never published.
         kinds = {kind.table_kind for kind in host_kinds().values() if kind.table_kind}
+        kinds.discard("service")
         assert set(rows) == kinds
         dropped = sorted(kind for kind, row in rows.items() if row.observed_in != [D2])
         assert dropped == []
@@ -173,7 +175,7 @@ class TestTheSurfaces:
         from malspark.reporting.renderers import MarkdownRenderer
 
         text = MarkdownRenderer().render(report)
-        for value in ("ExampleVendor7731", "ExampleTask7731", "ExampleSvc7731"):
+        for value in ("ExampleVendor7731", "ExampleTask7731"):
             line = next(x for x in text.split("\n") if x.startswith("|") and value in x)
             assert MARK in line, line
 

@@ -1188,8 +1188,8 @@ def _build_sigma(report: MalwareReport) -> list[DetectionRule]:
     value in the first draft; a file and a folder in ``file_event``; a stream
     in ``create_stream_hash``; a scheduled task in the Security log's event
     4698; a named pipe in ``pipe_created``. A mutex no Windows log records
-    gets none; a service gets none, since its log records an installation and
-    the record does not tell one the sample installed from one it changed; and
+    gets none; a service is never published on the analysis's statement
+    (``stated_host_values.stated_refusal``), so none is selected on; and
     a generic name never forms a selection. Every selection holds only values that stand
     alone (:func:`selection_specific`). With no value left to select on there
     is no Sigma draft, and the report says why (:func:`drafts_not_built`).
@@ -1348,9 +1348,8 @@ _STATED_LOGSOURCES = {
 # The IOC-table kind of each stated value a draft selects: the draft, the
 # selection's name and field, and what the event writes the value as. An
 # event id the selection is read under where the log source holds many. A
-# service is none: its log records an installation, and the record does not
-# tell a service the sample installed from one that existed and was changed
-# (:data:`_STATED_NOT_SELECTED`).
+# service is none: a stated service is never published
+# (``stated_host_values.stated_refusal``).
 _STATED_FIELDS: dict[str, tuple[str, str, str]] = {
     "path": ("file", "selection_file", "TargetFilename|endswith"),
     "folder": ("file", "selection_folder", "TargetFilename|contains"),
@@ -1360,18 +1359,10 @@ _STATED_FIELDS: dict[str, tuple[str, str, str]] = {
 }
 _STATED_EVENT_IDS = {"task": 4698}
 _STATED_REGISTRY_KINDS = frozenset({"registry", "registry_value"})
-# The IOC-table kinds a published stated value of which is counted as never
-# selected on, with why, where the report says why no Sigma draft was built.
-_STATED_NOT_SELECTED = frozenset({"service"})
 # The most values one stated draft selects on: a published row is one
 # statement of the analysis, and a table of them is bounded by
 # ``stated_host_values.MAX_STATED_ROWS``.
 _MAX_STATED_VALUES = 64
-
-
-def stated_draft_kinds() -> frozenset[str]:
-    """The IOC-table kinds a published stated value of which a Sigma draft selects on."""
-    return frozenset(_STATED_FIELDS) | _STATED_REGISTRY_KINDS
 
 
 def _stated_rows(report: MalwareReport) -> list[Any]:
@@ -1463,27 +1454,20 @@ def _printed_path(text: str, shortened: str) -> str:
     return "\\" + "\\".join(parts) if parts else shortened
 
 
-def _stated_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, int]:
-    """The drafts over the stated values, how many generic names and how many services were
-    left out of them.
+def _stated_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int]:
+    """The drafts over the stated values, and how many generic names were left out of them.
 
     Each draft holds, for each selected value, every row that reduces to it
     (``held``), which the value's further detonations are read over once the
-    draft is narrowed (:func:`_sigma_drafts`). A service is counted as a
-    service, its name generic or not (:data:`_STATED_NOT_SELECTED`); a generic
-    name of another kind as a generic name.
+    draft is narrowed (:func:`_sigma_drafts`).
     """
     from malspark.reporting.ledger_projection import marks_of
 
     drafts: dict[str, _SigmaDraft] = {}
     seen: set[tuple[str, str]] = set()
     generic = 0
-    services = 0
     for row in _stated_rows(report):
         kind = str(row.kind or "")
-        if kind in _STATED_NOT_SELECTED:
-            services += 1
-            continue
         placed = _STATED_FIELDS.get(kind)
         if placed is None:
             continue
@@ -1514,7 +1498,7 @@ def _stated_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, int]:
         draft.sources.append(f"{kind}:{row.value}")
         draft.picked[(selection, value.lower())] = draft.sources[-1]
         draft.held[(selection, value.lower())] = (row.value, marks_of(row))
-    return [drafts[s] for s in _STATED_TITLES if s in drafts], generic, services
+    return [drafts[s] for s in _STATED_TITLES if s in drafts], generic
 
 
 def sigma_admits(report: MalwareReport) -> frozenset[str]:
@@ -2168,7 +2152,7 @@ def _selection_kind(selection: str) -> Any:
     return next((k for k in host_kinds().values() if k.table_kind == table_kind), None)
 
 
-def _sigma_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, list[str], int]:
+def _sigma_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, list[str]]:
     """Every Sigma draft the run's values give, each narrowed (:func:`selection_specific`).
 
     First the draft over registry keys, images and the paths persistence's
@@ -2181,8 +2165,7 @@ def _sigma_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, list[s
     (``left_out``). Second, how many generic names were left out; third, why
     each value was left out, which is read only when no draft is built: every
     value left out then is one the catalogue's question took out, since
-    containment always keeps the narrower value; fourth, how many services
-    were left out (:data:`_STATED_NOT_SELECTED`).
+    containment always keeps the narrower value.
     """
     registry_targets, registered, held = _sigma_values(report)
 
@@ -2205,7 +2188,7 @@ def _sigma_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, list[s
     first, unheld = _first("registry_event")
     if not registry_targets or "selection_registry" not in _narrowed(first)[0]:
         first, unheld = _first("process_creation")
-    stated, generic, services = _stated_drafts(report)
+    stated, generic = _stated_drafts(report)
     drafts: list[_SigmaDraft] = []
     reasons: list[str] = []
     for draft in [first, *stated] if first.selections else stated:
@@ -2241,7 +2224,7 @@ def _sigma_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, list[s
                 left_out=left_out,
             )
         )
-    return drafts, generic, reasons, services
+    return drafts, generic, reasons
 
 
 def _narrowed(draft: _SigmaDraft) -> tuple[dict[str, dict[str, Any]], list[tuple[str, str]]]:
@@ -2292,12 +2275,6 @@ _SIGMA_GENERIC_LEFT_OUT = (
     "; {count} the analysis states {are} a name ordinary software also uses, which is never "
     "selected on alone"
 )
-# The clause for the services the analysis states, whose log records an
-# installation (:data:`_STATED_NOT_SELECTED`).
-_SIGMA_SERVICES_LEFT_OUT = (
-    "; {count} the analysis states {are} never selected on: the record does not tell a "
-    "service the sample installed from one that existed and was changed"
-)
 # The clause for the values the catalogue's question took out
 # (:func:`selection_specific`), with each reason once.
 _SIGMA_EVERY_HOST_LEFT_OUT = (
@@ -2325,7 +2302,7 @@ def drafts_not_built(report: MalwareReport, rules: list[DetectionRule]) -> list[
         return []
     if any(rule.kind == "sigma" for rule in rules):
         return []
-    drafts, generic, every_host, services = _sigma_drafts(report)
+    drafts, generic, every_host = _sigma_drafts(report)
     if drafts:
         return [DraftNotBuilt(kind="sigma", why=_SIGMA_DRAFT_RAISED)]
     why = _SIGMA_NOTHING_TO_SELECT
@@ -2333,11 +2310,6 @@ def drafts_not_built(report: MalwareReport, rules: list[DetectionRule]) -> list[
         why += _SIGMA_GENERIC_LEFT_OUT.format(
             count="the value" if generic == 1 else f"the {generic} values",
             are="is" if generic == 1 else "are each",
-        )
-    if services:
-        why += _SIGMA_SERVICES_LEFT_OUT.format(
-            count="the service" if services == 1 else f"the {services} services",
-            are="is" if services == 1 else "are",
         )
     if every_host:
         why += _SIGMA_EVERY_HOST_LEFT_OUT.format(
